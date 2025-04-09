@@ -1,12 +1,26 @@
 const ALLOW_PAST_CLOCKING = true;
 
 const employees = {
-    "1010": "Jasmine Cruz",
-    "1020": "Ron dela Peña",
-    "1030": "Carla Ramos",
-    "1040": "EJ Tan",
-    "1050": "Miko Santos"
+    "130129": "Beatrice Grace Boldo",
+    "130229": "Cristopher David",
+    "130329": "Gabrielle Hannah Catalan",
+    "130429": "Acerr Franco",
+    "130529": "Raschel Joy Cruz",
+    "130629": "Raniel Buenaventura",
+    "130729": "Denzel Genesis Fernandez",
+    "130829": "Sheila Mae Salvajan",
+    "130929": "Paul John Garin",
+    "131029": "John Lester Cal",
+    "131129": "Liezel Acebedo",
+    "131229": "Laville Laborte",
+    "131329": "Jasmine Ferrer",
+    "131429": "Gerilou Gonzales",
+    "131529": "Sarah Perpinan",
+    "131629": "Rhobbie Ryza Saligumba",
+    "131729": "Charles Francis Tan",
+    "131829": "Japhet Dizon"
 };
+
 
 let dutyStatus = "in";
 let selfieData = "";
