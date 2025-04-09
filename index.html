@@ -71,14 +71,6 @@
             background-color: #238636;
         }
 
-        video,
-        canvas,
-        #previewContainer img {
-            width: 100%;
-            border-radius: 10px;
-            margin-top: 1rem;
-        }
-
         #cameraContainer,
         #previewContainer,
         #mainInterface {
@@ -103,6 +95,7 @@
             width: 100vw;
             height: 100vh;
             object-fit: cover;
+            transform: scaleX(-1);
         }
 
         #cameraCaptureBtn {
@@ -133,19 +126,44 @@
             display: none;
         }
 
+        #fullPreviewContainer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: black;
+            z-index: 1500;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        #fullPreviewImg {
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover;
+        }
+
+        .overlay-buttons {
+            position: absolute;
+            bottom: calc(env(safe-area-inset-bottom) + 2rem);
+            display: flex;
+            gap: 1rem;
+            z-index: 1600;
+        }
+
+        .overlay-buttons button {
+            width: auto;
+            padding: 0.75rem 1.5rem;
+        }
+
         .footer {
             text-align: center;
             font-size: 0.85rem;
             color: #888;
             margin-top: 2rem;
-        }
-
-        @media (orientation: landscape) {
-            #video {
-                width: 100%;
-                height: 100%;
-                object-fit: contain;
-            }
         }
     </style>
 </head>
@@ -164,148 +182,148 @@
             <p id="welcomeText"></p>
             <button onclick="logoutUser()" style="background:#ccc; color:#000;">Switch User</button>
             <button id="startBtn" onclick="startPhotoSequence()" style="display:none;">Clock In</button>
-
-            <div id="cameraContainer">
-                <video id="video" autoplay muted playsinline></video>
-                <div id="cameraCaptureBtn" onclick="takePhoto()"></div>
-            </div>
-
-            <div id="previewContainer">
-                <h3>📷 Preview</h3>
-                <img id="previewImg" />
-                <div style="display: flex; gap: 0.5rem;">
-                    <button onclick="submitAttendance()">✅ Submit</button>
-                    <button onclick="retakePhoto()" style="background-color:#ccc; color:#000;">🔁 Retake</button>
-                </div>
-            </div>
         </div>
+    </div>
 
-        <div id="flash"></div>
-        <canvas id="snapshot" style="display:none;"></canvas>
-        <div class="footer">Matchanese Attendance System</div>
+    <div id="cameraContainer">
+        <video id="video" autoplay muted playsinline></video>
+        <div id="cameraCaptureBtn" onclick="takePhoto()"></div>
+    </div>
 
-        <script>
-            const employees = {
-                "1010": "Jasmine Cruz",
-                "1020": "Ron dela Peña",
-                "1030": "Carla Ramos",
-                "1040": "EJ Tan",
-                "1050": "Miko Santos"
+    <div id="fullPreviewContainer">
+        <img id="fullPreviewImg" />
+        <div class="overlay-buttons">
+            <button onclick="submitAttendance()">✅ Use Photo</button>
+            <button onclick="retakePhoto()" style="background:#ccc; color:#000;">🔁 Retake</button>
+        </div>
+    </div>
+
+    <div id="flash"></div>
+    <canvas id="snapshot" style="display:none;"></canvas>
+    <div class="footer">Matchanese Attendance System</div>
+
+    <script>
+        const employees = {
+            "1010": "Jasmine Cruz",
+            "1020": "Ron dela Peña",
+            "1030": "Carla Ramos",
+            "1040": "EJ Tan",
+            "1050": "Miko Santos"
+        };
+
+        const video = document.getElementById("video");
+        const canvas = document.getElementById("snapshot");
+        const fullPreviewImg = document.getElementById("fullPreviewImg");
+        const cameraContainer = document.getElementById("cameraContainer");
+        const fullPreviewContainer = document.getElementById("fullPreviewContainer");
+        const loginForm = document.getElementById("loginForm");
+        const mainInterface = document.getElementById("mainInterface");
+        const welcomeText = document.getElementById("welcomeText");
+        const flash = document.getElementById("flash");
+        const timestamp = document.getElementById("timestamp");
+        const startBtn = document.getElementById("startBtn");
+
+        let dutyStatus = "in";
+        let selfieData = "";
+        let currentUser = localStorage.getItem("loggedInUser") || "";
+
+        if (currentUser && employees[currentUser]) {
+            showMainInterface(currentUser);
+        }
+
+        let stream;
+
+        function initCamera() {
+            if (!stream) {
+                navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
+                    .then(s => {
+                        stream = s;
+                        video.srcObject = stream;
+                    })
+                    .catch(err => {
+                        alert("📷 Unable to access camera.");
+                    });
+            }
+        }
+
+        setInterval(() => {
+            const now = new Date();
+            timestamp.textContent = `Current Time: ${now.toLocaleTimeString()}`;
+        }, 1000);
+
+        function loginUser() {
+            const code = document.getElementById("codeInput").value.trim();
+            if (employees[code]) {
+                localStorage.setItem("loggedInUser", code);
+                showMainInterface(code);
+            } else {
+                alert("❌ Invalid code");
+            }
+        }
+
+        function showMainInterface(code) {
+            loginForm.style.display = "none";
+            mainInterface.style.display = "block";
+            welcomeText.textContent = `👋 Welcome, ${employees[code]}`;
+            startBtn.textContent = dutyStatus === 'in' ? "Clock In" : "Clock Out";
+            startBtn.style.display = "block";
+        }
+
+        function logoutUser() {
+            localStorage.removeItem("loggedInUser");
+            location.reload();
+        }
+
+        function startPhotoSequence() {
+            initCamera();
+            startBtn.style.display = "none";
+            cameraContainer.style.display = "flex";
+            window.scrollTo(0, 0);
+        }
+
+        function takePhoto() {
+            flash.style.display = "block";
+            setTimeout(() => flash.style.display = "none", 150);
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext("2d").drawImage(video, 0, 0);
+            selfieData = canvas.toDataURL("image/png");
+            fullPreviewImg.src = selfieData;
+            cameraContainer.style.display = "none";
+            fullPreviewContainer.style.display = "flex";
+        }
+
+        function retakePhoto() {
+            fullPreviewContainer.style.display = "none";
+            cameraContainer.style.display = "flex";
+            window.scrollTo(0, 0);
+        }
+
+        function submitAttendance() {
+            const now = new Date();
+            const time = now.toLocaleTimeString();
+            const date = now.toLocaleDateString();
+            const code = localStorage.getItem("loggedInUser");
+
+            const log = {
+                employee: employees[code],
+                code,
+                mode: dutyStatus,
+                date,
+                time,
+                selfie: selfieData
             };
 
-            const video = document.getElementById("video");
-            const canvas = document.getElementById("snapshot");
-            const previewImg = document.getElementById("previewImg");
-            const cameraContainer = document.getElementById("cameraContainer");
-            const previewContainer = document.getElementById("previewContainer");
-            const loginForm = document.getElementById("loginForm");
-            const mainInterface = document.getElementById("mainInterface");
-            const welcomeText = document.getElementById("welcomeText");
-            const flash = document.getElementById("flash");
-            const timestamp = document.getElementById("timestamp");
-            const startBtn = document.getElementById("startBtn");
+            console.log("✅ Attendance Log:", log);
+            alert(`✅ ${dutyStatus === 'in' ? 'Clocked In' : 'Clocked Out'} at ${time}`);
 
-            let dutyStatus = "in";
-            let selfieData = "";
-            let currentUser = localStorage.getItem("loggedInUser") || "";
-
-            if (currentUser && employees[currentUser]) {
-                showMainInterface(currentUser);
-            }
-
-            let stream;
-
-            function initCamera() {
-                if (!stream) {
-                    navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
-                        .then(s => {
-                            stream = s;
-                            video.srcObject = stream;
-                        })
-                        .catch(err => {
-                            alert("📷 Unable to access camera.");
-                        });
-                }
-            }
-
-            setInterval(() => {
-                const now = new Date();
-                timestamp.textContent = `Current Time: ${now.toLocaleTimeString()}`;
-            }, 1000);
-
-            function loginUser() {
-                const code = document.getElementById("codeInput").value.trim();
-                if (employees[code]) {
-                    localStorage.setItem("loggedInUser", code);
-                    showMainInterface(code);
-                } else {
-                    alert("❌ Invalid code");
-                }
-            }
-
-            function showMainInterface(code) {
-                loginForm.style.display = "none";
-                mainInterface.style.display = "block";
-                welcomeText.textContent = `👋 Welcome, ${employees[code]}`;
-                startBtn.textContent = dutyStatus === 'in' ? "Clock In" : "Clock Out";
-                startBtn.style.display = "block";
-            }
-
-            function logoutUser() {
-                localStorage.removeItem("loggedInUser");
-                location.reload();
-            }
-
-            function startPhotoSequence() {
-                initCamera();
-                startBtn.style.display = "none";
-                cameraContainer.style.display = "flex";
-                window.scrollTo(0, 0);
-            }
-
-            function takePhoto() {
-                flash.style.display = "block";
-                setTimeout(() => flash.style.display = "none", 150);
-
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
-                canvas.getContext("2d").drawImage(video, 0, 0);
-                selfieData = canvas.toDataURL("image/png");
-                previewImg.src = selfieData;
-                cameraContainer.style.display = "none";
-                previewContainer.style.display = "block";
-            }
-
-            function retakePhoto() {
-                previewContainer.style.display = "none";
-                cameraContainer.style.display = "flex";
-                window.scrollTo(0, 0);
-            }
-
-            function submitAttendance() {
-                const now = new Date();
-                const time = now.toLocaleTimeString();
-                const date = now.toLocaleDateString();
-                const code = localStorage.getItem("loggedInUser");
-
-                const log = {
-                    employee: employees[code],
-                    code,
-                    mode: dutyStatus,
-                    date,
-                    time,
-                    selfie: selfieData
-                };
-
-                console.log("✅ Attendance Log:", log);
-                alert(`✅ ${dutyStatus === 'in' ? 'Clocked In' : 'Clocked Out'} at ${time}`);
-
-                dutyStatus = (dutyStatus === 'in') ? 'out' : 'in';
-                previewContainer.style.display = "none";
-                startBtn.textContent = dutyStatus === 'in' ? "Clock In" : "Clock Out";
-                startBtn.style.display = "block";
-            }
-        </script>
+            dutyStatus = (dutyStatus === 'in') ? 'out' : 'in';
+            fullPreviewContainer.style.display = "none";
+            startBtn.textContent = dutyStatus === 'in' ? "Clock In" : "Clock Out";
+            startBtn.style.display = "block";
+        }
+    </script>
 </body>
 
 </html>
