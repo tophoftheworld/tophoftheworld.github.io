@@ -20,8 +20,8 @@ const timestamp = document.getElementById("timestamp");
 const datePicker = document.getElementById("datePicker");
 const mainInterface = document.getElementById("mainInterface");
 const loginForm = document.getElementById("loginForm");
-const summaryContainer = document.getElementById("summaryContainer");
-const startBtn = document.getElementById("startBtn");
+// const summaryContainer = document.getElementById("summaryContainer");
+// const startBtn = document.getElementById("startBtn");
 const video = document.getElementById("video");
 const previewImg = document.getElementById("previewImg");
 const canvas = document.getElementById("snapshot");
@@ -121,45 +121,45 @@ function updateSummaryUI() {
         datePicker._flatpickr.jumpToDate(viewDate);
     }
 
-    nextBtn.disabled = formatDate(viewDate) >= formatDate(today);
+    // nextBtn.disabled = formatDate(viewDate) >= formatDate(today);
 
-    summaryContainer.innerHTML = `
-    <div class="summary-row">
-        <div class="summary-block">
-        <strong>Clock In:</strong>
-        <div>${data.clockIn?.time || '--'}</div>
-        <div>${data.clockIn?.branch || ''}</div>
-        </div>
-        <div class="summary-block">
-        <strong>Clock Out:</strong>
-        <div>${data.clockOut?.time || '--'}</div>
-        <div>${data.clockOut?.branch || ''}</div>
-        </div>
-      </div>`;
+    // summaryContainer.innerHTML = `
+    // <div class="summary-row">
+    //     <div class="summary-block">
+    //     <strong>Clock In:</strong>
+    //     <div>${data.clockIn?.time || '--'}</div>
+    //     <div>${data.clockIn?.branch || ''}</div>
+    //     </div>
+    //     <div class="summary-block">
+    //     <strong>Clock Out:</strong>
+    //     <div>${data.clockOut?.time || '--'}</div>
+    //     <div>${data.clockOut?.branch || ''}</div>
+    //     </div>
+    //   </div>`;
 
     const isActiveDay = ALLOW_PAST_CLOCKING || isToday;
     dutyStatus = !data.clockIn ? 'in' : (data.clockOut ? 'in' : 'out');
 
-    startBtn.textContent = dutyStatus === 'in' ? "Clock In" : "Clock Out";
-    startBtn.style.display = isActiveDay && (!data.clockIn || !data.clockOut) ? "block" : "none";
+    // startBtn.textContent = dutyStatus === 'in' ? "Clock In" : "Clock Out";
+    // startBtn.style.display = isActiveDay && (!data.clockIn || !data.clockOut) ? "block" : "none";
 
     const branchSelect = document.getElementById("branchSelect");
     branchSelect.style.display = isToday && !data.clockIn ? "block" : "none";
 }
 
 
-function changeDay(delta) {
-    viewDate.setDate(viewDate.getDate() + delta);
+// function changeDay(delta) {
+//     viewDate.setDate(viewDate.getDate() + delta);
 
-    const formatted = formatDate(viewDate);
-    datePicker.value = formatted;
+//     const formatted = formatDate(viewDate);
+//     datePicker.value = formatted;
 
-    if (datePicker._flatpickr) {
-        datePicker._flatpickr.jumpToDate(viewDate);
-    }
+//     if (datePicker._flatpickr) {
+//         datePicker._flatpickr.jumpToDate(viewDate);
+//     }
 
-    updateSummaryUI();
-}
+//     updateSummaryUI();
+// }
 
 function startPhotoSequence() {
     navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
@@ -272,9 +272,11 @@ function updateCardTimes(data) {
 
     if (data.clockIn?.selfie) {
         clockInPhoto.src = data.clockIn.selfie;
+        clockInPhoto.onclick = () => openImageModal(data.clockIn.selfie);
         clockInOverlay.classList.add("green");
     } else {
         clockInPhoto.src = "";
+        clockInPhoto.onclick = null;
         clockInOverlay.classList.remove("green");
     }
 
@@ -283,9 +285,11 @@ function updateCardTimes(data) {
 
     if (data.clockOut?.selfie) {
         clockOutPhoto.src = data.clockOut.selfie;
+        clockOutPhoto.onclick = () => openImageModal(data.clockOut.selfie);
         clockOutOverlay.classList.add("green");
     } else {
         clockOutPhoto.src = "";
+        clockOutPhoto.onclick = null;
         clockOutOverlay.classList.remove("green");
     }
 
@@ -335,3 +339,24 @@ document.getElementById("dateDisplay").addEventListener("click", () => {
     floatingPicker.open();
     highlightAttendanceDates(floatingPicker);
 });
+
+function openImageModal(src) {
+    const modal = document.getElementById("imageModal");
+    const image = document.getElementById("modalImage");
+
+    image.src = src;
+    modal.style.display = "flex";
+
+    // Close modal on any click, including the image
+    modal.onclick = closeImageModal;
+}
+
+
+function closeImageModal() {
+    const modal = document.getElementById("imageModal");
+    const image = document.getElementById("modalImage");
+
+    modal.style.display = "none";
+    image.src = "";
+    modal.onclick = null;
+}

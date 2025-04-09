@@ -11,6 +11,11 @@
 </head>
 
 <body>
+    <div id="imageModal" class="image-modal">
+        <div class="modal-content">
+            <img id="modalImage" src="" />
+        </div>
+    </div>
     <div class="container">
         <!-- <h1>📍 Staff Time Log</h1> -->
         <div id="loginForm">
@@ -57,11 +62,11 @@
             <button onclick="logoutUser()" style="background:#ccc; color:#000;">Switch User</button>
             <div class="panel timestamp-panel" id="timestamp">Current Time: --:--</div>
 
-            <div class="nav-date-row">
+            <!-- <div class="nav-date-row">
                 <button onclick="changeDay(-1)">⬅️</button>
-                <!-- <input id="summaryDate" class="date-button" readonly /> -->
-                <button id="nextBtn" onclick="changeDay(1)">➡️</button>
-            </div>
+                <input id="summaryDate" class="date-button" readonly /> -->
+                <!-- <button id="nextBtn" onclick="changeDay(1)">➡️</button>
+            </div> -->
 
             <select id="branchSelect" style="margin-bottom: 1rem; display: none;">
                 <option value="">Select Branch</option>
@@ -69,7 +74,7 @@
                 <option>Matcha Bar SM North EDSA</option>
                 <option>Events</option>
             </select>
-            <button id="startBtn" onclick="startPhotoSequence()">Clock In</button>
+            <!-- <button id="startBtn" onclick="startPhotoSequence()">Clock In</button> -->
             <div id="summaryContainer"></div>
         </div>
 
@@ -86,7 +91,7 @@
         <canvas id="snapshot" style="display:none;"></canvas>
         <button onclick="clearData()" style="background:#e63946; color:white; margin-top: 2rem;">🧹 Clear All Data
             (Debug)</button>
-        <div class="footer">Matchanese Attendance System</div>
+        <div class="footer">Matchanese Attendance System</div><br>
 
         <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
         <script src="js/script.js"></script>
