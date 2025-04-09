@@ -138,9 +138,11 @@
 
         #videoContainer video,
         #previewImg {
+            position: absolute;
+            top: 0;
+            left: 0;
             width: 100vw;
-            height: auto;
-            max-height: 80vh;
+            height: 100vh;
             object-fit: cover;
         }
 
@@ -187,6 +189,13 @@
                 <button class="date-button" id="summaryDate">YYYY-MM-DD</button>
                 <button id="nextBtn" onclick="changeDay(1)">➡️</button>
             </div>
+            
+            <select id="branchSelect" style="margin-bottom: 1rem; display: none;">
+                <option value="">Select Branch</option>
+                <option>Matcha Bar Podium</option>
+                <option>Matcha Bar SM North EDSA</option>
+                <option>Events</option>
+            </select>
 
             <button id="startBtn" onclick="startPhotoSequence()">Clock In</button>
             <div id="summaryContainer"></div>
@@ -282,6 +291,9 @@
                 mainInterface.style.display = "block";
                 welcomeText.textContent = `👋 Welcome, ${employees[code]}`;
                 viewDate = new Date();
+                const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
+                const data = JSON.parse(localStorage.getItem(key)) || {};
+                dutyStatus = data.clockIn && !data.clockOut ? 'out' : 'in';
                 updateSummaryUI();
             }
 
@@ -293,21 +305,36 @@
                 nextBtn.disabled = formatDate(viewDate) >= formatDate(today);
 
                 summaryContainer.innerHTML = `
-                <div class="summary-row">
-                    <div class="summary-block">
-                        <strong>Clock In:</strong>
-                        <div>${data.clockIn?.time || '--'}</div>
-                        ${data.clockIn?.selfie ? `<img class="summary-photo" src="${data.clockIn.selfie}" />` : ''}
-                    </div>
-                    <div class="summary-block">
-                        <strong>Clock Out:</strong>
-                        <div>${data.clockOut?.time || '--'}</div>
-                        ${data.clockOut?.selfie ? `<img class="summary-photo" src="${data.clockOut.selfie}" />` : ''}
-                    </div>
-                </div>`;
+          <div class="summary-row">
+            <div class="summary-block">
+              <strong>Clock In:</strong>
+              <div>${data.clockIn?.time || '--'}</div>
+              ${data.clockIn?.selfie ? `<img class="summary-photo" src="${data.clockIn.selfie}" />` : ''}
+                <div>${data.clockIn?.branch || ''}</div>
+            </div>
+            <div class="summary-block">
+              <strong>Clock Out:</strong>
+              <div>${data.clockOut?.time || '--'}</div>
+              ${data.clockOut?.selfie ? `<img class="summary-photo" src="${data.clockOut.selfie}" />` : ''}
+                <div>${data.clockIn?.branch || ''}</div>
+            </div>
+          </div>`;
 
-                startBtn.textContent = dutyStatus === 'in' ? "Clock In" : "Clock Out";
-                startBtn.style.display = isToday && !(dutyStatus === 'out' && data.clockOut) ? "block" : "none";
+                if (isToday && (!data.clockIn || !data.clockOut)) {
+                    dutyStatus = !data.clockIn ? 'in' : 'out';
+                    startBtn.textContent = dutyStatus === 'in' ? "Clock In" : "Clock Out";
+                    startBtn.style.display = "block";
+                } else {
+                    startBtn.style.display = "none";
+                }
+
+                const branchSelect = document.getElementById("branchSelect");
+                if (isToday && !data.clockIn) {
+                    branchSelect.style.display = "block";
+                } else {
+                    branchSelect.style.display = "none";
+                }
+
             }
 
             function changeDay(delta) {
@@ -366,7 +393,8 @@
                 const existing = JSON.parse(localStorage.getItem(key)) || {};
 
                 if (dutyStatus === 'in') {
-                    existing.clockIn = { time, selfie: selfieData };
+                    const branch = document.getElementById("branchSelect").value || "N/A";
+                    existing.clockIn = { time, selfie: selfieData, branch };
                     dutyStatus = 'out';
                 } else {
                     existing.clockOut = { time, selfie: selfieData };
