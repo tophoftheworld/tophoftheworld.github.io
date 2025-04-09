@@ -121,6 +121,11 @@
             color: #888;
             margin-top: 2rem;
         }
+        
+        #video {
+            transform: scaleX(-1);
+        }
+
 
         #videoContainer {
             position: fixed;
@@ -148,7 +153,7 @@
 
         #captureCircle {
             position: absolute;
-            bottom: 5rem;
+            bottom: 8rem;
             width: 70px;
             height: 70px;
             border-radius: 50%;
@@ -164,7 +169,7 @@
             justify-content: center;
             gap: 1rem;
             position: absolute;
-            bottom: 1rem;
+            bottom: 2.5rem;
             z-index: 10000;
         }
     </style>
@@ -186,7 +191,7 @@
 
             <div class="nav-date-row">
                 <button onclick="changeDay(-1)">⬅️</button>
-                <button class="date-button" id="summaryDate">YYYY-MM-DD</button>
+                <input id="summaryDate" class="date-button" readonly />
                 <button id="nextBtn" onclick="changeDay(1)">➡️</button>
             </div>
             
@@ -230,6 +235,7 @@
             let selfieData = "";
             let currentUser = localStorage.getItem("loggedInUser") || "";
             let today = new Date();
+            today.setHours(0, 0, 0, 0);
             let viewDate = new Date();
             let stream = null;
 
@@ -260,6 +266,7 @@
             flatpickr("#summaryDate", {
                 dateFormat: "Y-m-d",
                 defaultDate: today,
+                maxDate: today,
                 onChange: function (selectedDates) {
                     viewDate = selectedDates[0];
                     updateSummaryUI();
@@ -267,7 +274,10 @@
             });
 
             function formatDate(dateObj) {
-                return dateObj.toISOString().split("T")[0];
+                const year = dateObj.getFullYear();
+                const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+                const day = String(dateObj.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
             }
 
             function loginUser() {
@@ -301,7 +311,7 @@
                 const isToday = formatDate(viewDate) === formatDate(today);
                 const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
                 const data = JSON.parse(localStorage.getItem(key)) || {};
-                summaryDate.textContent = formatDate(viewDate);
+                summaryDate.value = formatDate(viewDate);
                 nextBtn.disabled = formatDate(viewDate) >= formatDate(today);
 
                 summaryContainer.innerHTML = `
