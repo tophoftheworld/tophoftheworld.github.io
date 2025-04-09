@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Payslip Generator</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background-color: #f7f7f7;
+            margin: 0;
+            padding: 2rem;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: auto;
+            display: flex;
+            gap: 2rem;
+            align-items: flex-start;
+        }
+
+        .form {
+            flex: 1.2;
+            min-width: 420px;
+        }
+
+        .payslip {
+            flex: 2;
+        }
+
+        .form,
+        .duty-block {
+            background: #fff;
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+            margin-bottom: 2rem;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            margin-top: 1rem;
+        }
+
+        label {
+            display: block;
+            margin-top: 1rem;
+            font-weight: 500;
+        }
+
+        input,
+        select {
+            width: 100%;
+            padding: 0.75rem;
+            margin-top: 0.5rem;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            font-size: 1rem;
+        }
+
+        input[type="text"], input[type="number"], select {
+            height: 44px;
+            box-sizing: border-box;
+        }
+
+        input[type="file"] {
+            display: block;
+            width: 100%;
+            padding: 0.65rem 0.75rem;
+            font-size: 1rem;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            background-color: #fff;
+            color: #555;
+            box-sizing: border-box;
+            cursor: pointer;
+        }
+
+        input[type="file"]::-webkit-file-upload-button {
+            background: #2b9348;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            margin-right: 0.75rem;
+            cursor: pointer;
+            font-size: 0.95rem;
+        }
+
+        input[type="file"]::-ms-browse {
+            background: #2b9348;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            margin-right: 0.75rem;
+            cursor: pointer;
+            font-size: 0.95rem;
+        }
+
+        input[type="file"]::-webkit-file-upload-button:hover {
+            background: #238636;
+        }
+
+
+        button {
+            padding: 0.75rem;
+            font-size: 1rem;
+            border-radius: 6px;
+            border: none;
+            background-color: #2b9348;
+            color: white;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #238636;
+        }
+
+        .payslip {
+            background: #fff;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .summary {
+            background: #eef9f0;
+            padding: 1.5rem;
+            border-radius: 10px;
+            margin-bottom: 2rem;
+        }
+
+        .summary .full-width {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 1.5rem;
+            align-items: flex-start; /* fixes vertical misalignment */
+        }
+
+        .summary .full-width > div {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .summary .full-width div span {
+            font-size: 22px;
+            font-weight: 600;
+            color: #000;
+        }
+
+        .summary .details-row {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .summary .details-row div {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        }
+
+        .summary .details-row div:nth-child(2) {
+        align-items: center;
+        text-align: center;
+        }
+
+        .summary .details-row div:nth-child(3) {
+        align-items: flex-end;
+        text-align: right;
+        }
+
+        .summary div strong {
+            font-size: 10px;
+            letter-spacing: 0.05em;
+            color: #555;
+            text-transform: uppercase;
+            margin-bottom: 0.25rem;
+        }
+
+        .summary .details-row div span {
+            font-size: 17px;
+            font-weight: 500;
+        }
+
+        .duty-summary {
+            background: #f1f9f2;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .duty-summary h4 {
+            margin: 0 0 0.5rem;
+            color: #2b9348;
+        }
+
+        .footer {
+            text-align: center;
+            font-size: 0.85rem;
+            color: #777;
+            margin-top: 2rem;
+        }
+
+        .flatpickr-day:focus {
+            outline: none !important;
+            box-shadow: none !important;
+        }
+
+        ul {
+            padding-left: 1.2rem;
+        }
+
+        @media (max-width: 1000px) {
+            .container {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<body>
+    <div class="container">
+        <div class="form">
+            <label for="csvUpload">Upload Attendance CSV</label>
+            <input type="file" id="csvUpload" accept=".csv" onchange="handleCSVUpload(event)" />
+
+            <label for="employee">Employee Name</label>
+            
+            <!-- First row: Select + Reload -->
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+
+                <select id="employee"
+                    style="flex: 1; height: 44px; padding: 0 0.75rem; font-size: 1rem; border-radius: 6px; border: 1px solid #ccc;"></select>
+            <button onclick="removeName()" style="
+                height: 44px;
+                width: 44px;
+                font-size: 1.25rem;
+                background-color: #e63946;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                line-height: 1.25;
+                padding: 0 0.75rem;
+                margin: 0;
+                box-sizing: border-box;
+                " title="Remove selected name">✕</button>
+            </div>
+            
+            <!-- Second row: Input + Add Name -->
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <input id="newName" placeholder="Add new name"
+                    style="flex: 2; height: 44px; padding: 0 0.75rem; font-size: 1rem; border-radius: 6px; border: 1px solid #ccc;" />
+                <button onclick="addName()" style="
+                        flex: 1;
+                        font-size: 1rem;
+                        background-color: #2b9348;
+                        color: white;
+                        border: none;
+                        border-radius: 6px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        line-height: 1.25;
+                        padding: 0 0.75rem;
+                        height: 44px;
+                    ">
+                    Add Name
+                </button>
+
+            </div>
+    
+
+
+
+
+            <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+                <div style="flex: 1;">
+                    <label>Role</label>
+                    <select id="role">
+                        <option>Barista</option>
+                        <option>Operations Manager</option>
+                        <option>External</option>
+                    </select>
+                </div>
+                <div style="flex: 1;">
+                    <label>Mode of Transfer</label>
+                    <select id="transferMode">
+                        <option>GoTyme</option>
+                        <option>GCash</option>
+                        <option>BDO</option>
+                        <option>Others</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label>Payroll Period</label>
+                <input id="payrollPeriod" placeholder="Select payroll period" />
+            </div>
+
+            <div style="margin-top: 3rem; display: flex; gap: 0.5rem;">
+                <button id="branchViewBtn" onclick="switchToView('branch')" style="flex: 1; background: #2b9348;">Per
+                    Branch</button>
+                <button id="dateViewBtn" onclick="switchToView('date')" style="flex: 1; background: #ccc;">Per Date</button>
+            </div>
+
+            <div id="branchView">
+                <div id="duties" style="margin-top: 0.5rem;"></div>
+                <div style="text-align: center; margin-top: 0rem;">
+                    <button onclick="addDutyBlock()">Add Duty Block</button>
+                </div>
+            </div>
+            
+            <div id="dateView" style="display: none;">
+                <div class="form-group">
+                    <label>Assign Branch Per Date</label>
+                    <input id="perDateCalendar" placeholder="Select days to manage individually" />
+                </div>
+                <div id="dateAssignments"></div>
+            </div>
+
+            <div style="text-align: center; margin-top: 1.5rem; display: flex; justify-content: center; gap: 0.75rem;">
+                <button onclick="openInNewWindow()">View in New Window</button>
+                <button onclick="downloadPDF()">Save as PDF</button>
+            </div>
+        </div>
+
+        <div class="payslip">
+            <img src="https://matchanese.com/cdn/shop/files/matchanese-2025-logo_e4944ef8-b626-4206-80c5-cc4fd9ed79ab.png?v=1738086945&width=60"
+                style="max-height: 50px;" />
+            <h2>Your Salary Statement</h2>
+            <p>Hi <span id="selectedName">[Name]</span>! Here's your salary statement for this payroll period.
+                We hope everything looks all good — but if you have any questions, just let us know anytime.</p>
+            <div class="summary">
+                <div class="full-width">
+                    <div>
+                        <strong>EMPLOYEE NAME</strong>
+                        <span id="employeeDisplay">[Name]</span>
+                    </div>
+                    <div style="text-align: right;">
+                        <strong>TOTAL PAYMENT</strong>
+                        <span id="totalPay">₱0.00</span>
+                    </div>
+                </div>
+                <div class="details-row">
+                    <div><strong>ROLE</strong><span id="summaryRole">Barista</span></div>
+                    <div><strong>PAYROLL PERIOD</strong><span id="summaryPeriod">December 1 – 15, 2024</span></div>
+                    <div><strong>MODE OF TRANSFER</strong><span id="summaryMode">GoTyme</span></div>
+                </div>
+            </div>
+            <div id="breakdown"></div>
+            <div class="footer">
+                Matchanese, Inc.<br />
+                Unit 4506, Edades Tower, Amorsolo Drive, Rockwell, Makati City, Philippines
+            </div>
+        </div>
+    </div>
+
+
+
+
+    <script>
+        let uploadedAttendanceData = {}; // key: employee name, value: array of dates
+
+            function handleCSVUpload(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                Papa.parse(file, {
+                    header: true,
+                    skipEmptyLines: true,
+                    complete: function (results) {
+                        const data = results.data;
+                        uploadedAttendanceData = {};
+
+                        data.forEach(row => {
+                            const name = row["Staff"]?.trim();
+                            const date = row["In Date"]?.trim();
+
+                            if (name && date) {
+                                if (!uploadedAttendanceData[name]) uploadedAttendanceData[name] = [];
+                                uploadedAttendanceData[name].push(date);
+                            }
+                        });
+
+                        const validNames = Object.keys(uploadedAttendanceData).sort();
+                        localStorage.setItem("employeeNames", JSON.stringify(validNames));
+                        loadNames();
+                    }
+                });
+            }
+
+        async function downloadPDF() {
+                const payslipElement = document.querySelector(".payslip");
+                const canvas = await html2canvas(payslipElement, { scale: 2, useCORS: true });
+                const imgData = canvas.toDataURL("image/png");
+
+                const { jsPDF } = window.jspdf;
+                const pdf = new jsPDF({
+                    orientation: "portrait",
+                    unit: "mm",
+                    format: "a4"
+                });
+
+                const pageWidth = pdf.internal.pageSize.getWidth();
+                const pageHeight = pdf.internal.pageSize.getHeight();
+                const imgProps = pdf.getImageProperties(imgData);
+                const pdfWidth = pageWidth - 20;
+                const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+                pdf.addImage(imgData, "PNG", 10, 10, pdfWidth, pdfHeight);
+
+                const employeeName = document.getElementById("employeeDisplay").textContent.replace(/\s+/g, '');
+                const period = document.getElementById("summaryPeriod").textContent.replace(/[\s–,]+/g, '_');
+                pdf.save(`matchanese_payslip_${employeeName}_${period}.pdf`);
+            }
+
+        function openInNewWindow() {
+                // Create a new window
+                const newWindow = window.open('', '_blank', 'width=800,height=600');
+
+                // Get the payslip content
+                const payslipContent = document.querySelector('.payslip').innerHTML;
+
+                // Copy styles from the current document
+                const styles = Array.from(document.styleSheets)
+                    .map(styleSheet => {
+                        try {
+                            // Only extract CSS from stylesheets that are accessible (same-origin, etc.)
+                            return Array.from(styleSheet.cssRules)
+                                .map(rule => rule.cssText)
+                                .join(' ');
+                        } catch (err) {
+                            return ''; // Ignore inaccessible stylesheets
+                        }
+                    })
+                    .join(' ');
+
+                // Add the HTML structure and style for the new window
+                newWindow.document.write(`
+        <html>
+            <head>
+                <title>Payslip</title>
+                <style>
+                    ${styles} /* Inject existing styles dynamically */
+                </style>
+            </head>
+            <body>
+                <div class="payslip">${payslipContent}</div>
+            </body>
+        </html>
+    `);
+
+                // Ensure styles are applied
+                newWindow.document.close();
+            }
+
+
+                
+        function loadNames() {
+            const select = document.getElementById("employee");
+            select.innerHTML = "";
+            const names = JSON.parse(localStorage.getItem("employeeNames")) || [];
+            names.forEach(name => {
+                const option = document.createElement("option");
+                option.textContent = name;
+                select.appendChild(option);
+            });
+            if (names.length > 0) select.value = names[0];
+        }
+
+        document.getElementById("employee").addEventListener("change", () => {
+                updateDutyBlocksFromCSV();
+            });
+
+        function updateDutyBlocksFromCSV() {
+                const selectedName = document.getElementById("employee").value;
+                const dutyContainer = document.getElementById("duties");
+
+                if (!uploadedAttendanceData[selectedName]) return;
+
+                // Clear existing blocks
+                dutyContainer.innerHTML = "";
+
+                // Create a new duty block
+                addDutyBlock();
+
+                const newBlock = dutyContainer.querySelector(".duty-block");
+
+                // Set branch to Podium
+                newBlock.querySelector("select").value = "Matcha Bar Podium";
+                newBlock.querySelector("summary").textContent = "Matcha Bar Podium";
+
+                const daysWorkedInput = newBlock.querySelector(".days-worked");
+
+                const fp = daysWorkedInput._flatpickr;
+                if (fp) {
+                    const validDates = uploadedAttendanceData[selectedName];
+                    fp.setDate(validDates, true);
+
+                    // Also create per-date entries
+                    validDates.forEach(date => {
+                        const iso = new Date(date).toISOString().split('T')[0];
+                        if (!perDateAssignments[iso]) {
+                            perDateAssignments[iso] = {
+                                branch: "Matcha Bar Podium",
+                                rate: 650,
+                                meal: 150,
+                                transport: 0,
+                                ot: 0,
+                                late: 0,
+                            };
+                            renderPerDateBlock(iso);
+                        }
+                    });
+                }
+            }
+
+
+        
+        function removeName() {
+                const select = document.getElementById("employee");
+                const nameToRemove = select.value;
+
+                if (!nameToRemove) return;
+
+                let names = JSON.parse(localStorage.getItem("employeeNames")) || [];
+                names = names.filter(name => name !== nameToRemove);
+                localStorage.setItem("employeeNames", JSON.stringify(names));
+
+                loadNames();
+            }
+
+        function addName() {
+                const input = document.getElementById("newName");
+                const name = input.value.trim();
+                if (!name) return;
+
+                let names = JSON.parse(localStorage.getItem("employeeNames")) || [];
+
+                // Avoid duplicates
+                if (!names.includes(name)) {
+                    names.unshift(name); // Adds to the top
+                    localStorage.setItem("employeeNames", JSON.stringify(names));
+                    loadNames();
+                    document.getElementById("employee").value = name;
+                }
+
+                input.value = ""; // Clear input
+            }
+
+        function addDutyBlock() {
+                const container = document.getElementById("duties");
+                const blockIndex = document.querySelectorAll(".duty-block").length + 1;
+
+                const details = document.createElement("details");
+                details.className = "duty-block";
+                details.open = true;
+
+                const defaultBranch = "Matcha Bar SM North EDSA";
+
+                details.innerHTML = `
+        <summary style="font-weight: bold; font-size: 1.1rem; cursor: pointer;">${defaultBranch}</summary>
+        <div class="duty-content">
+            <label>Branch</label>
+            <select>
+                <option>Matcha Bar SM North EDSA</option>
+                <option>Matcha Bar Podium</option>
+                <option>Workshop</option>
+                <option>Pop-up</option>
+                <option>Other Events</option>
+            </select>
+            <label>Days Worked</label>
+            <input type="text" class="days-worked" placeholder="Select days" />
+            <label>Daily Rate (₱)</label>
+            <input type="number" value="650" class="daily-rate" />
+            <label>Meal Allowance per Day (₱)</label>
+            <input type="number" value="150" class="meal-allowance" />
+            <label>Transport Allowance per Day (₱) <span style="font-size: 12px;">(Optional)</span></label>
+            <input type="number" class="transport-allowance" />
+            <label>Overtime Hours</label>
+            <input type="number" step="0.01" class="ot-hours" />
+            <label>Late Deduction (Hours Late)</label>
+            <input type="number" step="0.01" class="late-hours" />
+        </div>
+    `;
+
+                const selectBranch = details.querySelector("select");
+                const summary = details.querySelector("summary");
+                selectBranch.addEventListener("change", () => {
+                    summary.textContent = selectBranch.value;
+                });
+
+                const removeBtn = document.createElement("button");
+                removeBtn.textContent = "Remove Duty Block";
+                removeBtn.style.cssText = `
+        margin-top: 1rem;
+        background-color: #f8d7da;
+        color: #721c24;
+        border: none;
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        display: block;
+        margin-left: auto;
+        margin-right: auto;
+    `;
+                removeBtn.onclick = () => {
+                    details.remove();
+                };
+                details.querySelector(".duty-content").appendChild(removeBtn);
+
+                container.appendChild(details);
+
+                const getAllSelectedDates = (excludeInput) => {
+                    const allDates = [];
+                    document.querySelectorAll(".days-worked").forEach(input => {
+                        if (input === excludeInput) return;
+                        const fp = input._flatpickr;
+                        if (fp) allDates.push(...fp.selectedDates.map(d => d.toDateString()));
+                    });
+                    return allDates;
+                };
+
+                const fpInstance = flatpickr(details.querySelector(".days-worked"), {
+                    mode: "multiple",
+                    dateFormat: "Y-m-d",
+                    wrap: false,
+                    allowInput: true,
+                    onReady: function (selectedDates, dateStr, instance) {
+                        const clearBtn = document.createElement("button");
+                        clearBtn.textContent = "Clear";
+                        clearBtn.type = "button";
+                        clearBtn.style.cssText = "margin-top: 5px; margin-bottom: 10px; background: #bbb; border: none; padding: 4px 10px; border-radius: 4px; font-size: 0.85rem;";
+                        clearBtn.onclick = () => {
+                            instance.clear();
+                        };
+                        instance.calendarContainer.appendChild(clearBtn);
+                    },
+                    onDayCreate: function (dObj, dStr, fp, dayElem) {
+                        const otherDates = getAllSelectedDates(fp.input);
+                        const currentDate = new Date(dayElem.dateObj).toDateString();
+                        const isSelectedInOther = otherDates.includes(currentDate);
+
+                        if (fp.selectedDates.map(d => d.toDateString()).includes(currentDate)) {
+                            dayElem.style.backgroundColor = "#2b9348"; // green
+                            dayElem.style.color = "#fff";
+                            dayElem.style.borderRadius = "50%";
+                        } else if (isSelectedInOther) {
+                            dayElem.style.backgroundColor = "#d3d3d3"; // light gray
+                            dayElem.style.borderRadius = "50%";
+                        }
+                    },
+                    onChange: function () {
+                        fpInstance.redraw();
+                    }
+                });
+            }
+
+
+
+        flatpickr("#payrollPeriod", {
+                mode: "range",
+                dateFormat: "F j, Y",
+                maxDate: "today"
+            });
+
+        const perDateAssignments = {};
+
+            function setupPerDateCalendar() {
+                flatpickr("#perDateCalendar", {
+                    mode: "multiple",
+                    dateFormat: "Y-m-d",
+                    maxDate: "today",
+                    onChange: function (selectedDates) {
+                        selectedDates.forEach(date => {
+                            const iso = date.toISOString().split('T')[0];
+                            if (!perDateAssignments[iso]) {
+                                perDateAssignments[iso] = {
+                                    branch: "Matcha Bar Podium",
+                                    rate: 650,
+                                    meal: 150,
+                                    transport: 0,
+                                    ot: 0,
+                                    late: 0,
+                                };
+                                renderPerDateBlock(iso);
+                            }
+                        });
+                    }
+                });
+            }
+
+            function renderPerDateBlock(isoDate) {
+                const data = perDateAssignments[isoDate];
+
+                const container = document.getElementById("dateAssignments");
+                const details = document.createElement("details");
+                details.className = "duty-block";
+                details.open = true;
+                details.dataset.date = isoDate;
+
+                const dateDisplay = new Date(isoDate).toLocaleDateString("en-US", {
+                    weekday: "long",
+                    year: "numeric",
+                    month: "short",
+                    day: "numeric"
+                });
+
+                details.innerHTML = `
+        <summary style="font-weight: bold;">📅 ${dateDisplay}</summary>
+        <div class="duty-content">
+            <label>Branch</label>
+            <select class="per-date-branch">
+                <option>Matcha Bar SM North EDSA</option>
+                <option selected>Matcha Bar Podium</option>
+                <option>Workshop</option>
+                <option>Pop-up</option>
+                <option>Other Events</option>
+            </select>
+            <label>Daily Rate (₱)</label>
+            <input type="number" class="per-date-rate" value="${data.rate}" />
+            <label>Meal Allowance per Day (₱)</label>
+            <input type="number" class="per-date-meal" value="${data.meal}" />
+            <label>Transport Allowance (₱)</label>
+            <input type="number" class="per-date-transport" value="${data.transport}" />
+            <label>Overtime Hours</label>
+            <input type="number" step="0.01" class="per-date-ot" value="${data.ot}" />
+            <label>Late Deduction (Hours Late)</label>
+            <input type="number" step="0.01" class="per-date-late" value="${data.late}" />
+            <button onclick="removeDateAssignment('${isoDate}')" style="margin-top: 1rem; background-color: #f8d7da; color: #721c24;">Remove</button>
+        </div>
+    `;
+
+                // Attach change listeners to update data
+                details.querySelector(".per-date-branch").addEventListener("change", e => {
+                    perDateAssignments[isoDate].branch = e.target.value;
+                    updatePayslip();
+                });
+                details.querySelector(".per-date-rate").addEventListener("input", e => {
+                    perDateAssignments[isoDate].rate = parseFloat(e.target.value);
+                    updatePayslip();
+                });
+                details.querySelector(".per-date-meal").addEventListener("input", e => {
+                    perDateAssignments[isoDate].meal = parseFloat(e.target.value);
+                    updatePayslip();
+                });
+                details.querySelector(".per-date-transport").addEventListener("input", e => {
+                    perDateAssignments[isoDate].transport = parseFloat(e.target.value);
+                    updatePayslip();
+                });
+                details.querySelector(".per-date-ot").addEventListener("input", e => {
+                    perDateAssignments[isoDate].ot = parseFloat(e.target.value);
+                    updatePayslip();
+                });
+                details.querySelector(".per-date-late").addEventListener("input", e => {
+                    perDateAssignments[isoDate].late = parseFloat(e.target.value);
+                    updatePayslip();
+                });
+
+                container.appendChild(details);
+            }
+
+            function removeDateAssignment(isoDate) {
+                delete perDateAssignments[isoDate];
+                const block = document.querySelector(`details[data-date='${isoDate}']`);
+                if (block) block.remove();
+            }
+
+        function formatDate(dateStr) {
+            const d = new Date(dateStr);
+            return d.toLocaleDateString("en-US", {
+                weekday: "long",
+                year: "numeric",
+                month: "short",
+                day: "numeric"
+            });
+        }
+
+        function switchToView(view) {
+                document.getElementById("branchView").style.display = view === 'branch' ? 'block' : 'none';
+                document.getElementById("dateView").style.display = view === 'date' ? 'block' : 'none';
+
+                document.getElementById("branchViewBtn").style.backgroundColor = view === 'branch' ? '#2b9348' : '#ccc';
+                document.getElementById("dateViewBtn").style.backgroundColor = view === 'date' ? '#2b9348' : '#ccc';
+            }
+
+
+        function updatePayslip() {
+            const name = document.getElementById("employee").value;
+            const role = document.getElementById("role").value;
+            const period = document.getElementById("payrollPeriod").value;
+            const transfer = document.getElementById("transferMode").value;
+
+            let periodStart = null;
+            let periodEnd = null;
+            if (period.includes(" to ")) {
+                const [startStr, endStr] = period.split(" to ");
+                periodStart = new Date(startStr);
+                periodEnd = new Date(endStr);
+            }
+
+            document.getElementById("selectedName").textContent = name.split(" ")[0]; // first name only
+            document.getElementById("employeeDisplay").textContent = name;
+            document.getElementById("summaryRole").textContent = role;
+            let formattedPeriod = period;
+            if (period.includes(" to ")) {
+                const [start, end] = period.split(" to ").map(d => new Date(d));
+                const opts = { month: "long", day: "numeric" };
+                if (start.getFullYear() === end.getFullYear()) {
+                    if (start.getMonth() === end.getMonth()) {
+                        formattedPeriod = `${start.toLocaleDateString("en-US", opts).replace(/ \d+/, "")} ${start.getDate()}–${end.getDate()}, ${start.getFullYear()}`;
+                    } else {
+                        formattedPeriod = `${start.toLocaleDateString("en-US", opts)} – ${end.toLocaleDateString("en-US", opts)}, ${start.getFullYear()}`;
+                    }
+                } else {
+                    formattedPeriod = `${start.toLocaleDateString("en-US", opts)}, ${start.getFullYear()} – ${end.toLocaleDateString("en-US", opts)}, ${end.getFullYear()}`;
+                }
+            }
+            document.getElementById("summaryPeriod").textContent = formattedPeriod;
+            document.getElementById("summaryMode").textContent = transfer;
+
+            let totalPay = 0;
+            const breakdown = document.getElementById("breakdown");
+            breakdown.innerHTML = "";
+
+            const blocks = document.querySelectorAll(".duty-block");
+            blocks.forEach(block => {
+                const branch = block.querySelector("select").value;
+                const datePicker = block.querySelector(".days-worked")._flatpickr;
+                const days = datePicker ? datePicker.selectedDates : [];
+                
+                if (datePicker && periodStart && periodEnd) {
+                    datePicker.set("minDate", periodStart);
+                    datePicker.set("maxDate", periodEnd);
+                }
+
+                const rate = parseFloat(block.querySelector(".daily-rate").value || 0);
+                const meal = parseFloat(block.querySelector(".meal-allowance").value || 0);
+               
+                const transport = parseFloat(block.querySelector(".transport-allowance").value || 0); // Check for transport allowance
+
+                const basic = days.length * rate;
+                const meals = days.length * meal;
+                const transports = days.length * transport; 
+
+
+                const otHours = parseFloat(block.querySelector(".ot-hours").value || 0);
+                const lateHours = parseFloat(block.querySelector(".late-hours").value || 0);
+                const hourlyRate = rate / 8;
+
+                const otPay = otHours * hourlyRate * 1.25;
+                const lateDeduction = lateHours * hourlyRate;
+
+                const subtotal = basic + meals + transports + otPay - lateDeduction;
+                totalPay += subtotal;
+
+                const readableDays = days
+                    .slice()
+                    .sort((a, b) => a - b)
+                    .map(d => `<li>${formatDate(d)}</li>`)
+                    .join("");
+
+                breakdown.innerHTML += `
+                    <div class="duty-summary">
+                        <h4>${branch}</h4>
+                        <strong style="display: flex; justify-content: space-between;">
+                        <span>DAYS WORKED</span>
+                        <span>${days.length} day${days.length !== 1 ? "s" : ""}</span>
+                        </strong>
+                        <ul>${readableDays}</ul>
+                        <p>Basic Pay <span style="float:right">₱${basic.toFixed(2)}</span></p>
+                        <p>Meal Allowance <span style="float:right">₱${meals.toFixed(2)}</span></p>
+                        ${transports > 0 ? `<p>Transport Allowance <span style="float:right">₱${transports.toFixed(2)}</span></p>` : ''}
+                        ${otPay > 0 ? `<p>Overtime Hours <span style="float:right">₱${otPay.toFixed(2)}</span></p>` : ''}
+                        ${lateDeduction > 0 ? `<p>Late Deduction <span style="float:right">–₱${lateDeduction.toFixed(2)}</span></p>` : ''}
+                        <hr>
+                        <strong>Subtotal <span style="float:right">₱${subtotal.toFixed(2)}</span></strong>
+                    </div>
+                `;
+            });
+
+            for (const isoDate in perDateAssignments) {
+                const data = perDateAssignments[isoDate];
+                const day = new Date(isoDate);
+                const hourlyRate = data.rate / 8;
+                const basic = data.rate;
+                const meals = data.meal;
+                const transport = data.transport;
+                const otPay = data.ot * hourlyRate * 1.25;
+                const lateDeduction = data.late * hourlyRate;
+                const subtotal = basic + meals + transport + otPay - lateDeduction;
+                totalPay += subtotal;
+
+                breakdown.innerHTML += `
+                    <div class="duty-summary">
+                        <h4>${data.branch}</h4>
+                        <strong style="display: flex; justify-content: space-between;">
+                            <span>${formatDate(day)}</span>
+                            <span>1 day</span>
+                        </strong>
+                        <ul><li>${formatDate(day)}</li></ul>
+                        <p>Basic Pay <span style="float:right">₱${basic.toFixed(2)}</span></p>
+                        <p>Meal Allowance <span style="float:right">₱${meals.toFixed(2)}</span></p>
+                        ${transport > 0 ? `<p>Transport Allowance <span style="float:right">₱${transport.toFixed(2)}</span></p>` : ''}
+                        ${otPay > 0 ? `<p>Overtime Hours <span style="float:right">₱${otPay.toFixed(2)}</span></p>` : ''}
+                        ${lateDeduction > 0 ? `<p>Late Deduction <span style="float:right">–₱${lateDeduction.toFixed(2)}</span></p>` : ''}
+                        <hr>
+                        <strong>Subtotal <span style="float:right">₱${subtotal.toFixed(2)}</span></strong>
+                    </div>
+                `;
+            }
+
+
+            document.getElementById("totalPay").textContent = `₱${totalPay.toFixed(2)}`;
+        }
+
+        window.onload = function () {
+            loadNames();
+            addDutyBlock();
+            setInterval(updatePayslip, 500);
+            setupPerDateCalendar();
+        };
+    </script>
+</body>
+
+</html>

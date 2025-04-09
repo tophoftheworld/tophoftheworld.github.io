@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>POS Expense Formatter</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Inter, sans-serif;
+            background: #f9f9f9;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        h1 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        #upload-container {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        input[type="file"] {
+            padding: 10px;
+            font-size: 14px;
+        }
+
+        #copyBtn {
+            background-color: #2ecc71;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            margin: 20px auto;
+            display: none;
+        }
+
+        #copyBtn.copied::after {
+            content: " ✅ Copied!";
+            margin-left: 8px;
+            color: #2ecc71;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 90%;
+            max-width: 1200px;
+            background-color: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            margin-bottom: 40px;
+        }
+
+        th,
+        td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #eee;
+            text-align: left;
+            font-size: 14px;
+        }
+
+        th {
+            background-color: #f2f2f2;
+            color: #333;
+        }
+
+        td {
+            color: #555;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>POS Expense Formatter</h1>
+
+    <div id="upload-container">
+        <input type="file" id="csvFile" accept=".csv" />
+    </div>
+
+    <button id="copyBtn">Copy Table</button>
+
+    <div id="tableContainer"></div>
+
+    <script>
+        const csvFile = document.getElementById("csvFile");
+        const copyBtn = document.getElementById("copyBtn");
+        const tableContainer = document.getElementById("tableContainer");
+
+        const formatSupplier = (text) => {
+            const mappings = {
+                "SMSupermarket": "SM Supermarket",
+                "GrabS&R": "Grab S&R",
+                "MDRTrading": "MDR Trading",
+                "Ivoryway": "Ivoryway Co. Inc.",
+                "PhilJacobeVenturesInc": "Phil. Jacobe Ventures, Inc."
+            };
+            return mappings[text] || text.replace(/([a-z])([A-Z])/g, '$1 $2');
+        };
+
+        const formatItem = (text) => {
+            return text.replace(/([a-z])([A-Z])/g, '$1 $2').split('.').join(', ');
+        };
+
+        const formatCurrency = (num) => `₱${parseFloat(num).toFixed(2)}`;
+
+        csvFile.addEventListener("change", function () {
+            const file = this.files[0];
+            if (!file) return;
+
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                complete: function (results) {
+                    const data = results.data;
+                    const table = document.createElement("table");
+                    const headerRow = table.insertRow();
+
+                    const headers = [
+                        "Date", "Item", "Supplier", "Amount", "Paid Via",
+                        "Category", "Purchasee", "Full Amount", "TIN", "Invoice No.", "Address"
+                    ];
+
+                    headers.forEach(header => {
+                        const th = document.createElement("th");
+                        th.textContent = header;
+                        headerRow.appendChild(th);
+                    });
+
+                    data.forEach(row => {
+                        if (!row.Name || !row.Amount) return;
+
+                        const [supplierCode, itemPart] = row.Name.split("_");
+                        const supplier = formatSupplier(supplierCode);
+                        const item = itemPart ? formatItem(itemPart) : "";
+
+                        const newRow = table.insertRow();
+                        const values = [
+                            row.Date,
+                            item,
+                            supplier,
+                            formatCurrency(row.Amount),
+                            row.Tag,
+                            (supplier.toLowerCase().includes("grab") || supplier.toLowerCase().includes("lalamove")) ? "Delivery" : "Supplies",
+                            "Store", "", "", "", ""
+                        ];
+
+                        values.forEach(value => {
+                            const cell = newRow.insertCell();
+                            cell.textContent = value;
+                        });
+                    });
+
+                    tableContainer.innerHTML = "";
+                    tableContainer.appendChild(table);
+                    copyBtn.style.display = "inline-block";
+                }
+            });
+        });
+
+        copyBtn.addEventListener("click", () => {
+            const table = tableContainer.querySelector("table");
+            if (!table) return;
+
+            let text = "";
+            for (let i = 1; i < table.rows.length; i++) {
+                const row = table.rows[i];
+                const values = Array.from(row.cells).map(cell => cell.innerText);
+                text += values.join("\t") + "\n";
+            }
+
+            navigator.clipboard.writeText(text).then(() => {
+                copyBtn.classList.add("copied");
+                setTimeout(() => copyBtn.classList.remove("copied"), 2000);
+            });
+        });
+    </script>
+
+</body>
+
+</html>

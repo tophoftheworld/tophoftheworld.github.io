@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Staff Clock In/Out</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f6f8;
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 480px;
+            margin: auto;
+            background: #ffffff;
+            padding: 2rem;
+            border-radius: 16px;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.04);
+            text-align: center;
+            min-height: 100vh;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            margin-bottom: 1.25rem;
+        }
+
+        input,
+        select {
+            width: 100%;
+            padding: 0.75rem;
+            font-size: 1rem;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            background: #fff;
+            margin-bottom: 1rem;
+        }
+
+        .timestamp {
+            font-size: 0.95rem;
+            margin-bottom: 1.25rem;
+            color: #555;
+        }
+
+        button {
+            width: 100%;
+            padding: 0.85rem;
+            font-size: 1rem;
+            background-color: #2b9348;
+            color: #fff;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            margin-bottom: 1rem;
+        }
+
+        button:hover {
+            background-color: #238636;
+        }
+
+        video,
+        canvas,
+        #previewContainer img {
+            width: 100%;
+            border-radius: 10px;
+            margin-top: 1rem;
+        }
+
+        #cameraContainer,
+        #previewContainer,
+        #mainInterface {
+            display: none;
+        }
+
+        #cameraContainer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: black;
+            z-index: 999;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        #video {
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover;
+        }
+
+        #cameraCaptureBtn {
+            position: absolute;
+            bottom: 2rem;
+            width: 70px;
+            height: 70px;
+            background: transparent;
+            border: 4px solid white;
+            border-radius: 50%;
+            cursor: pointer;
+            z-index: 1000;
+        }
+
+        #flash {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: white;
+            z-index: 2000;
+            display: none;
+        }
+
+        .footer {
+            text-align: center;
+            font-size: 0.85rem;
+            color: #888;
+            margin-top: 2rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>📍 Staff Time Log</h1>
+
+        <div id="loginForm">
+            <input type="tel" id="codeInput" inputmode="numeric" pattern="[0-9]*" placeholder="Enter Employee Code" />
+            <button onclick="loginUser()">🔐 Log In</button>
+        </div>
+
+        <div id="mainInterface">
+            <div class="timestamp" id="timestamp">Current Time: --:--</div>
+            <p id="welcomeText"></p>
+            <button onclick="logoutUser()" style="background:#ccc; color:#000;">Switch User</button>
+            <button id="startBtn" onclick="startPhotoSequence()">Clock In</button>
+
+            <div id="cameraContainer">
+                <video id="video" autoplay muted playsinline></video>
+                <div id="cameraCaptureBtn" onclick="takePhoto()"></div>
+            </div>
+
+            <div id="previewContainer">
+                <h3>📷 Preview</h3>
+                <img id="previewImg" />
+                <button onclick="submitAttendance()">✅ Submit</button>
+            </div>
+        </div>
+
+        <div id="flash"></div>
+        <canvas id="snapshot" style="display:none;"></canvas>
+        <div class="footer">Matchanese Attendance System</div>
+    </div>
+
+    <script>
+        const employees = {
+            "1010": "Jasmine Cruz",
+            "1020": "Ron dela Peña",
+            "1030": "Carla Ramos",
+            "1040": "EJ Tan",
+            "1050": "Miko Santos"
+        };
+
+        const video = document.getElementById("video");
+        const canvas = document.getElementById("snapshot");
+        const previewImg = document.getElementById("previewImg");
+        const startBtn = document.getElementById("startBtn");
+        const cameraContainer = document.getElementById("cameraContainer");
+        const previewContainer = document.getElementById("previewContainer");
+        const timestamp = document.getElementById("timestamp");
+        const loginForm = document.getElementById("loginForm");
+        const mainInterface = document.getElementById("mainInterface");
+        const welcomeText = document.getElementById("welcomeText");
+        const flash = document.getElementById("flash");
+
+        let dutyStatus = "in";
+        let selfieData = "";
+        let currentUser = localStorage.getItem("loggedInUser") || "";
+
+        if (currentUser && employees[currentUser]) {
+            showMainInterface(currentUser);
+        }
+
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
+            .then(stream => {
+                video.srcObject = stream;
+            })
+            .catch(err => {
+                alert("📷 Unable to access camera.");
+            });
+
+        setInterval(() => {
+            const now = new Date();
+            timestamp.textContent = `Current Time: ${now.toLocaleTimeString()}`;
+        }, 1000);
+
+        function loginUser() {
+            const code = document.getElementById("codeInput").value.trim();
+            if (employees[code]) {
+                localStorage.setItem("loggedInUser", code);
+                showMainInterface(code);
+            } else {
+                alert("❌ Invalid code");
+            }
+        }
+
+        function showMainInterface(code) {
+            loginForm.style.display = "none";
+            mainInterface.style.display = "block";
+            welcomeText.textContent = `👋 Welcome, ${employees[code]}`;
+        }
+
+        function logoutUser() {
+            localStorage.removeItem("loggedInUser");
+            location.reload();
+        }
+
+        function startPhotoSequence() {
+            startBtn.style.display = "none";
+            cameraContainer.style.display = "flex";
+            window.scrollTo(0, 0);
+        }
+
+        function takePhoto() {
+            flash.style.display = "block";
+            setTimeout(() => flash.style.display = "none", 150);
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext("2d").drawImage(video, 0, 0);
+            selfieData = canvas.toDataURL("image/png");
+            previewImg.src = selfieData;
+            cameraContainer.style.display = "none";
+            previewContainer.style.display = "block";
+        }
+
+        function submitAttendance() {
+            const now = new Date();
+            const time = now.toLocaleTimeString();
+            const date = now.toLocaleDateString();
+            const code = localStorage.getItem("loggedInUser");
+
+            const log = {
+                employee: employees[code],
+                code,
+                mode: dutyStatus,
+                date,
+                time,
+                selfie: selfieData
+            };
+
+            console.log("✅ Attendance Log:", log);
+            alert(`✅ ${dutyStatus === 'in' ? 'Clocked In' : 'Clocked Out'} at ${time}`);
+
+            dutyStatus = (dutyStatus === 'in') ? 'out' : 'in';
+            previewContainer.style.display = "none";
+            startBtn.textContent = dutyStatus === 'in' ? "Clock In" : "Clock Out";
+            startBtn.style.display = "block";
+        }
+    </script>
+</body>
+
+</html>
