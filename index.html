@@ -73,7 +73,8 @@
 
         #cameraContainer,
         #previewContainer,
-        #mainInterface {
+        #mainInterface,
+        #summaryContainer {
             display: none;
         }
 
@@ -100,7 +101,7 @@
 
         #cameraCaptureBtn {
             position: fixed;
-            bottom: calc(env(safe-area-inset-bottom) + 2rem);
+            bottom: 15vh;
             left: 50%;
             transform: translateX(-50%);
             width: 70px;
@@ -148,7 +149,7 @@
 
         .overlay-buttons {
             position: absolute;
-            bottom: calc(env(safe-area-inset-bottom) + 2rem);
+            bottom: 15vh;
             display: flex;
             gap: 1rem;
             z-index: 1600;
@@ -157,6 +158,12 @@
         .overlay-buttons button {
             width: auto;
             padding: 0.75rem 1.5rem;
+        }
+
+        #summaryContainer img {
+            max-width: 100%;
+            border-radius: 10px;
+            margin-bottom: 1rem;
         }
 
         .footer {
@@ -182,6 +189,13 @@
             <p id="welcomeText"></p>
             <button onclick="logoutUser()" style="background:#ccc; color:#000;">Switch User</button>
             <button id="startBtn" onclick="startPhotoSequence()" style="display:none;">Clock In</button>
+        </div>
+
+        <div id="summaryContainer">
+            <h2>✅ Logged ${'in'} Summary</h2>
+            <p><strong>Time:</strong> <span id="summaryTime"></span></p>
+            <img id="summaryImg" />
+            <button id="clockOutBtn" onclick="startPhotoSequence()">Clock Out</button>
         </div>
     </div>
 
@@ -214,17 +228,22 @@
         const video = document.getElementById("video");
         const canvas = document.getElementById("snapshot");
         const fullPreviewImg = document.getElementById("fullPreviewImg");
+        const summaryImg = document.getElementById("summaryImg");
+        const summaryTime = document.getElementById("summaryTime");
         const cameraContainer = document.getElementById("cameraContainer");
         const fullPreviewContainer = document.getElementById("fullPreviewContainer");
         const loginForm = document.getElementById("loginForm");
         const mainInterface = document.getElementById("mainInterface");
+        const summaryContainer = document.getElementById("summaryContainer");
         const welcomeText = document.getElementById("welcomeText");
         const flash = document.getElementById("flash");
         const timestamp = document.getElementById("timestamp");
         const startBtn = document.getElementById("startBtn");
+        const clockOutBtn = document.getElementById("clockOutBtn");
 
         let dutyStatus = "in";
         let selfieData = "";
+        let clockInTime = "";
         let currentUser = localStorage.getItem("loggedInUser") || "";
 
         if (currentUser && employees[currentUser]) {
@@ -264,6 +283,7 @@
         function showMainInterface(code) {
             loginForm.style.display = "none";
             mainInterface.style.display = "block";
+            summaryContainer.style.display = "none";
             welcomeText.textContent = `👋 Welcome, ${employees[code]}`;
             startBtn.textContent = dutyStatus === 'in' ? "Clock In" : "Clock Out";
             startBtn.style.display = "block";
@@ -278,6 +298,7 @@
             initCamera();
             startBtn.style.display = "none";
             cameraContainer.style.display = "flex";
+            summaryContainer.style.display = "none";
             window.scrollTo(0, 0);
         }
 
@@ -287,7 +308,10 @@
 
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
-            canvas.getContext("2d").drawImage(video, 0, 0);
+            const ctx = canvas.getContext("2d");
+            ctx.translate(canvas.width, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(video, 0, 0);
             selfieData = canvas.toDataURL("image/png");
             fullPreviewImg.src = selfieData;
             cameraContainer.style.display = "none";
@@ -303,25 +327,38 @@
         function submitAttendance() {
             const now = new Date();
             const time = now.toLocaleTimeString();
-            const date = now.toLocaleDateString();
             const code = localStorage.getItem("loggedInUser");
+            const name = employees[code];
 
             const log = {
-                employee: employees[code],
+                employee: name,
                 code,
                 mode: dutyStatus,
-                date,
                 time,
                 selfie: selfieData
             };
 
             console.log("✅ Attendance Log:", log);
-            alert(`✅ ${dutyStatus === 'in' ? 'Clocked In' : 'Clocked Out'} at ${time}`);
 
-            dutyStatus = (dutyStatus === 'in') ? 'out' : 'in';
             fullPreviewContainer.style.display = "none";
-            startBtn.textContent = dutyStatus === 'in' ? "Clock In" : "Clock Out";
-            startBtn.style.display = "block";
+
+            if (dutyStatus === 'in') {
+                clockInTime = time;
+                summaryTime.textContent = clockInTime;
+                summaryImg.src = selfieData;
+                summaryContainer.querySelector("h2").textContent = `✅ Clocked In Summary`;
+                summaryContainer.style.display = "block";
+                mainInterface.style.display = "none";
+                dutyStatus = "out";
+            } else {
+                summaryContainer.querySelector("h2").textContent = `✅ Clocked Out Summary`;
+                summaryTime.textContent += ` → ${time}`;
+                const imgOut = document.createElement("img");
+                imgOut.src = selfieData;
+                summaryContainer.appendChild(imgOut);
+                dutyStatus = "in";
+                clockOutBtn.style.display = "none";
+            }
         }
     </script>
 </body>
