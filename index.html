@@ -12,7 +12,7 @@
 
 <body>
     <div class="container">
-        <h1>📍 Staff Time Log</h1>
+        <!-- <h1>📍 Staff Time Log</h1> -->
         <div id="loginForm">
             <input type="tel" id="codeInput" inputmode="numeric" pattern="[0-9]*" placeholder="Enter Employee Code"
                 onkeydown="if(event.key==='Enter'){loginUser()}">
@@ -20,7 +20,38 @@
         </div>
 
         <div id="mainInterface" style="display:none">
-            <p id="welcomeText"></p>
+
+            <div id="summaryCardUI" class="summary-ui">
+                <img src="https://matchanese.com/cdn/shop/files/matchanese-2025-logo_e4944ef8-b626-4206-80c5-cc4fd9ed79ab.png?v=1738086945&width=60"
+                    class="logo" alt="Matchanese Logo" />
+                <h2 class="greeting">Good Morning,<br><span id="userName" class="username">Cristopher</span></h2>
+                <p class="date-label">
+                    <strong id="dayOfWeek">Wednesday</strong><br>
+                    <span id="fullDate">April 9, 2025</span>
+                </p>
+            
+                <div class="summary-panels">
+                    <div class="panel-card" id="clockInCard" onclick="handleClock('in')">
+                        <img id="clockInPhoto" class="panel-bg" src="" />
+                        <div class="panel-overlay" id="clockInOverlay">
+                            <span class="panel-label">Time In</span>
+                            <span class="panel-time" id="clockInTime">9:30<span class="ampm">AM</span></span>
+                        </div>
+                    </div>
+
+
+                    <div class="panel-card" id="clockOutCard" onclick="handleClock('out')">
+                        <img id="clockOutPhoto" class="panel-bg" src="" />
+                        <div class="panel-overlay" id="clockOutOverlay">
+                            <span class="panel-label">Time Out</span>
+                            <span class="panel-time" id="clockOutTime">6:30<span class="ampm">PM</span></span>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <br><br><br><br><br><br><br><br><br>
             <button onclick="logoutUser()" style="background:#ccc; color:#000;">Switch User</button>
             <div class="panel timestamp-panel" id="timestamp">Current Time: --:--</div>
 
@@ -36,7 +67,6 @@
                 <option>Matcha Bar SM North EDSA</option>
                 <option>Events</option>
             </select>
-
             <button id="startBtn" onclick="startPhotoSequence()">Clock In</button>
             <div id="summaryContainer"></div>
         </div>

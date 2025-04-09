@@ -18,7 +18,6 @@ let stream = null;
 
 const timestamp = document.getElementById("timestamp");
 const summaryDate = document.getElementById("summaryDate");
-const welcomeText = document.getElementById("welcomeText");
 const mainInterface = document.getElementById("mainInterface");
 const loginForm = document.getElementById("loginForm");
 const summaryContainer = document.getElementById("summaryContainer");
@@ -103,6 +102,11 @@ function loginUser() {
         currentUser = code;
         localStorage.setItem("loggedInUser", code);
         showMainInterface(code);
+        updateGreetingUI();
+        
+        const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
+        const data = JSON.parse(localStorage.getItem(key)) || {};
+        updateCardTimes(data);
     } else {
         alert("❌ Invalid code");
     }
@@ -116,7 +120,6 @@ function logoutUser() {
 function showMainInterface(code) {
     loginForm.style.display = "none";
     mainInterface.style.display = "block";
-    welcomeText.textContent = `👋 Welcome, ${employees[code]}`;
     viewDate = new Date();
     const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
     const data = JSON.parse(localStorage.getItem(key)) || {};
@@ -129,6 +132,8 @@ function updateSummaryUI() {
     const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
     const data = JSON.parse(localStorage.getItem(key)) || {};
 
+    updateCardTimes(data); // ← Add this!
+
     const formatted = formatDate(viewDate);
     summaryDate.value = formatted;
     if (summaryDate._flatpickr) {
@@ -138,18 +143,16 @@ function updateSummaryUI() {
     nextBtn.disabled = formatDate(viewDate) >= formatDate(today);
 
     summaryContainer.innerHTML = `
-      <div class="summary-row">
+    <div class="summary-row">
         <div class="summary-block">
-          <strong>Clock In:</strong>
-          <div>${data.clockIn?.time || '--'}</div>
-          ${data.clockIn?.selfie ? `<img class="summary-photo" src="${data.clockIn.selfie}" />` : ''}
-          <div>${data.clockIn?.branch || ''}</div>
+        <strong>Clock In:</strong>
+        <div>${data.clockIn?.time || '--'}</div>
+        <div>${data.clockIn?.branch || ''}</div>
         </div>
         <div class="summary-block">
-          <strong>Clock Out:</strong>
-          <div>${data.clockOut?.time || '--'}</div>
-          ${data.clockOut?.selfie ? `<img class="summary-photo" src="${data.clockOut.selfie}" />` : ''}
-          <div>${data.clockIn?.branch || ''}</div>
+        <strong>Clock Out:</strong>
+        <div>${data.clockOut?.time || '--'}</div>
+        <div>${data.clockOut?.branch || ''}</div>
         </div>
       </div>`;
 
@@ -234,8 +237,12 @@ function saveAttendance() {
     const time = now.toLocaleTimeString();
     const existing = JSON.parse(localStorage.getItem(key)) || {};
 
+    // Prevent double clock in/out
+    if (dutyStatus === 'in' && existing.clockIn) return;
+    if (dutyStatus === 'out' && existing.clockOut) return;
+
     if (dutyStatus === 'in') {
-        const branch = document.getElementById("branchSelect").value || "N/A";
+        const branch = document.getElementById("branchSelect")?.value || "N/A";
         existing.clockIn = { time, selfie: selfieData, branch };
         dutyStatus = 'out';
     } else {
@@ -244,7 +251,9 @@ function saveAttendance() {
     }
 
     localStorage.setItem(key, JSON.stringify(existing));
+    const updated = JSON.parse(localStorage.getItem(key));
     updateSummaryUI();
+    updateCardTimes(updated); // this updates the time + selfie background
 }
 
 function clearData() {
@@ -252,4 +261,70 @@ function clearData() {
         localStorage.clear();
         location.reload();
     }
+}
+
+function updateGreetingUI() {
+    const name = employees[currentUser] || "Employee";
+    document.getElementById("userName").textContent = name;
+
+    const now = new Date();
+    const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+    const formatted = now.toLocaleDateString('en-US', options);
+    const [weekday, monthDayYear] = formatted.split(', ');
+
+    document.getElementById("dayOfWeek").textContent = weekday;
+    document.getElementById("fullDate").textContent = monthDayYear;
+}
+
+function handleClock(type) {
+    const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
+    const data = JSON.parse(localStorage.getItem(key)) || {};
+    if (type === 'in' && !data.clockIn) startPhotoSequence();
+    if (type === 'out' && data.clockIn && !data.clockOut) startPhotoSequence();
+}
+
+function updateCardTimes(data) {
+    const clockInTime = data.clockIn?.time || "9:30 AM";
+    const clockOutTime = data.clockOut?.time || "6:30 PM";
+
+    const [inTime, inMeridiem] = splitTime(clockInTime);
+    const [outTime, outMeridiem] = splitTime(clockOutTime);
+
+    document.getElementById("clockInTime").innerHTML = `${inTime}<span class="ampm">${inMeridiem}</span>`;
+    document.getElementById("clockOutTime").innerHTML = `${outTime}<span class="ampm">${outMeridiem}</span>`;
+
+    const clockInPhoto = document.getElementById("clockInPhoto");
+    const clockInOverlay = document.getElementById("clockInOverlay");
+
+    if (data.clockIn?.selfie) {
+        clockInPhoto.src = data.clockIn.selfie;
+        clockInOverlay.classList.add("green");
+    } else {
+        clockInPhoto.src = "";
+        clockInOverlay.classList.remove("green");
+    }
+
+    const clockOutPhoto = document.getElementById("clockOutPhoto");
+    const clockOutOverlay = document.getElementById("clockOutOverlay");
+
+    if (data.clockOut?.selfie) {
+        clockOutPhoto.src = data.clockOut.selfie;
+        clockOutOverlay.classList.add("green");
+    } else {
+        clockOutPhoto.src = "";
+        clockOutOverlay.classList.remove("green");
+    }
+
+}
+
+
+function splitTime(fullTimeStr) {
+    if (!fullTimeStr) return ["--:--", ""];
+
+    const match = fullTimeStr.match(/^(\d{1,2}):(\d{2}):\d{2} (\w{2})$/);
+    if (!match) return ["--:--", ""];
+
+    let [, hour, minute, ampm] = match;
+
+    return [`${hour}:${minute}`, ampm];
 }

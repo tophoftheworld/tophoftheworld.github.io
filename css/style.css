@@ -197,3 +197,114 @@ button:disabled {
 .flatpickr-day.today.selected {
     box-shadow: none !important;
 }
+
+.summary-ui {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.25rem;
+    padding-top: 1.5rem;
+}
+
+.logo {
+    /* width: 60px; */
+    height: 50px; 
+}
+
+.greeting {
+    font-size: 1.5rem;
+    font-weight: 500;
+    margin: 0;
+    text-align: center;
+}
+
+.username {
+    color: #2b9348;
+    font-weight: 600;
+}
+
+.date-label {
+    font-size: 1rem;
+    text-align: center;
+    color: #333;
+    margin: 0;
+}
+
+.summary-panels {
+    display: flex;
+    gap: 1rem;
+    width: 100%;
+    justify-content: center;
+}
+
+.panel-card {
+    position: relative;
+    width: 140px;
+    height: 140px;
+    border-radius: 1rem;
+    overflow: hidden;
+    background-color: #e9f5eb;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.panel-card img {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    z-index: 1;
+}
+
+.panel-overlay {
+    position: relative;
+    z-index: 2;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.panel-overlay.green {
+    background: rgba(0, 100, 0, 0.4);
+    color: white;
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    z-index: 2;
+    top: 0;
+    left: 0;
+    padding: 1rem;
+    box-sizing: border-box;
+}
+
+.panel-label {
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.panel-time {
+    font-size: 2rem;
+    font-weight: 600;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+}
+
+.panel-time .ampm {
+    font-size: 0.85rem;
+    margin-left: 4px;
+}
+
+.panel-bg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 1rem;
+    z-index: 1;
+}
