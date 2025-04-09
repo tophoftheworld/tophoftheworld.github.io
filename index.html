@@ -25,10 +25,12 @@
                 <img src="https://matchanese.com/cdn/shop/files/matchanese-2025-logo_e4944ef8-b626-4206-80c5-cc4fd9ed79ab.png?v=1738086945&width=60"
                     class="logo" alt="Matchanese Logo" />
                 <h2 class="greeting">Good Morning,<br><span id="userName" class="username">Cristopher</span></h2>
-                <p class="date-label">
+                <p class="date-label" id="dateDisplay">
                     <strong id="dayOfWeek">Wednesday</strong><br>
                     <span id="fullDate">April 9, 2025</span>
+                    <input type="text" id="datePicker" style="display: none;" />
                 </p>
+
             
                 <div class="summary-panels">
                     <div class="panel-card" id="clockInCard" onclick="handleClock('in')">
@@ -57,7 +59,7 @@
 
             <div class="nav-date-row">
                 <button onclick="changeDay(-1)">⬅️</button>
-                <input id="summaryDate" class="date-button" readonly />
+                <!-- <input id="summaryDate" class="date-button" readonly /> -->
                 <button id="nextBtn" onclick="changeDay(1)">➡️</button>
             </div>
 

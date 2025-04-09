@@ -198,6 +198,22 @@ button:disabled {
     box-shadow: none !important;
 }
 
+.flatpickr-calendar {
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    z-index: 9999 !important;
+    position: fixed !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    border-radius: 12px;
+}
+
+.flatpickr-open {
+    display: flex !important;
+    justify-content: center;
+    align-items: center;
+}
+
 .summary-ui {
     display: flex;
     flex-direction: column;
@@ -212,10 +228,11 @@ button:disabled {
 }
 
 .greeting {
-    font-size: 1.5rem;
+    font-size: 1.75rem;
     font-weight: 500;
     margin: 0;
     text-align: center;
+    line-height: 1;
 }
 
 .username {
@@ -224,7 +241,7 @@ button:disabled {
 }
 
 .date-label {
-    font-size: 1rem;
+    font-size: 1.5rem;
     text-align: center;
     color: #333;
     margin: 0;
@@ -239,9 +256,9 @@ button:disabled {
 
 .panel-card {
     position: relative;
-    width: 140px;
+    width: 160px;
     aspect-ratio: 1 / 1;
-    border-radius: 1rem;
+    border-radius: 1.25rem;
     overflow: hidden;
     background-color: #e9f5ec;
     display: flex;
@@ -261,7 +278,7 @@ button:disabled {
 }
 
 .panel-overlay.green {
-    background: rgba(0, 100, 0, 0.4);
+    background: rgba(0, 100, 0, 0.2);
     color: white;
     width: 100%;
     height: 100%;
@@ -274,16 +291,18 @@ button:disabled {
 }
 
 .panel-label {
-    font-size: 0.9rem;
+    font-size: 1rem;
     font-weight: 500;
+    margin-bottom: 0.25rem;
 }
 
 .panel-time {
-    font-size: 2rem;
-    font-weight: 600;
+    font-size: 2.4rem;
+    font-weight: 700;
     display: flex;
     align-items: flex-end;
     justify-content: center;
+    line-height: 1;
 }
 
 .panel-time .ampm {
@@ -302,13 +321,19 @@ button:disabled {
     display: block;
 }
 
-/* This keeps the overlay text above the image */
 .panel-overlay {
-    position: relative;
+    position: absolute;
     z-index: 2;
-    text-align: center;
     color: #000;
-    /* or white if the image is dark */
+    width: 100%;
+    height: 100%;
+    top: 0;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
 }
 
 @media (max-width: 600px) {

@@ -17,7 +17,7 @@ let viewDate = new Date();
 let stream = null;
 
 const timestamp = document.getElementById("timestamp");
-const summaryDate = document.getElementById("summaryDate");
+const datePicker = document.getElementById("datePicker");
 const mainInterface = document.getElementById("mainInterface");
 const loginForm = document.getElementById("loginForm");
 const summaryContainer = document.getElementById("summaryContainer");
@@ -46,32 +46,6 @@ function getAttendanceDates() {
         .filter(key => key.startsWith(prefix))
         .map(key => key.replace(prefix, ""));
 }
-
-flatpickr("#summaryDate", {
-    dateFormat: "Y-m-d",
-    defaultDate: today,
-    maxDate: today,
-    disableMobile: true,
-    onChange: function (selectedDates) {
-        viewDate = selectedDates[0];
-        updateSummaryUI();
-    },
-    onReady: function (_, __, fp) {
-        highlightAttendanceDates(fp);
-    },
-    onMonthChange: function (_, __, fp) {
-        highlightAttendanceDates(fp);
-    },
-    onYearChange: function (_, __, fp) {
-        highlightAttendanceDates(fp);
-    },
-    onValueUpdate: function (_, __, fp) {
-        highlightAttendanceDates(fp);
-    },
-    onOpen: function (_, __, fp) {
-        highlightAttendanceDates(fp);
-    }
-});
 
 function highlightAttendanceDates(fp) {
     const dates = getAttendanceDates();
@@ -132,12 +106,19 @@ function updateSummaryUI() {
     const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
     const data = JSON.parse(localStorage.getItem(key)) || {};
 
-    updateCardTimes(data); // ← Add this!
+    updateCardTimes(data);
+
+    // ✅ Update visible text date
+    const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+    const formattedDate = viewDate.toLocaleDateString('en-US', options);
+    const [weekday, monthDayYear] = formattedDate.split(', ');
+    document.getElementById("dayOfWeek").textContent = weekday;
+    document.getElementById("fullDate").textContent = monthDayYear;
 
     const formatted = formatDate(viewDate);
-    summaryDate.value = formatted;
-    if (summaryDate._flatpickr) {
-        summaryDate._flatpickr.jumpToDate(viewDate);
+    datePicker.value = formatted;
+    if (datePicker._flatpickr) {
+        datePicker._flatpickr.jumpToDate(viewDate);
     }
 
     nextBtn.disabled = formatDate(viewDate) >= formatDate(today);
@@ -157,31 +138,24 @@ function updateSummaryUI() {
       </div>`;
 
     const isActiveDay = ALLOW_PAST_CLOCKING || isToday;
+    dutyStatus = !data.clockIn ? 'in' : (data.clockOut ? 'in' : 'out');
 
-    if (isActiveDay && (!data.clockIn || !data.clockOut)) {
-        dutyStatus = !data.clockIn ? 'in' : 'out';
-        startBtn.textContent = dutyStatus === 'in' ? "Clock In" : "Clock Out";
-        startBtn.style.display = "block";
-    } else {
-        startBtn.style.display = "none";
-    }
+    startBtn.textContent = dutyStatus === 'in' ? "Clock In" : "Clock Out";
+    startBtn.style.display = isActiveDay && (!data.clockIn || !data.clockOut) ? "block" : "none";
 
     const branchSelect = document.getElementById("branchSelect");
-    if (isToday && !data.clockIn) {
-        branchSelect.style.display = "block";
-    } else {
-        branchSelect.style.display = "none";
-    }
+    branchSelect.style.display = isToday && !data.clockIn ? "block" : "none";
 }
+
 
 function changeDay(delta) {
     viewDate.setDate(viewDate.getDate() + delta);
 
     const formatted = formatDate(viewDate);
-    summaryDate.value = formatted;
+    datePicker.value = formatted;
 
-    if (summaryDate._flatpickr) {
-        summaryDate._flatpickr.jumpToDate(viewDate);
+    if (datePicker._flatpickr) {
+        datePicker._flatpickr.jumpToDate(viewDate);
     }
 
     updateSummaryUI();
@@ -208,7 +182,7 @@ function takePhoto() {
     ctx.translate(video.videoWidth, 0);
     ctx.scale(-1, 1);
     ctx.drawImage(video, 0, 0);
-    selfieData = canvas.toDataURL("image/png");
+    selfieData = canvas.toDataURL("image/jpeg", 0.6);
 
     video.style.display = "none";
     previewImg.src = selfieData;
@@ -328,3 +302,36 @@ function splitTime(fullTimeStr) {
 
     return [`${hour}:${minute}`, ampm];
 }
+
+const floatingPicker = flatpickr("#datePicker", {
+    dateFormat: "Y-m-d",
+    defaultDate: today,
+    maxDate: today,
+    disableMobile: true,
+    onChange: function (selectedDates) {
+        viewDate = selectedDates[0];
+        updateSummaryUI();
+        updateGreetingUI();
+    },
+    onReady: function (_, __, fp) {
+        highlightAttendanceDates(fp);
+    },
+    onMonthChange: function (_, __, fp) {
+        highlightAttendanceDates(fp);
+    },
+    onYearChange: function (_, __, fp) {
+        highlightAttendanceDates(fp);
+    },
+    onValueUpdate: function (_, __, fp) {
+        highlightAttendanceDates(fp);
+    },
+    onOpen: function (_, __, fp) {
+        highlightAttendanceDates(fp);
+    }
+});
+
+
+document.getElementById("dateDisplay").addEventListener("click", () => {
+    floatingPicker.open();
+    highlightAttendanceDates(floatingPicker);
+});
