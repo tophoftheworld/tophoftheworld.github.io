@@ -83,8 +83,27 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 1rem;
+            gap: 0.75rem;
             margin: 1rem 0;
+        }
+        
+        .nav-date-row button {
+            flex: 0 0 auto;
+            padding: 0.65rem 1.5rem;
+            width: auto;
+            font-size: 1.25rem;
+            line-height: 1;
+        }
+        
+        #summaryDate {
+            flex: 1;
+            padding: 0.65rem 1.25rem;
+            font-size: 1rem;
+            height: auto;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            text-align: center;
         }
 
         .date-button {
@@ -170,7 +189,7 @@
             justify-content: center;
             gap: 1rem;
             position: absolute;
-            bottom: 5rem;
+            bottom: 8rem;
             z-index: 10000;
         }
     </style>
@@ -212,8 +231,8 @@
             <img id="previewImg" style="display:none" />
             <button id="captureCircle" onclick="takePhoto()"></button>
             <div class="camera-controls" id="cameraControls">
-                <button onclick="retakePhoto()">🔄 Retake</button>
-                <button onclick="submitPhoto()">✅ Submit</button>
+                <button onclick="retakePhoto()">Retake</button>
+                <button onclick="submitPhoto()">Submit</button>
             </div>
         </div>
 
@@ -268,6 +287,7 @@
                 dateFormat: "Y-m-d",
                 defaultDate: today,
                 maxDate: today,
+                disableMobile: true,
                 onChange: function (selectedDates) {
                     viewDate = selectedDates[0];
                     updateSummaryUI();
@@ -350,6 +370,7 @@
 
             function changeDay(delta) {
                 viewDate.setDate(viewDate.getDate() + delta);
+                summaryDate._flatpickr.setDate(viewDate, true);
                 updateSummaryUI();
             }
 
