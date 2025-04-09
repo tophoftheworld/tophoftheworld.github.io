@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Staff Time Log</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <style>
         * {
             box-sizing: border-box;
@@ -89,6 +90,10 @@
             background-color: #ddd;
             color: #000;
             font-weight: 600;
+            border-radius: 8px;
+            padding: 0.65rem 1.25rem;
+            cursor: pointer;
+            border: 1px solid #ccc;
         }
 
         .summary-row {
@@ -131,17 +136,17 @@
             flex-direction: column;
         }
 
-        #videoContainer video {
+        #videoContainer video,
+        #previewImg {
             width: 100vw;
             height: auto;
             max-height: 80vh;
             object-fit: cover;
-            transform: scaleX(-1);
         }
 
         #captureCircle {
             position: absolute;
-            bottom: 2rem;
+            bottom: 5rem;
             width: 70px;
             height: 70px;
             border-radius: 50%;
@@ -157,7 +162,7 @@
             justify-content: center;
             gap: 1rem;
             position: absolute;
-            bottom: 2rem;
+            bottom: 1rem;
             z-index: 10000;
         }
     </style>
@@ -168,7 +173,7 @@
         <h1>📍 Staff Time Log</h1>
         <div id="loginForm">
             <input type="tel" id="codeInput" inputmode="numeric" pattern="[0-9]*" placeholder="Enter Employee Code"
-                onkeydown="if(event.key==='Enter'){loginUser()}" />
+                onkeydown="if(event.key==='Enter'){loginUser()}">
             <button onclick="loginUser()">🔐 Log In</button>
         </div>
 
@@ -179,7 +184,7 @@
 
             <div class="nav-date-row">
                 <button onclick="changeDay(-1)">⬅️</button>
-                <button class="date-button" onclick="openDatePicker()" id="summaryDate">YYYY-MM-DD</button>
+                <button class="date-button" id="summaryDate">YYYY-MM-DD</button>
                 <button id="nextBtn" onclick="changeDay(1)">➡️</button>
             </div>
 
@@ -189,6 +194,7 @@
 
         <div id="videoContainer">
             <video id="video" autoplay playsinline></video>
+            <img id="previewImg" style="display:none" />
             <button id="captureCircle" onclick="takePhoto()"></button>
             <div class="camera-controls" id="cameraControls">
                 <button onclick="retakePhoto()">🔄 Retake</button>
@@ -197,9 +203,11 @@
         </div>
 
         <canvas id="snapshot" style="display:none;"></canvas>
-        <button onclick="clearData()" style="background:#e63946; color:white;">🧹 Clear All Data (Debug)</button>
+        <button onclick="clearData()" style="background:#e63946; color:white; margin-top: 2rem;">🧹 Clear All Data
+            (Debug)</button>
         <div class="footer">Matchanese Attendance System</div>
 
+        <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
         <script>
             const employees = {
                 "1010": "Jasmine Cruz",
@@ -224,6 +232,7 @@
             const summaryContainer = document.getElementById("summaryContainer");
             const startBtn = document.getElementById("startBtn");
             const video = document.getElementById("video");
+            const previewImg = document.getElementById("previewImg");
             const canvas = document.getElementById("snapshot");
             const videoContainer = document.getElementById("videoContainer");
             const nextBtn = document.getElementById("nextBtn");
@@ -238,6 +247,15 @@
             if (currentUser && employees[currentUser]) {
                 showMainInterface(currentUser);
             }
+
+            flatpickr("#summaryDate", {
+                dateFormat: "Y-m-d",
+                defaultDate: today,
+                onChange: function (selectedDates) {
+                    viewDate = selectedDates[0];
+                    updateSummaryUI();
+                }
+            });
 
             function formatDate(dateObj) {
                 return dateObj.toISOString().split("T")[0];
@@ -275,22 +293,21 @@
                 nextBtn.disabled = formatDate(viewDate) >= formatDate(today);
 
                 summaryContainer.innerHTML = `
-    <div class="summary-row">
-      <div class="summary-block">
-        <strong>Clock In:</strong>
-        <div>${data.clockIn?.time || '--'}</div>
-        ${data.clockIn?.selfie ? `<img class="summary-photo" src="${data.clockIn.selfie}" />` : ''}
-      </div>
-      <div class="summary-block">
-        <strong>Clock Out:</strong>
-        <div>${data.clockOut?.time || '--'}</div>
-        ${data.clockOut?.selfie ? `<img class="summary-photo" src="${data.clockOut.selfie}" />` : ''}
-      </div>
-    </div>
-  `;
+                <div class="summary-row">
+                    <div class="summary-block">
+                        <strong>Clock In:</strong>
+                        <div>${data.clockIn?.time || '--'}</div>
+                        ${data.clockIn?.selfie ? `<img class="summary-photo" src="${data.clockIn.selfie}" />` : ''}
+                    </div>
+                    <div class="summary-block">
+                        <strong>Clock Out:</strong>
+                        <div>${data.clockOut?.time || '--'}</div>
+                        ${data.clockOut?.selfie ? `<img class="summary-photo" src="${data.clockOut.selfie}" />` : ''}
+                    </div>
+                </div>`;
 
                 startBtn.textContent = dutyStatus === 'in' ? "Clock In" : "Clock Out";
-                startBtn.style.display = isToday ? "block" : "none";
+                startBtn.style.display = isToday && !(dutyStatus === 'out' && data.clockOut) ? "block" : "none";
             }
 
             function changeDay(delta) {
@@ -298,29 +315,13 @@
                 updateSummaryUI();
             }
 
-            function openDatePicker() {
-                const input = document.createElement('input');
-                input.type = 'date';
-                input.value = formatDate(viewDate);
-                input.style.position = 'fixed';
-                input.style.top = '-9999px';
-                document.body.appendChild(input);
-                input.onchange = () => {
-                    const picked = new Date(input.value);
-                    if (!isNaN(picked)) {
-                        viewDate = picked;
-                        updateSummaryUI();
-                    }
-                    input.remove();
-                };
-                input.click();
-            }
-
             function startPhotoSequence() {
                 navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
                     .then(s => {
                         stream = s;
                         video.srcObject = stream;
+                        video.style.display = "block";
+                        previewImg.style.display = "none";
                         videoContainer.style.display = "flex";
                         captureCircle.style.display = "block";
                         cameraControls.style.display = "none";
@@ -336,12 +337,18 @@
                 ctx.scale(-1, 1);
                 ctx.drawImage(video, 0, 0);
                 selfieData = canvas.toDataURL("image/png");
+
+                video.style.display = "none";
+                previewImg.src = selfieData;
+                previewImg.style.display = "block";
+
                 captureCircle.style.display = "none";
                 cameraControls.style.display = "flex";
             }
 
             function retakePhoto() {
-                selfieData = "";
+                previewImg.style.display = "none";
+                video.style.display = "block";
                 captureCircle.style.display = "block";
                 cameraControls.style.display = "none";
             }
