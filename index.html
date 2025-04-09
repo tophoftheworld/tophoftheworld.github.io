@@ -332,7 +332,13 @@
                 const isToday = formatDate(viewDate) === formatDate(today);
                 const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
                 const data = JSON.parse(localStorage.getItem(key)) || {};
-                summaryDate.value = formatDate(viewDate);
+
+                const formatted = formatDate(viewDate);
+                summaryDate.value = formatted;
+                if (summaryDate._flatpickr) {
+                    summaryDate._flatpickr.jumpToDate(viewDate);
+                }
+
                 nextBtn.disabled = formatDate(viewDate) >= formatDate(today);
 
                 summaryContainer.innerHTML = `
@@ -370,7 +376,15 @@
 
             function changeDay(delta) {
                 viewDate.setDate(viewDate.getDate() + delta);
-                summaryDate._flatpickr.setDate(viewDate, true);
+                
+                const formatted = formatDate(viewDate);
+                summaryDate.value = formatted; // force update display
+
+                // Set Flatpickr's internal state *without* triggering anything
+                if (summaryDate._flatpickr) {
+                    summaryDate._flatpickr.jumpToDate(viewDate); // <- this doesn't fire onChange or clear value
+                }
+                
                 updateSummaryUI();
             }
 
