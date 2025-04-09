@@ -34,11 +34,12 @@
 
         h1 {
             font-size: 1.5rem;
-            margin-bottom: 1rem;
+            margin-bottom: 0.5rem;
         }
 
         input,
-        select {
+        select,
+        .panel {
             width: 100%;
             padding: 0.75rem;
             font-size: 1rem;
@@ -48,14 +49,10 @@
             margin-bottom: 1rem;
         }
 
-        .timestamp {
-            font-size: 0.95rem;
-            color: #555;
-        }
-
-        .date-display {
-            font-weight: bold;
-            margin: 0.5rem 0;
+        .timestamp-panel {
+            background-color: #eee;
+            color: #333;
+            border: none;
         }
 
         button {
@@ -80,18 +77,37 @@
             cursor: not-allowed;
         }
 
-        .nav-buttons {
+        .nav-date-row {
             display: flex;
-            justify-content: center;
             align-items: center;
+            justify-content: center;
             gap: 1rem;
             margin: 1rem 0;
         }
 
-        .summary-photo {
-            max-width: 100%;
+        .date-button {
+            background-color: #ddd;
+            color: #000;
+            font-weight: 600;
+        }
+
+        .summary-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .summary-block {
+            flex: 1;
+            background: #f9f9f9;
+            padding: 1rem;
             border-radius: 10px;
-            margin: 0.5rem 0 1rem;
+        }
+
+        .summary-photo {
+            width: 100%;
+            border-radius: 10px;
+            margin-top: 0.5rem;
         }
 
         .footer {
@@ -144,11 +160,6 @@
             bottom: 2rem;
             z-index: 10000;
         }
-
-        .camera-controls button {
-            flex: 1;
-            padding: 0.6rem 1.2rem;
-        }
     </style>
 </head>
 
@@ -162,16 +173,16 @@
         </div>
 
         <div id="mainInterface" style="display:none">
-            <div class="date-display">
-                <div class="nav-buttons">
-                    <button onclick="changeDay(-1)">⬅️</button>
-                    <span id="summaryDate">YYYY-MM-DD</span>
-                    <button id="nextBtn" onclick="changeDay(1)">➡️</button>
-                </div>
-            </div>
-            <div class="timestamp" id="timestamp">Current Time: --:--</div>
             <p id="welcomeText"></p>
             <button onclick="logoutUser()" style="background:#ccc; color:#000;">Switch User</button>
+            <div class="panel timestamp-panel" id="timestamp">Current Time: --:--</div>
+
+            <div class="nav-date-row">
+                <button onclick="changeDay(-1)">⬅️</button>
+                <button class="date-button" onclick="openDatePicker()" id="summaryDate">YYYY-MM-DD</button>
+                <button id="nextBtn" onclick="changeDay(1)">➡️</button>
+            </div>
+
             <button id="startBtn" onclick="startPhotoSequence()">Clock In</button>
             <div id="summaryContainer"></div>
         </div>
@@ -264,10 +275,17 @@
                 nextBtn.disabled = formatDate(viewDate) >= formatDate(today);
 
                 summaryContainer.innerHTML = `
-    <div>
-      <p><strong>Clock In:</strong> ${data.clockIn?.time || '--'} &nbsp;&nbsp; <strong>Clock Out:</strong> ${data.clockOut?.time || '--'}</p>
-      ${data.clockIn?.selfie ? `<img class="summary-photo" src="${data.clockIn.selfie}" />` : ''}
-      ${data.clockOut?.selfie ? `<img class="summary-photo" src="${data.clockOut.selfie}" />` : ''}
+    <div class="summary-row">
+      <div class="summary-block">
+        <strong>Clock In:</strong>
+        <div>${data.clockIn?.time || '--'}</div>
+        ${data.clockIn?.selfie ? `<img class="summary-photo" src="${data.clockIn.selfie}" />` : ''}
+      </div>
+      <div class="summary-block">
+        <strong>Clock Out:</strong>
+        <div>${data.clockOut?.time || '--'}</div>
+        ${data.clockOut?.selfie ? `<img class="summary-photo" src="${data.clockOut.selfie}" />` : ''}
+      </div>
     </div>
   `;
 
@@ -278,6 +296,24 @@
             function changeDay(delta) {
                 viewDate.setDate(viewDate.getDate() + delta);
                 updateSummaryUI();
+            }
+
+            function openDatePicker() {
+                const input = document.createElement('input');
+                input.type = 'date';
+                input.value = formatDate(viewDate);
+                input.style.position = 'fixed';
+                input.style.top = '-9999px';
+                document.body.appendChild(input);
+                input.onchange = () => {
+                    const picked = new Date(input.value);
+                    if (!isNaN(picked)) {
+                        viewDate = picked;
+                        updateSummaryUI();
+                    }
+                    input.remove();
+                };
+                input.click();
             }
 
             function startPhotoSequence() {
@@ -300,7 +336,6 @@
                 ctx.scale(-1, 1);
                 ctx.drawImage(video, 0, 0);
                 selfieData = canvas.toDataURL("image/png");
-
                 captureCircle.style.display = "none";
                 cameraControls.style.display = "flex";
             }
