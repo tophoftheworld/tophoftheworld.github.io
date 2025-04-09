@@ -1,0 +1,199 @@
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: #f4f6f8;
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow-x: hidden;
+    padding-bottom: env(safe-area-inset-bottom, 20px);
+}
+
+.container {
+    max-width: 480px;
+    margin: auto;
+    background: #ffffff;
+    padding: 2rem;
+    border-radius: 16px;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.04);
+    text-align: center;
+    min-height: 100vh;
+}
+
+h1 {
+    font-size: 1.5rem;
+    margin-bottom: 0.5rem;
+}
+
+input,
+select,
+.panel {
+    width: 100%;
+    padding: 0.75rem;
+    font-size: 1rem;
+    border: 1px solid #ccc;
+    border-radius: 10px;
+    background: #fff;
+    margin-bottom: 1rem;
+}
+
+.timestamp-panel {
+    background-color: #eee;
+    color: #333;
+    border: none;
+}
+
+button {
+    width: 100%;
+    padding: 0.85rem;
+    font-size: 1rem;
+    background-color: #2b9348;
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.2s ease;
+    margin-bottom: 1rem;
+}
+
+button:hover:not([disabled]) {
+    background-color: #238636;
+}
+
+button:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+
+.nav-date-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    margin: 1rem 0;
+}
+
+.nav-date-row button {
+    flex: 0 0 auto;
+    padding: 0.65rem 1.5rem;
+    width: auto;
+    font-size: 1.25rem;
+    line-height: 1;
+}
+
+#summaryDate {
+    flex: 1;
+    padding: 0.65rem 1.25rem;
+    font-size: 1rem;
+    height: auto;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: center;
+}
+
+.date-button {
+    background-color: #ddd;
+    color: #000;
+    font-weight: 600;
+    border-radius: 8px;
+    padding: 0.65rem 1.25rem;
+    cursor: pointer;
+    border: 1px solid #ccc;
+}
+
+.summary-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.summary-block {
+    flex: 1;
+    background: #f9f9f9;
+    padding: 1rem;
+    border-radius: 10px;
+}
+
+.summary-photo {
+    width: 100%;
+    border-radius: 10px;
+    margin-top: 0.5rem;
+}
+
+.footer {
+    text-align: center;
+    font-size: 0.85rem;
+    color: #888;
+    margin-top: 2rem;
+}
+
+#video {
+    transform: scaleX(-1);
+}
+
+#videoContainer {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: black;
+    display: none;
+    z-index: 9999;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+}
+
+#videoContainer video,
+#previewImg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    object-fit: cover;
+}
+
+#captureCircle {
+    position: absolute;
+    bottom: 8rem;
+    width: 70px;
+    height: 70px;
+    border-radius: 50%;
+    border: 4px solid #fff;
+    background: transparent;
+    z-index: 10000;
+    cursor: pointer;
+}
+
+.camera-controls {
+    display: none;
+    flex-direction: row;
+    justify-content: center;
+    gap: 1rem;
+    position: absolute;
+    bottom: 8rem;
+    z-index: 10000;
+}
+
+.flatpickr-day.selected {
+    background: #2b9348 !important;
+    color: white !important;
+    border: none !important;
+}
+
+.flatpickr-day:hover {
+    background: #23863730 !important;
+    color: 2b9348 !important;
+    border: none !important;
+}
+
+.flatpickr-day.today.selected {
+    box-shadow: none !important;
+}
