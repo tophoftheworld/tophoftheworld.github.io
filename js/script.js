@@ -50,7 +50,7 @@ const lateGraceLimitMinutes = 30;
 
 // At top of your script.js
 import { db } from './firebase-setup.js';
-import { doc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 
 
 
@@ -59,14 +59,9 @@ setInterval(() => {
     timestamp.textContent = `Current Time: ${now.toLocaleTimeString()}`;
 }, 1000);
 
-setInterval(() => {
+setInterval(async () => {
     if (formatDate(viewDate) !== formatDate(today)) return;
-
-    const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
-    const data = JSON.parse(localStorage.getItem(key)) || {};
-    if (!data.clockIn) {
-        updateCardTimes(data); // recheck status
-    }
+    await updateSummaryUI();
 }, 10000);
 
 if (currentUser && employees[currentUser]) {
@@ -119,9 +114,7 @@ async function loginUser() {
         showMainInterface(code);
         updateGreetingUI();
 
-        const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
-        const data = JSON.parse(localStorage.getItem(key)) || {};
-        updateCardTimes(data);
+        await updateSummaryUI();
     } else {
         alert("❌ Invalid code");
     }
@@ -134,20 +127,23 @@ function logoutUser() {
     location.reload();
 }
 
-function showMainInterface(code) {
+async function showMainInterface(code) {
     loginForm.style.display = "none";
     mainInterface.style.display = "block";
     viewDate = new Date();
-    const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
-    const data = JSON.parse(localStorage.getItem(key)) || {};
-    dutyStatus = data.clockIn && !data.clockOut ? 'out' : 'in';
-    updateSummaryUI();
+    await updateSummaryUI();
 }
 
-function updateSummaryUI() {
+async function updateSummaryUI() {
     const isToday = formatDate(viewDate) === formatDate(today);
-    const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
-    const data = JSON.parse(localStorage.getItem(key)) || {};
+    
+    updateCardTimes({});
+    
+    const dateKey = formatDate(viewDate);
+    const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
+    const docSnap = await getDoc(subDocRef);
+
+    const data = docSnap.exists() ? docSnap.data() : {};
 
     updateCardTimes(data);
 
@@ -251,34 +247,54 @@ function retakePhoto() {
 }
 
 function submitPhoto() {
+    console.log("📸 Submitting photo...");
     videoContainer.style.display = "none";
     if (stream) stream.getTracks().forEach(t => t.stop());
     saveAttendance();
 }
 
-function saveAttendance() {
+async function saveAttendance() {
+    console.log("💾 Running saveAttendance...");
     const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
     const now = new Date();
     const time = now.toLocaleTimeString();
     const existing = JSON.parse(localStorage.getItem(key)) || {};
 
     // Prevent double clock in/out
-    if (dutyStatus === 'in' && existing.clockIn) return;
-    if (dutyStatus === 'out' && existing.clockOut) return;
+    // if (dutyStatus === 'in' && existing.clockIn) return;
+    // if (dutyStatus === 'out' && existing.clockOut) return;
+
+    // const attendanceRef = doc(db, "attendance", currentUser);
+    const dateKey = formatDate(viewDate);
+    const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
 
     if (dutyStatus === 'in') {
         const branch = document.getElementById("branchSelect")?.value || "Matcha Bar Podium";
         existing.clockIn = { time, selfie: selfieData, branch };
+
+        // ✅ Save to Firestore
+        await setDoc(subDocRef, { clockIn: existing.clockIn }, { merge: true });
+        console.log("✅ Clock-in saved to Firestore");
+        
+
         dutyStatus = 'out';
     } else {
         existing.clockOut = { time, selfie: selfieData };
+
+        // ✅ Save to Firestore
+        await setDoc(subDocRef, { clockOut: existing.clockOut }, { merge: true });
+        console.log("✅ Clock-out saved to Firestore");
+
         dutyStatus = 'in';
     }
 
+    // Optional: still store locally for UI speed
     localStorage.setItem(key, JSON.stringify(existing));
     const updated = JSON.parse(localStorage.getItem(key));
     updateSummaryUI();
-    updateCardTimes(updated); // this updates the time + selfie background
+    updateCardTimes(updated);
+
+    console.log("🎉 UI updated");
 }
 
 function clearData() {
@@ -301,24 +317,30 @@ async function updateGreetingUI() {
     document.getElementById("fullDate").textContent = rest.join(', ');
 }
 
-document.getElementById("branchSelect").addEventListener("change", () => {
-    const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
-    const data = JSON.parse(localStorage.getItem(key)) || {};
+document.getElementById("branchSelect").addEventListener("change", async () => {
+    const dateKey = formatDate(viewDate);
+    const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
+    const docSnap = await getDoc(subDocRef);
 
-    if (data.clockIn) {
-        data.clockIn.branch = document.getElementById("branchSelect").value;
-        localStorage.setItem(key, JSON.stringify(data));
+    if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.clockIn) {
+            data.clockIn.branch = document.getElementById("branchSelect").value;
+            await setDoc(subDocRef, { clockIn: data.clockIn }, { merge: true });
+        }
     }
 });
 
-function handleClock(type) {
+async function handleClock(type) {
     const isToday = formatDate(viewDate) === formatDate(today);
     if (!ALLOW_PAST_CLOCKING && !isToday) {
         return;
     }
 
-    const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
-    const data = JSON.parse(localStorage.getItem(key)) || {};
+    const dateKey = formatDate(viewDate);
+    const docSnap = await getDoc(doc(db, "attendance", currentUser, "dates", dateKey));
+    const data = docSnap.exists() ? docSnap.data() : {};
+
     if (type === 'in' && !data.clockIn) startPhotoSequence();
     if (type === 'out' && data.clockIn && !data.clockOut) startPhotoSequence();
 }
