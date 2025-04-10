@@ -51,6 +51,7 @@ setInterval(() => {
 
 if (currentUser && employees[currentUser]) {
     showMainInterface(currentUser);
+    updateGreetingUI();
 }
 
 function getAttendanceDates() {
@@ -286,10 +287,12 @@ function updateCardTimes(data) {
 
     if (data.clockIn?.selfie) {
         clockInPhoto.src = data.clockIn.selfie;
+        clockInPhoto.style.display = "block";
         clockInPhoto.onclick = () => openImageModal(data.clockIn.selfie);
         clockInOverlay.classList.add("green");
     } else {
         clockInPhoto.src = "";
+        clockInPhoto.style.display = "none";
         clockInPhoto.onclick = null;
         clockInOverlay.classList.remove("green");
     }
@@ -299,10 +302,12 @@ function updateCardTimes(data) {
 
     if (data.clockOut?.selfie) {
         clockOutPhoto.src = data.clockOut.selfie;
+        clockOutPhoto.style.display = "block";
         clockOutPhoto.onclick = () => openImageModal(data.clockOut.selfie);
         clockOutOverlay.classList.add("green");
     } else {
         clockOutPhoto.src = "";
+        clockOutPhoto.style.display = "none";
         clockOutPhoto.onclick = null;
         clockOutOverlay.classList.remove("green");
     }

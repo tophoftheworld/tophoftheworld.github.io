@@ -5,23 +5,20 @@
 html,
 body {
     font-family: 'Inter', sans-serif;
-    background-color: #f4f6f8;
+    background-color: #f1f1f1;
     margin: 0;
     padding: 0;
     height: 100%;
     overflow-x: hidden;
-    padding-bottom: env(safe-area-inset-bottom, 20px);
 }
 
 .container {
     max-width: 480px;
-    margin: auto;
-    background: #ffffff;
-    padding: 2rem;
-    border-radius: 16px;
-    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.04);
-    text-align: center;
-    min-height: 100vh;
+    margin: 0 auto;
+    padding: 2rem 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
 }
 
 h1 {
@@ -215,57 +212,90 @@ button:disabled {
 }
 
 .summary-ui {
+    background: #fff;
+    border-top-left-radius: 24px;
+    border-top-right-radius: 24px;
+    margin-top: 2rem;
+    padding: 2rem 1.5rem;
+    width: 100%;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.05);
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 1.25rem;
-    padding-top: 1.5rem;
+}
+
+.header-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-top: 1rem;
+    /* more space from top */
+    margin-bottom: 1.5rem;
 }
 
 .logo {
-    /* width: 60px; */
-    height: 50px; 
+    height: 50px;
+    margin-bottom: 1rem;
+    /* more space below the logo */
 }
 
 .greeting {
     font-size: 1.75rem;
-    font-weight: 500;
-    margin: 0;
+    font-weight: 400;
     text-align: center;
-    line-height: 1;
+    margin: 0;
+    line-height: 1.2;
+    /* tighten line spacing */
 }
 
 .username {
+    display: block;
+    margin-top: -2px;
+    /* pull name closer to greeting */
     color: #2b9348;
-    font-weight: 600;
+    font-weight: 900;
 }
 
 .date-label {
+    font-size: 1rem;
+    line-height: 1.1;
+    margin: 0, 1rem;
+}
+
+
+.date-label strong {
+    /* display: block; */
+    font-size: 1.2rem;
+    /* for the weekday */
+}
+
+#fullDate {
     font-size: 1.5rem;
-    text-align: center;
-    color: #333;
-    margin: 0;
+    /* smaller for April 10 */
 }
 
 .summary-panels {
     display: flex;
-    gap: 1rem;
+    gap: 1.25rem;
     width: 100%;
+    max-width: 540px;
     justify-content: center;
+    padding: 1rem 0;
+    /* Add spacing around the tiles */
 }
 
 .panel-card {
     position: relative;
-    width: 160px;
-    aspect-ratio: 1 / 1;
-    border-radius: 1.25rem;
+    width: 50%;
+    aspect-ratio: 4 / 5;
+    border-radius: 20px;
     overflow: hidden;
-    background-color: #e9f5ec;
+    /* background-color: #e9f5ec; */
+    /* soft default bg */
     display: flex;
     align-items: center;
     justify-content: center;
-    min-width: 0;
-    min-height: 0;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
 }
 
 
@@ -277,9 +307,23 @@ button:disabled {
     z-index: 1;
 }
 
+.panel-card.single {
+    width: 90%;
+    max-width: 320px;
+    /* background-color: #fff; */
+    border-radius: 20px;
+    /* box-shadow: 0 5px 8px rgba(0, 0, 0, 0.1); */
+    margin-bottom: 1rem;
+    text-align: center;
+    padding: 0.75rem 1rem;
+    aspect-ratio: auto !important;
+    height: auto !important;
+}
+
 .panel-overlay.green {
-    background: rgba(0, 100, 0, 0.2);
-    color: white;
+    background: rgba(43, 147, 72, 0.2);
+    /* subtle soft green */
+    color: #fff;
     width: 100%;
     height: 100%;
     position: absolute;
@@ -292,8 +336,8 @@ button:disabled {
 }
 
 .panel-label {
-    font-size: 1rem;
-    font-weight: 500;
+    font-size: 0.9rem;
+    font-weight: 600;
     margin-bottom: 0.25rem;
 }
 
@@ -302,13 +346,12 @@ button:disabled {
     font-weight: 700;
     display: flex;
     align-items: flex-end;
-    justify-content: center;
-    line-height: 1;
 }
 
 .panel-time .ampm {
-    font-size: 0.85rem;
+    font-size: 0.75rem;
     margin-left: 4px;
+    font-weight: 500;
 }
 
 .panel-bg {
@@ -326,17 +369,20 @@ button:disabled {
 .panel-overlay {
     position: absolute;
     z-index: 2;
-    color: #000;
     width: 100%;
     height: 100%;
     top: 0;
     left: 0;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    pointer-events: auto;
+    justify-content: flex-end;
+    align-items: flex-start;
+    padding: 1rem;
+    text-align: left;
+    color: #000;
+    /* or white if using .green overlay */
+    pointer-events: none;
+    box-sizing: border-box;
 }
 
 @media (max-width: 600px) {
@@ -394,4 +440,77 @@ button:disabled {
     border-radius: 8px;
     cursor: pointer;
     font-size: 1rem;
+}
+
+button.retake-btn {
+    background: transparent;
+    color: #2b9348;
+    border: 2px solid #2b9348;
+}
+
+button.retake-btn:hover {
+    background: #2b9348;
+    color: white;
+}
+
+button.submit-btn:hover {
+    background: #0b451b;
+    color: white;
+}
+
+#summaryCardUI {
+    background: #fff;
+    border-radius: 15px;
+    padding: 2rem 1.5rem;
+    width: 90vw;
+    max-width: 640px;
+    margin: 0 auto;
+    /* box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.05); */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.branch-label {
+    /* background: #fff; */
+    color: #000000;
+    padding: 1rem;
+    border-radius: 20px;
+    font-weight: 600;
+    font-size: 1rem;
+    text-align: center;
+    width: 90%;
+    max-width: 320px;
+    /* box-shadow: 0 5px 8px rgba(0, 0, 0, 0.1); */
+    /* match card */
+    margin-top: 1rem;
+}
+
+@media (max-width: 600px) {
+    .summary-ui {
+        padding: 2rem 1rem 3rem;
+    }
+
+    .summary-panels {
+        flex-direction: row;
+        gap: 1rem;
+    }
+
+    .container {
+        padding-left: 0;
+        padding-right: 0;
+    }
+
+    .panel-label {
+        font-size: 0.8rem;
+    }
+
+    .panel-time {
+        font-size: 1.75rem;
+    }
+
+    .panel-time .ampm {
+        font-size: 0.85rem;
+        margin-left: 2px;
+    }
 }

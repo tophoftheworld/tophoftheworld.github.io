@@ -26,15 +26,21 @@
 
         <div id="mainInterface" style="display:none">
 
-            <div id="summaryCardUI" class="summary-ui">
+            <div class="header-block">
                 <img src="https://matchanese.com/cdn/shop/files/matchanese-2025-logo_e4944ef8-b626-4206-80c5-cc4fd9ed79ab.png?v=1738086945&width=60"
                     class="logo" alt="Matchanese Logo" />
-                <h2 class="greeting">Good Morning,<br><span id="userName" class="username">Cristopher</span></h2>
-                <p class="date-label" id="dateDisplay">
-                    <strong id="dayOfWeek">Wednesday</strong><br>
-                    <span id="fullDate">April 9, 2025</span>
-                    <input type="text" id="datePicker" style="display: none;" />
-                </p>
+                <h2 class="greeting">Good Morning,<br><span id="userName" class="username"></span></h2>
+            </div>
+
+            <div id="summaryCardUI" class="summary-ui">
+                <!-- <div class="panel-card single" id="dateCard"> -->
+                    <p class="date-label" id="dateDisplay">
+                        <strong id="dayOfWeek">Wednesday</strong><br>
+                        <span id="fullDate">April 9, 2025</span>
+                        <input type="text" id="datePicker" style="display: none;" />
+                    </p>
+                <!-- </div> -->
+
 
             
                 <div class="summary-panels">
@@ -56,6 +62,8 @@
                     </div>
 
                 </div>
+                <div class="branch-label" id="branchLabel">Matcha Bar Podium</div>
+
             </div>
 
             <br><br><br><br><br><br><br><br><br>
@@ -83,8 +91,8 @@
             <img id="previewImg" style="display:none" />
             <button id="captureCircle" onclick="takePhoto()"></button>
             <div class="camera-controls" id="cameraControls">
-                <button onclick="retakePhoto()">Retake</button>
-                <button onclick="submitPhoto()">Submit</button>
+                <button class="retake-btn" onclick="retakePhoto()">Retake</button>
+                <button class="submit-btn" onclick="submitPhoto()">Submit</button>
             </div>
         </div>
 
