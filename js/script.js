@@ -1,4 +1,4 @@
-const ALLOW_PAST_CLOCKING = true;
+const ALLOW_PAST_CLOCKING = false;
 
 const employees = {
     "130129": "Beatrice Grace Boldo",
@@ -44,8 +44,9 @@ const nextBtn = document.getElementById("nextBtn");
 const captureCircle = document.getElementById("captureCircle");
 const cameraControls = document.getElementById("cameraControls");
 
-const scheduledTimeIn = "10:30 PM";
-const scheduledTimeOut = "6:30 PM";
+const scheduledTimeIn = "2:30 AM";
+const scheduledTimeOut = "1:45 AM";
+const lateGraceLimitMinutes = 30;
 
 setInterval(() => {
     const now = new Date();
@@ -138,10 +139,10 @@ function updateSummaryUI() {
 
     // ✅ Update visible text date
     const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-    const formattedDate = viewDate.toLocaleDateString('en-US', options);
-    const [weekday, monthDayYear] = formattedDate.split(', ');
+    const formattedDate = viewDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const [weekday, ...rest] = formattedDate.split(', ');
     document.getElementById("dayOfWeek").textContent = weekday;
-    document.getElementById("fullDate").textContent = monthDayYear;
+    document.getElementById("fullDate").textContent = rest.join(', ');
 
     const formatted = formatDate(viewDate);
     datePicker.value = formatted;
@@ -171,8 +172,16 @@ function updateSummaryUI() {
     // startBtn.textContent = dutyStatus === 'in' ? "Clock In" : "Clock Out";
     // startBtn.style.display = isActiveDay && (!data.clockIn || !data.clockOut) ? "block" : "none";
 
+    // const branchSelect = document.getElementById("branchSelect");
+    // branchSelect.style.display = isToday && !data.clockIn ? "block" : "none";
     const branchSelect = document.getElementById("branchSelect");
-    branchSelect.style.display = isToday && !data.clockIn ? "block" : "none";
+    const savedBranch = data.clockIn?.branch;
+    if (savedBranch && [...branchSelect.options].some(o => o.value === savedBranch)) {
+        branchSelect.value = savedBranch;
+    } else {
+        branchSelect.value = "Matcha Bar Podium";
+    }
+
 }
 
 
@@ -244,7 +253,7 @@ function saveAttendance() {
     if (dutyStatus === 'out' && existing.clockOut) return;
 
     if (dutyStatus === 'in') {
-        const branch = document.getElementById("branchSelect")?.value || "N/A";
+        const branch = document.getElementById("branchSelect")?.value || "Matcha Bar Podium";
         existing.clockIn = { time, selfie: selfieData, branch };
         dutyStatus = 'out';
     } else {
@@ -269,16 +278,30 @@ function updateGreetingUI() {
     const name = employees[currentUser] || "Employee";
     document.getElementById("userName").textContent = name;
 
-    const now = new Date();
+    const now = viewDate;
     const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-    const formatted = now.toLocaleDateString('en-US', options);
-    const [weekday, monthDayYear] = formatted.split(', ');
-
+    const formatted = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const [weekday, ...rest] = formatted.split(', ');
     document.getElementById("dayOfWeek").textContent = weekday;
-    document.getElementById("fullDate").textContent = monthDayYear;
+    document.getElementById("fullDate").textContent = rest.join(', ');
 }
 
+document.getElementById("branchSelect").addEventListener("change", () => {
+    const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
+    const data = JSON.parse(localStorage.getItem(key)) || {};
+
+    if (data.clockIn) {
+        data.clockIn.branch = document.getElementById("branchSelect").value;
+        localStorage.setItem(key, JSON.stringify(data));
+    }
+});
+
 function handleClock(type) {
+    const isToday = formatDate(viewDate) === formatDate(today);
+    if (!ALLOW_PAST_CLOCKING && !isToday) {
+        return;
+    }
+
     const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
     const data = JSON.parse(localStorage.getItem(key)) || {};
     if (type === 'in' && !data.clockIn) startPhotoSequence();
@@ -299,14 +322,82 @@ function compareTimes(t1, t2) {
 
 function updateCardTimes(data) {
     const isToday = formatDate(viewDate) === formatDate(today);
+    const hasNoData = !data.clockIn && !data.clockOut;
     const clockInPhoto = document.getElementById("clockInPhoto");
     const clockInOverlay = document.getElementById("clockInOverlay");
     const statusLabel = document.getElementById("clockInStatusLabel");
     const label = clockInOverlay.querySelector(".panel-label");
     const timeSpan = document.getElementById("clockInTime");
 
+    const clockOutOverlay = document.getElementById("clockOutOverlay");
+    const clockOutPhoto = document.getElementById("clockOutPhoto");
+    const clockOutTimeSpan = document.getElementById("clockOutTime");
+    const clockOutStatus = document.getElementById("clockOutStatusLabel");
+
+    if (hasNoData && isToday) {
+        const now = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        const late = compareTimes(now, scheduledTimeIn) > 0;
+        const [inTime, inMeridiem] = splitTime(scheduledTimeIn);
+        const [outTime, outMeridiem] = splitTime(scheduledTimeOut);
+
+        // ✅ Clock In
+        clockInPhoto.src = "";
+        clockInPhoto.style.display = "none";
+        clockInPhoto.onclick = null;
+        clockInOverlay.className = "panel-overlay";
+        clockInOverlay.classList.add(late ? "red" : "green");
+        statusLabel.textContent = late ? "Running late" : "On time";
+        label.textContent = "Time In";
+        timeSpan.innerHTML = `${inTime}<span class="ampm">${inMeridiem}</span>`;
+
+        // ✅ Clock Out (show default schedule)
+        clockOutPhoto.src = "";
+        clockOutPhoto.style.display = "none";
+        clockOutPhoto.onclick = null;
+        clockOutOverlay.className = "panel-overlay";
+        clockOutOverlay.classList.add("default-green");
+        clockOutStatus.textContent = "";
+        clockOutOverlay.querySelector(".panel-label").textContent = "Time Out";
+        clockOutTimeSpan.innerHTML = `${outTime}<span class="ampm">${outMeridiem}</span>`;
+
+        return;
+    }
+    else if (hasNoData && !isToday) {
+        // Fully blank for past days with no record
+        clockInPhoto.src = "";
+        clockInPhoto.style.display = "none";
+        clockInPhoto.onclick = null;
+        clockInOverlay.className = "panel-overlay";
+        statusLabel.textContent = "";
+        label.textContent = "Time In";
+        timeSpan.innerHTML = `--:--<span class="ampm"></span>`;
+
+        clockOutPhoto.src = "";
+        clockOutPhoto.style.display = "none";
+        clockOutPhoto.onclick = null;
+        clockOutOverlay.className = "panel-overlay";
+        clockOutStatus.textContent = "";
+        clockOutOverlay.querySelector(".panel-label").textContent = "Time Out";
+        clockOutTimeSpan.innerHTML = `--:--<span class="ampm"></span>`;
+
+        return;
+    }
+
     // Set default
-    let timeInToShow = scheduledTimeIn;
+    let timeInToShow;
+
+    if (compareTimes(new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }), scheduledTimeIn) > 0) {
+        // After scheduled time — show real time slipping
+        const now = new Date();
+        const hour = now.getHours() % 12 || 12;
+        const minutes = now.getMinutes().toString().padStart(2, '0');
+        const ampm = now.getHours() >= 12 ? 'PM' : 'AM';
+        timeInToShow = `${hour}:${minutes} ${ampm}`;
+    } else {
+        // Still before scheduled — show scheduled
+        timeInToShow = scheduledTimeIn;
+    }
+
     let statusText = "";
     let overlayColor = "";
 
@@ -348,11 +439,11 @@ function updateCardTimes(data) {
     // Update panel UI
     const [inTime, inMeridiem] = splitTime(timeInToShow);
     timeSpan.innerHTML = `${inTime}<span class="ampm">${inMeridiem}</span>`;
-    statusLabel.textContent = isToday ? statusText : "";
+    statusLabel.textContent = data.clockIn ? statusText : "";
 
     // Apply color classes
     clockInOverlay.classList.remove("red", "green");
-    if (isToday) clockInOverlay.classList.add(overlayColor);
+    if (data.clockIn) clockInOverlay.classList.add(overlayColor);
 
     if (!data.clockIn) {
         clockInPhoto.src = "";
@@ -361,24 +452,82 @@ function updateCardTimes(data) {
     }
 
     // Clock Out (left untouched for now)
-    const clockOutTime = data.clockOut?.time || scheduledTimeOut;
-    const [outTime, outMeridiem] = splitTime(clockOutTime);
+    // const clockOutTime = data.clockOut?.time || scheduledTimeOut;
+    // const [outTime, outMeridiem] = splitTime(clockOutTime);
 
-    const clockOutPhoto = document.getElementById("clockOutPhoto");
-    const clockOutOverlay = document.getElementById("clockOutOverlay");
+    let displayOutTime = scheduledTimeOut;
+    let outStatus = "";
+    let outOverlayColor = "";
 
-    document.getElementById("clockOutTime").innerHTML = `${outTime}<span class="ampm">${outMeridiem}</span>`;
+    if (data.clockIn && !data.clockOut) {
+        const lateBy = compareTimes(data.clockIn.time, scheduledTimeIn);
 
-    if (data.clockOut?.selfie) {
+        if (lateBy > 0 && lateBy <= lateGraceLimitMinutes) {
+            // Adjust timeout
+            const [hourStr, minStr] = scheduledTimeOut.split(/:|\s/);
+            const hour = parseInt(hourStr);
+            const min = parseInt(minStr);
+            const ampm = scheduledTimeOut.includes("PM") ? "PM" : "AM";
+
+            let adjustedMinutes = min + lateBy;
+            let adjustedHour = hour + Math.floor(adjustedMinutes / 60);
+            adjustedMinutes %= 60;
+            if (adjustedHour > 12) adjustedHour -= 12;
+
+            displayOutTime = `${adjustedHour}:${adjustedMinutes.toString().padStart(2, '0')} ${ampm}`;
+        }
+
+        // Determine if it's time yet
+        const now = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        const notYetTime = compareTimes(now, displayOutTime) < 0;
+
+        outStatus = notYetTime ? "Hang in there!" : "You're good to go!";
+        outOverlayColor = notYetTime ? "" : "green";
+
+        clockOutOverlay.classList.remove("default-green", "red", "green", "overlayed");
+        clockOutOverlay.classList.add("overlayed");
+        clockOutOverlay.classList.add(notYetTime ? "default-green" : "green");
+
+    } else if (data.clockOut) {
+        displayOutTime = data.clockOut.time;
+
+        if (compareTimes(displayOutTime, scheduledTimeOut) < 0) {
+            // Left early
+            outStatus = "Clocked out early";
+        } else {
+            // On time or overtime
+            outStatus = "Great job today!";
+        }
+
+        outOverlayColor = compareTimes(displayOutTime, scheduledTimeOut) >= 0 ? "green" : "red";
+
         clockOutPhoto.src = data.clockOut.selfie;
         clockOutPhoto.style.display = "block";
         clockOutPhoto.onclick = () => openImageModal(data.clockOut.selfie);
-        clockOutOverlay.classList.add("green");
-    } else {
+        
+        clockOutOverlay.classList.remove("default-green", "red", "green");
+        clockOutOverlay.classList.add("overlayed");
+
+    }
+
+    const [outTime, outMeridiem] = splitTime(displayOutTime);
+    clockOutTimeSpan.innerHTML = `${outTime}<span class="ampm">${outMeridiem}</span>`;
+    clockOutStatus.textContent = outStatus;
+
+    // Visuals
+    clockOutOverlay.classList.remove("red", "green");
+    if (data.clockOut && outOverlayColor) {
+        clockOutOverlay.classList.add(outOverlayColor);
+    }
+
+
+    if (!data.clockOut) {
         clockOutPhoto.src = "";
         clockOutPhoto.style.display = "none";
         clockOutPhoto.onclick = null;
-        clockOutOverlay.classList.remove("green");
+
+        clockOutOverlay.classList.remove("red", "green", "overlayed");
+        clockOutOverlay.classList.add("default-green");
     }
 }
 
@@ -387,13 +536,15 @@ function updateCardTimes(data) {
 function splitTime(fullTimeStr) {
     if (!fullTimeStr) return ["--:--", ""];
 
-    const match = fullTimeStr.match(/^(\d{1,2}):(\d{2}):\d{2} (\w{2})$/);
+    // Match both "9:30 AM" and "9:30:01 AM"
+    const match = fullTimeStr.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)$/i);
     if (!match) return ["--:--", ""];
 
-    let [, hour, minute, ampm] = match;
-
-    return [`${hour}:${minute}`, ampm];
+    const [, hour, minute, ampm] = match;
+    return [`${hour}:${minute}`, ampm.toUpperCase()];
 }
+
+
 
 const floatingPicker = flatpickr("#datePicker", {
     dateFormat: "Y-m-d",

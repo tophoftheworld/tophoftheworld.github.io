@@ -42,6 +42,7 @@ select,
     background-color: #eee;
     color: #333;
     border: none;
+    text-align: center;
 }
 
 button {
@@ -260,17 +261,20 @@ button:disabled {
     font-size: 1rem;
     line-height: 1.1;
     margin: 0, 1rem;
+    text-align: left;
 }
 
 
 .date-label strong {
     /* display: block; */
     font-size: 1.2rem;
+    text-align: left;
     /* for the weekday */
 }
 
 #fullDate {
-    font-size: 1.5rem;
+    font-size: 1.3rem;
+    text-align: left;
     /* smaller for April 10 */
 }
 
@@ -318,6 +322,11 @@ button:disabled {
     padding: 0.75rem 1rem;
     aspect-ratio: auto !important;
     height: auto !important;
+}
+
+.panel-overlay.default-green {
+    background: #eefcea !important;
+    color: #1d8a00 !important;
 }
 
 .panel-overlay.green {
@@ -497,19 +506,75 @@ button.submit-btn:hover {
     align-items: center;
 }
 
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    max-width: 540px;
+    margin-bottom: 1rem;
+}
+
+@media (max-width: 600px) {
+    .info-row {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        gap: 0.5rem;
+    }
+
+    .date-block strong,
+    .date-block span {
+        text-align: center;
+        display: block;
+        width: 100%;
+        line-height: 0.25;
+    }
+
+    .branch-label {
+        margin-top: 1.2rem;
+        text-align: center;
+    }
+}
+
+select {
+    background: transparent;
+    appearance: none;
+    text-align: center;
+    -webkit-appearance: none;
+    background-color: white;
+    color: black;
+    border: 1px solid #fff;
+    padding: 8px;
+    border: none;
+    border-radius: 6px;
+    font-weight: 400;
+}
+
+select option {
+    background-color: white;
+    color: black;
+}
+
+.date-block {
+    font-size: 1rem;
+    line-height: 1.1;
+    text-align: left;
+}
+
+.date-block strong {
+    font-size: 1rem;
+}
+
+.date-block span {
+    font-size: 1.2rem;
+}
+
 .branch-label {
-    /* background: #fff; */
-    color: #000000;
-    padding: 1rem;
-    border-radius: 20px;
     font-weight: 600;
     font-size: 1.25rem;
-    text-align: center;
-    width: 90%;
-    max-width: 320px;
-    /* box-shadow: 0 5px 8px rgba(0, 0, 0, 0.1); */
-    /* match card */
-    margin-top: 1rem;
+    text-align: right;
+    color: #000;
 }
 
 @media (max-width: 600px) {

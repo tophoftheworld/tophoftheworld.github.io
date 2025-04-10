@@ -33,13 +33,21 @@
             </div>
 
             <div id="summaryCardUI" class="summary-ui">
-                <!-- <div class="panel-card single" id="dateCard"> -->
-                    <p class="date-label" id="dateDisplay">
+                <div class="info-row">
+                    <div class="date-block" id="dateDisplay">
                         <strong id="dayOfWeek">Wednesday</strong><br>
                         <span id="fullDate">April 9, 2025</span>
                         <input type="text" id="datePicker" style="display: none;" />
-                    </p>
-                <!-- </div> -->
+                    </div>
+                    <select class="branch-label" id="branchSelect"
+                        style="text-align: center;">
+                        <option selected>Matcha Bar Podium</option>
+                        <option>Matcha Bar SM North</option>
+                        <option>Pop-up</option>
+                        <option>Workshop</option>
+                        <option>Other Events</option>
+                    </select>
+                </div>
 
 
             
@@ -64,26 +72,20 @@
                     </div>
 
                 </div>
-                <div class="branch-label" id="branchLabel">Matcha Bar Podium</div>
+                <!-- <div class="branch-label" id="branchLabel">Matcha Bar Podium</div> -->
 
             </div>
 
-            <br><br><br><br><br><br><br><br><br>
+            <br><br><br><br><div class="panel timestamp-panel" id="timestamp">Current Time: --:--</div>
             <button onclick="logoutUser()" style="background:#ccc; color:#000;">Switch User</button>
-            <div class="panel timestamp-panel" id="timestamp">Current Time: --:--</div>
+            <button onclick="clearData()" style="background:#e63946; color:white; ">🧹 Clear All Data
+                (Debug)</button>
 
             <!-- <div class="nav-date-row">
                 <button onclick="changeDay(-1)">⬅️</button>
                 <input id="summaryDate" class="date-button" readonly /> -->
                 <!-- <button id="nextBtn" onclick="changeDay(1)">➡️</button>
             </div> -->
-
-            <select id="branchSelect" style="margin-bottom: 1rem; display: none;">
-                <option value="">Select Branch</option>
-                <option>Matcha Bar Podium</option>
-                <option>Matcha Bar SM North EDSA</option>
-                <option>Events</option>
-            </select>
             <!-- <button id="startBtn" onclick="startPhotoSequence()">Clock In</button> -->
             <div id="summaryContainer"></div>
         </div>
@@ -99,8 +101,6 @@
         </div>
 
         <canvas id="snapshot" style="display:none;"></canvas>
-        <button onclick="clearData()" style="background:#e63946; color:white; margin-top: 2rem;">🧹 Clear All Data
-            (Debug)</button>
         <div class="footer">Matchanese Attendance System</div><br>
 
         <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
