@@ -8,6 +8,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <link rel="stylesheet" href="css/style.css">
+    <script type="module" src="js/firebase-setup.js"></script>
 </head>
 
 <body>
@@ -19,9 +20,8 @@
     <div class="container">
         <!-- <h1>📍 Staff Time Log</h1> -->
         <div id="loginForm">
-            <input type="tel" id="codeInput" inputmode="numeric" pattern="[0-9]*" placeholder="Enter Employee Code"
-                onkeydown="if(event.key==='Enter'){loginUser()}">
-            <button onclick="loginUser()">🔐 Log In</button>
+            <input type="tel" id="codeInput" inputmode="numeric" pattern="[0-9]*" placeholder="Enter Employee Code">
+            <button id="loginButton">Log In</button>
         </div>
 
         <div id="mainInterface" style="display:none">
@@ -52,7 +52,7 @@
 
             
                 <div class="summary-panels">
-                    <div class="panel-card" id="clockInCard" onclick="handleClock('in')">
+                    <div class="panel-card" id="clockInCard">
                         <img id="clockInPhoto" class="panel-bg" src="" />
                         <div class="panel-overlay" id="clockInOverlay">
                             <span class="panel-status" id="clockInStatusLabel"></span>
@@ -62,7 +62,7 @@
                     </div>
 
 
-                    <div class="panel-card" id="clockOutCard" onclick="handleClock('out')">
+                    <div class="panel-card" id="clockOutCard">
                         <img id="clockOutPhoto" class="panel-bg" src="" />
                         <div class="panel-overlay" id="clockOutOverlay">
                             <span class="panel-status" id="clockOutStatusLabel"></span>
@@ -104,7 +104,7 @@
         <div class="footer">Matchanese Attendance System</div><br>
 
         <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-        <script src="js/script.js"></script>
+        <script type="module" src="js/script.js"></script>
     </div>
 </body>
 

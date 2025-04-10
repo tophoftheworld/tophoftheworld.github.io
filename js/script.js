@@ -48,6 +48,12 @@ const scheduledTimeIn = "2:30 AM";
 const scheduledTimeOut = "1:45 AM";
 const lateGraceLimitMinutes = 30;
 
+// At top of your script.js
+import { db } from './firebase-setup.js';
+import { doc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+
+
+
 setInterval(() => {
     const now = new Date();
     timestamp.textContent = `Current Time: ${now.toLocaleTimeString()}`;
@@ -99,14 +105,20 @@ function formatDate(dateObj) {
     return `${year}-${month}-${day}`;
 }
 
-function loginUser() {
+async function loginUser() {
     const code = document.getElementById("codeInput").value.trim();
-    if (employees[code]) {
+    if (!code) return alert("Please enter a code");
+
+    // now this works fine
+    const docRef = doc(db, "staff", code);
+    const docSnap = await getDoc(docRef);
+
+    if (docSnap.exists()) {
         currentUser = code;
         localStorage.setItem("loggedInUser", code);
         showMainInterface(code);
         updateGreetingUI();
-        
+
         const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
         const data = JSON.parse(localStorage.getItem(key)) || {};
         updateCardTimes(data);
@@ -114,6 +126,8 @@ function loginUser() {
         alert("❌ Invalid code");
     }
 }
+
+document.getElementById("loginButton").addEventListener("click", loginUser);
 
 function logoutUser() {
     localStorage.removeItem("loggedInUser");
@@ -274,12 +288,13 @@ function clearData() {
     }
 }
 
-function updateGreetingUI() {
-    const name = employees[currentUser] || "Employee";
+async function updateGreetingUI() {
+    const docSnap = await getDoc(doc(db, "staff", currentUser));
+    const name = docSnap.exists() ? docSnap.data().name : "Employee";
+
     document.getElementById("userName").textContent = name;
 
     const now = viewDate;
-    const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
     const formatted = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
     const [weekday, ...rest] = formatted.split(', ');
     document.getElementById("dayOfWeek").textContent = weekday;
@@ -599,3 +614,20 @@ function closeImageModal() {
     image.src = "";
     modal.onclick = null;
 }
+
+document.getElementById("loginButton").addEventListener("click", loginUser);
+document.getElementById("codeInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") loginUser();
+});
+document.getElementById("clockInCard").addEventListener("click", () => handleClock("in"));
+document.getElementById("clockOutCard").addEventListener("click", () => handleClock("out"));
+
+// ✅ Expose functions to window for HTML inline events
+window.takePhoto = takePhoto;
+window.retakePhoto = retakePhoto;
+window.submitPhoto = submitPhoto;
+window.logoutUser = logoutUser;
+window.clearData = clearData;
+window.openImageModal = openImageModal;
+window.closeImageModal = closeImageModal;
+window.handleClock = handleClock;
