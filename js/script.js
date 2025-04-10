@@ -44,10 +44,23 @@ const nextBtn = document.getElementById("nextBtn");
 const captureCircle = document.getElementById("captureCircle");
 const cameraControls = document.getElementById("cameraControls");
 
+const scheduledTimeIn = "10:30 PM";
+const scheduledTimeOut = "6:30 PM";
+
 setInterval(() => {
     const now = new Date();
     timestamp.textContent = `Current Time: ${now.toLocaleTimeString()}`;
 }, 1000);
+
+setInterval(() => {
+    if (formatDate(viewDate) !== formatDate(today)) return;
+
+    const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
+    const data = JSON.parse(localStorage.getItem(key)) || {};
+    if (!data.clockIn) {
+        updateCardTimes(data); // recheck status
+    }
+}, 10000);
 
 if (currentUser && employees[currentUser]) {
     showMainInterface(currentUser);
@@ -272,33 +285,89 @@ function handleClock(type) {
     if (type === 'out' && data.clockIn && !data.clockOut) startPhotoSequence();
 }
 
+function compareTimes(t1, t2) {
+    const [time1, meridian1] = t1.split(' ');
+    const [hour1, min1] = time1.split(':').map(Number);
+    const minutes1 = (meridian1 === "PM" && hour1 !== 12 ? hour1 + 12 : hour1 % 12) * 60 + min1;
+
+    const [time2, meridian2] = t2.split(' ');
+    const [hour2, min2] = time2.split(':').map(Number);
+    const minutes2 = (meridian2 === "PM" && hour2 !== 12 ? hour2 + 12 : hour2 % 12) * 60 + min2;
+
+    return minutes1 - minutes2; // > 0 means late
+}
+
 function updateCardTimes(data) {
-    const clockInTime = data.clockIn?.time || "9:30 AM";
-    const clockOutTime = data.clockOut?.time || "6:30 PM";
-
-    const [inTime, inMeridiem] = splitTime(clockInTime);
-    const [outTime, outMeridiem] = splitTime(clockOutTime);
-
-    document.getElementById("clockInTime").innerHTML = `${inTime}<span class="ampm">${inMeridiem}</span>`;
-    document.getElementById("clockOutTime").innerHTML = `${outTime}<span class="ampm">${outMeridiem}</span>`;
-
+    const isToday = formatDate(viewDate) === formatDate(today);
     const clockInPhoto = document.getElementById("clockInPhoto");
     const clockInOverlay = document.getElementById("clockInOverlay");
+    const statusLabel = document.getElementById("clockInStatusLabel");
+    const label = clockInOverlay.querySelector(".panel-label");
+    const timeSpan = document.getElementById("clockInTime");
 
-    if (data.clockIn?.selfie) {
+    // Set default
+    let timeInToShow = scheduledTimeIn;
+    let statusText = "";
+    let overlayColor = "";
+
+    if (!data.clockIn) {
+        // No clock-in yet
+        const now = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        const late = compareTimes(now, scheduledTimeIn) > 0;
+
+        statusText = late ? "Running late" : "On time";
+        overlayColor = late ? "red" : "green";
+
+        label.textContent = "Time In";
+        clockInOverlay.classList.remove("overlayed");
+    } else {
+        // Already clocked in
+        const actualTime = data.clockIn.time;
+        const lateBy = compareTimes(actualTime, scheduledTimeIn);
+        timeInToShow = actualTime;
+        overlayColor = lateBy > 0 ? "red" : "green";
+        if (lateBy > 0) {
+            const hrs = Math.floor(lateBy / 60);
+            const mins = lateBy % 60;
+            statusText = hrs > 0
+                ? `${hrs} hr${hrs > 1 ? 's' : ''}${mins > 0 ? ` ${mins} min${mins > 1 ? 's' : ''}` : ''} late`
+                : `${mins} min${mins > 1 ? 's' : ''} late`;
+        } else {
+            statusText = "On time";
+        }
+
+
+        label.textContent = "Timed In";
         clockInPhoto.src = data.clockIn.selfie;
         clockInPhoto.style.display = "block";
         clockInPhoto.onclick = () => openImageModal(data.clockIn.selfie);
-        clockInOverlay.classList.add("green");
-    } else {
+        clockInOverlay.classList.add("overlayed");
+
+    }
+
+    // Update panel UI
+    const [inTime, inMeridiem] = splitTime(timeInToShow);
+    timeSpan.innerHTML = `${inTime}<span class="ampm">${inMeridiem}</span>`;
+    statusLabel.textContent = isToday ? statusText : "";
+
+    // Apply color classes
+    clockInOverlay.classList.remove("red", "green");
+    if (isToday) clockInOverlay.classList.add(overlayColor);
+
+    if (!data.clockIn) {
         clockInPhoto.src = "";
         clockInPhoto.style.display = "none";
         clockInPhoto.onclick = null;
-        clockInOverlay.classList.remove("green");
     }
+
+    // Clock Out (left untouched for now)
+    const clockOutTime = data.clockOut?.time || scheduledTimeOut;
+    const [outTime, outMeridiem] = splitTime(clockOutTime);
 
     const clockOutPhoto = document.getElementById("clockOutPhoto");
     const clockOutOverlay = document.getElementById("clockOutOverlay");
+
+    document.getElementById("clockOutTime").innerHTML = `${outTime}<span class="ampm">${outMeridiem}</span>`;
 
     if (data.clockOut?.selfie) {
         clockOutPhoto.src = data.clockOut.selfie;
@@ -311,8 +380,8 @@ function updateCardTimes(data) {
         clockOutPhoto.onclick = null;
         clockOutOverlay.classList.remove("green");
     }
-
 }
+
 
 
 function splitTime(fullTimeStr) {

@@ -321,8 +321,8 @@ button:disabled {
 }
 
 .panel-overlay.green {
-    background: rgba(43, 147, 72, 0.2);
-    /* subtle soft green */
+    background: linear-gradient(to bottom, #6fbb20, #228c01);
+    /* soft gradient */
     color: #fff;
     width: 100%;
     height: 100%;
@@ -335,23 +335,49 @@ button:disabled {
     pointer-events: none;
 }
 
+.panel-overlay.red {
+    background: linear-gradient(to bottom, #df5242, #bf2b1c);
+    color: #fff;
+}
+
+.panel-overlay.green.overlayed {
+    background: rgba(111, 187, 32, 0.35);
+    color: #fff;
+}
+
+.panel-overlay.red.overlayed {
+    background: rgba(223, 82, 66, 0.35);
+    color: #fff;
+}
+
 .panel-label {
-    font-size: 0.9rem;
-    font-weight: 600;
-    margin-bottom: 0.25rem;
+    font-size: 1.2rem;
+    font-weight: 400;
+    margin-bottom: -0.3rem;
 }
 
 .panel-time {
-    font-size: 2.4rem;
+    font-size: 2.75rem;
     font-weight: 700;
     display: flex;
     align-items: flex-end;
 }
 
 .panel-time .ampm {
-    font-size: 0.75rem;
+    font-size: 0.95rem;
     margin-left: 4px;
     font-weight: 500;
+}
+
+.panel-status {
+    position: absolute;
+    top: 1rem;
+    left: 1rem;
+    font-size: 1.1rem;
+    font-weight: 400;
+    background: transparent;
+    color: inherit;
+    z-index: 3;
 }
 
 .panel-bg {
@@ -477,7 +503,7 @@ button.submit-btn:hover {
     padding: 1rem;
     border-radius: 20px;
     font-weight: 600;
-    font-size: 1rem;
+    font-size: 1.25rem;
     text-align: center;
     width: 90%;
     max-width: 320px;
