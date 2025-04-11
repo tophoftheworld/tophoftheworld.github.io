@@ -59,10 +59,10 @@ setInterval(() => {
     timestamp.textContent = `Current Time: ${now.toLocaleTimeString()}`;
 }, 1000);
 
-setInterval(async () => {
-    if (formatDate(viewDate) !== formatDate(today)) return;
-    await updateSummaryUI();
-}, 10000);
+// setInterval(async () => {
+//     if (formatDate(viewDate) !== formatDate(today)) return;
+//     await updateSummaryUI();
+// }, 10000);
 
 if (currentUser && employees[currentUser]) {
     showMainInterface(currentUser);
@@ -138,7 +138,7 @@ async function updateSummaryUI() {
     const isToday = formatDate(viewDate) === formatDate(today);
     
     updateCardTimes({});
-    
+
     const dateKey = formatDate(viewDate);
     const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
     const docSnap = await getDoc(subDocRef);
@@ -466,7 +466,10 @@ function updateCardTimes(data) {
 
 
         label.textContent = "Timed In";
-        clockInPhoto.src = data.clockIn.selfie;
+        
+        if (clockInPhoto.src !== data.clockIn.selfie) {
+            clockInPhoto.src = data.clockIn.selfie;
+        }
         clockInPhoto.style.display = "block";
         clockInPhoto.onclick = () => openImageModal(data.clockIn.selfie);
         clockInOverlay.classList.add("overlayed");
@@ -538,7 +541,10 @@ function updateCardTimes(data) {
 
         outOverlayColor = compareTimes(displayOutTime, scheduledTimeOut) >= 0 ? "green" : "red";
 
-        clockOutPhoto.src = data.clockOut.selfie;
+        if (clockOutPhoto.src !== data.clockOut.selfie) {
+            clockOutPhoto.src = data.clockOut.selfie;
+        }
+
         clockOutPhoto.style.display = "block";
         clockOutPhoto.onclick = () => openImageModal(data.clockOut.selfie);
         
@@ -590,6 +596,8 @@ const floatingPicker = flatpickr("#datePicker", {
     disableMobile: true,
     onChange: function (selectedDates) {
         viewDate = selectedDates[0];
+
+        updateDateUI();    
         updateSummaryUI();
         updateGreetingUI();
     },
@@ -610,6 +618,19 @@ const floatingPicker = flatpickr("#datePicker", {
     }
 });
 
+function updateDateUI() {
+    const now = viewDate;
+    const formatted = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const [weekday, ...rest] = formatted.split(', ');
+    document.getElementById("dayOfWeek").textContent = weekday;
+    document.getElementById("fullDate").textContent = rest.join(', ');
+
+    const formattedStr = formatDate(viewDate);
+    datePicker.value = formattedStr;
+    if (datePicker._flatpickr) {
+        datePicker._flatpickr.jumpToDate(viewDate);
+    }
+}
 
 document.getElementById("dateDisplay").addEventListener("click", () => {
     floatingPicker.open();
@@ -637,6 +658,68 @@ function closeImageModal() {
     modal.onclick = null;
 }
 
+document.getElementById("toggleHistoryBtn").addEventListener("click", async () => {
+    const historyDiv = document.getElementById("historyLog");
+    const contentDiv = document.getElementById("historyContent");
+
+    if (historyDiv.style.display === "none") {
+        historyDiv.style.display = "block";
+        await loadHistoryLogs();
+    } else {
+        historyDiv.style.display = "none";
+    }
+});
+
+async function loadHistoryLogs() {
+    const contentDiv = document.getElementById("historyContent");
+    const allDates = new Set(getAttendanceDates());
+    const todayStr = formatDate(today);
+    allDates.add(todayStr); // Always include today
+
+    const dates = Array.from(allDates)
+        .sort((a, b) => new Date(b) - new Date(a))
+        .slice(0, 15);
+
+
+    let table = `
+        <table>
+        <colgroup>
+            <col style="width: 25%;">
+            <col style="width: 25%;">
+            <col style="width: 25%;">
+            <col style="width: 25%;">
+        </colgroup>
+        <thead>
+            <tr>
+            <th>Date</th>
+            <th>Clock In</th>
+            <th>Clock Out</th>
+            <th>Branch</th>
+            </tr>
+        </thead>
+        <tbody>
+        `;
+
+
+
+    for (const dateKey of dates) {
+        const docSnap = await getDoc(doc(db, "attendance", currentUser, "dates", dateKey));
+        const data = docSnap.exists() ? docSnap.data() : {};
+
+        table += `
+        <tr class="history-row">
+            <td>${new Date(dateKey).toLocaleDateString()}</td>
+            <td>${data.clockIn?.time || '--'}</td>
+            <td>${data.clockOut?.time || '--'}</td>
+            <td>${data.clockIn?.branch || '--'}</td>
+        </tr>`;
+    }
+
+    table += `</tbody></table>`;
+    contentDiv.innerHTML = table;
+}
+
+
 document.getElementById("loginButton").addEventListener("click", loginUser);
 document.getElementById("codeInput").addEventListener("keydown", (e) => {
     if (e.key === "Enter") loginUser();
@@ -653,3 +736,5 @@ window.clearData = clearData;
 window.openImageModal = openImageModal;
 window.closeImageModal = closeImageModal;
 window.handleClock = handleClock;
+
+z

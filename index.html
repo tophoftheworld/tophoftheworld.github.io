@@ -77,6 +77,13 @@
 
             </div>
 
+            <button id="toggleHistoryBtn" style="margin-top: 20px;">🕓 View Past 15 Logs</button>
+            
+            <div id="historyLog" style="display: none; margin-top: 20px;">
+                <h3>📅 Recent Attendance Logs</h3>
+                <div id="historyContent" class="history-table"></div>
+            </div>
+
             <br><br><br><br><div class="panel timestamp-panel" id="timestamp">Current Time: --:--</div>
             <button onclick="logoutUser()" style="background:#ccc; color:#000;">Switch User</button>
             <button onclick="clearData()" style="background:#e63946; color:white; ">🧹 Clear All Data

@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Mock Attendance Uploader</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 2rem;
+        }
+
+        table,
+        th,
+        td {
+            border: 1px solid #ddd;
+            border-collapse: collapse;
+            padding: 8px;
+        }
+
+        input[type="time"],
+        input[type="date"],
+        input[type="text"] {
+            width: 150px;
+        }
+
+        img {
+            max-height: 60px;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>Mock Attendance Entry (with Firebase Upload)</h2>
+    <form id="mockForm">
+        <label>Employee Code: <input type="text" id="code" required></label><br><br>
+        <label>Date: <input type="date" id="date" required></label><br><br>
+        <label>Clock In Time: <input type="time" id="clockInTime"></label><br><br>
+        <label>Clock In Photo: <input type="file" id="clockInPhoto" accept="image/*"></label><br><br>
+        <label>Clock Out Time: <input type="time" id="clockOutTime"></label><br><br>
+        <label>Clock Out Photo: <input type="file" id="clockOutPhoto" accept="image/*"></label><br><br>
+        <button type="submit">Add Entry</button>
+    </form>
+
+    <hr>
+    <h3>Entries</h3>
+    <table id="entryTable">
+        <thead>
+            <tr>
+                <th>Code</th>
+                <th>Date</th>
+                <th>Clock In</th>
+                <th>Clock In Photo</th>
+                <th>Clock Out</th>
+                <th>Clock Out Photo</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+    <br>
+    <button onclick="uploadToFirebase()">📤 Upload to Firebase</button>
+
+    <script type="module">
+        // Modular Firebase SDK
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
+        import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-storage.js";
+        import { getFirestore, doc, setDoc } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyA6ikBMsQACcUpn4Jff7PQFeWLN8wv18EE",
+            authDomain: "matchanese-attendance.firebaseapp.com",
+            projectId: "matchanese-attendance",
+            storageBucket: "matchanese-attendance.appspot.com",
+            messagingSenderId: "339591618451",
+            appId: "1:339591618451:web:23f9d95833ee5010bbd266",
+            measurementId: "G-YEK4GML6SJ"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const storage = getStorage(app);
+
+        const entries = [];
+
+        document.getElementById('mockForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const code = document.getElementById('code').value;
+            const date = document.getElementById('date').value;
+            const clockInTime = document.getElementById('clockInTime').value;
+            const clockOutTime = document.getElementById('clockOutTime').value;
+            const clockInPhoto = document.getElementById('clockInPhoto').files[0];
+            const clockOutPhoto = document.getElementById('clockOutPhoto').files[0];
+
+            const entry = {
+                code,
+                date,
+                clockIn: clockInTime ? { time: clockInTime, selfie: clockInPhoto } : null,
+                clockOut: clockOutTime ? { time: clockOutTime, selfie: clockOutPhoto } : null
+            };
+
+            entries.push(entry);
+
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${code}</td>
+                <td>${date}</td>
+                <td>${clockInTime || '--'}</td>
+                <td>${clockInPhoto ? `<img src="${URL.createObjectURL(clockInPhoto)}">` : '--'}</td>
+                <td>${clockOutTime || '--'}</td>
+                <td>${clockOutPhoto ? `<img src="${URL.createObjectURL(clockOutPhoto)}">` : '--'}</td>
+            `;
+
+            document.querySelector('#entryTable tbody').appendChild(row);
+
+            document.getElementById('mockForm').reset();
+        });
+
+        window.uploadToFirebase = async function () {
+                const rows = document.querySelectorAll('#entryTable tbody tr');
+
+                for (let i = 0; i < entries.length; i++) {
+                    const entry = entries[i];
+                    const row = rows[i];
+                    const docRef = doc(db, "attendance", entry.code, "dates", entry.date);
+                    const data = {};
+
+                    if (entry.clockIn) {
+                        const inPath = `attendance/${entry.code}/dates/${entry.date}/clockIn.jpg`;
+                        const inStorageRef = storageRef(storage, inPath);
+                        await uploadBytes(inStorageRef, entry.clockIn.selfie);
+                        const inUrl = await getDownloadURL(inStorageRef);
+                        data.clockIn = { time: entry.clockIn.time, selfie: inUrl };
+
+                        // 👇 update preview image with Firebase URL
+                        const inImg = row.children[3].querySelector('img');
+                        if (inImg) inImg.src = inUrl;
+                    }
+
+                    if (entry.clockOut) {
+                        const outPath = `attendance/${entry.code}/dates/${entry.date}/clockOut.jpg`;
+                        const outStorageRef = storageRef(storage, outPath);
+                        await uploadBytes(outStorageRef, entry.clockOut.selfie);
+                        const outUrl = await getDownloadURL(outStorageRef);
+                        data.clockOut = { time: entry.clockOut.time, selfie: outUrl };
+
+                        // 👇 update preview image with Firebase URL
+                        const outImg = row.children[5].querySelector('img');
+                        if (outImg) outImg.src = outUrl;
+                    }
+
+                    await setDoc(docRef, data, { merge: true });
+                    console.log(`✅ Uploaded ${entry.code} - ${entry.date}`);
+                }
+
+                alert("🎉 Upload complete!");
+            };
+
+    </script>
+
+</body>
+
+</html>
