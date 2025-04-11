@@ -51,7 +51,7 @@ const lateGraceLimitMinutes = 30;
 // At top of your script.js
 import { db } from './firebase-setup.js';
 import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
-
+import { getDocs, collection } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 
 
 setInterval(() => {
@@ -78,11 +78,8 @@ function getAttendanceDates() {
 }
 
 async function getAttendanceDatesFromFirestore() {
-    const snapshot = await getDoc(doc(db, "attendance", currentUser));
-    if (!snapshot.exists()) return [];
-
-    const subCollection = await getDocs(collection(db, "attendance", currentUser, "dates"));
-    return subCollection.docs.map(doc => doc.id);
+    const subCollectionSnap = await getDocs(collection(db, "attendance", currentUser, "dates"));
+    return subCollectionSnap.docs.map(doc => doc.id);
 }
 
 function highlightAttendanceDates(fp) {
