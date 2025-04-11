@@ -77,6 +77,14 @@ function getAttendanceDates() {
         .map(key => key.replace(prefix, ""));
 }
 
+async function getAttendanceDatesFromFirestore() {
+    const snapshot = await getDoc(doc(db, "attendance", currentUser));
+    if (!snapshot.exists()) return [];
+
+    const subCollection = await getDocs(collection(db, "attendance", currentUser, "dates"));
+    return subCollection.docs.map(doc => doc.id);
+}
+
 function highlightAttendanceDates(fp) {
     const dates = getAttendanceDates();
     const cells = fp.calendarContainer.querySelectorAll(".flatpickr-day");
@@ -672,7 +680,7 @@ document.getElementById("toggleHistoryBtn").addEventListener("click", async () =
 
 async function loadHistoryLogs() {
     const contentDiv = document.getElementById("historyContent");
-    const allDates = new Set(getAttendanceDates());
+    const allDates = new Set(await getAttendanceDatesFromFirestore());
     const todayStr = formatDate(today);
     allDates.add(todayStr); // Always include today
 
@@ -748,5 +756,3 @@ window.clearData = clearData;
 window.openImageModal = openImageModal;
 window.closeImageModal = closeImageModal;
 window.handleClock = handleClock;
-
-z
