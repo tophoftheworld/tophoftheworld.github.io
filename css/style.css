@@ -302,6 +302,10 @@ button:disabled {
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
 }
 
+.panel-card:hover {
+    transform: scale(1.02);
+}
+
 
 .panel-card img {
     position: absolute;
@@ -620,13 +624,13 @@ select option {
     overflow: hidden;
     font-family: 'Inter', sans-serif;
     font-size: 14px;
-    text-align: left;
+    text-align: center;
 }
 
 .history-table th,
 .history-table td {
     padding: 12px 16px;
-    text-align: left;
+    text-align: center;
     border-bottom: 1px solid #eee;
 }
 
@@ -641,4 +645,21 @@ select option {
 
 .history-table colgroup col {
     width: 25%;
+}
+
+.thumb {
+    width: 64px;
+    height: 64px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    margin-top: 4px;
+    cursor: pointer;
+    display: block;
+    text-align: center;
+}
+
+.thumb:hover {
+    transform: scale(1.05);
+    border-color: #888;
 }

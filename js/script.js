@@ -684,10 +684,10 @@ async function loadHistoryLogs() {
     let table = `
         <table>
         <colgroup>
-            <col style="width: 25%;">
-            <col style="width: 25%;">
-            <col style="width: 25%;">
-            <col style="width: 25%;">
+            <col style="width: 20%;">
+            <col style="width: 20%;">
+            <col style="width: 20%;">
+            <col style="width: 40%;">
         </colgroup>
         <thead>
             <tr>
@@ -702,17 +702,29 @@ async function loadHistoryLogs() {
 
 
 
+
     for (const dateKey of dates) {
         const docSnap = await getDoc(doc(db, "attendance", currentUser, "dates", dateKey));
         const data = docSnap.exists() ? docSnap.data() : {};
 
         table += `
-        <tr class="history-row">
+            <tr class="history-row">
             <td>${new Date(dateKey).toLocaleDateString()}</td>
-            <td>${data.clockIn?.time || '--'}</td>
-            <td>${data.clockOut?.time || '--'}</td>
+            <td style="vertical-align: top; text-align: center;">
+            ${data.clockIn?.selfie
+                            ? `<img src="${data.clockIn.selfie}" class="thumb" onclick="openImageModal('${data.clockIn.selfie}')" />`
+                            : ''}
+            <div style="margin-top: 4px; font-size: 12px;">${data.clockIn?.time || '--'}</div>
+            </td>
+           <td style="vertical-align: top; text-align: center;">
+            ${data.clockOut?.selfie
+            ? `<img src="${data.clockOut.selfie}" class="thumb" onclick="openImageModal('${data.clockOut.selfie}')" />`
+                : ''}
+            <div style="margin-top: 4px; font-size: 12px;">${data.clockOut?.time || '--'}</div>
+            </td>
             <td>${data.clockIn?.branch || '--'}</td>
-        </tr>`;
+            </tr>
+            `;
     }
 
     table += `</tbody></table>`;
