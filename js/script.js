@@ -44,9 +44,14 @@ const nextBtn = document.getElementById("nextBtn");
 const captureCircle = document.getElementById("captureCircle");
 const cameraControls = document.getElementById("cameraControls");
 
-const scheduledTimeIn = "2:30 AM";
-const scheduledTimeOut = "1:45 AM";
 const lateGraceLimitMinutes = 30;
+
+const SHIFT_SCHEDULES = {
+    Opening: { timeIn: "9:30 AM", timeOut: "6:30 PM" },
+    Midshift: { timeIn: "11:00 AM", timeOut: "8:00 PM" },
+    Closing: { timeIn: "1:00 PM", timeOut: "10:00 PM" },
+    Custom: { timeIn: null, timeOut: null }
+};
 
 // At top of your script.js
 import { db } from './firebase-setup.js';
@@ -67,6 +72,16 @@ setInterval(() => {
 if (currentUser && employees[currentUser]) {
     showMainInterface(currentUser);
     updateGreetingUI();
+}
+
+function getScheduledTimes(data = null) {
+    const shift =
+        data?.clockIn?.shift ||
+        document.getElementById("shiftSelect")?.value ||
+        localStorage.getItem("lastSelectedShift") ||
+        "Opening";
+
+    return SHIFT_SCHEDULES[shift] || SHIFT_SCHEDULES["Opening"];
 }
 
 function getAttendanceDates() {
@@ -116,6 +131,10 @@ async function loginUser() {
     if (docSnap.exists()) {
         currentUser = code;
         localStorage.setItem("loggedInUser", code);
+
+        const userData = docSnap.data();
+        localStorage.setItem("userName", userData.name);
+
         showMainInterface(code);
         updateGreetingUI();
 
@@ -129,8 +148,10 @@ document.getElementById("loginButton").addEventListener("click", loginUser);
 
 function logoutUser() {
     localStorage.removeItem("loggedInUser");
+    localStorage.removeItem("userName"); // ✅ Clear cached name
     location.reload();
 }
+
 
 async function showMainInterface(code) {
     loginForm.style.display = "none";
@@ -150,9 +171,9 @@ async function updateSummaryUI() {
 
     const data = docSnap.exists() ? docSnap.data() : {};
 
+    updateBranchAndShiftSelectors(data); // ⬅️ Ensure dropdown reflects current data
     updateCardTimes(data);
 
-    // ✅ Update visible text date
     const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
     const formattedDate = viewDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
     const [weekday, ...rest] = formattedDate.split(', ');
@@ -165,38 +186,10 @@ async function updateSummaryUI() {
         datePicker._flatpickr.jumpToDate(viewDate);
     }
 
-    // nextBtn.disabled = formatDate(viewDate) >= formatDate(today);
-
-    // summaryContainer.innerHTML = `
-    // <div class="summary-row">
-    //     <div class="summary-block">
-    //     <strong>Clock In:</strong>
-    //     <div>${data.clockIn?.time || '--'}</div>
-    //     <div>${data.clockIn?.branch || ''}</div>
-    //     </div>
-    //     <div class="summary-block">
-    //     <strong>Clock Out:</strong>
-    //     <div>${data.clockOut?.time || '--'}</div>
-    //     <div>${data.clockOut?.branch || ''}</div>
-    //     </div>
-    //   </div>`;
-
     const isActiveDay = ALLOW_PAST_CLOCKING || isToday;
     dutyStatus = !data.clockIn ? 'in' : (data.clockOut ? 'in' : 'out');
 
-    // startBtn.textContent = dutyStatus === 'in' ? "Clock In" : "Clock Out";
-    // startBtn.style.display = isActiveDay && (!data.clockIn || !data.clockOut) ? "block" : "none";
-
-    // const branchSelect = document.getElementById("branchSelect");
-    // branchSelect.style.display = isToday && !data.clockIn ? "block" : "none";
-    const branchSelect = document.getElementById("branchSelect");
-    const savedBranch = data.clockIn?.branch;
-    if (savedBranch && [...branchSelect.options].some(o => o.value === savedBranch)) {
-        branchSelect.value = savedBranch;
-    } else {
-        branchSelect.value = "Matcha Bar Podium";
-    }
-
+    updateBranchAndShiftSelectors(data);
 }
 
 
@@ -258,6 +251,11 @@ function submitPhoto() {
     saveAttendance();
 }
 
+document.getElementById("closeCameraBtn").addEventListener("click", () => {
+    videoContainer.style.display = "none";
+    if (stream) stream.getTracks().forEach(t => t.stop());
+});
+
 async function saveAttendance() {
     console.log("💾 Running saveAttendance...");
     const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
@@ -275,7 +273,9 @@ async function saveAttendance() {
 
     if (dutyStatus === 'in') {
         const branch = document.getElementById("branchSelect")?.value || "Matcha Bar Podium";
-        existing.clockIn = { time, selfie: selfieData, branch };
+        const shift = document.getElementById("shiftSelect")?.value || "Opening";
+        existing.clockIn = { time, selfie: selfieData, branch, shift };
+
 
         // ✅ Save to Firestore
         await setDoc(subDocRef, { clockIn: existing.clockIn }, { merge: true });
@@ -310,8 +310,24 @@ function clearData() {
 }
 
 async function updateGreetingUI() {
-    const docSnap = await getDoc(doc(db, "staff", currentUser));
-    const name = docSnap.exists() ? docSnap.data().name : "Employee";
+    let name = localStorage.getItem("userName");
+
+    // If no name is saved yet, fetch and save
+    if (!name && currentUser) {
+        // Fallback: re-fetch name if missing
+        try {
+            const docSnap = await getDoc(doc(db, "staff", currentUser));
+            if (docSnap.exists()) {
+                name = docSnap.data().name;
+                localStorage.setItem("userName", name); // Save it again
+            } else {
+                name = "Employee";
+            }
+        } catch (err) {
+            console.error("Failed to fetch name:", err);
+            name = "Employee";
+        }
+    }
 
     document.getElementById("userName").textContent = name;
 
@@ -320,7 +336,9 @@ async function updateGreetingUI() {
     const [weekday, ...rest] = formatted.split(', ');
     document.getElementById("dayOfWeek").textContent = weekday;
     document.getElementById("fullDate").textContent = rest.join(', ');
+    document.getElementById("greetingText").textContent = getTimeBasedGreeting();
 }
+
 
 document.getElementById("branchSelect").addEventListener("change", async () => {
     const dateKey = formatDate(viewDate);
@@ -347,7 +365,43 @@ async function handleClock(type) {
     const data = docSnap.exists() ? docSnap.data() : {};
 
     if (type === 'in' && !data.clockIn) startPhotoSequence();
-    if (type === 'out' && data.clockIn && !data.clockOut) startPhotoSequence();
+
+    if (type === 'out' && data.clockIn && !data.clockOut) {
+        const now = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        const { timeOut } = getScheduledTimes(data);
+        const lateBy = compareTimes(data.clockIn.time, getScheduledTimes(data).timeIn);
+
+        let displayOutTime = timeOut;
+
+        // Adjusted time if late within grace
+        if (lateBy > 0 && lateBy <= lateGraceLimitMinutes) {
+            const [h, m] = timeOut.split(/:|\s/);
+            let hour = parseInt(h);
+            let min = parseInt(m);
+            min += lateBy;
+            hour += Math.floor(min / 60);
+            min %= 60;
+            if (hour > 12) hour -= 12;
+            displayOutTime = `${hour}:${min.toString().padStart(2, '0')} ${timeOut.includes("PM") ? "PM" : "AM"}`;
+        }
+
+        if (compareTimes(now, displayOutTime) < 0) {
+            // Show modal instead of confirm()
+            const modal = document.getElementById("earlyOutModal");
+            modal.style.display = "flex";
+
+            document.getElementById("confirmEarlyOut").onclick = () => {
+                modal.style.display = "none";
+                startPhotoSequence(); // proceed
+            };
+            document.getElementById("cancelEarlyOut").onclick = () => {
+                modal.style.display = "none";
+            };
+            return;
+        }
+
+        startPhotoSequence();
+    }
 }
 
 function compareTimes(t1, t2) {
@@ -376,11 +430,14 @@ function updateCardTimes(data) {
     const clockOutTimeSpan = document.getElementById("clockOutTime");
     const clockOutStatus = document.getElementById("clockOutStatusLabel");
 
+    const { timeIn: scheduledTimeIn, timeOut: scheduledTimeOut } = getScheduledTimes();
+
     if (hasNoData && isToday) {
         const now = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        const { timeIn: scheduledTimeIn, timeOut: scheduledTimeOut } = getScheduledTimes(data);
         const late = compareTimes(now, scheduledTimeIn) > 0;
-        const [inTime, inMeridiem] = splitTime(scheduledTimeIn);
-        const [outTime, outMeridiem] = splitTime(scheduledTimeOut);
+        const [inTime, inMeridiem] = splitTime(scheduledTimeIn || "--:--");
+        const [outTime, outMeridiem] = splitTime(scheduledTimeOut || "--:--");
 
         // ✅ Clock In
         clockInPhoto.src = "";
@@ -509,7 +566,23 @@ function updateCardTimes(data) {
 
         if (lateBy > 0 && lateBy <= lateGraceLimitMinutes) {
             // Adjust timeout
-            const [hourStr, minStr] = scheduledTimeOut.split(/:|\s/);
+            
+            const { timeIn: scheduledTimeIn, timeOut: scheduledTimeOut } = getScheduledTimes(data);
+            
+            if (scheduledTimeOut) {
+                const [hourStr, minStr] = scheduledTimeOut.split(/:|\s/);
+                const hour = parseInt(hourStr);
+                const min = parseInt(minStr);
+                const ampm = scheduledTimeOut.includes("PM") ? "PM" : "AM";
+
+                let adjustedMinutes = min + lateBy;
+                let adjustedHour = hour + Math.floor(adjustedMinutes / 60);
+                adjustedMinutes %= 60;
+                if (adjustedHour > 12) adjustedHour -= 12;
+
+                displayOutTime = `${adjustedHour}:${adjustedMinutes.toString().padStart(2, '0')} ${ampm}`;
+            }
+
             const hour = parseInt(hourStr);
             const min = parseInt(minStr);
             const ampm = scheduledTimeOut.includes("PM") ? "PM" : "AM";
@@ -578,7 +651,6 @@ function updateCardTimes(data) {
         clockOutOverlay.classList.add("default-green");
     }
 }
-
 
 
 function splitTime(fullTimeStr) {
@@ -743,6 +815,55 @@ document.getElementById("codeInput").addEventListener("keydown", (e) => {
 });
 document.getElementById("clockInCard").addEventListener("click", () => handleClock("in"));
 document.getElementById("clockOutCard").addEventListener("click", () => handleClock("out"));
+
+
+function getTimeBasedGreeting() {
+    const hour = new Date().getHours();
+    if (hour < 12) return "Good Morning,";
+    if (hour < 18) return "Good Afternoon,";
+    return "Good Evening,";
+}
+
+function updateBranchAndShiftSelectors(data) {
+    const branchSelect = document.getElementById("branchSelect");
+    const savedBranch = data.clockIn?.branch;
+    if (savedBranch && [...branchSelect.options].some(o => o.value === savedBranch)) {
+        branchSelect.value = savedBranch;
+    } else {
+        branchSelect.value = "Matcha Bar Podium";
+    }
+
+    const shiftSelect = document.getElementById("shiftSelect");
+    const savedShift = data.clockIn?.shift;
+    if (savedShift && [...shiftSelect.options].some(o => o.value === savedShift)) {
+        // When shift changes
+        shiftSelect.value = savedShift || localStorage.getItem("lastSelectedShift") || "Opening";
+    } else {
+        shiftSelect.value = "Opening";
+    }
+}
+
+document.getElementById("shiftSelect").addEventListener("change", async () => {
+    const shift = document.getElementById("shiftSelect").value;
+    localStorage.setItem("lastSelectedShift", shift); // Save for persistence
+
+    // Immediately update visuals
+    const dateKey = formatDate(viewDate);
+    const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
+    const docSnap = await getDoc(subDocRef);
+    const data = docSnap.exists() ? docSnap.data() : {};
+    updateCardTimes(data); // ⬅️ Immediately reflects shift's new time
+
+    // Save if already clocked in
+    if (data.clockIn) {
+        data.clockIn.shift = shift;
+        await setDoc(subDocRef, { clockIn: data.clockIn }, { merge: true });
+    }
+});
+
+
+
+// document.getElementById("greeting").textContent = getTimeBasedGreeting();
 
 // ✅ Expose functions to window for HTML inline events
 window.takePhoto = takePhoto;

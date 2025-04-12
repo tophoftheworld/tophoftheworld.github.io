@@ -26,6 +26,31 @@ h1 {
     margin-bottom: 0.5rem;
 }
 
+select.branch-label {
+    /* width: 60%; */
+    font-weight: 600;
+    font-size: 1.25rem;
+    color: #000;
+    background-color: white;
+
+    /* Dropdown arrow styles */
+    background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L6 6L11 1' stroke='black' stroke-width='2'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 12px 8px;
+
+    border: none;
+    border-radius: 6px;
+    padding: 8px 36px 8px 8px;
+    /* right padding for arrow */
+    text-align: right;
+    text-align-last: right;
+    direction: ltr;
+    appearance: none;
+    -webkit-appearance: none;
+    margin-bottom: 0;
+}
+
 input,
 select,
 .panel {
@@ -527,17 +552,40 @@ button.submit-btn:hover {
         gap: 0.5rem;
     }
 
-    .date-block strong,
-    .date-block span {
-        text-align: center;
-        display: block;
-        width: 100%;
-        line-height: 0.25;
+    .date-block {
+        line-height: 1.1;
+        margin: 0;
+        padding: 0;
     }
 
+    .date-block strong {
+        display: block;
+        font-size: 1rem;
+        padding: 0;
+        line-height: 1.1;
+    }
+
+    .date-block span {
+        display: block;
+        font-size: 1.2rem;
+        margin-top: -1rem;
+        /* ✅ Pulls it up without overlap */
+        padding: 0;
+        line-height: 1.1;
+    }
+        
     .branch-label {
         margin-top: 1.2rem;
         text-align: center;
+    }
+
+    select.branch-label {
+        width: auto;
+        margin: 0 auto;
+        display: block;
+        text-align: center;
+        text-align-last: center;
+        background-position: center right 12px;
     }
 }
 
@@ -561,9 +609,14 @@ select option {
 }
 
 .date-block {
-    font-size: 1rem;
-    line-height: 1.1;
-    text-align: left;
+    white-space: nowrap;
+    /* 🔒 Prevent wrap */
+    overflow: hidden;
+    /* Optional: hide overflow */
+    text-overflow: ellipsis;
+    /* Optional: add ellipsis */
+    width: auto;
+    /* ✅ Let content size naturally */
 }
 
 .date-block strong {
@@ -575,10 +628,23 @@ select option {
 }
 
 .branch-label {
+    /* width: 60%; */
     font-weight: 600;
     font-size: 1.25rem;
-    text-align: right;
     color: #000;
+    background-color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 8px;
+    text-align: right;
+    /* Align text inside the select */
+    text-align-last: right;
+    /* Align selected value */
+    direction: ltr;
+    /* Prevent RTL issues */
+    appearance: none;
+    /* Clean look */
+    -webkit-appearance: none;
 }
 
 @media (max-width: 600px) {
@@ -662,4 +728,53 @@ select option {
 .thumb:hover {
     transform: scale(1.05);
     border-color: #888;
+}
+
+.shift-label {
+    font-weight: 400;
+    font-size: 1.25rem;
+    background-color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 36px 8px 8px;
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 12px 8px;
+    text-align: right;
+    text-align-last: right;
+    appearance: none;
+    -webkit-appearance: none;
+    margin-top: -1.2rem;
+
+    background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L6 6L11 1' stroke='black' stroke-width='2'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 12px 8px;
+    margin-bottom: 0;
+}
+
+@media (max-width: 600px) {
+    select.shift-label {
+        width: auto;
+        margin: 0 auto;
+        display: block;
+        text-align: center;
+        text-align-last: center;
+        background-position: center right 12px;
+        margin-top: -1.2rem;
+    }
+}
+
+.dropdown-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.5rem;
+    min-width: 160px;
+}
+
+@media (max-width: 600px) {
+    .dropdown-stack {
+        align-items: center;
+    }
 }

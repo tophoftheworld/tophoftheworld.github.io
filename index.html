@@ -30,7 +30,7 @@
             <div class="header-block">
                 <img src="https://matchanese.com/cdn/shop/files/matchanese-2025-logo_e4944ef8-b626-4206-80c5-cc4fd9ed79ab.png?v=1738086945&width=60"
                     class="logo" alt="Matchanese Logo" />
-                <h2 class="greeting">Good Morning,<br><span id="userName" class="username"></span></h2>
+                <h2 class="greeting"><span id="greetingText">Good Morning,</span><br><span id="userName" class="username"></span></h2>
             </div>
 
             <div id="summaryCardUI" class="summary-ui">
@@ -40,14 +40,21 @@
                         <span id="fullDate">April 9, 2025</span>
                         <input type="text" id="datePicker" style="display: none;" />
                     </div>
-                    <select class="branch-label" id="branchSelect"
-                        style="text-align: center;">
-                        <option selected>Matcha Bar Podium</option>
-                        <option>Matcha Bar SM North</option>
-                        <option>Pop-up</option>
-                        <option>Workshop</option>
-                        <option>Other Events</option>
-                    </select>
+                    <div class="dropdown-stack">
+                        <select class="branch-label" id="branchSelect">
+                            <option selected>Matcha Bar Podium</option>
+                            <option>Matcha Bar SM North</option>
+                            <option>Pop-up</option>
+                            <option>Workshop</option>
+                            <option>Other Events</option>
+                        </select>
+                        <select class="shift-label" id="shiftSelect">
+                            <option>Opening</option>
+                            <option>Midshift</option>
+                            <option>Closing</option>
+                            <option>Custom</option>
+                        </select>
+                    </div>
                 </div>
 
 
@@ -99,6 +106,16 @@
         </div>
 
         <div id="videoContainer">
+            <div id="closeCameraBtn" style="
+                position: absolute;
+                top: 1.25rem;
+                right: 1.5rem;
+                font-size: 2rem;
+                color: white;
+                z-index: 10001;
+                cursor: pointer;
+                font-weight: 100;
+                user-select: none;">×</div>
             <video id="video" autoplay playsinline></video>
             <img id="previewImg" style="display:none" />
             <button id="captureCircle" onclick="takePhoto()"></button>
@@ -110,6 +127,19 @@
 
         <canvas id="snapshot" style="display:none;"></canvas>
         <div class="footer">Matchanese Attendance System</div><br>
+
+        <div id="earlyOutModal" class="image-modal">
+            <div class="modal-content" style="padding: 1.5rem; max-width: 90%; text-align: center;">
+                <p style="font-size: 1.2rem; margin-bottom: 1.5rem;">
+                    ⏰ It's not yet time to clock out.<br>Are you sure you want to proceed?
+                </p>
+                <div style="display: flex; gap: 1rem; justify-content: center;">
+                    <button id="cancelEarlyOut" class="retake-btn">Cancel</button>
+                    <button id="confirmEarlyOut" class="submit-btn">Proceed</button>
+                </div>
+            </div>
+        </div>
+
 
         <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
         <script type="module" src="js/script.js"></script>
