@@ -130,11 +130,12 @@ async function loginUser() {
 
     // ✅ Offline fallback
     if (!navigator.onLine) {
-        if (savedUser === code && savedName) {
+        const cached = localStorage.getItem(`userCache_${code}`);
+        if (savedUser === code && savedName && cached) {
             currentUser = code;
             showMainInterface(code);
             updateGreetingUI();
-            updateSummaryUI(); // use local cache
+            updateSummaryUI();
             return;
         } else {
             return alert("⚠️ Offline login unavailable. Please connect to the internet at least once.");
@@ -151,6 +152,8 @@ async function loginUser() {
 
         const userData = docSnap.data();
         localStorage.setItem("userName", userData.name);
+
+        localStorage.setItem(`userCache_${code}`, JSON.stringify(userData)); // ✅ Store full user object
 
         showMainInterface(code);
         updateGreetingUI();
@@ -189,12 +192,12 @@ async function showMainInterface(code) {
 
     updateGreetingUI(); // always show greeting immediately
 
-    // 🌐 Then fetch fresh data in background
     if (!navigator.onLine) {
         console.warn("Offline mode - using local data only.");
-        updateSummaryUI(); // This already handles local fallback
+        updateSummaryUI(); // local fallback only
+    } else {
+        await updateSummaryUI(); // ❗only run Firestore fetch online
     }
-    await updateSummaryUI(); // this can now update with Firestore
 }
 
 async function updateSummaryUI() {
