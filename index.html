@@ -10,6 +10,19 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <link rel="stylesheet" href="css/style.css">
     <script type="module" src="js/firebase-setup.js"></script>
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').then(reg => {
+                    console.log('✅ Service Worker registered:', reg.scope);
+                }).catch(err => {
+                    console.error('❌ Service Worker registration failed:', err);
+                });
+            });
+        }
+    </script>
+
 </head>
 
 <body>
@@ -33,6 +46,9 @@
                 <h2 class="greeting"><span id="greetingText">Good Morning,</span><br><span id="userName" class="username"></span></h2>
             </div>
 
+            <div id="networkStatus" style="text-align: center;">Checking network...</div>
+            <br>
+            
             <div id="summaryCardUI" class="summary-ui">
                 <div class="info-row">
                     <div class="date-block" id="dateDisplay">

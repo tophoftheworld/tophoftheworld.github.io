@@ -263,10 +263,6 @@ async function saveAttendance() {
     const time = now.toLocaleTimeString();
     const existing = JSON.parse(localStorage.getItem(key)) || {};
 
-    // Prevent double clock in/out
-    // if (dutyStatus === 'in' && existing.clockIn) return;
-    // if (dutyStatus === 'out' && existing.clockOut) return;
-
     // const attendanceRef = doc(db, "attendance", currentUser);
     const dateKey = formatDate(viewDate);
     const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
@@ -276,20 +272,26 @@ async function saveAttendance() {
         const shift = document.getElementById("shiftSelect")?.value || "Opening";
         existing.clockIn = { time, selfie: selfieData, branch, shift };
 
-
-        // ✅ Save to Firestore
-        await setDoc(subDocRef, { clockIn: existing.clockIn }, { merge: true });
-        console.log("✅ Clock-in saved to Firestore");
-        
+        try {
+            await setDoc(subDocRef, { clockIn: existing.clockIn }, { merge: true });
+            existing.synced = true;
+        } catch (err) {
+            console.warn('🔌 Offline - will sync later');
+            existing.synced = false;
+        }
 
         dutyStatus = 'out';
     } else {
         existing.clockOut = { time, selfie: selfieData };
 
-        // ✅ Save to Firestore
-        await setDoc(subDocRef, { clockOut: existing.clockOut }, { merge: true });
-        console.log("✅ Clock-out saved to Firestore");
-
+        try {
+            await setDoc(subDocRef, { clockOut: existing.clockOut }, { merge: true });
+            existing.synced = true;
+        } catch (err) {
+            console.warn('🔌 Offline - will sync later');
+            existing.synced = false;
+        }
+        
         dutyStatus = 'in';
     }
 
@@ -861,7 +863,34 @@ document.getElementById("shiftSelect").addEventListener("change", async () => {
     }
 });
 
+window.addEventListener('online', syncPendingData);
 
+async function syncPendingData() {
+    const keys = Object.keys(localStorage).filter(k => k.startsWith("attendance_"));
+    for (const key of keys) {
+        const data = JSON.parse(localStorage.getItem(key));
+        if (data.synced) continue;
+
+        const [, user, date] = key.split('_');
+        const ref = doc(db, "attendance", user, "dates", date);
+        try {
+            await setDoc(ref, data, { merge: true });
+            data.synced = true;
+            localStorage.setItem(key, JSON.stringify(data));
+            console.log(`✅ Synced offline data for ${user} on ${date}`);
+        } catch (err) {
+            console.warn(`❌ Failed to sync ${key}`, err);
+        }
+    }
+}
+
+function updateNetworkStatus() {
+    const el = document.getElementById("networkStatus");
+    el.textContent = navigator.onLine ? "✅ Online" : "📴 Offline - saving locally";
+}
+window.addEventListener('online', updateNetworkStatus);
+window.addEventListener('offline', updateNetworkStatus);
+updateNetworkStatus();
 
 // document.getElementById("greeting").textContent = getTimeBasedGreeting();
 
