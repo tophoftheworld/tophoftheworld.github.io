@@ -179,19 +179,34 @@ async function updateSummaryUI() {
     const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
     
     let data = {};
+    const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
+    const localData = localStorage.getItem(key);
+
+    // 1. Load local first for instant UI
+    if (localData) {
+        data = JSON.parse(localData);
+        updateCardTimes(data); // ⬅️ Load UI instantly
+    }
+
+    // 2. Then try to fetch latest from Firestore
     try {
         const docSnap = await getDoc(subDocRef);
         if (docSnap.exists()) {
-            data = docSnap.data();
+            const firestoreData = docSnap.data();
+
+            // Optional: only update if different
+            const oldJson = JSON.stringify(data);
+            const newJson = JSON.stringify(firestoreData);
+            if (oldJson !== newJson) {
+                data = firestoreData;
+                updateCardTimes(data); // ⬅️ Replace if fresher
+                localStorage.setItem(key, newJson); // ⬅️ Update local
+            }
         }
     } catch (err) {
-        // 🔌 Fallback to local
-        const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
-        const localData = localStorage.getItem(key);
-        if (localData) {
-            data = JSON.parse(localData);
-        }
+        console.warn("❌ Firestore fetch failed, using local only", err);
     }
+
 
 
     updateBranchAndShiftSelectors(data); // ⬅️ Ensure dropdown reflects current data
