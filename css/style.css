@@ -5,7 +5,7 @@
 html,
 body {
     font-family: 'Inter', sans-serif;
-    background-color: #f1f1f1;
+    background-color: #f9f9f9;
     margin: 0;
     padding: 0;
     height: 100%;
@@ -884,4 +884,150 @@ select option {
     to {
         transform: rotate(360deg);
     }
+}
+
+.sync-status-dot {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    z-index: 25;
+    border: 2px solid white;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.sync-status-dot.synced {
+    background-color: #2b9348;
+    /* Green */
+}
+
+.sync-status-dot.syncing {
+    background-color: #ff9500;
+    /* Orange */
+    animation: pulse 1.5s infinite;
+}
+
+.sync-status-dot.offline {
+    background-color: #e63946;
+    /* Red */
+}
+
+@keyframes pulse {
+    0% {
+        opacity: 0.6;
+    }
+
+    50% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0.6;
+    }
+}
+
+/* 2. Toast Notifications */
+.toast-container {
+    position: fixed;
+    top: 1rem;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 9999;
+}
+
+.toast-message {
+    background-color: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 0.75rem 1rem;
+    border-radius: 99px;
+    max-width: 80%;
+    text-align: center;
+    margin: 0 auto;
+    font-size: 0.9rem;
+    font-weight: 500;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+    opacity: 0;
+    transform: translateY(-20px);
+    transition: opacity 0.3s, transform 0.3s;
+}
+
+.toast-message.show {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.toast-message.offline {
+    background-color: rgba(230, 57, 70, 0.9);
+}
+
+.toast-message.online {
+    background-color: rgba(43, 147, 72, 0.9);
+}
+
+.toast-message.syncing {
+    background-color: rgba(255, 149, 0, 0.9);
+}
+
+/* 3. Persistent Offline Indicator */
+.offline-indicator {
+    position: fixed;
+    bottom: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: rgba(230, 57, 70, 0.9);
+    color: white;
+    padding: 0.5rem 0.75rem;
+    border-radius: 99px;
+    font-size: 0.8rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+    z-index: 999;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s;
+}
+
+.offline-indicator.show {
+    opacity: 0.9;
+    pointer-events: auto;
+}
+
+.offline-indicator-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: white;
+    display: inline-block;
+    animation: blink 1.5s infinite;
+}
+
+@keyframes blink {
+    0% {
+        opacity: 0.4;
+    }
+
+    50% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0.4;
+    }
+}
+
+/* Optional: Hover effect for offline indicator */
+.offline-indicator:hover {
+    opacity: 1;
+}
+
+/* Hide the existing network status wrapper */
+#networkStatusWrapper {
+    display: none;
 }

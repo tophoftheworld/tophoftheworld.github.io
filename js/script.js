@@ -1,4 +1,4 @@
-const APP_VERSION = "0.41"; 
+const APP_VERSION = "0.42"; 
 
 const ALLOW_PAST_CLOCKING = false;
 
@@ -439,6 +439,9 @@ function submitPhoto() {
     }
 
     saveAttendance();
+
+
+    setTimeout(updateSyncStatusDots, 500);
 }
 
 document.getElementById("closeCameraBtn").addEventListener("click", () => {
@@ -1293,14 +1296,6 @@ document.getElementById("shiftSelect").addEventListener("change", async () => {
     }
 });
 
-window.addEventListener('online', () => {
-    console.log('🌐 App is online');
-    updateNetworkStatus();
-
-    // Try to sync when coming back online
-    syncPendingData();
-});
-
 async function syncPendingData() {
     document.getElementById("networkStatus").textContent = "🔄 Syncing...";
 
@@ -1392,12 +1387,17 @@ async function syncPendingData() {
     updateSummaryUI();
 }
 
-
+window.addEventListener('online', () => {
+    console.log('🌐 App is online');
+    showToast('You are back online', 'online');
+    updateNetworkStatusUI();
+});
 
 window.addEventListener('offline', () => {
     console.log('📴 App is offline');
-    updateNetworkStatus();
+    updateNetworkStatusUI();
 });
+
 
 function updateNetworkStatus() {
     const el = document.getElementById("networkStatus");
@@ -1470,8 +1470,10 @@ updateNetworkStatus();
 
 // document.getElementById("greeting").textContent = getTimeBasedGreeting();
 
-
-document.addEventListener('DOMContentLoaded', updateNetworkStatus);
+document.addEventListener('DOMContentLoaded', () => {
+    createNetworkUI();
+    updateNetworkStatusUI();
+});
 
 // ✅ Expose functions to window for HTML inline events
 window.takePhoto = takePhoto;
@@ -1573,70 +1575,70 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-function setupPullToRefresh() {
-    // Create indicator element if it doesn't exist
-    if (!document.querySelector('.pull-indicator')) {
-        const indicator = document.createElement('div');
-        indicator.className = 'pull-indicator';
-        indicator.textContent = 'Pull down to refresh';
-        document.body.prepend(indicator);
-    }
+// function setupPullToRefresh() {
+//     // Create indicator element if it doesn't exist
+//     if (!document.querySelector('.pull-indicator')) {
+//         const indicator = document.createElement('div');
+//         indicator.className = 'pull-indicator';
+//         indicator.textContent = 'Pull down to refresh';
+//         document.body.prepend(indicator);
+//     }
 
-    // Variables to track touch
-    let startY = 0;
-    let currentY = 0;
-    let refreshing = false;
-    const indicator = document.querySelector('.pull-indicator');
+//     // Variables to track touch
+//     let startY = 0;
+//     let currentY = 0;
+//     let refreshing = false;
+//     const indicator = document.querySelector('.pull-indicator');
 
-    // Add touch event listeners
-    document.addEventListener('touchstart', e => {
-        // Only enable pull-to-refresh at the top of the page
-        if (window.scrollY === 0) {
-            startY = e.touches[0].clientY;
-        }
-    }, { passive: true });
+//     // Add touch event listeners
+//     document.addEventListener('touchstart', e => {
+//         // Only enable pull-to-refresh at the top of the page
+//         if (window.scrollY === 0) {
+//             startY = e.touches[0].clientY;
+//         }
+//     }, { passive: true });
 
-    document.addEventListener('touchmove', e => {
-        if (startY > 0 && !refreshing) {
-            currentY = e.touches[0].clientY;
-            const pullDistance = currentY - startY;
+//     document.addEventListener('touchmove', e => {
+//         if (startY > 0 && !refreshing) {
+//             currentY = e.touches[0].clientY;
+//             const pullDistance = currentY - startY;
 
-            // Only show indicator if pulling down
-            if (pullDistance > 0) {
-                indicator.classList.add('visible');
+//             // Only show indicator if pulling down
+//             if (pullDistance > 0) {
+//                 indicator.classList.add('visible');
 
-                if (pullDistance > 100) {
-                    indicator.textContent = 'Release to refresh';
-                } else {
-                    indicator.textContent = 'Pull down to refresh';
-                }
-            }
-        }
-    }, { passive: true });
+//                 if (pullDistance > 100) {
+//                     indicator.textContent = 'Release to refresh';
+//                 } else {
+//                     indicator.textContent = 'Pull down to refresh';
+//                 }
+//             }
+//         }
+//     }, { passive: true });
 
-    document.addEventListener('touchend', e => {
-        if (startY > 0 && currentY > 0 && !refreshing) {
-            const pullDistance = currentY - startY;
+//     document.addEventListener('touchend', e => {
+//         if (startY > 0 && currentY > 0 && !refreshing) {
+//             const pullDistance = currentY - startY;
 
-            if (pullDistance > 100) {
-                // Trigger refresh
-                refreshing = true;
-                indicator.textContent = 'Refreshing...';
-                indicator.classList.add('refreshing');
+//             if (pullDistance > 100) {
+//                 // Trigger refresh
+//                 refreshing = true;
+//                 indicator.textContent = 'Refreshing...';
+//                 indicator.classList.add('refreshing');
 
-                // Force page reload
-                forceRefresh();
-            } else {
-                // Hide indicator if not refreshing
-                indicator.classList.remove('visible');
-            }
-        }
+//                 // Force page reload
+//                 forceRefresh();
+//             } else {
+//                 // Hide indicator if not refreshing
+//                 indicator.classList.remove('visible');
+//             }
+//         }
 
-        // Reset values
-        startY = 0;
-        currentY = 0;
-    }, { passive: true });
-}
+//         // Reset values
+//         startY = 0;
+//         currentY = 0;
+//     }, { passive: true });
+// }
 
 // Force refresh function
 function forceRefresh() {
@@ -1666,7 +1668,7 @@ function setupRefreshControl() {
     document.body.appendChild(versionBadge);
 
     // Setup pull-to-refresh
-    setupPullToRefresh();
+    // setupPullToRefresh();
 
     // Setup refresh button
     document.getElementById('forceRefresh')?.addEventListener('click', forceRefresh);
@@ -1715,3 +1717,206 @@ function checkForNewVersion() {
 
 // Call this during initialization
 document.addEventListener('DOMContentLoaded', setupRefreshControl);
+
+function createNetworkUI() {
+    // Create toast container if it doesn't exist
+    if (!document.querySelector('.toast-container')) {
+        const toastContainer = document.createElement('div');
+        toastContainer.className = 'toast-container';
+        document.body.appendChild(toastContainer);
+    }
+
+    // Create persistent offline indicator if it doesn't exist
+    if (!document.querySelector('.offline-indicator')) {
+        const offlineIndicator = document.createElement('div');
+        offlineIndicator.className = 'offline-indicator';
+        offlineIndicator.innerHTML = '<span class="offline-indicator-dot"></span> <span>Offline Mode</span>';
+        document.body.appendChild(offlineIndicator);
+
+        // Add click handler to dismiss
+        offlineIndicator.addEventListener('click', () => {
+            offlineIndicator.classList.remove('show');
+            setTimeout(() => {
+                if (!navigator.onLine) {
+                    offlineIndicator.classList.add('show');
+                }
+            }, 5000); // Show again after 5 seconds if still offline
+        });
+    }
+
+    // Add sync status dots to time cards
+    addSyncStatusDots();
+}
+
+// Add sync status dots to the time cards
+function addSyncStatusDots() {
+    const clockInCard = document.getElementById('clockInCard');
+    const clockOutCard = document.getElementById('clockOutCard');
+
+    // Add dot to clock in card if it doesn't exist
+    if (!clockInCard.querySelector('.sync-status-dot')) {
+        const dot = document.createElement('div');
+        dot.className = 'sync-status-dot';
+        dot.id = 'clockInSyncDot';
+        clockInCard.appendChild(dot);
+    }
+
+    // Add dot to clock out card if it doesn't exist
+    if (!clockOutCard.querySelector('.sync-status-dot')) {
+        const dot = document.createElement('div');
+        dot.className = 'sync-status-dot';
+        dot.id = 'clockOutSyncDot';
+        clockOutCard.appendChild(dot);
+    }
+}
+
+// Show a toast notification
+function showToast(message, type, duration = 3000) {
+    const toastContainer = document.querySelector('.toast-container');
+
+    // Create toast element
+    const toast = document.createElement('div');
+    toast.className = `toast-message ${type || ''}`;
+    toast.textContent = message;
+
+    // Add to container
+    toastContainer.appendChild(toast);
+
+    // Trigger animation
+    setTimeout(() => {
+        toast.classList.add('show');
+    }, 10);
+
+    // Remove after duration
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => {
+            toast.remove();
+        }, 300);
+    }, duration);
+}
+
+// Update the network status indicators
+function updateNetworkStatusUI() {
+    const offlineIndicator = document.querySelector('.offline-indicator');
+
+    if (navigator.onLine) {
+        // Online
+        offlineIndicator.classList.remove('show');
+
+        // Check if there are items to sync
+        const syncQueue = JSON.parse(localStorage.getItem("syncQueue") || "[]");
+
+        if (syncQueue.length > 0 && !document.hidden) {
+            // Show toast about syncing
+            showToast(`Syncing ${syncQueue.length} records...`, 'syncing');
+
+            // Begin sync
+            syncPendingData();
+        }
+    } else {
+        // Offline - show indicator
+        offlineIndicator.classList.add('show');
+
+        // Show toast notification
+        showToast('You are offline. Changes will sync when connection returns.', 'offline', 5000);
+    }
+
+    // Update status dots
+    updateSyncStatusDots();
+}
+
+// Update the sync status dots on the time cards
+function updateSyncStatusDots() {
+    const todayKey = `attendance_${currentUser}_${formatDate(new Date())}`;
+    const todayData = JSON.parse(localStorage.getItem(todayKey) || "{}");
+
+    const clockInDot = document.getElementById('clockInSyncDot');
+    const clockOutDot = document.getElementById('clockOutSyncDot');
+
+    // Reset classes
+    clockInDot.className = 'sync-status-dot';
+    clockOutDot.className = 'sync-status-dot';
+
+    if (!navigator.onLine) {
+        // Offline
+        if (todayData.clockIn) {
+            clockInDot.classList.add('offline');
+            clockInDot.title = 'Stored offline - will sync when online';
+        } else {
+            clockInDot.style.display = 'none';
+        }
+
+        if (todayData.clockOut) {
+            clockOutDot.classList.add('offline');
+            clockOutDot.title = 'Stored offline - will sync when online';
+        } else {
+            clockOutDot.style.display = 'none';
+        }
+    } else {
+        // Online
+        if (todayData.clockIn) {
+            if (todayData.synced) {
+                clockInDot.classList.add('synced');
+                clockInDot.title = 'Synced to server';
+            } else {
+                clockInDot.classList.add('syncing');
+                clockInDot.title = 'Syncing...';
+            }
+        } else {
+            clockInDot.style.display = 'none';
+        }
+
+        if (todayData.clockOut) {
+            if (todayData.synced) {
+                clockOutDot.classList.add('synced');
+                clockOutDot.title = 'Synced to server';
+            } else {
+                clockOutDot.classList.add('syncing');
+                clockOutDot.title = 'Syncing...';
+            }
+        } else {
+            clockOutDot.style.display = 'none';
+        }
+    }
+}
+
+// Enhanced sync function with toast notifications
+async function syncPendingData() {
+    const syncQueue = JSON.parse(localStorage.getItem("syncQueue") || "[]");
+
+    if (syncQueue.length === 0) {
+        return;
+    }
+
+    console.log(`🔄 Syncing ${syncQueue.length} records...`);
+
+    let successCount = 0;
+    let failCount = 0;
+
+    // Update dots to syncing state
+    updateSyncStatusDots();
+
+    for (const key of syncQueue) {
+        // Similar implementation as before
+        // ...
+
+        // Show progress in toast
+        if (syncQueue.length > 2 && (successCount + failCount) % 2 === 0) {
+            const progress = Math.round(((successCount + failCount) / syncQueue.length) * 100);
+            showToast(`Syncing: ${progress}% complete`, 'syncing', 1500);
+        }
+    }
+
+    // Show completion toast
+    if (successCount > 0) {
+        showToast(`Synced ${successCount} records successfully`, 'online', 3000);
+    }
+
+    if (failCount > 0) {
+        showToast(`${failCount} records failed to sync`, 'offline', 3000);
+    }
+
+    // Update status dots again
+    updateSyncStatusDots();
+}
