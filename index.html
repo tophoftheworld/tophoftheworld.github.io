@@ -37,6 +37,114 @@
             </div>
 
             <div id="networkStatus" style="text-align: center;">Checking network...</div>
+            <!-- Add this code to your HTML file just below your existing networkStatus div -->
+            <div id="networkStatusWrapper">
+                <div id="networkStatus" class="network-status">Checking network...</div>
+                <div id="syncProgress" class="sync-progress" style="display: none;">
+                    <div class="sync-bar"></div>
+                </div>
+            </div>
+            
+            <style>
+                /* Network Status Styling */
+                #networkStatusWrapper {
+                    position: relative;
+                    width: 100%;
+                    margin: 1rem 0;
+                    padding: 0.5rem;
+                    border-radius: 0.5rem;
+                }
+            
+                .network-status {
+                    padding: 0.5rem 1rem;
+                    font-weight: 600;
+                    border-radius: 99px;
+                    /* Pill shape */
+                    text-align: center;
+                    font-size: 0.9rem;
+                    background-color: #f1f1f1;
+                    transition: all 0.3s ease;
+                }
+            
+                /* Status colors */
+                .network-status.online {
+                    background-color: #e0f7e5;
+                    color: #2b9348;
+                    box-shadow: 0 2px 8px rgba(43, 147, 72, 0.15);
+                }
+            
+                .network-status.offline {
+                    background-color: #ffe7e7;
+                    color: #e63946;
+                    box-shadow: 0 2px 8px rgba(230, 57, 70, 0.15);
+                }
+            
+                .network-status.syncing {
+                    background-color: #fff2df;
+                    color: #ff9500;
+                    box-shadow: 0 2px 8px rgba(255, 149, 0, 0.15);
+                }
+            
+                /* Sync progress bar */
+                .sync-progress {
+                    width: 100%;
+                    height: 4px;
+                    background-color: #e5e5e5;
+                    border-radius: 4px;
+                    overflow: hidden;
+                    margin-top: 4px;
+                }
+            
+                .sync-bar {
+                    height: 100%;
+                    width: 0%;
+                    background-color: #ff9500;
+                    border-radius: 4px;
+                    transition: width 0.5s ease;
+                }
+            
+                /* Login button loading state */
+                #loginButton.loading {
+                    background-color: #bcccbc;
+                    position: relative;
+                    overflow: hidden;
+                }
+            
+                #loginButton.loading::after {
+                    content: "";
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    height: 100%;
+                    width: 30%;
+                    background-color: rgba(255, 255, 255, 0.3);
+                    animation: loading 1.5s infinite;
+                }
+            
+                @keyframes loading {
+                    0% {
+                        transform: translateX(-100%);
+                    }
+            
+                    100% {
+                        transform: translateX(400%);
+                    }
+                }
+            
+                /* Offline badge for photos */
+                .panel-card .offline-badge {
+                    position: absolute;
+                    top: 8px;
+                    right: 8px;
+                    background-color: rgba(230, 57, 70, 0.9);
+                    color: white;
+                    font-size: 0.7rem;
+                    padding: 2px 6px;
+                    border-radius: 99px;
+                    z-index: 20;
+                    font-weight: 600;
+                }
+            </style>
             <br>
 
             <div id="summaryCardUI" class="summary-ui">
@@ -132,7 +240,7 @@
         </div>
 
         <canvas id="snapshot" style="display:none;"></canvas>
-        <div class="footer">Matchanese Attendance System v0.38</div><br>
+        <div class="footer">Matchanese Attendance System v0.39</div><br>
 
         <div id="earlyOutModal" class="image-modal">
             <div class="modal-content" style="padding: 1.5rem; max-width: 90%; text-align: center;">

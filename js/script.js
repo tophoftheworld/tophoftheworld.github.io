@@ -125,6 +125,10 @@ async function loginUser() {
     const code = document.getElementById("codeInput").value.trim();
     if (!code) return alert("Please enter a code");
 
+    // Show loading indicator
+    document.getElementById("loginButton").disabled = true;
+    document.getElementById("loginButton").textContent = "Logging in...";
+
     // Check if we've previously cached this user's data
     const cachedUserData = localStorage.getItem(`userCache_${code}`);
 
@@ -145,6 +149,8 @@ async function loginUser() {
             updateSummaryUI();
             return;
         } else {
+            document.getElementById("loginButton").disabled = false;
+            document.getElementById("loginButton").textContent = "Log In";
             return alert("⚠️ Cannot login offline - You must login online at least once first");
         }
     }
@@ -164,17 +170,26 @@ async function loginUser() {
             // Cache user data for offline login
             localStorage.setItem(`userCache_${code}`, JSON.stringify(userData));
 
-            // Cache recent attendance data for offline viewing
-            await cacheMostRecentAttendance(code);
-
+            // Show interface immediately - don't wait for cache
             showMainInterface(code);
             updateGreetingUI();
             await updateSummaryUI();
+
+            // IMPORTANT: Run data caching in background after login
+            setTimeout(() => {
+                cacheMostRecentAttendance(code)
+                    .then(() => console.log("✅ Background caching completed"))
+                    .catch(err => console.warn("⚠️ Background caching error:", err));
+            }, 100);
         } else {
+            document.getElementById("loginButton").disabled = false;
+            document.getElementById("loginButton").textContent = "Log In";
             alert("❌ Invalid employee code");
         }
     } catch (error) {
         console.error("Login error:", error);
+        document.getElementById("loginButton").disabled = false;
+        document.getElementById("loginButton").textContent = "Log In";
 
         // Fall back to cached data if network request fails
         if (cachedUserData) {
@@ -194,19 +209,26 @@ async function loginUser() {
     }
 }
 
+// Optimized cacheMostRecentAttendance function
 async function cacheMostRecentAttendance(userCode) {
     try {
-        const last30Days = [];
+        // Only cache the most recent 7 days instead of 30
+        const last7Days = [];
         let date = new Date();
 
-        // Get last 30 days of dates
-        for (let i = 0; i < 30; i++) {
-            last30Days.push(formatDate(date));
+        // Get last 7 days of dates
+        for (let i = 0; i < 7; i++) {
+            last7Days.push(formatDate(date));
             date.setDate(date.getDate() - 1);
         }
 
+        // Update UI to show background sync is happening
+        const networkStatus = document.getElementById("networkStatus");
+        const originalText = networkStatus.textContent;
+        networkStatus.textContent = "🔄 Caching recent data...";
+
         // Fetch recent attendance data
-        for (const dateKey of last30Days) {
+        for (const dateKey of last7Days) {
             const subDocRef = doc(db, "attendance", userCode, "dates", dateKey);
             const docSnap = await getDoc(subDocRef);
 
@@ -216,11 +238,51 @@ async function cacheMostRecentAttendance(userCode) {
                 data.synced = true; // Mark as synced
                 localStorage.setItem(key, JSON.stringify(data));
             }
+
+            // Small delay to prevent overwhelming Firestore
+            await new Promise(resolve => setTimeout(resolve, 50));
         }
 
+        // Restore network status
+        networkStatus.textContent = originalText;
         console.log("✅ Cached recent attendance for offline use");
+
+        // Cache older data in chunks if needed
+        if (navigator.onLine) {
+            cacheOlderDataInBackground(userCode, 7, 30);
+        }
     } catch (error) {
         console.error("Failed to cache recent attendance:", error);
+    }
+}
+
+// New function to cache older data in small batches in the background
+async function cacheOlderDataInBackground(userCode, startDay, endDay) {
+    try {
+        for (let i = startDay; i < endDay; i++) {
+            // Check if we're still online before proceeding
+            if (!navigator.onLine) break;
+
+            const date = new Date();
+            date.setDate(date.getDate() - i);
+            const dateKey = formatDate(date);
+
+            const subDocRef = doc(db, "attendance", userCode, "dates", dateKey);
+            const docSnap = await getDoc(subDocRef);
+
+            if (docSnap.exists()) {
+                const key = `attendance_${userCode}_${dateKey}`;
+                const data = docSnap.data();
+                data.synced = true;
+                localStorage.setItem(key, JSON.stringify(data));
+            }
+
+            // Larger delay for background caching
+            await new Promise(resolve => setTimeout(resolve, 200));
+        }
+        console.log(`✅ Background caching complete (days ${startDay}-${endDay})`);
+    } catch (error) {
+        console.warn("Background caching stopped:", error);
     }
 }
 
@@ -669,6 +731,39 @@ function compareTimes(t1, t2) {
     return minutes1 - minutes2; // > 0 means late
 }
 
+function markOfflineData() {
+    // Check if we have any unsynced data
+    const syncQueue = JSON.parse(localStorage.getItem("syncQueue") || "[]");
+
+    if (syncQueue.length === 0) return;
+
+    // Get today's data
+    const todayKey = `attendance_${currentUser}_${formatDate(new Date())}`;
+    const todayData = JSON.parse(localStorage.getItem(todayKey) || "{}");
+
+    // If today's data isn't synced, add badges
+    if (!todayData.synced) {
+        const clockInCard = document.getElementById("clockInCard");
+        const clockOutCard = document.getElementById("clockOutCard");
+
+        // Add offline indicator to clock in card if needed
+        if (todayData.clockIn && !document.querySelector("#clockInCard .offline-badge")) {
+            const badge = document.createElement("div");
+            badge.className = "offline-badge";
+            badge.textContent = "Not synced";
+            clockInCard.appendChild(badge);
+        }
+
+        // Add offline indicator to clock out card if needed
+        if (todayData.clockOut && !document.querySelector("#clockOutCard .offline-badge")) {
+            const badge = document.createElement("div");
+            badge.className = "offline-badge";
+            badge.textContent = "Not synced";
+            clockOutCard.appendChild(badge);
+        }
+    }
+}
+
 function updateCardTimes(data) {
     const isToday = formatDate(viewDate) === formatDate(today);
     const hasNoData = !data.clockIn && !data.clockOut;
@@ -903,6 +998,8 @@ function updateCardTimes(data) {
         clockOutOverlay.classList.remove("red", "green", "overlayed");
         clockOutOverlay.classList.add("default-green");
     }
+
+    markOfflineData();
 }
 
 
@@ -1123,12 +1220,17 @@ window.addEventListener('online', () => {
 });
 
 async function syncPendingData() {
-    document.getElementById("networkStatus").textContent = "🔄 Syncing...";
+    const el = document.getElementById("networkStatus");
+    const syncProgress = document.getElementById("syncProgress");
+    const syncBar = document.querySelector(".sync-bar");
 
     const syncQueue = JSON.parse(localStorage.getItem("syncQueue") || "[]");
 
     if (syncQueue.length === 0) {
-        document.getElementById("networkStatus").textContent = "✅ Online";
+        el.textContent = "✅ Online";
+        el.classList.remove("syncing");
+        el.classList.add("online");
+        syncProgress.style.display = "none";
         return;
     }
 
@@ -1136,14 +1238,23 @@ async function syncPendingData() {
 
     let successCount = 0;
     let failCount = 0;
+    let totalItems = syncQueue.length;
 
-    for (const key of syncQueue) {
+    for (let i = 0; i < syncQueue.length; i++) {
+        const key = syncQueue[i];
         const data = JSON.parse(localStorage.getItem(key) || "{}");
-        if (data.synced) continue; // Skip already synced data
+        if (data.synced) {
+            // Update progress for already synced items
+            syncBar.style.width = `${Math.floor(((i + 1) / totalItems) * 100)}%`;
+            continue;
+        }
 
         // Extract user and date from key
         const [, user, date] = key.split('_');
-        if (!user || !date) continue;
+        if (!user || !date) {
+            syncBar.style.width = `${Math.floor(((i + 1) / totalItems) * 100)}%`;
+            continue;
+        }
 
         const ref = doc(db, "attendance", user, "dates", date);
 
@@ -1160,12 +1271,28 @@ async function syncPendingData() {
             localStorage.setItem(key, JSON.stringify(data));
 
             successCount++;
+
+            // Update progress
+            const progress = Math.floor(((i + 1) / totalItems) * 100);
+            syncBar.style.width = `${progress}%`;
+            el.textContent = `🔄 Syncing... ${progress}%`;
+
             console.log(`✅ Synced: ${key}`);
         } catch (err) {
             failCount++;
             console.warn(`❌ Failed to sync ${key}:`, err);
+
+            // Still update progress
+            const progress = Math.floor(((i + 1) / totalItems) * 100);
+            syncBar.style.width = `${progress}%`;
         }
+
+        // Small delay to prevent UI freeze and show progress animation
+        await new Promise(resolve => setTimeout(resolve, 100));
     }
+
+    // Complete the progress bar animation
+    syncBar.style.width = "100%";
 
     // Remove successful items from sync queue
     const updatedQueue = syncQueue.filter(key => {
@@ -1175,12 +1302,22 @@ async function syncPendingData() {
 
     localStorage.setItem("syncQueue", JSON.stringify(updatedQueue));
 
-    // Update status message
+    // Final delay to show completed progress bar before hiding
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Update status message based on results
     if (updatedQueue.length === 0) {
-        document.getElementById("networkStatus").textContent = "✅ Online - All data synced";
+        el.textContent = "✅ All data synced";
+        el.classList.remove("syncing");
+        el.classList.add("online");
+
+        // Hide progress bar with slight delay
+        setTimeout(() => {
+            syncProgress.style.display = "none";
+        }, 1000);
     } else {
-        document.getElementById("networkStatus").textContent =
-            `⚠️ Online - ${successCount} synced, ${failCount} pending`;
+        el.textContent = `⚠️ ${successCount} synced, ${failCount} pending`;
+        el.classList.add("syncing");
     }
 
     console.log(`🔄 Sync complete: ${successCount} successful, ${failCount} failed`);
@@ -1189,6 +1326,7 @@ async function syncPendingData() {
     updateSummaryUI();
 }
 
+
 window.addEventListener('offline', () => {
     console.log('📴 App is offline');
     updateNetworkStatus();
@@ -1196,46 +1334,64 @@ window.addEventListener('offline', () => {
 
 function updateNetworkStatus() {
     const el = document.getElementById("networkStatus");
+    const wrapper = document.getElementById("networkStatusWrapper");
+    const syncProgress = document.getElementById("syncProgress");
+    const syncBar = document.querySelector(".sync-bar");
+
+    // Clear all status classes
+    el.classList.remove("online", "offline", "syncing");
 
     if (navigator.onLine) {
         // Check if there are items to sync
         const syncQueue = JSON.parse(localStorage.getItem("syncQueue") || "[]");
 
         if (syncQueue.length > 0) {
-            el.textContent = `🔄 Online - ${syncQueue.length} items to sync`;
-            el.style.color = "#ff9500";
+            // Online with pending syncs
+            el.textContent = `🔄 Syncing ${syncQueue.length} items...`;
+            el.classList.add("syncing");
 
-            // Trigger sync
+            // Show and animate progress bar
+            syncProgress.style.display = "block";
+            syncBar.style.width = "0%";
+
+            // Animate to 70% immediately (visual feedback)
+            setTimeout(() => {
+                syncBar.style.width = "70%";
+            }, 10);
+
+            // Begin sync
             syncPendingData();
         } else {
+            // Fully online with no pending syncs
             el.textContent = "✅ Online";
-            el.style.color = "#2b9348";
+            el.classList.add("online");
+            syncProgress.style.display = "none";
         }
     } else {
-        el.textContent = "📴 Offline - saving locally";
-        el.style.color = "#e63946";
+        // Offline mode
+        el.textContent = "📴 Offline Mode";
+        el.classList.add("offline");
+        syncProgress.style.display = "none";
     }
 }
 
+
 function registerServiceWorker() {
     if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js')
-            .then(registration => {
-                console.log('✅ Service Worker registered:', registration.scope);
-                
-                // Listen for messages from service worker
-                navigator.serviceWorker.addEventListener('message', event => {
-                    if (event.data && event.data.type === 'SYNC_STARTED') {
-                        document.getElementById("networkStatus").textContent = 
-                            `🔄 Syncing ${event.data.dataCount} items...`;
-                    } else if (event.data && event.data.type === 'SYNC_COMPLETED') {
-                        updateNetworkStatus();
-                    }
-                });
-            })
-            .catch(err => {
-                console.error('❌ Service Worker registration failed:', err);
-            });
+        navigator.serviceWorker.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'SYNC_STARTED') {
+                const el = document.getElementById("networkStatus");
+                const syncProgress = document.getElementById("syncProgress");
+                const syncBar = document.querySelector(".sync-bar");
+
+                el.textContent = `🔄 Background sync started`;
+                el.classList.add("syncing");
+                syncProgress.style.display = "block";
+                syncBar.style.width = "10%";
+            } else if (event.data && event.data.type === 'SYNC_COMPLETED') {
+                updateNetworkStatus();
+            }
+        });
     }
 }
 
