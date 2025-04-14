@@ -886,13 +886,16 @@ select option {
     }
 }
 
+/* Toast Notifications */
 .toast-container {
     position: fixed;
-    top: 1rem;
+    top: 20px;
+    /* Move to the top with a little margin */
     left: 0;
     right: 0;
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    align-items: center;
     pointer-events: none;
     z-index: 9999;
 }
@@ -900,12 +903,19 @@ select option {
 .toast-message {
     background-color: rgba(0, 0, 0, 0.8);
     color: white;
-    padding: 0.75rem 1.25rem;
+    padding: 10px 20px;
+    /* Slightly increased padding */
     border-radius: 99px;
     max-width: 80%;
+    /* Prevent from being too wide */
+    width: auto;
+    /* Let content determine width */
+    min-width: 150px;
+    /* Minimum width */
     text-align: center;
-    margin: 0 auto;
-    font-size: 0.9rem;
+    margin-bottom: 10px;
+    font-size: 14px;
+    /* Slightly larger font */
     font-weight: 500;
     box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
     opacity: 0;
@@ -930,22 +940,7 @@ select option {
     background-color: rgba(255, 149, 0, 0.9);
 }
 
-/* Offline badge for time cards */
-.panel-card .offline-badge {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    background-color: rgba(230, 57, 70, 0.9);
-    color: white;
-    font-size: 0.7rem;
-    padding: 3px 8px;
-    border-radius: 99px;
-    z-index: 20;
-    font-weight: 600;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-}
-
-/* Small, subtle offline indicator at bottom */
+/* Mini Offline Indicator */
 .mini-offline-indicator {
     position: fixed;
     bottom: 10px;
@@ -991,5 +986,20 @@ select option {
 
     100% {
         opacity: 0.4;
+    }
+}
+
+@media (max-width: 480px) {
+    .toast-message {
+        max-width: 90%;
+        /* Wider on mobile */
+        font-size: 13px;
+        /* Slightly smaller text */
+        padding: 8px 16px;
+    }
+
+    .toast-container {
+        top: 10px;
+        /* Less margin on top for mobile */
     }
 }

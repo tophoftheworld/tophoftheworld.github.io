@@ -1,4 +1,4 @@
-const APP_VERSION = "0.45"; 
+const APP_VERSION = "0.47"; 
 
 const ALLOW_PAST_CLOCKING = false;
 
@@ -1406,20 +1406,35 @@ async function syncPendingData() {
     updateSyncStatusDots();
 }
 
-window.addEventListener('online', () => {
-    console.log('🌐 App is online');
-    showToast('You are back online', 'online');
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('Setting up network UI and version controls');
+    setupNetworkUI();
+    setupVersionControls();
     updateNetworkStatusUI();
+    checkForUpdates();
+
+    // Set up event listeners
+    window.addEventListener('online', () => {
+        console.log('Network is online');
+        showToast('You are back online', 'online');
+        updateNetworkStatusUI();
+    });
+
+    window.addEventListener('offline', () => {
+        console.log('Network is offline');
+        updateNetworkStatusUI();
+    });
 });
 
-window.addEventListener('offline', () => {
-    console.log('📴 App is offline');
-    updateNetworkStatusUI();
-});
+function updateNetworkStatusUI() {
+    // Make sure UI elements exist
+    setupNetworkUI();
 
-function updateNetworkStatus() {
     const offlineIndicator = document.querySelector('.mini-offline-indicator');
-    if (!offlineIndicator) return;
+    if (!offlineIndicator) {
+        console.error('Offline indicator not found');
+        return;
+    }
 
     if (navigator.onLine) {
         // We're online
@@ -1498,7 +1513,7 @@ function registerServiceWorker() {
                 syncProgress.style.display = "block";
                 syncBar.style.width = "10%";
             } else if (event.data && event.data.type === 'SYNC_COMPLETED') {
-                updateNetworkStatus();
+                updateNetworkStatusUI();
             }
         });
     }
@@ -1508,7 +1523,7 @@ function registerServiceWorker() {
 registerServiceWorker();
 
 // ✅ Run network status check after definition
-updateNetworkStatus();
+updateNetworkStatusUI();
 
 // document.getElementById("greeting").textContent = getTimeBasedGreeting();
 
@@ -1539,41 +1554,45 @@ function checkForUpdates() {
     }
 }
 
-// Show update notification to users
-function showUpdateNotification(oldVersion, newVersion) {
-    // Create update modal if it doesn't exist
-    if (!document.getElementById('updateModal')) {
-        const modal = document.createElement('div');
-        modal.id = 'updateModal';
-        modal.className = 'image-modal';
-        modal.innerHTML = `
-      <div class="modal-content" style="padding: 1.5rem; max-width: 90%; text-align: center;">
-        <h3 style="margin-top: 0;">App Update Available</h3>
-        <p style="font-size: 1.1rem; margin-bottom: 1rem;">
-          A new version of the attendance app is available.
-          <br><small style="color: #666;">v${oldVersion} → v${newVersion}</small>
-        </p>
-        <div style="display: flex; gap: 1rem; justify-content: center;">
-          <button id="updateLater" class="retake-btn">Later</button>
-          <button id="updateNow" class="submit-btn">Update Now</button>
-        </div>
-      </div>
-    `;
-        document.body.appendChild(modal);
+function setupVersionControls() {
+    // Add version badge to UI
+    const versionBadge = document.createElement('div');
+    versionBadge.className = 'version-badge';
+    versionBadge.textContent = `v${APP_VERSION}`;
+    document.body.appendChild(versionBadge);
 
-        // Add event listeners
-        document.getElementById('updateLater').addEventListener('click', () => {
-            modal.style.display = 'none';
-        });
-
-        document.getElementById('updateNow').addEventListener('click', () => {
-            // Force reload bypassing cache
-            window.location.reload(true);
-        });
+    // Setup refresh button if it exists
+    const refreshBtn = document.getElementById('forceRefresh');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', forceRefresh);
     }
 
-    // Show the modal
-    document.getElementById('updateModal').style.display = 'flex';
+    // Listen for service worker messages about updates
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.addEventListener('message', event => {
+            if (event.data && event.data.type === 'NEW_VERSION') {
+                document.getElementById('appUpdateStatus').style.display = 'block';
+                document.getElementById('updateMessage').textContent =
+                    `New version available: v${event.data.version}`;
+            }
+        });
+    }
+}
+
+// Show update notification to users
+function showUpdateNotification(oldVersion, newVersion) {
+    // First show a toast
+    showToast(`New version available: ${oldVersion} → ${newVersion}`, 'online', 5000);
+
+    // Then show the modal
+    const updateStatus = document.getElementById('appUpdateStatus');
+    if (updateStatus) {
+        updateStatus.style.display = 'block';
+        const updateMsg = document.getElementById('updateMessage');
+        if (updateMsg) {
+            updateMsg.textContent = `New version available: ${oldVersion} → ${newVersion}`;
+        }
+    }
 }
 
 // Function to add cache busting query param to all resources
@@ -1745,95 +1764,85 @@ function checkForNewVersion() {
 // Call this during initialization
 document.addEventListener('DOMContentLoaded', setupRefreshControl);
 
-function setupNetworkListeners() {
-    window.addEventListener('online', () => {
-        showToast('You are back online', 'online');
-        updateNetworkStatus();
-    });
-
-    window.addEventListener('offline', () => {
-        updateNetworkStatus();
-    });
-
-    // Check network status when page loads
-    document.addEventListener('DOMContentLoaded', () => {
-        setupNetworkUI();
-        updateNetworkStatus();
-    });
-}
-
 setupNetworkListeners();
 
-function createNetworkUI() {
-    // Create toast container if it doesn't exist
+function setupNetworkUI() {
+    // Create toast container with proper positioning
     if (!document.querySelector('.toast-container')) {
-        const toastContainer = document.createElement('div');
-        toastContainer.className = 'toast-container';
-        document.body.appendChild(toastContainer);
+        createToastContainer();
+        console.log('Toast container created with proper positioning');
     }
 
-    // Create persistent offline indicator if it doesn't exist
-    if (!document.querySelector('.offline-indicator')) {
-        const offlineIndicator = document.createElement('div');
-        offlineIndicator.className = 'offline-indicator';
-        offlineIndicator.innerHTML = '<span class="offline-indicator-dot"></span> <span>Offline Mode</span>';
-        document.body.appendChild(offlineIndicator);
-
-        // Add click handler to dismiss
-        offlineIndicator.addEventListener('click', () => {
-            offlineIndicator.classList.remove('show');
-            setTimeout(() => {
-                if (!navigator.onLine) {
-                    offlineIndicator.classList.add('show');
-                }
-            }, 5000); // Show again after 5 seconds if still offline
-        });
+    // Create mini offline indicator if needed
+    if (!document.querySelector('.mini-offline-indicator')) {
+        const indicator = document.createElement('div');
+        indicator.className = 'mini-offline-indicator';
+        indicator.innerHTML = '<div class="offline-dot"></div> <span>Offline</span>';
+        document.body.appendChild(indicator);
     }
-
-    // Add sync status dots to time cards
-    addSyncStatusDots();
 }
 
-// Add sync status dots to the time cards
-function addSyncStatusDots() {
-    const clockInCard = document.getElementById('clockInCard');
-    const clockOutCard = document.getElementById('clockOutCard');
 
-    // Add dot to clock in card if it doesn't exist
-    if (!clockInCard.querySelector('.sync-status-dot')) {
-        const dot = document.createElement('div');
-        dot.className = 'sync-status-dot';
-        dot.id = 'clockInSyncDot';
-        clockInCard.appendChild(dot);
+function createToastContainer() {
+    // Remove any existing container first to prevent duplicates
+    const existing = document.querySelector('.toast-container');
+    if (existing) {
+        existing.remove();
     }
 
-    // Add dot to clock out card if it doesn't exist
-    if (!clockOutCard.querySelector('.sync-status-dot')) {
-        const dot = document.createElement('div');
-        dot.className = 'sync-status-dot';
-        dot.id = 'clockOutSyncDot';
-        clockOutCard.appendChild(dot);
-    }
+    // Create new container
+    const container = document.createElement('div');
+    container.className = 'toast-container';
+
+    // Ensure it's positioned at the top
+    container.style.top = '20px';
+    container.style.bottom = 'auto';
+
+    // Add to document
+    document.body.appendChild(container);
+
+    return container;
 }
 
 function showToast(message, type = '', duration = 3000) {
+    // Create toast container if it doesn't exist yet
+    if (!document.querySelector('.toast-container')) {
+        setupNetworkUI();
+    }
+
     const container = document.querySelector('.toast-container');
-    if (!container) return;
+    if (!container) {
+        console.error('Toast container not found');
+        return;
+    }
 
     // Create toast element
     const toast = document.createElement('div');
-    toast.className = `toast-message ${type}`;
+    toast.className = `toast-message ${type || ''}`;
+
+    // For short messages, ensure reasonable width
+    if (message.length < 15) {
+        toast.style.minWidth = '200px';
+    }
+
+    // Set the message content
     toast.textContent = message;
 
     // Add to container
     container.appendChild(toast);
 
-    // Trigger animation
-    setTimeout(() => toast.classList.add('show'), 10);
+    // Trigger animation (slightly longer delay to ensure DOM update)
+    setTimeout(() => {
+        toast.classList.add('show');
+    }, 20);
 
     // Remove after duration
     setTimeout(() => {
         toast.classList.remove('show');
-        setTimeout(() => toast.remove(), 300);
+        setTimeout(() => {
+            toast.remove();
+        }, 300);
     }, duration);
+
+    return toast; // Return the toast element for potential future reference
 }
