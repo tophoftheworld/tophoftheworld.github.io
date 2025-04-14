@@ -1,4 +1,4 @@
-const APP_VERSION = "0.42"; 
+const APP_VERSION = "0.43"; 
 
 const ALLOW_PAST_CLOCKING = false;
 
@@ -1297,12 +1297,9 @@ document.getElementById("shiftSelect").addEventListener("change", async () => {
 });
 
 async function syncPendingData() {
-    document.getElementById("networkStatus").textContent = "🔄 Syncing...";
-
     const syncQueue = JSON.parse(localStorage.getItem("syncQueue") || "[]");
 
     if (syncQueue.length === 0) {
-        document.getElementById("networkStatus").textContent = "✅ Online";
         return;
     }
 
@@ -1310,6 +1307,8 @@ async function syncPendingData() {
 
     let successCount = 0;
     let failCount = 0;
+
+    updateSyncStatusDots();
 
     for (const key of syncQueue) {
         const localData = JSON.parse(localStorage.getItem(key) || "{}");
@@ -1359,10 +1358,29 @@ async function syncPendingData() {
 
             successCount++;
             console.log(`✅ Synced: ${key}`);
+
+            if (syncQueue.length > 2 && (successCount + failCount) % 2 === 0) {
+                const progress = Math.round(((successCount + failCount) / syncQueue.length) * 100);
+                showToast(`Syncing: ${progress}% complete`, 'syncing', 1500);
+            }
         } catch (err) {
             failCount++;
             console.warn(`❌ Failed to sync ${key}:`, err);
         }
+
+        if (syncQueue.length > 2 && (successCount + failCount) % 2 === 0) {
+            const progress = Math.round(((successCount + failCount) / syncQueue.length) * 100);
+            showToast(`Syncing: ${progress}% complete`, 'syncing', 1500);
+        }
+    }
+
+    // Show completion toast
+    if (successCount > 0) {
+        showToast(`Synced ${successCount} records successfully`, 'online', 3000);
+    }
+
+    if (failCount > 0) {
+        showToast(`${failCount} records failed to sync`, 'offline', 3000);
     }
 
     // Remove successful items from sync queue
@@ -1385,6 +1403,7 @@ async function syncPendingData() {
 
     // Refresh current view after sync
     updateSummaryUI();
+    updateSyncStatusDots();
 }
 
 window.addEventListener('online', () => {
@@ -1879,44 +1898,4 @@ function updateSyncStatusDots() {
             clockOutDot.style.display = 'none';
         }
     }
-}
-
-// Enhanced sync function with toast notifications
-async function syncPendingData() {
-    const syncQueue = JSON.parse(localStorage.getItem("syncQueue") || "[]");
-
-    if (syncQueue.length === 0) {
-        return;
-    }
-
-    console.log(`🔄 Syncing ${syncQueue.length} records...`);
-
-    let successCount = 0;
-    let failCount = 0;
-
-    // Update dots to syncing state
-    updateSyncStatusDots();
-
-    for (const key of syncQueue) {
-        // Similar implementation as before
-        // ...
-
-        // Show progress in toast
-        if (syncQueue.length > 2 && (successCount + failCount) % 2 === 0) {
-            const progress = Math.round(((successCount + failCount) / syncQueue.length) * 100);
-            showToast(`Syncing: ${progress}% complete`, 'syncing', 1500);
-        }
-    }
-
-    // Show completion toast
-    if (successCount > 0) {
-        showToast(`Synced ${successCount} records successfully`, 'online', 3000);
-    }
-
-    if (failCount > 0) {
-        showToast(`${failCount} records failed to sync`, 'offline', 3000);
-    }
-
-    // Update status dots again
-    updateSyncStatusDots();
 }
