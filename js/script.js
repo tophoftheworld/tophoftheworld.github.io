@@ -124,18 +124,23 @@ async function loginUser() {
     const code = document.getElementById("codeInput").value.trim();
     if (!code) return alert("Please enter a code");
 
+    const savedUser = localStorage.getItem("loggedInUser");
+    const savedName = localStorage.getItem("userName");
+
+    // ✅ Offline fallback
     if (!navigator.onLine) {
-        const localName = localStorage.getItem("userName");
-        if (localStorage.getItem("loggedInUser") === code && localName) {
+        if (savedUser === code && savedName) {
             currentUser = code;
             showMainInterface(code);
             updateGreetingUI();
-            await updateSummaryUI();
+            updateSummaryUI(); // use local cache
             return;
+        } else {
+            return alert("⚠️ Offline login unavailable. Please connect to the internet at least once.");
         }
-        return alert("⚠️ No internet. Cannot validate code for first-time login.");
     }
 
+    // ✅ Online normal login
     const docRef = doc(db, "staff", code);
     const docSnap = await getDoc(docRef);
 
@@ -153,6 +158,7 @@ async function loginUser() {
         alert("❌ Invalid code");
     }
 }
+
 
 document.getElementById("loginButton").addEventListener("click", loginUser);
 
@@ -205,7 +211,7 @@ async function updateSummaryUI() {
     // STEP 2: Fetch fresh data in the background
     try {
         if (!navigator.onLine) return; // ⛔ Skip Firestore fetch when offline
-        
+
         const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
         const docSnap = await getDoc(subDocRef);
         if (docSnap.exists()) {

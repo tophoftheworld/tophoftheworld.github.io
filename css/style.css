@@ -259,6 +259,14 @@ button:disabled {
     margin-bottom: 1.5rem;
 }
 
+#loginForm {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+}
+
 .logo {
     height: 50px;
     margin-bottom: 1rem;
