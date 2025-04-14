@@ -204,6 +204,8 @@ async function updateSummaryUI() {
 
     // STEP 2: Fetch fresh data in the background
     try {
+        if (!navigator.onLine) return; // ⛔ Skip Firestore fetch when offline
+        
         const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
         const docSnap = await getDoc(subDocRef);
         if (docSnap.exists()) {
@@ -340,9 +342,8 @@ async function saveAttendance() {
 
     // Optional: still store locally for UI speed
     localStorage.setItem(key, JSON.stringify(existing));
-    const updated = JSON.parse(localStorage.getItem(key));
-    updateSummaryUI();
-    updateCardTimes(updated);
+    updateCardTimes(existing); // Use what we just saved
+    updateDateUI(); // To refresh date visuals
 
     console.log("🎉 UI updated");
 }
