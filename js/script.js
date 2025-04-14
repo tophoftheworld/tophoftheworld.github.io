@@ -171,12 +171,12 @@ async function showMainInterface(code) {
     const dateKey = formatDate(viewDate);
     const localData = localStorage.getItem(`attendance_${code}_${dateKey}`);
 
-    // 💨 Show instant cached UI
     if (localData) {
-        updateBranchAndShiftSelectors(JSON.parse(localData));
-        updateCardTimes(JSON.parse(localData));
+        const data = JSON.parse(localData);
+        updateBranchAndShiftSelectors(data);
+        updateCardTimes(data);
     } else {
-        updateBranchAndShiftSelectors();
+        updateBranchAndShiftSelectors({}); 
         updateCardTimes({});
     }
 
@@ -869,7 +869,7 @@ function getTimeBasedGreeting() {
     return "Good Evening,";
 }
 
-function updateBranchAndShiftSelectors(data) {
+function updateBranchAndShiftSelectors(data = {}) {
     const branchSelect = document.getElementById("branchSelect");
     const savedBranch = data.clockIn?.branch;
     if (savedBranch && [...branchSelect.options].some(o => o.value === savedBranch)) {
@@ -927,13 +927,36 @@ async function syncPendingData() {
     }
 }
 
+window.addEventListener('online', updateNetworkStatus);
+window.addEventListener('offline', updateNetworkStatus);
+
 function updateNetworkStatus() {
     const el = document.getElementById("networkStatus");
     el.textContent = navigator.onLine ? "✅ Online" : "📴 Offline - saving locally";
 }
-window.addEventListener('online', updateNetworkStatus);
-window.addEventListener('offline', updateNetworkStatus);
+
+// ✅ Register service worker immediately
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js')
+        .then(reg => {
+            console.log('✅ Service Worker registered:', reg.scope);
+        })
+        .catch(err => {
+            console.error('❌ Service Worker registration failed:', err);
+        });
+}
+
+// ✅ Run network status check after definition
 updateNetworkStatus();
+
+if (currentUser && localStorage.getItem("userName")) {
+    console.time("UI Load");
+    showMainInterface(currentUser);
+    console.timeEnd("UI Load");
+
+    updateGreetingUI();
+}
+
 
 // document.getElementById("greeting").textContent = getTimeBasedGreeting();
 
