@@ -167,7 +167,23 @@ async function showMainInterface(code) {
     loginForm.style.display = "none";
     mainInterface.style.display = "block";
     viewDate = new Date();
-    await updateSummaryUI();
+
+    const dateKey = formatDate(viewDate);
+    const localData = localStorage.getItem(`attendance_${code}_${dateKey}`);
+
+    // 💨 Show instant cached UI
+    if (localData) {
+        updateBranchAndShiftSelectors(JSON.parse(localData));
+        updateCardTimes(JSON.parse(localData));
+    } else {
+        updateBranchAndShiftSelectors();
+        updateCardTimes({});
+    }
+
+    updateGreetingUI(); // always show greeting immediately
+
+    // 🌐 Then fetch fresh data in background
+    await updateSummaryUI(); // this can now update with Firestore
 }
 
 async function updateSummaryUI() {
