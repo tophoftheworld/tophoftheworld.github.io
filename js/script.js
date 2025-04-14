@@ -72,7 +72,7 @@ setInterval(() => {
 if (currentUser && localStorage.getItem("userName")) {
     showMainInterface(currentUser);
     updateGreetingUI();
-    updateSummaryUI();
+    // updateSummaryUI();
 }
 
 function getScheduledTimes(data = null) {
@@ -190,6 +190,10 @@ async function showMainInterface(code) {
     updateGreetingUI(); // always show greeting immediately
 
     // 🌐 Then fetch fresh data in background
+    if (!navigator.onLine) {
+        console.warn("Offline mode - using local data only.");
+        updateSummaryUI(); // This already handles local fallback
+    }
     await updateSummaryUI(); // this can now update with Firestore
 }
 
