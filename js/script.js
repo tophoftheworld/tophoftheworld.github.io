@@ -69,7 +69,7 @@ setInterval(() => {
 //     await updateSummaryUI();
 // }, 10000);
 
-if (currentUser && employees[currentUser]) {
+if (currentUser && localStorage.getItem("userName")) {
     showMainInterface(currentUser);
     updateGreetingUI();
 }
@@ -124,7 +124,18 @@ async function loginUser() {
     const code = document.getElementById("codeInput").value.trim();
     if (!code) return alert("Please enter a code");
 
-    // now this works fine
+    if (!navigator.onLine) {
+        const localName = localStorage.getItem("userName");
+        if (localStorage.getItem("loggedInUser") === code && localName) {
+            currentUser = code;
+            showMainInterface(code);
+            updateGreetingUI();
+            await updateSummaryUI();
+            return;
+        }
+        return alert("⚠️ No internet. Cannot validate code for first-time login.");
+    }
+
     const docRef = doc(db, "staff", code);
     const docSnap = await getDoc(docRef);
 
@@ -137,7 +148,6 @@ async function loginUser() {
 
         showMainInterface(code);
         updateGreetingUI();
-
         await updateSummaryUI();
     } else {
         alert("❌ Invalid code");
@@ -167,9 +177,22 @@ async function updateSummaryUI() {
 
     const dateKey = formatDate(viewDate);
     const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
-    const docSnap = await getDoc(subDocRef);
+    
+    let data = {};
+    try {
+        const docSnap = await getDoc(subDocRef);
+        if (docSnap.exists()) {
+            data = docSnap.data();
+        }
+    } catch (err) {
+        // 🔌 Fallback to local
+        const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
+        const localData = localStorage.getItem(key);
+        if (localData) {
+            data = JSON.parse(localData);
+        }
+    }
 
-    const data = docSnap.exists() ? docSnap.data() : {};
 
     updateBranchAndShiftSelectors(data); // ⬅️ Ensure dropdown reflects current data
     updateCardTimes(data);

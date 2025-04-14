@@ -21,6 +21,8 @@
                 }).catch(err => {
                     console.error('❌ Service Worker registration failed:', err);
                 });
+
+                updateNetworkStatus();
             });
         }
     </script>
