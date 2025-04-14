@@ -1,4 +1,4 @@
-const APP_VERSION = "0.43"; 
+const APP_VERSION = "0.44"; 
 
 const ALLOW_PAST_CLOCKING = false;
 
@@ -1406,58 +1406,70 @@ async function syncPendingData() {
     updateSyncStatusDots();
 }
 
-window.addEventListener('online', () => {
-    console.log('🌐 App is online');
-    showToast('You are back online', 'online');
-    updateNetworkStatusUI();
-});
-
-window.addEventListener('offline', () => {
-    console.log('📴 App is offline');
-    updateNetworkStatusUI();
-});
-
-
 function updateNetworkStatus() {
-    const el = document.getElementById("networkStatus");
-    const wrapper = document.getElementById("networkStatusWrapper");
-    const syncProgress = document.getElementById("syncProgress");
-    const syncBar = document.querySelector(".sync-bar");
-
-    // Clear all status classes
-    el.classList.remove("online", "offline", "syncing");
+    const offlineIndicator = document.querySelector('.mini-offline-indicator');
+    if (!offlineIndicator) return;
 
     if (navigator.onLine) {
-        // Check if there are items to sync
-        const syncQueue = JSON.parse(localStorage.getItem("syncQueue") || "[]");
+        // We're online
+        offlineIndicator.classList.remove('show');
 
+        // Check for pending syncs
+        const syncQueue = JSON.parse(localStorage.getItem('syncQueue') || '[]');
         if (syncQueue.length > 0) {
-            // Online with pending syncs
-            el.textContent = `🔄 Syncing ${syncQueue.length} items...`;
-            el.classList.add("syncing");
-
-            // Show and animate progress bar
-            syncProgress.style.display = "block";
-            syncBar.style.width = "0%";
-
-            // Animate to 70% immediately (visual feedback)
-            setTimeout(() => {
-                syncBar.style.width = "70%";
-            }, 10);
-
-            // Begin sync
-            syncPendingData();
-        } else {
-            // Fully online with no pending syncs
-            el.textContent = "✅ Online";
-            el.classList.add("online");
-            syncProgress.style.display = "none";
+            // Only show sync toast if we just came online
+            if (window._wasOffline) {
+                showToast(`Syncing ${syncQueue.length} items...`, 'syncing');
+                syncPendingData();
+            }
         }
+        window._wasOffline = false;
     } else {
-        // Offline mode
-        el.textContent = "📴 Offline Mode";
-        el.classList.add("offline");
-        syncProgress.style.display = "none";
+        // We're offline
+        offlineIndicator.classList.add('show');
+
+        // Show toast only on first detection of offline
+        if (!window._wasOffline) {
+            showToast('You are offline. Changes will be saved locally.', 'offline');
+        }
+        window._wasOffline = true;
+    }
+
+    // Update offline badges on cards
+    updateOfflineBadges();
+}
+
+function addOfflineBadge(cardId) {
+    const card = document.getElementById(cardId);
+    if (card && !card.querySelector('.offline-badge')) {
+        const badge = document.createElement('div');
+        badge.className = 'offline-badge';
+        badge.textContent = 'Not synced';
+        card.appendChild(badge);
+    }
+}
+
+function updateOfflineBadges() {
+    // First remove any existing badges
+    document.querySelectorAll('.offline-badge').forEach(badge => {
+        badge.remove();
+    });
+
+    // Only show badges if we're offline or have unsynced data
+    if (!navigator.onLine || localStorage.getItem('syncQueue')) {
+        const todayKey = `attendance_${currentUser}_${formatDate(new Date())}`;
+        const todayData = JSON.parse(localStorage.getItem(todayKey) || '{}');
+
+        // If there's unsynced data for today, add badges
+        if (!todayData.synced) {
+            if (todayData.clockIn) {
+                addOfflineBadge('clockInCard');
+            }
+
+            if (todayData.clockOut) {
+                addOfflineBadge('clockOutCard');
+            }
+        }
     }
 }
 
@@ -1489,10 +1501,6 @@ updateNetworkStatus();
 
 // document.getElementById("greeting").textContent = getTimeBasedGreeting();
 
-document.addEventListener('DOMContentLoaded', () => {
-    createNetworkUI();
-    updateNetworkStatusUI();
-});
 
 // ✅ Expose functions to window for HTML inline events
 window.takePhoto = takePhoto;
@@ -1582,17 +1590,6 @@ function appendVersionToURL(url) {
     return `${url}${separator}v=${APP_VERSION}`;
 }
 
-// Call when page loads
-document.addEventListener('DOMContentLoaded', () => {
-    // Check for updates
-    checkForUpdates();
-
-    // Add HTML to show version in footer
-    const footer = document.querySelector('.footer');
-    if (footer) {
-        footer.textContent = `Matchanese Attendance System v${APP_VERSION}`;
-    }
-});
 
 // function setupPullToRefresh() {
 //     // Create indicator element if it doesn't exist
@@ -1735,7 +1732,24 @@ function checkForNewVersion() {
 }
 
 // Call this during initialization
-document.addEventListener('DOMContentLoaded', setupRefreshControl);
+function setupNetworkListeners() {
+    window.addEventListener('online', () => {
+        showToast('You are back online', 'online');
+        updateNetworkStatus();
+    });
+
+    window.addEventListener('offline', () => {
+        updateNetworkStatus();
+    });
+
+    // Check network status when page loads
+    document.addEventListener('DOMContentLoaded', () => {
+        setupNetworkUI();
+        updateNetworkStatus();
+    });
+}
+
+setupNetworkListeners();
 
 function createNetworkUI() {
     // Create toast container if it doesn't exist
@@ -1789,113 +1803,24 @@ function addSyncStatusDots() {
     }
 }
 
-// Show a toast notification
-function showToast(message, type, duration = 3000) {
-    const toastContainer = document.querySelector('.toast-container');
+function showToast(message, type = '', duration = 3000) {
+    const container = document.querySelector('.toast-container');
+    if (!container) return;
 
     // Create toast element
     const toast = document.createElement('div');
-    toast.className = `toast-message ${type || ''}`;
+    toast.className = `toast-message ${type}`;
     toast.textContent = message;
 
     // Add to container
-    toastContainer.appendChild(toast);
+    container.appendChild(toast);
 
     // Trigger animation
-    setTimeout(() => {
-        toast.classList.add('show');
-    }, 10);
+    setTimeout(() => toast.classList.add('show'), 10);
 
     // Remove after duration
     setTimeout(() => {
         toast.classList.remove('show');
-        setTimeout(() => {
-            toast.remove();
-        }, 300);
+        setTimeout(() => toast.remove(), 300);
     }, duration);
-}
-
-// Update the network status indicators
-function updateNetworkStatusUI() {
-    const offlineIndicator = document.querySelector('.offline-indicator');
-
-    if (navigator.onLine) {
-        // Online
-        offlineIndicator.classList.remove('show');
-
-        // Check if there are items to sync
-        const syncQueue = JSON.parse(localStorage.getItem("syncQueue") || "[]");
-
-        if (syncQueue.length > 0 && !document.hidden) {
-            // Show toast about syncing
-            showToast(`Syncing ${syncQueue.length} records...`, 'syncing');
-
-            // Begin sync
-            syncPendingData();
-        }
-    } else {
-        // Offline - show indicator
-        offlineIndicator.classList.add('show');
-
-        // Show toast notification
-        showToast('You are offline. Changes will sync when connection returns.', 'offline', 5000);
-    }
-
-    // Update status dots
-    updateSyncStatusDots();
-}
-
-// Update the sync status dots on the time cards
-function updateSyncStatusDots() {
-    const todayKey = `attendance_${currentUser}_${formatDate(new Date())}`;
-    const todayData = JSON.parse(localStorage.getItem(todayKey) || "{}");
-
-    const clockInDot = document.getElementById('clockInSyncDot');
-    const clockOutDot = document.getElementById('clockOutSyncDot');
-
-    // Reset classes
-    clockInDot.className = 'sync-status-dot';
-    clockOutDot.className = 'sync-status-dot';
-
-    if (!navigator.onLine) {
-        // Offline
-        if (todayData.clockIn) {
-            clockInDot.classList.add('offline');
-            clockInDot.title = 'Stored offline - will sync when online';
-        } else {
-            clockInDot.style.display = 'none';
-        }
-
-        if (todayData.clockOut) {
-            clockOutDot.classList.add('offline');
-            clockOutDot.title = 'Stored offline - will sync when online';
-        } else {
-            clockOutDot.style.display = 'none';
-        }
-    } else {
-        // Online
-        if (todayData.clockIn) {
-            if (todayData.synced) {
-                clockInDot.classList.add('synced');
-                clockInDot.title = 'Synced to server';
-            } else {
-                clockInDot.classList.add('syncing');
-                clockInDot.title = 'Syncing...';
-            }
-        } else {
-            clockInDot.style.display = 'none';
-        }
-
-        if (todayData.clockOut) {
-            if (todayData.synced) {
-                clockOutDot.classList.add('synced');
-                clockOutDot.title = 'Synced to server';
-            } else {
-                clockOutDot.classList.add('syncing');
-                clockOutDot.title = 'Syncing...';
-            }
-        } else {
-            clockOutDot.style.display = 'none';
-        }
-    }
 }

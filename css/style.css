@@ -886,49 +886,6 @@ select option {
     }
 }
 
-.sync-status-dot {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    z-index: 25;
-    border: 2px solid white;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-}
-
-.sync-status-dot.synced {
-    background-color: #2b9348;
-    /* Green */
-}
-
-.sync-status-dot.syncing {
-    background-color: #ff9500;
-    /* Orange */
-    animation: pulse 1.5s infinite;
-}
-
-.sync-status-dot.offline {
-    background-color: #e63946;
-    /* Red */
-}
-
-@keyframes pulse {
-    0% {
-        opacity: 0.6;
-    }
-
-    50% {
-        opacity: 1;
-    }
-
-    100% {
-        opacity: 0.6;
-    }
-}
-
-/* 2. Toast Notifications */
 .toast-container {
     position: fixed;
     top: 1rem;
@@ -941,9 +898,9 @@ select option {
 }
 
 .toast-message {
-    background-color: rgba(0, 0, 0, 0.7);
+    background-color: rgba(0, 0, 0, 0.8);
     color: white;
-    padding: 0.75rem 1rem;
+    padding: 0.75rem 1.25rem;
     border-radius: 99px;
     max-width: 80%;
     text-align: center;
@@ -973,35 +930,50 @@ select option {
     background-color: rgba(255, 149, 0, 0.9);
 }
 
-/* 3. Persistent Offline Indicator */
-.offline-indicator {
+/* Offline badge for time cards */
+.panel-card .offline-badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background-color: rgba(230, 57, 70, 0.9);
+    color: white;
+    font-size: 0.7rem;
+    padding: 3px 8px;
+    border-radius: 99px;
+    z-index: 20;
+    font-weight: 600;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+/* Small, subtle offline indicator at bottom */
+.mini-offline-indicator {
     position: fixed;
-    bottom: 1rem;
+    bottom: 10px;
     left: 50%;
     transform: translateX(-50%);
     background-color: rgba(230, 57, 70, 0.9);
     color: white;
-    padding: 0.5rem 0.75rem;
+    padding: 4px 10px;
     border-radius: 99px;
-    font-size: 0.8rem;
+    font-size: 0.7rem;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+    gap: 6px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
     z-index: 999;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.3s;
 }
 
-.offline-indicator.show {
+.mini-offline-indicator.show {
     opacity: 0.9;
     pointer-events: auto;
 }
 
-.offline-indicator-dot {
-    width: 8px;
-    height: 8px;
+.offline-dot {
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
     background-color: white;
     display: inline-block;
@@ -1020,14 +992,4 @@ select option {
     100% {
         opacity: 0.4;
     }
-}
-
-/* Optional: Hover effect for offline indicator */
-.offline-indicator:hover {
-    opacity: 1;
-}
-
-/* Hide the existing network status wrapper */
-#networkStatusWrapper {
-    display: none;
 }
