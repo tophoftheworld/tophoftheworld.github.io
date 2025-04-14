@@ -72,6 +72,7 @@ setInterval(() => {
 if (currentUser && localStorage.getItem("userName")) {
     showMainInterface(currentUser);
     updateGreetingUI();
+    updateSummaryUI();
 }
 
 function getScheduledTimes(data = null) {
@@ -413,8 +414,17 @@ async function handleClock(type) {
     }
 
     const dateKey = formatDate(viewDate);
-    const docSnap = await getDoc(doc(db, "attendance", currentUser, "dates", dateKey));
-    const data = docSnap.exists() ? docSnap.data() : {};
+    
+    let data = {};
+    try {
+        const docSnap = await getDoc(doc(db, "attendance", currentUser, "dates", dateKey));
+        if (docSnap.exists()) data = docSnap.data();
+    } catch (err) {
+        console.warn("⚠️ Offline - using local fallback in handleClock()");
+        document.getElementById("networkStatus").textContent = "📴 Offline - using local data";
+        const local = localStorage.getItem(`attendance_${currentUser}_${dateKey}`);
+        if (local) data = JSON.parse(local);
+    }
 
     if (type === 'in' && !data.clockIn) startPhotoSequence();
 
@@ -955,15 +965,6 @@ if ('serviceWorker' in navigator) {
 
 // ✅ Run network status check after definition
 updateNetworkStatus();
-
-if (currentUser && localStorage.getItem("userName")) {
-    console.time("UI Load");
-    showMainInterface(currentUser);
-    console.timeEnd("UI Load");
-
-    updateGreetingUI();
-}
-
 
 // document.getElementById("greeting").textContent = getTimeBasedGreeting();
 
