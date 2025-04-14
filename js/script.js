@@ -131,8 +131,11 @@ async function loginUser() {
     // ✅ Offline fallback
     if (!navigator.onLine) {
         const cached = localStorage.getItem(`userCache_${code}`);
-        if (savedUser === code && savedName && cached) {
+        const userData = JSON.parse(cached || '{}');
+        if (cached) {
             currentUser = code;
+            localStorage.setItem("loggedInUser", code);
+            localStorage.setItem("userName", userData.name || "Employee");
             showMainInterface(code);
             updateGreetingUI();
             updateSummaryUI();

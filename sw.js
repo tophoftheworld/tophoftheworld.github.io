@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matchanese-v1';
+const CACHE_NAME = 'matchanese-v3';
 const urlsToCache = [
     '/',
     '/index.html',
