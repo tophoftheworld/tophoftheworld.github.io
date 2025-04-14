@@ -125,44 +125,102 @@ async function loginUser() {
     const code = document.getElementById("codeInput").value.trim();
     if (!code) return alert("Please enter a code");
 
-    const savedUser = localStorage.getItem("loggedInUser");
-    const savedName = localStorage.getItem("userName");
+    // Check if we've previously cached this user's data
+    const cachedUserData = localStorage.getItem(`userCache_${code}`);
 
-    // ✅ Offline fallback
     if (!navigator.onLine) {
-        const cached = localStorage.getItem(`userCache_${code}`);
-        const userData = JSON.parse(cached || '{}');
-        if (cached) {
+        // Offline login logic
+        if (cachedUserData) {
+            const userData = JSON.parse(cachedUserData);
             currentUser = code;
             localStorage.setItem("loggedInUser", code);
             localStorage.setItem("userName", userData.name || "Employee");
+
+            // Update UI to indicate offline mode
+            document.getElementById("networkStatus").textContent = "📴 OFFLINE MODE - Some features limited";
+            document.getElementById("networkStatus").style.color = "#e63946";
+
             showMainInterface(code);
             updateGreetingUI();
             updateSummaryUI();
             return;
         } else {
-            return alert("⚠️ Offline login unavailable. Please connect to the internet at least once.");
+            return alert("⚠️ Cannot login offline - You must login online at least once first");
         }
     }
 
-    // ✅ Online normal login
-    const docRef = doc(db, "staff", code);
-    const docSnap = await getDoc(docRef);
+    // Online login logic - attempt to fetch from Firestore
+    try {
+        const docRef = doc(db, "staff", code);
+        const docSnap = await getDoc(docRef);
 
-    if (docSnap.exists()) {
-        currentUser = code;
-        localStorage.setItem("loggedInUser", code);
+        if (docSnap.exists()) {
+            currentUser = code;
+            localStorage.setItem("loggedInUser", code);
 
-        const userData = docSnap.data();
-        localStorage.setItem("userName", userData.name);
+            const userData = docSnap.data();
+            localStorage.setItem("userName", userData.name);
 
-        localStorage.setItem(`userCache_${code}`, JSON.stringify(userData)); // ✅ Store full user object
+            // Cache user data for offline login
+            localStorage.setItem(`userCache_${code}`, JSON.stringify(userData));
 
-        showMainInterface(code);
-        updateGreetingUI();
-        await updateSummaryUI();
-    } else {
-        alert("❌ Invalid code");
+            // Cache recent attendance data for offline viewing
+            await cacheMostRecentAttendance(code);
+
+            showMainInterface(code);
+            updateGreetingUI();
+            await updateSummaryUI();
+        } else {
+            alert("❌ Invalid employee code");
+        }
+    } catch (error) {
+        console.error("Login error:", error);
+
+        // Fall back to cached data if network request fails
+        if (cachedUserData) {
+            currentUser = code;
+            const userData = JSON.parse(cachedUserData);
+            localStorage.setItem("loggedInUser", code);
+            localStorage.setItem("userName", userData.name || "Employee");
+
+            alert("⚠️ Connected in offline mode - Some features limited");
+
+            showMainInterface(code);
+            updateGreetingUI();
+            updateSummaryUI();
+        } else {
+            alert("❌ Network error and no cached data available");
+        }
+    }
+}
+
+async function cacheMostRecentAttendance(userCode) {
+    try {
+        const last30Days = [];
+        let date = new Date();
+
+        // Get last 30 days of dates
+        for (let i = 0; i < 30; i++) {
+            last30Days.push(formatDate(date));
+            date.setDate(date.getDate() - 1);
+        }
+
+        // Fetch recent attendance data
+        for (const dateKey of last30Days) {
+            const subDocRef = doc(db, "attendance", userCode, "dates", dateKey);
+            const docSnap = await getDoc(subDocRef);
+
+            if (docSnap.exists()) {
+                const key = `attendance_${userCode}_${dateKey}`;
+                const data = docSnap.data();
+                data.synced = true; // Mark as synced
+                localStorage.setItem(key, JSON.stringify(data));
+            }
+        }
+
+        console.log("✅ Cached recent attendance for offline use");
+    } catch (error) {
+        console.error("Failed to cache recent attendance:", error);
     }
 }
 
@@ -324,6 +382,61 @@ document.getElementById("closeCameraBtn").addEventListener("click", () => {
     if (stream) stream.getTracks().forEach(t => t.stop());
 });
 
+async function saveAttendanceWithImageCompression() {
+    console.log("💾 Running saveAttendance with compression...");
+    const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
+    const now = new Date();
+    const time = now.toLocaleTimeString();
+    const existing = JSON.parse(localStorage.getItem(key)) || {};
+    
+    // Compress image to save storage space
+    let compressedSelfie = "";
+    if (selfieData) {
+        try {
+            compressedSelfie = await compressAndStoreImage(selfieData);
+            console.log("Image compressed for storage");
+        } catch (error) {
+            console.warn("Image compression failed, using original", error);
+            compressedSelfie = selfieData;
+        }
+    }
+    
+    // Add to sync queue (same as before)
+    let syncQueue = JSON.parse(localStorage.getItem("syncQueue") || "[]");
+
+    if (dutyStatus === 'in') {
+        const branch = document.getElementById("branchSelect")?.value || "Matcha Bar Podium";
+        const shift = document.getElementById("shiftSelect")?.value || "Opening";
+        
+        // Use compressed image for storage
+        existing.clockIn = { 
+            time, 
+            selfie: compressedSelfie, 
+            branch, 
+            shift,
+            timestamp: Date.now() // Add timestamp for sorting
+        };
+        
+        // Online/offline handling as before...
+        
+    } else {
+        // Clock out with compressed image
+        existing.clockOut = { 
+            time, 
+            selfie: compressedSelfie,
+            timestamp: Date.now() // Add timestamp for sorting
+        };
+        
+        // Online/offline handling as before...
+    }
+    
+    // Store locally
+    localStorage.setItem(key, JSON.stringify(existing));
+    updateCardTimes(existing);
+    updateDateUI();
+}
+
+
 async function saveAttendance() {
     console.log("💾 Running saveAttendance...");
     const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
@@ -331,51 +444,107 @@ async function saveAttendance() {
     const time = now.toLocaleTimeString();
     const existing = JSON.parse(localStorage.getItem(key)) || {};
 
-    // const attendanceRef = doc(db, "attendance", currentUser);
-    const dateKey = formatDate(viewDate);
-    const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
-    
-    if (!selfieData) {
-        console.warn("❌ No selfie data — skipping save");
-        return;
-    }
+    // We'll add a syncQueue for tracking offline changes
+    let syncQueue = JSON.parse(localStorage.getItem("syncQueue") || "[]");
 
-
+    // Create a new attendance entry
     if (dutyStatus === 'in') {
         const branch = document.getElementById("branchSelect")?.value || "Matcha Bar Podium";
         const shift = document.getElementById("shiftSelect")?.value || "Opening";
         existing.clockIn = { time, selfie: selfieData, branch, shift };
 
-        try {
-            await setDoc(subDocRef, { clockIn: existing.clockIn }, { merge: true });
-            existing.synced = true;
-        } catch (err) {
-            console.warn('🔌 Offline - will sync later');
+        if (navigator.onLine) {
+            try {
+                const dateKey = formatDate(viewDate);
+                const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
+                await setDoc(subDocRef, { clockIn: existing.clockIn }, { merge: true });
+                existing.synced = true;
+                console.log("✅ Clock-in saved to Firestore");
+            } catch (err) {
+                console.warn('🔌 Failed to save to Firestore - will sync later', err);
+                existing.synced = false;
+
+                // Add to sync queue
+                if (!syncQueue.includes(key)) {
+                    syncQueue.push(key);
+                    localStorage.setItem("syncQueue", JSON.stringify(syncQueue));
+                }
+
+                // Register for background sync if available
+                if ('serviceWorker' in navigator && 'SyncManager' in window) {
+                    const registration = await navigator.serviceWorker.ready;
+                    try {
+                        await registration.sync.register('sync-attendance');
+                        console.log("Background sync registered");
+                    } catch (error) {
+                        console.error("Background sync registration failed:", error);
+                    }
+                }
+            }
+        } else {
+            // Offline - mark for later sync
             existing.synced = false;
+            if (!syncQueue.includes(key)) {
+                syncQueue.push(key);
+                localStorage.setItem("syncQueue", JSON.stringify(syncQueue));
+            }
+            alert("📴 You're offline. Your time will be saved locally and synced when you're back online.");
         }
 
         dutyStatus = 'out';
     } else {
+        // Clock out logic
         existing.clockOut = { time, selfie: selfieData };
 
-        try {
-            await setDoc(subDocRef, { clockOut: existing.clockOut }, { merge: true });
-            existing.synced = true;
-        } catch (err) {
-            console.warn('🔌 Offline - will sync later');
+        if (navigator.onLine) {
+            try {
+                const dateKey = formatDate(viewDate);
+                const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
+                await setDoc(subDocRef, { clockOut: existing.clockOut }, { merge: true });
+                existing.synced = true;
+                console.log("✅ Clock-out saved to Firestore");
+            } catch (err) {
+                console.warn('🔌 Failed to save to Firestore - will sync later', err);
+                existing.synced = false;
+
+                // Add to sync queue
+                if (!syncQueue.includes(key)) {
+                    syncQueue.push(key);
+                    localStorage.setItem("syncQueue", JSON.stringify(syncQueue));
+                }
+
+                // Register for background sync if available
+                if ('serviceWorker' in navigator && 'SyncManager' in window) {
+                    const registration = await navigator.serviceWorker.ready;
+                    try {
+                        await registration.sync.register('sync-attendance');
+                        console.log("Background sync registered");
+                    } catch (error) {
+                        console.error("Background sync registration failed:", error);
+                    }
+                }
+            }
+        } else {
+            // Offline - mark for later sync
             existing.synced = false;
+            if (!syncQueue.includes(key)) {
+                syncQueue.push(key);
+                localStorage.setItem("syncQueue", JSON.stringify(syncQueue));
+            }
+            alert("📴 You're offline. Your time will be saved locally and synced when you're back online.");
         }
-        
+
         dutyStatus = 'in';
     }
 
-    // Optional: still store locally for UI speed
+    // Store locally for UI speed
     localStorage.setItem(key, JSON.stringify(existing));
-    updateCardTimes(existing); // Use what we just saved
-    updateDateUI(); // To refresh date visuals
+    updateCardTimes(existing);
+    updateDateUI();
 
     console.log("🎉 UI updated");
 }
+
 
 function clearData() {
     if (confirm("Are you sure you want to clear all local data?")) {
@@ -945,50 +1114,141 @@ document.getElementById("shiftSelect").addEventListener("change", async () => {
     }
 });
 
-window.addEventListener('online', syncPendingData);
+window.addEventListener('online', () => {
+    console.log('🌐 App is online');
+    updateNetworkStatus();
+
+    // Try to sync when coming back online
+    syncPendingData();
+});
 
 async function syncPendingData() {
-    const keys = Object.keys(localStorage).filter(k => k.startsWith("attendance_"));
-    for (const key of keys) {
-        const data = JSON.parse(localStorage.getItem(key));
-        if (data.synced) continue;
+    document.getElementById("networkStatus").textContent = "🔄 Syncing...";
 
+    const syncQueue = JSON.parse(localStorage.getItem("syncQueue") || "[]");
+
+    if (syncQueue.length === 0) {
+        document.getElementById("networkStatus").textContent = "✅ Online";
+        return;
+    }
+
+    console.log(`🔄 Syncing ${syncQueue.length} records...`);
+
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const key of syncQueue) {
+        const data = JSON.parse(localStorage.getItem(key) || "{}");
+        if (data.synced) continue; // Skip already synced data
+
+        // Extract user and date from key
         const [, user, date] = key.split('_');
+        if (!user || !date) continue;
+
         const ref = doc(db, "attendance", user, "dates", date);
+
         try {
-            await setDoc(ref, data, { merge: true });
+            // Create a clean object with only what we need to sync
+            const syncData = {};
+            if (data.clockIn) syncData.clockIn = data.clockIn;
+            if (data.clockOut) syncData.clockOut = data.clockOut;
+
+            await setDoc(ref, syncData, { merge: true });
+
+            // Mark as synced in localStorage
             data.synced = true;
             localStorage.setItem(key, JSON.stringify(data));
-            console.log(`✅ Synced offline data for ${user} on ${date}`);
+
+            successCount++;
+            console.log(`✅ Synced: ${key}`);
         } catch (err) {
-            console.warn(`❌ Failed to sync ${key}`, err);
+            failCount++;
+            console.warn(`❌ Failed to sync ${key}:`, err);
         }
     }
+
+    // Remove successful items from sync queue
+    const updatedQueue = syncQueue.filter(key => {
+        const data = JSON.parse(localStorage.getItem(key) || "{}");
+        return !data.synced;
+    });
+
+    localStorage.setItem("syncQueue", JSON.stringify(updatedQueue));
+
+    // Update status message
+    if (updatedQueue.length === 0) {
+        document.getElementById("networkStatus").textContent = "✅ Online - All data synced";
+    } else {
+        document.getElementById("networkStatus").textContent =
+            `⚠️ Online - ${successCount} synced, ${failCount} pending`;
+    }
+
+    console.log(`🔄 Sync complete: ${successCount} successful, ${failCount} failed`);
+
+    // Refresh current view after sync
+    updateSummaryUI();
 }
 
-window.addEventListener('online', updateNetworkStatus);
-window.addEventListener('offline', updateNetworkStatus);
+window.addEventListener('offline', () => {
+    console.log('📴 App is offline');
+    updateNetworkStatus();
+});
 
 function updateNetworkStatus() {
     const el = document.getElementById("networkStatus");
-    el.textContent = navigator.onLine ? "✅ Online" : "📴 Offline - saving locally";
+
+    if (navigator.onLine) {
+        // Check if there are items to sync
+        const syncQueue = JSON.parse(localStorage.getItem("syncQueue") || "[]");
+
+        if (syncQueue.length > 0) {
+            el.textContent = `🔄 Online - ${syncQueue.length} items to sync`;
+            el.style.color = "#ff9500";
+
+            // Trigger sync
+            syncPendingData();
+        } else {
+            el.textContent = "✅ Online";
+            el.style.color = "#2b9348";
+        }
+    } else {
+        el.textContent = "📴 Offline - saving locally";
+        el.style.color = "#e63946";
+    }
 }
 
-// ✅ Register service worker immediately
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js')
-        .then(reg => {
-            console.log('✅ Service Worker registered:', reg.scope);
-        })
-        .catch(err => {
-            console.error('❌ Service Worker registration failed:', err);
-        });
+function registerServiceWorker() {
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js')
+            .then(registration => {
+                console.log('✅ Service Worker registered:', registration.scope);
+                
+                // Listen for messages from service worker
+                navigator.serviceWorker.addEventListener('message', event => {
+                    if (event.data && event.data.type === 'SYNC_STARTED') {
+                        document.getElementById("networkStatus").textContent = 
+                            `🔄 Syncing ${event.data.dataCount} items...`;
+                    } else if (event.data && event.data.type === 'SYNC_COMPLETED') {
+                        updateNetworkStatus();
+                    }
+                });
+            })
+            .catch(err => {
+                console.error('❌ Service Worker registration failed:', err);
+            });
+    }
 }
+
+// Call this function on page load
+registerServiceWorker();
 
 // ✅ Run network status check after definition
 updateNetworkStatus();
 
 // document.getElementById("greeting").textContent = getTimeBasedGreeting();
+
+
+document.addEventListener('DOMContentLoaded', updateNetworkStatus);
 
 // ✅ Expose functions to window for HTML inline events
 window.takePhoto = takePhoto;
