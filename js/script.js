@@ -310,6 +310,12 @@ function submitPhoto() {
     console.log("📸 Submitting photo...");
     videoContainer.style.display = "none";
     if (stream) stream.getTracks().forEach(t => t.stop());
+
+    if (!selfieData) {
+        alert("⚠️ No photo captured. Please retake.");
+        return;
+    }
+
     saveAttendance();
 }
 
@@ -328,6 +334,12 @@ async function saveAttendance() {
     // const attendanceRef = doc(db, "attendance", currentUser);
     const dateKey = formatDate(viewDate);
     const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
+    
+    if (!selfieData) {
+        console.warn("❌ No selfie data — skipping save");
+        return;
+    }
+
 
     if (dutyStatus === 'in') {
         const branch = document.getElementById("branchSelect")?.value || "Matcha Bar Podium";
