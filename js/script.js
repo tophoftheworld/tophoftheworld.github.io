@@ -1,4 +1,4 @@
-const APP_VERSION = "0.44"; 
+const APP_VERSION = "0.45"; 
 
 const ALLOW_PAST_CLOCKING = false;
 
@@ -1406,6 +1406,17 @@ async function syncPendingData() {
     updateSyncStatusDots();
 }
 
+window.addEventListener('online', () => {
+    console.log('🌐 App is online');
+    showToast('You are back online', 'online');
+    updateNetworkStatusUI();
+});
+
+window.addEventListener('offline', () => {
+    console.log('📴 App is offline');
+    updateNetworkStatusUI();
+});
+
 function updateNetworkStatus() {
     const offlineIndicator = document.querySelector('.mini-offline-indicator');
     if (!offlineIndicator) return;
@@ -1732,6 +1743,8 @@ function checkForNewVersion() {
 }
 
 // Call this during initialization
+document.addEventListener('DOMContentLoaded', setupRefreshControl);
+
 function setupNetworkListeners() {
     window.addEventListener('online', () => {
         showToast('You are back online', 'online');
