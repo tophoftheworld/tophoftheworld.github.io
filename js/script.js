@@ -427,7 +427,7 @@ function retakePhoto() {
 }
 
 function submitPhoto() {
-    console.log("📸 Submitting photo...");
+    console.log("📸 Submitting photo... dutyStatus=" + dutyStatus);
     videoContainer.style.display = "none";
     if (stream) stream.getTracks().forEach(t => t.stop());
 
@@ -504,40 +504,66 @@ async function saveAttendance() {
     const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
     const now = new Date();
     const time = now.toLocaleTimeString();
-    const existing = JSON.parse(localStorage.getItem(key)) || {};
 
-    // We'll add a syncQueue for tracking offline changes
+    // IMPORTANT: Create a fresh copy of the existing data to avoid reference issues
+    const existing = JSON.parse(localStorage.getItem(key) || "{}");
+
+    // Track offline changes
     let syncQueue = JSON.parse(localStorage.getItem("syncQueue") || "[]");
 
-    // Create a new attendance entry
-    if (dutyStatus === 'in') {
+    // Store current action (in or out) for clarity
+    const action = dutyStatus === 'in' ? 'clockIn' : 'clockOut';
+    console.log(`Current action: ${action}`);
+
+    if (action === 'clockIn') {
+        // CLOCK IN LOGIC
         const branch = document.getElementById("branchSelect")?.value || "Matcha Bar Podium";
         const shift = document.getElementById("shiftSelect")?.value || "Opening";
-        existing.clockIn = { time, selfie: selfieData, branch, shift };
+
+        // Create new clock in data - don't modify existing.clockOut if it exists
+        existing.clockIn = {
+            time,
+            selfie: selfieData,
+            branch,
+            shift,
+            timestamp: Date.now()
+        };
 
         if (navigator.onLine) {
             try {
                 const dateKey = formatDate(viewDate);
                 const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
-                await setDoc(subDocRef, { clockIn: existing.clockIn }, { merge: true });
+
+                // Get existing data first to avoid overwriting clockOut
+                const docSnap = await getDoc(subDocRef);
+                let dataToSave = { clockIn: existing.clockIn };
+
+                // If there's existing data with clockOut, preserve it
+                if (docSnap.exists()) {
+                    const existingData = docSnap.data();
+                    if (existingData.clockOut) {
+                        console.log("Preserving existing clockOut data");
+                        existing.clockOut = existingData.clockOut;
+                    }
+                }
+
+                await setDoc(subDocRef, dataToSave, { merge: true });
                 existing.synced = true;
                 console.log("✅ Clock-in saved to Firestore");
             } catch (err) {
                 console.warn('🔌 Failed to save to Firestore - will sync later', err);
                 existing.synced = false;
 
-                // Add to sync queue
                 if (!syncQueue.includes(key)) {
                     syncQueue.push(key);
                     localStorage.setItem("syncQueue", JSON.stringify(syncQueue));
                 }
 
-                // Register for background sync if available
+                // Register background sync
                 if ('serviceWorker' in navigator && 'SyncManager' in window) {
                     const registration = await navigator.serviceWorker.ready;
                     try {
                         await registration.sync.register('sync-attendance');
-                        console.log("Background sync registered");
                     } catch (error) {
                         console.error("Background sync registration failed:", error);
                     }
@@ -550,18 +576,55 @@ async function saveAttendance() {
                 syncQueue.push(key);
                 localStorage.setItem("syncQueue", JSON.stringify(syncQueue));
             }
-            alert("📴 You're offline. Your time will be saved locally and synced when you're back online.");
+            alert("📴 You're offline. Your time will be saved locally and synced when back online.");
         }
 
         dutyStatus = 'out';
     } else {
-        // Clock out logic
-        existing.clockOut = { time, selfie: selfieData };
+        // CLOCK OUT LOGIC - Make sure we don't overwrite clockIn
+
+        // First check if there's clockIn data in existing
+        if (!existing.clockIn) {
+            // If no clockIn exists locally, try to get it from Firestore
+            if (navigator.onLine) {
+                try {
+                    const dateKey = formatDate(viewDate);
+                    const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
+                    const docSnap = await getDoc(subDocRef);
+
+                    if (docSnap.exists() && docSnap.data().clockIn) {
+                        // Use the Firestore clockIn data
+                        existing.clockIn = docSnap.data().clockIn;
+                    } else {
+                        // No clockIn found - can't clockOut
+                        alert("⚠️ Unable to clock out: No clock-in record found");
+                        return;
+                    }
+                } catch (err) {
+                    console.error("Failed to check for clock-in data:", err);
+                    alert("⚠️ Unable to clock out: Could not verify clock-in status");
+                    return;
+                }
+            } else {
+                // Offline with no clockIn - can't proceed
+                alert("⚠️ Cannot clock out: No clock-in record found in offline storage");
+                return;
+            }
+        }
+
+        // Now we can safely add clockOut data
+        existing.clockOut = {
+            time,
+            selfie: selfieData,
+            timestamp: Date.now()
+        };
 
         if (navigator.onLine) {
             try {
                 const dateKey = formatDate(viewDate);
                 const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
+
+                // We're specifically only updating the clockOut field
                 await setDoc(subDocRef, { clockOut: existing.clockOut }, { merge: true });
                 existing.synced = true;
                 console.log("✅ Clock-out saved to Firestore");
@@ -569,18 +632,16 @@ async function saveAttendance() {
                 console.warn('🔌 Failed to save to Firestore - will sync later', err);
                 existing.synced = false;
 
-                // Add to sync queue
                 if (!syncQueue.includes(key)) {
                     syncQueue.push(key);
                     localStorage.setItem("syncQueue", JSON.stringify(syncQueue));
                 }
 
-                // Register for background sync if available
+                // Register background sync
                 if ('serviceWorker' in navigator && 'SyncManager' in window) {
                     const registration = await navigator.serviceWorker.ready;
                     try {
                         await registration.sync.register('sync-attendance');
-                        console.log("Background sync registered");
                     } catch (error) {
                         console.error("Background sync registration failed:", error);
                     }
@@ -593,19 +654,20 @@ async function saveAttendance() {
                 syncQueue.push(key);
                 localStorage.setItem("syncQueue", JSON.stringify(syncQueue));
             }
-            alert("📴 You're offline. Your time will be saved locally and synced when you're back online.");
+            alert("📴 You're offline. Your time will be saved locally and synced when back online.");
         }
 
         dutyStatus = 'in';
     }
 
-    // Store locally for UI speed
+    // Store locally
     localStorage.setItem(key, JSON.stringify(existing));
     updateCardTimes(existing);
     updateDateUI();
 
-    console.log("🎉 UI updated");
+    console.log("🎉 UI updated with time " + action);
 }
+
 
 
 function clearData() {
@@ -667,7 +729,7 @@ async function handleClock(type) {
     }
 
     const dateKey = formatDate(viewDate);
-    
+
     let data = {};
     try {
         const docSnap = await getDoc(doc(db, "attendance", currentUser, "dates", dateKey));
@@ -679,9 +741,17 @@ async function handleClock(type) {
         if (local) data = JSON.parse(local);
     }
 
-    if (type === 'in' && !data.clockIn) startPhotoSequence();
+    // TIME IN: Only proceed if no clockIn exists
+    if (type === 'in' && !data.clockIn) {
+        dutyStatus = 'in'; // Set correct status before photo sequence
+        startPhotoSequence();
+        return;
+    }
 
+    // TIME OUT: Only proceed if clockIn exists and clockOut doesn't
     if (type === 'out' && data.clockIn && !data.clockOut) {
+        dutyStatus = 'out'; // Set correct status before photo sequence
+
         const now = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
         const { timeOut } = getScheduledTimes(data);
         const lateBy = compareTimes(data.clockIn.time, getScheduledTimes(data).timeIn);
@@ -716,6 +786,16 @@ async function handleClock(type) {
         }
 
         startPhotoSequence();
+        return;
+    }
+
+    // If we get here, the action doesn't make sense (already clocked in/out)
+    if (type === 'in' && data.clockIn) {
+        alert("You're already clocked in for today.");
+    } else if (type === 'out' && !data.clockIn) {
+        alert("You need to clock in before you can clock out.");
+    } else if (type === 'out' && data.clockOut) {
+        alert("You've already clocked out for today.");
     }
 }
 
@@ -1220,17 +1300,12 @@ window.addEventListener('online', () => {
 });
 
 async function syncPendingData() {
-    const el = document.getElementById("networkStatus");
-    const syncProgress = document.getElementById("syncProgress");
-    const syncBar = document.querySelector(".sync-bar");
+    document.getElementById("networkStatus").textContent = "🔄 Syncing...";
 
     const syncQueue = JSON.parse(localStorage.getItem("syncQueue") || "[]");
 
     if (syncQueue.length === 0) {
-        el.textContent = "✅ Online";
-        el.classList.remove("syncing");
-        el.classList.add("online");
-        syncProgress.style.display = "none";
+        document.getElementById("networkStatus").textContent = "✅ Online";
         return;
     }
 
@@ -1238,61 +1313,60 @@ async function syncPendingData() {
 
     let successCount = 0;
     let failCount = 0;
-    let totalItems = syncQueue.length;
 
-    for (let i = 0; i < syncQueue.length; i++) {
-        const key = syncQueue[i];
-        const data = JSON.parse(localStorage.getItem(key) || "{}");
-        if (data.synced) {
-            // Update progress for already synced items
-            syncBar.style.width = `${Math.floor(((i + 1) / totalItems) * 100)}%`;
-            continue;
-        }
+    for (const key of syncQueue) {
+        const localData = JSON.parse(localStorage.getItem(key) || "{}");
+        if (localData.synced) continue; // Skip already synced data
 
         // Extract user and date from key
         const [, user, date] = key.split('_');
-        if (!user || !date) {
-            syncBar.style.width = `${Math.floor(((i + 1) / totalItems) * 100)}%`;
-            continue;
-        }
+        if (!user || !date) continue;
 
         const ref = doc(db, "attendance", user, "dates", date);
 
         try {
-            // Create a clean object with only what we need to sync
-            const syncData = {};
-            if (data.clockIn) syncData.clockIn = data.clockIn;
-            if (data.clockOut) syncData.clockOut = data.clockOut;
+            // First, get current server data to avoid overwriting
+            const docSnap = await getDoc(ref);
+            let serverData = docSnap.exists() ? docSnap.data() : {};
 
-            await setDoc(ref, syncData, { merge: true });
+            // Prepare sync data with careful merging
+            const syncData = {};
+
+            // Only sync clockIn if it doesn't exist on server OR local timestamp is newer
+            if (localData.clockIn &&
+                (!serverData.clockIn ||
+                    !serverData.clockIn.timestamp ||
+                    localData.clockIn.timestamp > serverData.clockIn.timestamp)) {
+                syncData.clockIn = localData.clockIn;
+            }
+
+            // Only sync clockOut if it doesn't exist on server OR local timestamp is newer
+            if (localData.clockOut &&
+                (!serverData.clockOut ||
+                    !serverData.clockOut.timestamp ||
+                    localData.clockOut.timestamp > serverData.clockOut.timestamp)) {
+                syncData.clockOut = localData.clockOut;
+            }
+
+            // Only update if we have something to sync
+            if (Object.keys(syncData).length > 0) {
+                await setDoc(ref, syncData, { merge: true });
+                console.log(`Synced fields: ${Object.keys(syncData).join(', ')}`);
+            } else {
+                console.log("No newer data to sync");
+            }
 
             // Mark as synced in localStorage
-            data.synced = true;
-            localStorage.setItem(key, JSON.stringify(data));
+            localData.synced = true;
+            localStorage.setItem(key, JSON.stringify(localData));
 
             successCount++;
-
-            // Update progress
-            const progress = Math.floor(((i + 1) / totalItems) * 100);
-            syncBar.style.width = `${progress}%`;
-            el.textContent = `🔄 Syncing... ${progress}%`;
-
             console.log(`✅ Synced: ${key}`);
         } catch (err) {
             failCount++;
             console.warn(`❌ Failed to sync ${key}:`, err);
-
-            // Still update progress
-            const progress = Math.floor(((i + 1) / totalItems) * 100);
-            syncBar.style.width = `${progress}%`;
         }
-
-        // Small delay to prevent UI freeze and show progress animation
-        await new Promise(resolve => setTimeout(resolve, 100));
     }
-
-    // Complete the progress bar animation
-    syncBar.style.width = "100%";
 
     // Remove successful items from sync queue
     const updatedQueue = syncQueue.filter(key => {
@@ -1302,22 +1376,12 @@ async function syncPendingData() {
 
     localStorage.setItem("syncQueue", JSON.stringify(updatedQueue));
 
-    // Final delay to show completed progress bar before hiding
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    // Update status message based on results
+    // Update status message
     if (updatedQueue.length === 0) {
-        el.textContent = "✅ All data synced";
-        el.classList.remove("syncing");
-        el.classList.add("online");
-
-        // Hide progress bar with slight delay
-        setTimeout(() => {
-            syncProgress.style.display = "none";
-        }, 1000);
+        document.getElementById("networkStatus").textContent = "✅ Online - All data synced";
     } else {
-        el.textContent = `⚠️ ${successCount} synced, ${failCount} pending`;
-        el.classList.add("syncing");
+        document.getElementById("networkStatus").textContent =
+            `⚠️ Online - ${successCount} synced, ${failCount} pending`;
     }
 
     console.log(`🔄 Sync complete: ${successCount} successful, ${failCount} failed`);
@@ -1325,6 +1389,7 @@ async function syncPendingData() {
     // Refresh current view after sync
     updateSummaryUI();
 }
+
 
 
 window.addEventListener('offline', () => {
