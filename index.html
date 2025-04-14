@@ -14,16 +14,25 @@
     <script type="module" src="js/firebase-setup.js"></script>
 
     <script>
+        // Register SW as fast as possible, but don’t wait for it
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js').then(reg => {
+            navigator.serviceWorker.register('/sw.js')
+                .then(reg => {
                     console.log('✅ Service Worker registered:', reg.scope);
-                }).catch(err => {
+                })
+                .catch(err => {
                     console.error('❌ Service Worker registration failed:', err);
                 });
+        }
 
-                updateNetworkStatus();
-            });
+        // ✅ Immediately check network + run UI logic
+        updateNetworkStatus();
+        if (currentUser && localStorage.getItem("userName")) {
+                console.time("UI Load");
+                showMainInterface(currentUser);
+                console.timeEnd("UI Load");
+
+            updateGreetingUI();
         }
     </script>
 
