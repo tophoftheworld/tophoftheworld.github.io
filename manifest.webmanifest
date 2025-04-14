@@ -1,21 +1,22 @@
 {
-    "name": "Matchanese Staff App",
-    "short_name": "Time Log",
-    "start_url": "/",
+    "name": "Matchanese Attendance",
+    "short_name": "Attendance",
+    "description": "Staff time tracking app for Matchanese",
+    "start_url": "/?v=0.39",
     "display": "standalone",
     "background_color": "#ffffff",
     "theme_color": "#2b9348",
-    "orientation": "portrait",
     "icons": [
         {
-            "src": "icon-192.png",
+            "src": "icons/icon-192.png",
             "sizes": "192x192",
             "type": "image/png"
         },
         {
-            "src": "icon-512.png",
+            "src": "icons/icon-512.png",
             "sizes": "512x512",
             "type": "image/png"
         }
-    ]
+    ],
+    "version": "0.41"
 }

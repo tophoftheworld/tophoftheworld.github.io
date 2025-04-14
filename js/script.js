@@ -1,3 +1,5 @@
+const APP_VERSION = "0.41"; 
+
 const ALLOW_PAST_CLOCKING = false;
 
 const employees = {
@@ -790,13 +792,13 @@ async function handleClock(type) {
     }
 
     // If we get here, the action doesn't make sense (already clocked in/out)
-    if (type === 'in' && data.clockIn) {
-        alert("You're already clocked in for today.");
-    } else if (type === 'out' && !data.clockIn) {
-        alert("You need to clock in before you can clock out.");
-    } else if (type === 'out' && data.clockOut) {
-        alert("You've already clocked out for today.");
-    }
+    // if (type === 'in' && data.clockIn) {
+    //     alert("You're already clocked in for today.");
+    // } else if (type === 'out' && !data.clockIn) {
+    //     alert("You need to clock in before you can clock out.");
+    // } else if (type === 'out' && data.clockOut) {
+    //     alert("You've already clocked out for today.");
+    // }
 }
 
 function compareTimes(t1, t2) {
@@ -1480,3 +1482,236 @@ window.clearData = clearData;
 window.openImageModal = openImageModal;
 window.closeImageModal = closeImageModal;
 window.handleClock = handleClock;
+
+function checkForUpdates() {
+    // First, get the last version the user has seen
+    const lastVersion = localStorage.getItem('appVersion') || '0.0';
+
+    // If there's a new version, show update notification
+    if (lastVersion !== APP_VERSION) {
+        console.log(`New version detected: ${lastVersion} → ${APP_VERSION}`);
+
+        // Show update modal and offer refresh
+        showUpdateNotification(lastVersion, APP_VERSION);
+
+        // Update stored version
+        localStorage.setItem('appVersion', APP_VERSION);
+    }
+}
+
+// Show update notification to users
+function showUpdateNotification(oldVersion, newVersion) {
+    // Create update modal if it doesn't exist
+    if (!document.getElementById('updateModal')) {
+        const modal = document.createElement('div');
+        modal.id = 'updateModal';
+        modal.className = 'image-modal';
+        modal.innerHTML = `
+      <div class="modal-content" style="padding: 1.5rem; max-width: 90%; text-align: center;">
+        <h3 style="margin-top: 0;">App Update Available</h3>
+        <p style="font-size: 1.1rem; margin-bottom: 1rem;">
+          A new version of the attendance app is available.
+          <br><small style="color: #666;">v${oldVersion} → v${newVersion}</small>
+        </p>
+        <div style="display: flex; gap: 1rem; justify-content: center;">
+          <button id="updateLater" class="retake-btn">Later</button>
+          <button id="updateNow" class="submit-btn">Update Now</button>
+        </div>
+      </div>
+    `;
+        document.body.appendChild(modal);
+
+        // Add event listeners
+        document.getElementById('updateLater').addEventListener('click', () => {
+            modal.style.display = 'none';
+        });
+
+        document.getElementById('updateNow').addEventListener('click', () => {
+            // Force reload bypassing cache
+            window.location.reload(true);
+        });
+    }
+
+    // Show the modal
+    document.getElementById('updateModal').style.display = 'flex';
+}
+
+// Function to add cache busting query param to all resources
+function addCacheBustingParams() {
+    // For styles
+    const links = document.querySelectorAll('link[rel="stylesheet"]');
+    links.forEach(link => {
+        if (!link.href.includes('?v=')) {
+            link.href = appendVersionToURL(link.href);
+        }
+    });
+
+    // For scripts
+    const scripts = document.querySelectorAll('script[src]');
+    scripts.forEach(script => {
+        if (!script.src.includes('?v=')) {
+            script.src = appendVersionToURL(script.src);
+        }
+    });
+}
+
+// Helper to append version to URLs
+function appendVersionToURL(url) {
+    const separator = url.includes('?') ? '&' : '?';
+    return `${url}${separator}v=${APP_VERSION}`;
+}
+
+// Call when page loads
+document.addEventListener('DOMContentLoaded', () => {
+    // Check for updates
+    checkForUpdates();
+
+    // Add HTML to show version in footer
+    const footer = document.querySelector('.footer');
+    if (footer) {
+        footer.textContent = `Matchanese Attendance System v${APP_VERSION}`;
+    }
+});
+
+function setupPullToRefresh() {
+    // Create indicator element if it doesn't exist
+    if (!document.querySelector('.pull-indicator')) {
+        const indicator = document.createElement('div');
+        indicator.className = 'pull-indicator';
+        indicator.textContent = 'Pull down to refresh';
+        document.body.prepend(indicator);
+    }
+
+    // Variables to track touch
+    let startY = 0;
+    let currentY = 0;
+    let refreshing = false;
+    const indicator = document.querySelector('.pull-indicator');
+
+    // Add touch event listeners
+    document.addEventListener('touchstart', e => {
+        // Only enable pull-to-refresh at the top of the page
+        if (window.scrollY === 0) {
+            startY = e.touches[0].clientY;
+        }
+    }, { passive: true });
+
+    document.addEventListener('touchmove', e => {
+        if (startY > 0 && !refreshing) {
+            currentY = e.touches[0].clientY;
+            const pullDistance = currentY - startY;
+
+            // Only show indicator if pulling down
+            if (pullDistance > 0) {
+                indicator.classList.add('visible');
+
+                if (pullDistance > 100) {
+                    indicator.textContent = 'Release to refresh';
+                } else {
+                    indicator.textContent = 'Pull down to refresh';
+                }
+            }
+        }
+    }, { passive: true });
+
+    document.addEventListener('touchend', e => {
+        if (startY > 0 && currentY > 0 && !refreshing) {
+            const pullDistance = currentY - startY;
+
+            if (pullDistance > 100) {
+                // Trigger refresh
+                refreshing = true;
+                indicator.textContent = 'Refreshing...';
+                indicator.classList.add('refreshing');
+
+                // Force page reload
+                forceRefresh();
+            } else {
+                // Hide indicator if not refreshing
+                indicator.classList.remove('visible');
+            }
+        }
+
+        // Reset values
+        startY = 0;
+        currentY = 0;
+    }, { passive: true });
+}
+
+// Force refresh function
+function forceRefresh() {
+    console.log('Force refreshing page...');
+
+    // Clear caches first if possible
+    if ('caches' in window) {
+        caches.keys().then(function (names) {
+            for (let name of names) {
+                if (!name.includes(APP_VERSION)) {
+                    caches.delete(name);
+                }
+            }
+        });
+    }
+
+    // Add timestamp to force reload and bypass cache
+    window.location.href = window.location.pathname + '?t=' + Date.now();
+}
+
+// Setup Refresh Control
+function setupRefreshControl() {
+    // Add version badge to UI
+    const versionBadge = document.createElement('div');
+    versionBadge.className = 'version-badge';
+    versionBadge.textContent = `v${APP_VERSION}`;
+    document.body.appendChild(versionBadge);
+
+    // Setup pull-to-refresh
+    setupPullToRefresh();
+
+    // Setup refresh button
+    document.getElementById('forceRefresh')?.addEventListener('click', forceRefresh);
+
+    // Listen for service worker messages about updates
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.addEventListener('message', event => {
+            if (event.data && event.data.type === 'NEW_VERSION') {
+                document.getElementById('appUpdateStatus').style.display = 'block';
+                document.getElementById('updateMessage').textContent =
+                    `New version available: v${event.data.version}`;
+            }
+        });
+    }
+
+    // Periodically check for new versions (every 15 minutes)
+    setInterval(checkForNewVersion, 15 * 60 * 1000);
+}
+
+// Check if there's a new version available
+function checkForNewVersion() {
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        // Create a message channel
+        const messageChannel = new MessageChannel();
+
+        // Handler for receiving message from service worker
+        messageChannel.port1.onmessage = event => {
+            if (event.data && event.data.type === 'VERSION_INFO') {
+                const swVersion = event.data.version;
+
+                // If service worker has a newer version than we do
+                if (swVersion !== APP_VERSION) {
+                    document.getElementById('appUpdateStatus').style.display = 'block';
+                    document.getElementById('updateMessage').textContent =
+                        `New version available: v${swVersion}`;
+                }
+            }
+        };
+
+        // Send message to service worker
+        navigator.serviceWorker.controller.postMessage({
+            type: 'CHECK_VERSION'
+        }, [messageChannel.port2]);
+    }
+}
+
+// Call this during initialization
+document.addEventListener('DOMContentLoaded', setupRefreshControl);

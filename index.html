@@ -11,6 +11,9 @@
     <link rel="stylesheet" href="css/style.css">
     <link rel="manifest" href="/manifest.webmanifest">
     <meta name="theme-color" content="#2b9348">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <script type="module" src="js/firebase-setup.js"></script>
 
 </head>
@@ -256,6 +259,26 @@
         <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
         <script type="module" src="js/script.js"></script>
     </div>
+    <div id="appUpdateStatus"
+        style="display: none; position: fixed; bottom: 10px; left: 10px; right: 10px; background: #2b9348; color: white; padding: 10px; border-radius: 8px; text-align: center; z-index: 1000; box-shadow: 0 2px 10px rgba(0,0,0,0.2);">
+        <div id="updateMessage">A new version is available</div>
+        <button id="forceRefresh"
+            style="background: white; color: #2b9348; border: none; padding: 8px 16px; margin-top: 8px; border-radius: 4px; font-weight: bold;">Refresh
+            Now</button>
+    </div>
 </body>
 
+<script>
+    // Add this script inline at the end of your HTML file
+    document.getElementById('forceRefresh').addEventListener('click', function () {
+        // Clear browser cache and hard reload
+        if ('caches' in window) {
+            caches.keys().then(function (names) {
+                for (let name of names) caches.delete(name);
+            });
+        }
+        // Add a timestamp to force reload
+        window.location.href = window.location.pathname + '?t=' + Date.now();
+    });
+</script>
 </html>

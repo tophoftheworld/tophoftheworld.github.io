@@ -1,6 +1,7 @@
 // Matchanese Attendance App - Service Worker
-const CACHE_NAME = 'matchanese-v6';
-const DYNAMIC_CACHE = 'matchanese-dynamic-v1';
+const APP_VERSION = "0.41"; // IMPORTANT: Keep this in sync with script.js
+const CACHE_NAME = `matchanese-v${APP_VERSION}`;
+const DYNAMIC_CACHE = `matchanese-dynamic-v${APP_VERSION}`;
 
 // Resources to cache during installation
 const STATIC_RESOURCES = [
@@ -25,7 +26,7 @@ const NETWORK_ONLY = [
 
 // Install event - cache static resources
 self.addEventListener('install', event => {
-    console.log('Service Worker: Installing...');
+    console.log(`Service Worker v${APP_VERSION}: Installing...`);
     self.skipWaiting(); // Force activation on all open pages
 
     event.waitUntil(
@@ -39,15 +40,14 @@ self.addEventListener('install', event => {
 
 // Activate event - clean up old caches
 self.addEventListener('activate', event => {
-    console.log('Service Worker: Activating...');
+    console.log(`Service Worker v${APP_VERSION}: Activating...`);
 
     event.waitUntil(
         caches.keys().then(cacheNames => {
             return Promise.all(
                 cacheNames
                     .filter(cacheName => {
-                        return cacheName !== CACHE_NAME &&
-                            cacheName !== DYNAMIC_CACHE;
+                        return !cacheName.includes(APP_VERSION);
                     })
                     .map(cacheName => {
                         console.log('Service Worker: Clearing old cache', cacheName);
@@ -57,10 +57,19 @@ self.addEventListener('activate', event => {
         }).then(() => {
             console.log('Service Worker: Claiming clients');
             return self.clients.claim(); // Take control of all open pages
+        }).then(() => {
+            // Notify clients about new version
+            return self.clients.matchAll().then(clients => {
+                clients.forEach(client => {
+                    client.postMessage({
+                        type: 'NEW_VERSION',
+                        version: APP_VERSION
+                    });
+                });
+            });
         })
     );
 });
-
 // Helper function to check if URL should be network-only
 function isNetworkOnlyRequest(url) {
     return NETWORK_ONLY.some(endpoint => url.includes(endpoint));
@@ -166,3 +175,12 @@ async function getOfflineData() {
     // is stored in localStorage by the app itself
     return [];
 }
+
+self.addEventListener('message', event => {
+    if (event.data && event.data.type === 'CHECK_VERSION') {
+        event.ports[0].postMessage({
+            type: 'VERSION_INFO',
+            version: APP_VERSION
+        });
+    }
+});
