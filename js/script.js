@@ -172,63 +172,52 @@ async function showMainInterface(code) {
 
 async function updateSummaryUI() {
     const isToday = formatDate(viewDate) === formatDate(today);
-    
-    updateCardTimes({});
-
     const dateKey = formatDate(viewDate);
-    const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
-    
-    let data = {};
-    const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
+    const key = `attendance_${currentUser}_${dateKey}`;
     const localData = localStorage.getItem(key);
 
-    // 1. Load local first for instant UI
+    // STEP 1: Instant load from local
     if (localData) {
-        data = JSON.parse(localData);
-        updateCardTimes(data); // ⬅️ Load UI instantly
+        const data = JSON.parse(localData);
+        updateBranchAndShiftSelectors(data);
+        updateCardTimes(data);
+    } else {
+        updateBranchAndShiftSelectors(); // fallback to default
+        updateCardTimes({}); // blank
     }
 
-    // 2. Then try to fetch latest from Firestore
+    // STEP 2: Fetch fresh data in the background
     try {
+        const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
         const docSnap = await getDoc(subDocRef);
         if (docSnap.exists()) {
-            const firestoreData = docSnap.data();
+            const remoteData = docSnap.data();
 
-            // Optional: only update if different
-            const oldJson = JSON.stringify(data);
-            const newJson = JSON.stringify(firestoreData);
-            if (oldJson !== newJson) {
-                data = firestoreData;
-                updateCardTimes(data); // ⬅️ Replace if fresher
-                localStorage.setItem(key, newJson); // ⬅️ Update local
+            // Update if different
+            if (JSON.stringify(remoteData) !== localData) {
+                localStorage.setItem(key, JSON.stringify(remoteData));
+                updateBranchAndShiftSelectors(remoteData);
+                updateCardTimes(remoteData);
             }
         }
     } catch (err) {
-        console.warn("❌ Firestore fetch failed, using local only", err);
+        console.warn("⚠️ Firestore failed, used local only", err);
     }
 
-
-
-    updateBranchAndShiftSelectors(data); // ⬅️ Ensure dropdown reflects current data
-    updateCardTimes(data);
-
+    // Always update date UI & greeting immediately
     const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-    const formattedDate = viewDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const formattedDate = viewDate.toLocaleDateString('en-US', options);
     const [weekday, ...rest] = formattedDate.split(', ');
     document.getElementById("dayOfWeek").textContent = weekday;
     document.getElementById("fullDate").textContent = rest.join(', ');
+    document.getElementById("greetingText").textContent = getTimeBasedGreeting();
 
-    const formatted = formatDate(viewDate);
-    datePicker.value = formatted;
-    if (datePicker._flatpickr) {
-        datePicker._flatpickr.jumpToDate(viewDate);
-    }
+    datePicker.value = dateKey;
+    if (datePicker._flatpickr) datePicker._flatpickr.jumpToDate(viewDate);
 
-    const isActiveDay = ALLOW_PAST_CLOCKING || isToday;
-    dutyStatus = !data.clockIn ? 'in' : (data.clockOut ? 'in' : 'out');
-
-    updateBranchAndShiftSelectors(data);
+    dutyStatus = localData && JSON.parse(localData).clockIn && !JSON.parse(localData).clockOut ? 'out' : 'in';
 }
+
 
 
 // function changeDay(delta) {
