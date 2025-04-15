@@ -1,4 +1,4 @@
-const APP_VERSION = "0.48"; 
+const APP_VERSION = "0.49"; 
 
 const ALLOW_PAST_CLOCKING = false;
 
@@ -439,9 +439,45 @@ function submitPhoto() {
     }
 
     saveAttendance();
+}
 
+function updateSyncStatusVisual(status, count = 0) {
+    const cards = document.querySelectorAll('.panel-card .offline-badge');
 
-    setTimeout(updateSyncStatusDots, 500);
+    switch (status) {
+        case 'syncing':
+            cards.forEach(badge => {
+                badge.textContent = "Syncing...";
+                badge.style.backgroundColor = "rgba(255, 149, 0, 0.9)";
+            });
+            break;
+
+        case 'progress':
+            cards.forEach(badge => {
+                badge.textContent = `Syncing ${count}%`;
+                badge.style.backgroundColor = "rgba(255, 149, 0, 0.9)";
+            });
+            break;
+
+        case 'success':
+            cards.forEach(badge => {
+                badge.textContent = "Synced!";
+                badge.style.backgroundColor = "rgba(43, 147, 72, 0.9)";
+            });
+            break;
+
+        case 'hide':
+            // Don't remove badges for still unsynced items
+            const syncQueue = JSON.parse(localStorage.getItem("syncQueue") || "[]");
+            if (syncQueue.length === 0) {
+                cards.forEach(badge => {
+                    badge.remove();
+                });
+            } else {
+                updateOfflineBadges(); // Reset to proper state
+            }
+            break;
+    }
 }
 
 document.getElementById("closeCameraBtn").addEventListener("click", () => {
@@ -735,15 +771,30 @@ async function handleClock(type) {
 
     const dateKey = formatDate(viewDate);
 
+    // First get data from local storage (works offline)
     let data = {};
-    try {
-        const docSnap = await getDoc(doc(db, "attendance", currentUser, "dates", dateKey));
-        if (docSnap.exists()) data = docSnap.data();
-    } catch (err) {
-        console.warn("⚠️ Offline - using local fallback in handleClock()");
-        document.getElementById("networkStatus").textContent = "📴 Offline - using local data";
-        const local = localStorage.getItem(`attendance_${currentUser}_${dateKey}`);
-        if (local) data = JSON.parse(local);
+    const localStorageKey = `attendance_${currentUser}_${dateKey}`;
+    const localData = localStorage.getItem(localStorageKey);
+
+    if (localData) {
+        data = JSON.parse(localData);
+    }
+
+    // Try to get Firestore data only if online
+    if (navigator.onLine) {
+        try {
+            const docSnap = await getDoc(doc(db, "attendance", currentUser, "dates", dateKey));
+            if (docSnap.exists()) {
+                const firestoreData = docSnap.data();
+                // Merge with local data giving priority to Firestore
+                data = { ...data, ...firestoreData };
+            }
+        } catch (err) {
+            console.warn("⚠️ Offline - using local fallback in handleClock()");
+            // We already have local data loaded above
+        }
+    } else {
+        console.log("📴 Offline mode - using local data only");
     }
 
     // TIME IN: Only proceed if no clockIn exists
@@ -793,15 +844,6 @@ async function handleClock(type) {
         startPhotoSequence();
         return;
     }
-
-    // If we get here, the action doesn't make sense (already clocked in/out)
-    // if (type === 'in' && data.clockIn) {
-    //     alert("You're already clocked in for today.");
-    // } else if (type === 'out' && !data.clockIn) {
-    //     alert("You need to clock in before you can clock out.");
-    // } else if (type === 'out' && data.clockOut) {
-    //     alert("You've already clocked out for today.");
-    // }
 }
 
 function compareTimes(t1, t2) {
@@ -1308,7 +1350,7 @@ async function syncPendingData() {
     let successCount = 0;
     let failCount = 0;
 
-    updateSyncStatusDots();
+    updateSyncStatusVisual('syncing');
 
     for (const key of syncQueue) {
         const localData = JSON.parse(localStorage.getItem(key) || "{}");
@@ -1361,7 +1403,7 @@ async function syncPendingData() {
 
             if (syncQueue.length > 2 && (successCount + failCount) % 2 === 0) {
                 const progress = Math.round(((successCount + failCount) / syncQueue.length) * 100);
-                showToast(`Syncing: ${progress}% complete`, 'syncing', 1500);
+                updateSyncStatusVisual('progress', progress);
             }
         } catch (err) {
             failCount++;
@@ -1391,6 +1433,15 @@ async function syncPendingData() {
 
     localStorage.setItem("syncQueue", JSON.stringify(updatedQueue));
 
+    if (successCount > 0) {
+        updateSyncStatusVisual('success', successCount);
+
+        // Hide the success message after 3 seconds
+        setTimeout(() => {
+            updateSyncStatusVisual('hide');
+        }, 3000);
+    }
+
     // Update status message
     if (updatedQueue.length === 0) {
         document.getElementById("networkStatus").textContent = "✅ Online - All data synced";
@@ -1403,7 +1454,7 @@ async function syncPendingData() {
 
     // Refresh current view after sync
     updateSummaryUI();
-    updateSyncStatusDots();
+    updateOfflineBadges();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -1427,7 +1478,6 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function updateNetworkStatusUI() {
-    // Make sure UI elements exist
     setupNetworkUI();
 
     const offlineIndicator = document.querySelector('.mini-offline-indicator');
@@ -1442,22 +1492,14 @@ function updateNetworkStatusUI() {
 
         // Check for pending syncs
         const syncQueue = JSON.parse(localStorage.getItem('syncQueue') || '[]');
-        if (syncQueue.length > 0) {
-            // Only show sync toast if we just came online
-            if (window._wasOffline) {
-                showToast(`Syncing ${syncQueue.length} items...`, 'syncing');
-                syncPendingData();
-            }
+        if (syncQueue.length > 0 && window._wasOffline) {
+            // Only trigger sync without showing a toast
+            syncPendingData();
         }
         window._wasOffline = false;
     } else {
         // We're offline
         offlineIndicator.classList.add('show');
-
-        // Show toast only on first detection of offline
-        if (!window._wasOffline) {
-            showToast('You are offline. Changes will be saved locally.', 'offline');
-        }
         window._wasOffline = true;
     }
 
@@ -1481,18 +1523,19 @@ function updateOfflineBadges() {
         badge.remove();
     });
 
-    // Only show badges if we're offline or have unsynced data
-    if (!navigator.onLine || localStorage.getItem('syncQueue')) {
+    const syncQueue = JSON.parse(localStorage.getItem('syncQueue') || '[]');
+
+    if (syncQueue.length > 0) {
         const todayKey = `attendance_${currentUser}_${formatDate(new Date())}`;
         const todayData = JSON.parse(localStorage.getItem(todayKey) || '{}');
 
-        // If there's unsynced data for today, add badges
+        // If there's unsynced data for today, add badges to the appropriate cards only
         if (!todayData.synced) {
-            if (todayData.clockIn) {
+            if (todayData.clockIn && !todayData.clockIn.synced) {
                 addOfflineBadge('clockInCard');
             }
 
-            if (todayData.clockOut) {
+            if (todayData.clockOut && !todayData.clockOut.synced) {
                 addOfflineBadge('clockOutCard');
             }
         }
@@ -1782,7 +1825,6 @@ function setupNetworkUI() {
     }
 }
 
-
 function createToastContainer() {
     // Remove any existing container first to prevent duplicates
     const existing = document.querySelector('.toast-container');
@@ -1794,17 +1836,23 @@ function createToastContainer() {
     const container = document.createElement('div');
     container.className = 'toast-container';
 
-    // Ensure it's positioned at the top
-    container.style.top = '20px';
-    container.style.bottom = 'auto';
-
     // Add to document
     document.body.appendChild(container);
 
     return container;
 }
 
+
 function showToast(message, type = '', duration = 3000) {
+    // Skip showing toast if it's about updates and the update notification is visible
+    if (message.includes('version') || message.includes('update')) {
+        // Check if update notification is already visible
+        const updateStatus = document.getElementById('appUpdateStatus');
+        if (updateStatus && updateStatus.style.display === 'block') {
+            return; // Skip showing redundant toast
+        }
+    }
+
     // Create toast container if it doesn't exist yet
     if (!document.querySelector('.toast-container')) {
         setupNetworkUI();
@@ -1819,11 +1867,6 @@ function showToast(message, type = '', duration = 3000) {
     // Create toast element
     const toast = document.createElement('div');
     toast.className = `toast-message ${type || ''}`;
-
-    // For short messages, ensure reasonable width
-    if (message.length < 15) {
-        toast.style.minWidth = '200px';
-    }
 
     // Set the message content
     toast.textContent = message;
@@ -1844,5 +1887,5 @@ function showToast(message, type = '', duration = 3000) {
         }, 300);
     }, duration);
 
-    return toast; // Return the toast element for potential future reference
+    return toast;
 }

@@ -889,55 +889,57 @@ select option {
 /* Toast Notifications */
 .toast-container {
     position: fixed;
-    top: 20px;
-    /* Move to the top with a little margin */
+    top: 50%;
+    /* Center vertically */
     left: 0;
     right: 0;
+    transform: translateY(-50%);
+    /* Perfect centering */
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     pointer-events: none;
     z-index: 9999;
 }
 
 .toast-message {
-    background-color: rgba(0, 0, 0, 0.8);
+    background-color: rgba(0, 0, 0, 0.85);
     color: white;
-    padding: 10px 20px;
-    /* Slightly increased padding */
+    padding: 12px 24px;
     border-radius: 99px;
     max-width: 80%;
-    /* Prevent from being too wide */
     width: auto;
-    /* Let content determine width */
-    min-width: 150px;
-    /* Minimum width */
+    /* Auto width instead of full width */
+    min-width: 200px;
+    /* Minimum width for small messages */
     text-align: center;
     margin-bottom: 10px;
     font-size: 14px;
-    /* Slightly larger font */
     font-weight: 500;
-    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
     opacity: 0;
-    transform: translateY(-20px);
+    transform: translateY(20px);
+    /* Start below center */
     transition: opacity 0.3s, transform 0.3s;
 }
 
 .toast-message.show {
     opacity: 1;
     transform: translateY(0);
+    /* Move to center when shown */
 }
 
 .toast-message.offline {
-    background-color: rgba(230, 57, 70, 0.9);
+    background-color: rgba(230, 57, 70, 0.95);
 }
 
 .toast-message.online {
-    background-color: rgba(43, 147, 72, 0.9);
+    background-color: rgba(43, 147, 72, 0.95);
 }
 
 .toast-message.syncing {
-    background-color: rgba(255, 149, 0, 0.9);
+    background-color: rgba(255, 149, 0, 0.95);
 }
 
 /* Mini Offline Indicator */
@@ -991,12 +993,9 @@ select option {
 
 @media (max-width: 480px) {
     .toast-message {
-        max-width: 90%;
-        /* Wider on mobile */
-        font-size: 13px;
-        /* Slightly smaller text */
-        padding: 8px 16px;
-    }
+            max-width: 400px;
+            /* Limit width on desktop */
+        }
 
     .toast-container {
         top: 10px;
