@@ -818,22 +818,13 @@ select option {
 }
 
 #appUpdateStatus {
-    position: fixed;
-    bottom: auto;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: #2b9348;
-    color: white;
-    padding: 16px;
-    border-radius: 12px;
-    text-align: center;
-    z-index: 1000;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-    width: auto;
-    max-width: 400px;
-    margin: 0;
-    animation: fadeIn 0.3s ease-out;
+    position: fixed !important;
+    bottom: auto !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    width: auto !important;
+    max-width: 400px !important;
 }
 
 @keyframes fadeIn {
