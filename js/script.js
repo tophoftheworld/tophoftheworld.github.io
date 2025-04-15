@@ -1,4 +1,4 @@
-const APP_VERSION = "0.49"; 
+const APP_VERSION = "0.50"; 
 
 const ALLOW_PAST_CLOCKING = false;
 
@@ -467,15 +467,10 @@ function updateSyncStatusVisual(status, count = 0) {
             break;
 
         case 'hide':
-            // Don't remove badges for still unsynced items
-            const syncQueue = JSON.parse(localStorage.getItem("syncQueue") || "[]");
-            if (syncQueue.length === 0) {
-                cards.forEach(badge => {
-                    badge.remove();
-                });
-            } else {
-                updateOfflineBadges(); // Reset to proper state
-            }
+            // FORCE remove all badges
+            cards.forEach(badge => {
+                badge.remove();
+            });
             break;
     }
 }
@@ -1419,6 +1414,9 @@ async function syncPendingData() {
     // Show completion toast
     if (successCount > 0) {
         showToast(`Synced ${successCount} records successfully`, 'online', 3000);
+        document.querySelectorAll('.panel-card .offline-badge').forEach(badge => {
+            badge.remove();
+        });
     }
 
     if (failCount > 0) {
@@ -1529,14 +1527,21 @@ function updateOfflineBadges() {
         const todayKey = `attendance_${currentUser}_${formatDate(new Date())}`;
         const todayData = JSON.parse(localStorage.getItem(todayKey) || '{}');
 
-        // If there's unsynced data for today, add badges to the appropriate cards only
-        if (!todayData.synced) {
-            if (todayData.clockIn && !todayData.clockIn.synced) {
-                addOfflineBadge('clockInCard');
-            }
-
+        // Only add badge if TODAY'S data is in the sync queue
+        if (syncQueue.includes(todayKey) && !todayData.synced) {
+            // Only add badge to clock out if that's what's not synced
             if (todayData.clockOut && !todayData.clockOut.synced) {
                 addOfflineBadge('clockOutCard');
+            }
+
+            // Only add badge to clock in if that's what's not synced
+            if (todayData.clockIn && (!todayData.synced || !todayData.clockIn.synced)) {
+                // Extra check - don't add badge if we already have clock in data on server
+                const cachedKey = `serverCache_${currentUser}_${formatDate(new Date())}`;
+                const serverData = JSON.parse(localStorage.getItem(cachedKey) || '{}');
+                if (!serverData.clockIn) {
+                    addOfflineBadge('clockInCard');
+                }
             }
         }
     }
@@ -1589,8 +1594,11 @@ function checkForUpdates() {
     if (lastVersion !== APP_VERSION) {
         console.log(`New version detected: ${lastVersion} → ${APP_VERSION}`);
 
+        document.getElementById('appUpdateStatus').style.display = 'block';
+        document.getElementById('updateMessage').textContent =
+            `New version available: ${lastVersion} → ${APP_VERSION}`;
         // Show update modal and offer refresh
-        showUpdateNotification(lastVersion, APP_VERSION);
+        // showUpdateNotification(lastVersion, APP_VERSION);
 
         // Update stored version
         localStorage.setItem('appVersion', APP_VERSION);
@@ -1624,10 +1632,6 @@ function setupVersionControls() {
 
 // Show update notification to users
 function showUpdateNotification(oldVersion, newVersion) {
-    // First show a toast
-    showToast(`New version available: ${oldVersion} → ${newVersion}`, 'online', 5000);
-
-    // Then show the modal
     const updateStatus = document.getElementById('appUpdateStatus');
     if (updateStatus) {
         updateStatus.style.display = 'block';
@@ -1637,6 +1641,7 @@ function showUpdateNotification(oldVersion, newVersion) {
         }
     }
 }
+
 
 // Function to add cache busting query param to all resources
 function addCacheBustingParams() {

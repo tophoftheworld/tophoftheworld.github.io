@@ -787,6 +787,12 @@ select option {
     }
 }
 
+#updateMessage {
+    font-size: 15px;
+    margin-bottom: 12px;
+    font-weight: 500;
+}
+
 #updateModal {
     display: none;
     position: fixed;
@@ -812,13 +818,48 @@ select option {
 }
 
 #appUpdateStatus {
-    animation: slideUp 0.3s ease-out;
-    opacity: 0.9;
+    position: fixed;
+    bottom: auto;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: #2b9348;
+    color: white;
+    padding: 16px;
+    border-radius: 12px;
+    text-align: center;
+    z-index: 1000;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    width: auto;
+    max-width: 400px;
+    margin: 0;
+    animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+    0% {
+        opacity: 0;
+        transform: translate(-50%, -40%);
+    }
+    100% {
+        opacity: 1;
+        transform: translate(-50%, -50%);
+    }
 }
 
 #forceRefresh {
+    background: white;
+    color: #2b9348;
+    border: none;
+    padding: 10px 18px;
+    margin-top: 4px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 14px;
     cursor: pointer;
-    transition: background 0.2s;
+    transition: background 0.2s, transform 0.2s;
+    width: auto;
+    min-width: 140px;
 }
 
 #forceRefresh:hover {
