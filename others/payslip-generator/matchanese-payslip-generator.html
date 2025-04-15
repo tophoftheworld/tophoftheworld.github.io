@@ -234,6 +234,12 @@
             <label for="csvUpload">Upload Attendance CSV</label>
             <input type="file" id="csvUpload" accept=".csv" onchange="handleCSVUpload(event)" />
 
+            <div class="form-group">
+                <label for="salesCsvUpload">Upload Sales Bonus CSV</label>
+                <input type="file" id="salesCsvUpload" accept=".csv" onchange="handleSalesBonusUpload(event)" />
+            </div>
+
+
             <label for="employee">Employee Name</label>
             
             <!-- First row: Select + Reload -->
@@ -305,7 +311,14 @@
                     </select>
                 </div>
             </div>
-            
+
+            <div style="margin-top: 1rem;">
+                <label for="bonusEligible" style="display: inline;">
+                    <input type="checkbox" id="bonusEligible" style="width: auto; margin-right: 0.5rem;">
+                    Eligible for Sales Bonus
+                </label>
+            </div>
+
             <div class="form-group">
                 <label>Payroll Period</label>
                 <input id="payrollPeriod" placeholder="Select payroll period" />
@@ -320,7 +333,7 @@
             <div id="branchView">
                 <div id="duties" style="margin-top: 0.5rem;"></div>
                 <div style="text-align: center; margin-top: 0rem;">
-                    <button onclick="addDutyBlock()">Add Duty Block</button>
+                    <button onclick="addDutyBlock(document.getElementById('employee').value)">Add Duty Block</button>
                 </div>
             </div>
             
@@ -373,35 +386,117 @@
 
 
     <script>
+        const fullNameMap = {
+            "Acerr": "Acerr Franco",
+            "Avi": "Laville Laborte",
+            "Bea": "Beatrice Grace Boldo",
+            "Charles": "Charles Francis Tan",
+            "Darwin": "Darwin",
+            "Denzel": "Denzel Genesis Fernandez",
+            "Gab": "Gabrielle Hannah Catalan",
+            "Ja": "Japhet Dizon",
+            "Jas": "Jasmine Ferrer",
+            "Lester": "John Lester Cal",
+            "Liezel": "Liezel Acebedo",
+            "Mae": "Sheila Mae Salvajan",
+            "Paul": "Paul John Garin",
+            "Raniel": "Raniel Buenaventura",
+            "Raschel": "Raschel Joy Cruz",
+            "rhobbie": "Rhobbie Ryza Saligumba",
+            "Sarah": "Sarah Perpinan",
+            "Toph": "Cristopher David"
+        };
+
+            
+        const defaultRateMap = {
+            "Acerr": 750,
+            "Avi": 700,
+            "Laville": 700,
+            "Bea": 650,
+            "Charles": 650,
+            "Darwin": 650,
+            "Denzel": 700,
+            "Gab": 650,
+            "Ja": 650,
+            "Jas": 700,
+            "John": 700,
+            "Lester": 700,
+            "Liezel": 700,
+            "Mae": 680,
+            "Paul": 650,
+            "Raniel": 750,
+            "Raschel": 750,
+            "rhobbie": 650,
+            "Sarah": 650,
+            "Sheila": 680,
+        };
+
+        const holidays2025 = {
+            // Regular Holidays
+            "2025-01-01": { name: "New Year's Day", type: "regular" },
+            "2025-04-01": { name: "Eid'l Fitr (Feast of Ramadhan)", type: "regular" },
+            "2025-04-09": { name: "Araw ng Kagitingan", type: "regular" },
+            "2025-04-17": { name: "Maundy Thursday", type: "regular" },
+            "2025-04-18": { name: "Good Friday", type: "regular" },
+            "2025-05-01": { name: "Labor Day", type: "regular" },
+            "2025-06-12": { name: "Independence Day", type: "regular" },
+            "2025-08-25": { name: "National Heroes Day", type: "regular" },
+            "2025-11-30": { name: "Bonifacio Day", type: "regular" },
+            "2025-12-25": { name: "Christmas Day", type: "regular" },
+            "2025-12-30": { name: "Rizal Day", type: "regular" },
+
+            // Special (Non-Working) Holidays
+            "2025-01-29": { name: "Chinese New Year", type: "special" },
+            "2025-02-25": { name: "EDSA People Power Revolution Anniversary", type: "special" },
+            "2025-04-19": { name: "Black Saturday", type: "special" },
+            "2025-08-21": { name: "Ninoy Aquino Day", type: "special" },
+            "2025-10-31": { name: "All Saints’ Day Eve", type: "special" },
+            "2025-11-01": { name: "All Saints’ Day", type: "special" },
+            "2025-12-08": { name: "Feast of the Immaculate Conception", type: "special" },
+            "2025-12-24": { name: "Christmas Eve", type: "special" },
+            "2025-12-31": { name: "New Year's Eve", type: "special" }
+        };
+
+
+        let salesBonusData = {}; 
+
         let uploadedAttendanceData = {}; // key: employee name, value: array of dates
 
-            function handleCSVUpload(event) {
-                const file = event.target.files[0];
-                if (!file) return;
+        function handleCSVUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
 
-                Papa.parse(file, {
-                    header: true,
-                    skipEmptyLines: true,
-                    complete: function (results) {
-                        const data = results.data;
-                        uploadedAttendanceData = {};
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                complete: function (results) {
+                    const data = results.data;
+                    uploadedAttendanceData = {};
 
-                        data.forEach(row => {
-                            const name = row["Staff"]?.trim();
-                            const date = row["In Date"]?.trim();
+                    data.forEach(row => {
+                        const nickName = row["Staff"]?.trim();
+                        const name = fullNameMap[row["Staff"]?.trim()] || row["Staff"]?.trim();
+                        const date = row["In Date"]?.trim();
 
-                            if (name && date) {
-                                if (!uploadedAttendanceData[name]) uploadedAttendanceData[name] = [];
-                                uploadedAttendanceData[name].push(date);
-                            }
-                        });
+                        if (name && date) {
+                            if (!uploadedAttendanceData[name]) uploadedAttendanceData[name] = [];
+                            uploadedAttendanceData[name].push(date);
+                        }
+                    });
 
-                        const validNames = Object.keys(uploadedAttendanceData).sort();
-                        localStorage.setItem("employeeNames", JSON.stringify(validNames));
-                        loadNames();
-                    }
-                });
-            }
+                    const validNames = Object.keys(uploadedAttendanceData).sort();
+                    localStorage.setItem(STORAGE_KEYS.EMPLOYEE_NAMES, JSON.stringify(validNames));
+
+                    // Save the updated attendance data
+                    localStorage.setItem(STORAGE_KEYS.ATTENDANCE_DATA, JSON.stringify(uploadedAttendanceData));
+
+                    loadNames();
+
+                    // Save application state after loading CSV
+                    saveApplicationState();
+                }
+            });
+        }
 
         async function downloadPDF() {
                 const payslipElement = document.querySelector(".payslip");
@@ -473,201 +568,247 @@
         function loadNames() {
             const select = document.getElementById("employee");
             select.innerHTML = "";
-            const names = JSON.parse(localStorage.getItem("employeeNames")) || [];
+            const names = JSON.parse(localStorage.getItem(STORAGE_KEYS.EMPLOYEE_NAMES)) || [];
             names.forEach(name => {
                 const option = document.createElement("option");
                 option.textContent = name;
                 select.appendChild(option);
             });
-            if (names.length > 0) select.value = names[0];
+
+            const currentEmployee = localStorage.getItem(STORAGE_KEYS.CURRENT_EMPLOYEE);
+            if (names.length > 0) {
+                select.value = currentEmployee || names[0];
+                // Always ensure duty blocks are updated when loading names
+                updateDutyBlocksFromCSV();
+            }
         }
 
+
         document.getElementById("employee").addEventListener("change", () => {
-                updateDutyBlocksFromCSV();
-            });
+            const selectedName = document.getElementById("employee").value;
+            localStorage.setItem(STORAGE_KEYS.CURRENT_EMPLOYEE, selectedName);
+            updateDutyBlocksFromCSV();
+            loadEmployeeSettings(selectedName);
+            saveApplicationState();
+        });
+
+        function getHolidayBonus(dateStr, rate) {
+            const holiday = holidays2025[dateStr];
+            if (!holiday) return 0;
+
+            const dailyRate = parseFloat(rate) || 0;
+
+            if (holiday.type === "regular") return dailyRate; // 100% pay
+            if (holiday.type === "special") return dailyRate * 0.3; // 30% pay
+            return 0;
+        }
+
 
         function updateDutyBlocksFromCSV() {
-                const selectedName = document.getElementById("employee").value;
-                const dutyContainer = document.getElementById("duties");
+            const selectedName = document.getElementById("employee").value;
+            const nickname = selectedName.split(" ")[0];
+            const dutyContainer = document.getElementById("duties");
 
-                if (!uploadedAttendanceData[selectedName]) return;
+            // Clear existing blocks regardless of whether there's attendance data
+            dutyContainer.innerHTML = "";
 
-                // Clear existing blocks
-                dutyContainer.innerHTML = "";
-
-                // Create a new duty block
-                addDutyBlock();
-
-                const newBlock = dutyContainer.querySelector(".duty-block");
-
-                // Set branch to Podium
-                newBlock.querySelector("select").value = "Matcha Bar Podium";
-                newBlock.querySelector("summary").textContent = "Matcha Bar Podium";
-
-                const daysWorkedInput = newBlock.querySelector(".days-worked");
-
-                const fp = daysWorkedInput._flatpickr;
-                if (fp) {
-                    const validDates = uploadedAttendanceData[selectedName];
-                    fp.setDate(validDates, true);
-
-                    // Also create per-date entries
-                    validDates.forEach(date => {
-                        const iso = new Date(date).toISOString().split('T')[0];
-                        if (!perDateAssignments[iso]) {
-                            perDateAssignments[iso] = {
-                                branch: "Matcha Bar Podium",
-                                rate: 650,
-                                meal: 150,
-                                transport: 0,
-                                ot: 0,
-                                late: 0,
-                            };
-                            renderPerDateBlock(iso);
-                        }
-                    });
-                }
+            if (!uploadedAttendanceData[selectedName]) {
+                // No attendance data, just add an empty duty block
+                addDutyBlock(selectedName);
+                updatePayslip();
+                return;
             }
 
+            // Continue with existing logic for when there is attendance data
+            addDutyBlock(selectedName);
 
+            const newBlock = dutyContainer.querySelector(".duty-block");
+
+            // Set branch to Podium
+            newBlock.querySelector("select").value = "Matcha Bar Podium";
+            newBlock.querySelector("summary").textContent = "Matcha Bar Podium";
+
+            const daysWorkedInput = newBlock.querySelector(".days-worked");
+
+            const fp = daysWorkedInput._flatpickr;
+            if (fp) {
+                const validDates = uploadedAttendanceData[selectedName];
+                fp.setDate(validDates, true);
+            }
+
+            updatePayslip();
+        }
         
         function removeName() {
-                const select = document.getElementById("employee");
-                const nameToRemove = select.value;
+            const select = document.getElementById("employee");
+            const nameToRemove = select.value;
 
-                if (!nameToRemove) return;
+            if (!nameToRemove) return;
 
-                let names = JSON.parse(localStorage.getItem("employeeNames")) || [];
-                names = names.filter(name => name !== nameToRemove);
-                localStorage.setItem("employeeNames", JSON.stringify(names));
+            let names = JSON.parse(localStorage.getItem(STORAGE_KEYS.EMPLOYEE_NAMES)) || [];
+            names = names.filter(name => name !== nameToRemove);
+            localStorage.setItem(STORAGE_KEYS.EMPLOYEE_NAMES, JSON.stringify(names));
 
-                loadNames();
-            }
+            loadNames();
+            saveApplicationState();
+        }
 
         function addName() {
-                const input = document.getElementById("newName");
-                const name = input.value.trim();
-                if (!name) return;
+            const input = document.getElementById("newName");
+            const name = input.value.trim();
+            if (!name) return;
 
-                let names = JSON.parse(localStorage.getItem("employeeNames")) || [];
+            let names = JSON.parse(localStorage.getItem(STORAGE_KEYS.EMPLOYEE_NAMES)) || [];
 
-                // Avoid duplicates
-                if (!names.includes(name)) {
-                    names.unshift(name); // Adds to the top
-                    localStorage.setItem("employeeNames", JSON.stringify(names));
-                    loadNames();
-                    document.getElementById("employee").value = name;
+            // Avoid duplicates
+            if (!names.includes(name)) {
+                names.unshift(name); // Adds to the top
+                localStorage.setItem(STORAGE_KEYS.EMPLOYEE_NAMES, JSON.stringify(names));
+                loadNames();
+                document.getElementById("employee").value = name;
+                localStorage.setItem(STORAGE_KEYS.CURRENT_EMPLOYEE, name);
+            }
+
+            input.value = ""; // Clear input
+            saveApplicationState();
+        }
+
+        function addDutyBlock(employeeName = "") {
+            const container = document.getElementById("duties");
+            const blockIndex = document.querySelectorAll(".duty-block").length + 1;
+
+            const nickname = employeeName.split(" ")[0];
+
+            const details = document.createElement("details");
+            details.className = "duty-block";
+            details.open = true;
+
+            const defaultBranch = "Matcha Bar SM North EDSA";
+
+            details.innerHTML = `
+            <summary style="font-weight: bold; font-size: 1.1rem; cursor: pointer;">${defaultBranch}</summary>
+            <div class="duty-content">
+                <label>Branch</label>
+                <select>
+                    <option>Matcha Bar SM North EDSA</option>
+                    <option>Matcha Bar Podium</option>
+                    <option>Workshop</option>
+                    <option>Pop-up</option>
+                    <option>Other Events</option>
+                </select>
+                <label>Days Worked</label>
+                <input type="text" class="days-worked" placeholder="Select days" />
+                <label>Daily Rate (₱)</label>
+                <input type="number" value="${defaultRateMap[nickname] || 650}" class="daily-rate" />
+                <label>Meal Allowance per Day (₱)</label>
+                <input type="number" value="150" class="meal-allowance" />
+                <label>Transport Allowance per Day (₱) <span style="font-size: 12px;">(Optional)</span></label>
+                <input type="number" class="transport-allowance" />
+                <label>Overtime Hours</label>
+                <input type="number" step="0.01" class="ot-hours" />
+                <label>Late Deduction (Hours Late)</label>
+                <input type="number" step="0.01" class="late-hours" />
+            </div>
+            `;
+
+            const selectBranch = details.querySelector("select");
+            const summary = details.querySelector("summary");
+            selectBranch.addEventListener("change", () => {
+                summary.textContent = selectBranch.value;
+                saveApplicationState();
+            });
+
+            const removeBtn = document.createElement("button");
+            removeBtn.textContent = "Remove Duty Block";
+            removeBtn.style.cssText = `
+            margin-top: 1rem;
+            background-color: #f8d7da;
+            color: #721c24;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            display: block;
+            margin-left: auto;
+            margin-right: auto;
+            `;
+            removeBtn.onclick = () => {
+                details.remove();
+                saveApplicationState();
+            };
+            details.querySelector(".duty-content").appendChild(removeBtn);
+
+            container.appendChild(details);
+
+            const getAllSelectedDates = (excludeInput) => {
+                const allDates = [];
+                document.querySelectorAll(".days-worked").forEach(input => {
+                if (input === excludeInput) return;
+                const fp = input._flatpickr;
+                if (fp) allDates.push(...fp.selectedDates.map(d => d.toDateString()));
+                });
+                return allDates;
+            };
+
+            const fpInstance = flatpickr(details.querySelector(".days-worked"), {
+                mode: "multiple",
+                dateFormat: "Y-m-d",
+                wrap: false,
+                allowInput: true,
+                onReady: function (selectedDates, dateStr, instance) {
+                const clearBtn = document.createElement("button");
+                clearBtn.textContent = "Clear";
+                clearBtn.type = "button";
+                clearBtn.style.cssText = "margin-top: 5px; margin-bottom: 10px; background: #bbb; border: none; padding: 4px 10px; border-radius: 4px; font-size: 0.85rem;";
+                clearBtn.onclick = () => {
+                    instance.clear();
+                    saveApplicationState();
+                };
+                instance.calendarContainer.appendChild(clearBtn);
+                },
+                onDayCreate: function (dObj, dStr, fp, dayElem) {
+                const otherDates = getAllSelectedDates(fp.input);
+                const currentDate = new Date(dayElem.dateObj).toDateString();
+                const isSelectedInOther = otherDates.includes(currentDate);
+
+                if (fp.selectedDates.map(d => d.toDateString()).includes(currentDate)) {
+                    dayElem.style.backgroundColor = "#2b9348"; // green
+                    dayElem.style.color = "#fff";
+                    dayElem.style.borderRadius = "50%";
+                } else if (isSelectedInOther) {
+                    dayElem.style.backgroundColor = "#d3d3d3"; // light gray
+                    dayElem.style.borderRadius = "50%";
                 }
-
-                input.value = ""; // Clear input
+                },
+                onChange: function () {
+                    fpInstance.redraw();
+                    saveApplicationState();
+                    updatePayslip();
+                }
+            });
+            
+            // Add input listeners to save state when fields change
+            details.querySelector(".daily-rate").addEventListener("change", () => {
+                saveApplicationState();
+                updatePayslip();
+            });
+            details.querySelector(".meal-allowance").addEventListener("change", () => {
+                saveApplicationState();
+                updatePayslip();
+            });
+            details.querySelector(".transport-allowance").addEventListener("change", () => {
+                saveApplicationState();
+                updatePayslip();
+            });
+            details.querySelector(".ot-hours").addEventListener("change", () => {
+                saveApplicationState();
+                updatePayslip();
+            });
+            details.querySelector(".late-hours").addEventListener("change", () => {
+                saveApplicationState();
+                updatePayslip();
+            });
             }
 
-        function addDutyBlock() {
-                const container = document.getElementById("duties");
-                const blockIndex = document.querySelectorAll(".duty-block").length + 1;
-
-                const details = document.createElement("details");
-                details.className = "duty-block";
-                details.open = true;
-
-                const defaultBranch = "Matcha Bar SM North EDSA";
-
-                details.innerHTML = `
-        <summary style="font-weight: bold; font-size: 1.1rem; cursor: pointer;">${defaultBranch}</summary>
-        <div class="duty-content">
-            <label>Branch</label>
-            <select>
-                <option>Matcha Bar SM North EDSA</option>
-                <option>Matcha Bar Podium</option>
-                <option>Workshop</option>
-                <option>Pop-up</option>
-                <option>Other Events</option>
-            </select>
-            <label>Days Worked</label>
-            <input type="text" class="days-worked" placeholder="Select days" />
-            <label>Daily Rate (₱)</label>
-            <input type="number" value="650" class="daily-rate" />
-            <label>Meal Allowance per Day (₱)</label>
-            <input type="number" value="150" class="meal-allowance" />
-            <label>Transport Allowance per Day (₱) <span style="font-size: 12px;">(Optional)</span></label>
-            <input type="number" class="transport-allowance" />
-            <label>Overtime Hours</label>
-            <input type="number" step="0.01" class="ot-hours" />
-            <label>Late Deduction (Hours Late)</label>
-            <input type="number" step="0.01" class="late-hours" />
-        </div>
-    `;
-
-                const selectBranch = details.querySelector("select");
-                const summary = details.querySelector("summary");
-                selectBranch.addEventListener("change", () => {
-                    summary.textContent = selectBranch.value;
-                });
-
-                const removeBtn = document.createElement("button");
-                removeBtn.textContent = "Remove Duty Block";
-                removeBtn.style.cssText = `
-        margin-top: 1rem;
-        background-color: #f8d7da;
-        color: #721c24;
-        border: none;
-        padding: 0.5rem 1rem;
-        border-radius: 6px;
-        display: block;
-        margin-left: auto;
-        margin-right: auto;
-    `;
-                removeBtn.onclick = () => {
-                    details.remove();
-                };
-                details.querySelector(".duty-content").appendChild(removeBtn);
-
-                container.appendChild(details);
-
-                const getAllSelectedDates = (excludeInput) => {
-                    const allDates = [];
-                    document.querySelectorAll(".days-worked").forEach(input => {
-                        if (input === excludeInput) return;
-                        const fp = input._flatpickr;
-                        if (fp) allDates.push(...fp.selectedDates.map(d => d.toDateString()));
-                    });
-                    return allDates;
-                };
-
-                const fpInstance = flatpickr(details.querySelector(".days-worked"), {
-                    mode: "multiple",
-                    dateFormat: "Y-m-d",
-                    wrap: false,
-                    allowInput: true,
-                    onReady: function (selectedDates, dateStr, instance) {
-                        const clearBtn = document.createElement("button");
-                        clearBtn.textContent = "Clear";
-                        clearBtn.type = "button";
-                        clearBtn.style.cssText = "margin-top: 5px; margin-bottom: 10px; background: #bbb; border: none; padding: 4px 10px; border-radius: 4px; font-size: 0.85rem;";
-                        clearBtn.onclick = () => {
-                            instance.clear();
-                        };
-                        instance.calendarContainer.appendChild(clearBtn);
-                    },
-                    onDayCreate: function (dObj, dStr, fp, dayElem) {
-                        const otherDates = getAllSelectedDates(fp.input);
-                        const currentDate = new Date(dayElem.dateObj).toDateString();
-                        const isSelectedInOther = otherDates.includes(currentDate);
-
-                        if (fp.selectedDates.map(d => d.toDateString()).includes(currentDate)) {
-                            dayElem.style.backgroundColor = "#2b9348"; // green
-                            dayElem.style.color = "#fff";
-                            dayElem.style.borderRadius = "50%";
-                        } else if (isSelectedInOther) {
-                            dayElem.style.backgroundColor = "#d3d3d3"; // light gray
-                            dayElem.style.borderRadius = "50%";
-                        }
-                    },
-                    onChange: function () {
-                        fpInstance.redraw();
-                    }
-                });
-            }
 
 
 
@@ -677,107 +818,184 @@
                 maxDate: "today"
             });
 
+        function addPersistenceEventListeners() {
+                document.getElementById("role").addEventListener("change", saveApplicationState);
+                document.getElementById("transferMode").addEventListener("change", saveApplicationState);
+                document.getElementById("payrollPeriod").addEventListener("change", saveApplicationState);
+                document.getElementById("bonusEligible").addEventListener("change", saveApplicationState);
+            }
+            
         const perDateAssignments = {};
 
-            function setupPerDateCalendar() {
-                flatpickr("#perDateCalendar", {
-                    mode: "multiple",
-                    dateFormat: "Y-m-d",
-                    maxDate: "today",
-                    onChange: function (selectedDates) {
-                        selectedDates.forEach(date => {
-                            const iso = date.toISOString().split('T')[0];
-                            if (!perDateAssignments[iso]) {
-                                perDateAssignments[iso] = {
-                                    branch: "Matcha Bar Podium",
-                                    rate: 650,
-                                    meal: 150,
-                                    transport: 0,
-                                    ot: 0,
-                                    late: 0,
-                                };
-                                renderPerDateBlock(iso);
-                            }
-                        });
+        function resetAllData() {
+                if (confirm("Are you sure you want to reset all data? This cannot be undone.")) {
+                    try {
+                        // Explicitly clear all localStorage keys
+                        localStorage.clear();
+
+                        // Reset in-memory data
+                        uploadedAttendanceData = {};
+                        salesBonusData = {};
+
+                        // Clear perDateAssignments
+                        Object.keys(perDateAssignments).forEach(key => delete perDateAssignments[key]);
+
+                        console.log("All data has been reset successfully");
+
+                        // Force reload the page to reset all UI elements
+                        window.location.href = window.location.href.split('?')[0];
+                    } catch (error) {
+                        console.error("Error resetting data:", error);
+                        alert("There was an error resetting data. Please refresh the page and try again.");
                     }
-                });
+                }
             }
 
-            function renderPerDateBlock(isoDate) {
-                const data = perDateAssignments[isoDate];
+        function addResetButton() {
+            const container = document.querySelector('.form');
+            const resetBtn = document.createElement('button');
+            resetBtn.textContent = 'Reset All Data';
+            resetBtn.style.cssText = `
+            margin-top: 1.5rem;
+            background-color: #e63946;
+            width: 30%;
+            `;
+            resetBtn.onclick = resetAllData;
+            container.appendChild(resetBtn);
+        }
 
-                const container = document.getElementById("dateAssignments");
-                const details = document.createElement("details");
-                details.className = "duty-block";
-                details.open = true;
-                details.dataset.date = isoDate;
+        function setupPerDateCalendar() {
+            flatpickr("#perDateCalendar", {
+                mode: "multiple",
+                dateFormat: "Y-m-d",
+                maxDate: "today",
+                onChange: function (selectedDates) {
+                    selectedDates.forEach(date => {
+                        const iso = date.toISOString().split('T')[0];
+                        if (!perDateAssignments[iso]) {
+                            const selectedName = document.getElementById("employee").value;
+                            const nickname = selectedName.split(" ")[0];
+                            const baseRate = defaultRateMap[nickname] || 650;
 
-                const dateDisplay = new Date(isoDate).toLocaleDateString("en-US", {
-                    weekday: "long",
-                    year: "numeric",
-                    month: "short",
-                    day: "numeric"
-                });
+                            perDateAssignments[iso] = {
+                                branch: "Matcha Bar Podium",
+                                rate: baseRate,
+                                meal: 150,
+                                transport: 0,
+                                ot: 0,
+                                late: 0,
+                            };
+                            renderPerDateBlock(iso);
+                        }
+                    });
 
-                details.innerHTML = `
-        <summary style="font-weight: bold;">📅 ${dateDisplay}</summary>
-        <div class="duty-content">
-            <label>Branch</label>
-            <select class="per-date-branch">
-                <option>Matcha Bar SM North EDSA</option>
-                <option selected>Matcha Bar Podium</option>
-                <option>Workshop</option>
-                <option>Pop-up</option>
-                <option>Other Events</option>
-            </select>
-            <label>Daily Rate (₱)</label>
-            <input type="number" class="per-date-rate" value="${data.rate}" />
-            <label>Meal Allowance per Day (₱)</label>
-            <input type="number" class="per-date-meal" value="${data.meal}" />
-            <label>Transport Allowance (₱)</label>
-            <input type="number" class="per-date-transport" value="${data.transport}" />
-            <label>Overtime Hours</label>
-            <input type="number" step="0.01" class="per-date-ot" value="${data.ot}" />
-            <label>Late Deduction (Hours Late)</label>
-            <input type="number" step="0.01" class="per-date-late" value="${data.late}" />
-            <button onclick="removeDateAssignment('${isoDate}')" style="margin-top: 1rem; background-color: #f8d7da; color: #721c24;">Remove</button>
-        </div>
-    `;
+                    // Trigger update
+                    updatePayslip();
+                }
+            });
+        }
 
-                // Attach change listeners to update data
-                details.querySelector(".per-date-branch").addEventListener("change", e => {
-                    perDateAssignments[isoDate].branch = e.target.value;
-                    updatePayslip();
-                });
-                details.querySelector(".per-date-rate").addEventListener("input", e => {
-                    perDateAssignments[isoDate].rate = parseFloat(e.target.value);
-                    updatePayslip();
-                });
-                details.querySelector(".per-date-meal").addEventListener("input", e => {
-                    perDateAssignments[isoDate].meal = parseFloat(e.target.value);
-                    updatePayslip();
-                });
-                details.querySelector(".per-date-transport").addEventListener("input", e => {
-                    perDateAssignments[isoDate].transport = parseFloat(e.target.value);
-                    updatePayslip();
-                });
-                details.querySelector(".per-date-ot").addEventListener("input", e => {
-                    perDateAssignments[isoDate].ot = parseFloat(e.target.value);
-                    updatePayslip();
-                });
-                details.querySelector(".per-date-late").addEventListener("input", e => {
-                    perDateAssignments[isoDate].late = parseFloat(e.target.value);
-                    updatePayslip();
-                });
+        function renderPerDateBlock(isoDate) {
+            const data = perDateAssignments[isoDate];
+            if (!data) return;
 
-                container.appendChild(details);
+            // Check if block already exists
+            let details = document.querySelector(`details[data-date="${isoDate}"]`);
+
+            // If it exists, update values instead of creating a new one
+            if (details) {
+                details.querySelector(".per-date-branch").value = data.branch;
+                details.querySelector(".per-date-rate").value = data.rate;
+                details.querySelector(".per-date-meal").value = data.meal;
+                details.querySelector(".per-date-transport").value = data.transport;
+                details.querySelector(".per-date-ot").value = data.ot;
+                details.querySelector(".per-date-late").value = data.late;
+                return;
             }
 
-            function removeDateAssignment(isoDate) {
-                delete perDateAssignments[isoDate];
-                const block = document.querySelector(`details[data-date='${isoDate}']`);
-                if (block) block.remove();
+            const container = document.getElementById("dateAssignments");
+            details = document.createElement("details");
+            details.className = "duty-block";
+            details.open = true;
+            details.dataset.date = isoDate;
+
+            const dateDisplay = new Date(isoDate).toLocaleDateString("en-US", {
+                weekday: "long",
+                year: "numeric",
+                month: "short",
+                day: "numeric"
+            });
+
+            details.innerHTML = `
+<summary style="font-weight: bold;">📅 ${dateDisplay}</summary>
+<div class="duty-content">
+<label>Branch</label>
+<select class="per-date-branch">
+<option>Matcha Bar SM North EDSA</option>
+<option>Matcha Bar Podium</option>
+<option>Workshop</option>
+<option>Pop-up</option>
+<option>Other Events</option>
+</select>
+<label>Daily Rate (₱)</label>
+<input type="number" class="per-date-rate" value="${data.rate}" />
+<label>Meal Allowance per Day (₱)</label>
+<input type="number" class="per-date-meal" value="${data.meal}" />
+<label>Transport Allowance (₱)</label>
+<input type="number" class="per-date-transport" value="${data.transport}" />
+<label>Overtime Hours</label>
+<input type="number" step="0.01" class="per-date-ot" value="${data.ot}" />
+<label>Late Deduction (Hours Late)</label>
+<input type="number" step="0.01" class="per-date-late" value="${data.late}" />
+<button onclick="removeDateAssignment('${isoDate}')" style="margin-top: 1rem; background-color: #f8d7da; color: #721c24;">Remove</button>
+</div>
+`;
+
+            // Set the branch value
+            const branchSelect = details.querySelector(".per-date-branch");
+            if (branchSelect && data.branch) {
+                branchSelect.value = data.branch;
             }
+
+            // Attach change listeners to update data
+            details.querySelector(".per-date-branch").addEventListener("change", e => {
+                perDateAssignments[isoDate].branch = e.target.value;
+                saveApplicationState();
+                updatePayslip();
+            });
+
+            details.querySelector(".per-date-rate").addEventListener("input", e => {
+                perDateAssignments[isoDate].rate = parseFloat(e.target.value);
+                saveApplicationState();
+                updatePayslip();
+            });
+
+            details.querySelector(".per-date-meal").addEventListener("input", e => {
+                perDateAssignments[isoDate].meal = parseFloat(e.target.value);
+                saveApplicationState();
+                updatePayslip();
+            });
+
+            details.querySelector(".per-date-transport").addEventListener("input", e => {
+                perDateAssignments[isoDate].transport = parseFloat(e.target.value);
+                saveApplicationState();
+                updatePayslip();
+            });
+
+            details.querySelector(".per-date-ot").addEventListener("input", e => {
+                perDateAssignments[isoDate].ot = parseFloat(e.target.value);
+                saveApplicationState();
+                updatePayslip();
+            });
+
+            details.querySelector(".per-date-late").addEventListener("input", e => {
+                perDateAssignments[isoDate].late = parseFloat(e.target.value);
+                saveApplicationState();
+                updatePayslip();
+            });
+
+            container.appendChild(details);
+        }
 
         function formatDate(dateStr) {
             const d = new Date(dateStr);
@@ -789,20 +1007,147 @@
             });
         }
 
-        function switchToView(view) {
-                document.getElementById("branchView").style.display = view === 'branch' ? 'block' : 'none';
-                document.getElementById("dateView").style.display = view === 'date' ? 'block' : 'none';
+        let originalBranchDates = {}; // Stores the original dates from branch view before switching
 
-                document.getElementById("branchViewBtn").style.backgroundColor = view === 'branch' ? '#2b9348' : '#ccc';
-                document.getElementById("dateViewBtn").style.backgroundColor = view === 'date' ? '#2b9348' : '#ccc';
+        // Replace the switchToView function with this improved version
+        function switchToView(view) {
+            console.log(`Switching to ${view} view...`);
+
+            if (view === 'branch') {
+                // Before switching back to branch view, store the original dates from perDateAssignments
+                originalBranchDates = {}; // Reset storage
+
+                // Switch from Date to Branch view
+                syncDateToBranchView();
+                document.getElementById("branchView").style.display = 'block';
+                document.getElementById("dateView").style.display = 'none';
+            } else {
+                // Before switching to date view, store original dates from branch blocks
+                originalBranchDates = {}; // Reset storage
+
+                document.querySelectorAll(".duty-block:not([data-date])").forEach(block => {
+                    const branch = block.querySelector("select").value;
+                    const datePicker = block.querySelector(".days-worked")?._flatpickr;
+
+                    if (datePicker && datePicker.selectedDates.length > 0) {
+                        // Store dates for this branch
+                        originalBranchDates[branch] = datePicker.selectedDates.map(d =>
+                            d.toISOString().split('T')[0]
+                        );
+                        console.log(`Stored ${originalBranchDates[branch].length} dates for ${branch}`);
+                    }
+                });
+
+                // Now switch to date view
+                syncBranchToDateView();
+                document.getElementById("branchView").style.display = 'none';
+                document.getElementById("dateView").style.display = 'block';
             }
 
+            // Update button styles
+            document.getElementById("branchViewBtn").style.backgroundColor = view === 'branch' ? '#2b9348' : '#ccc';
+            document.getElementById("dateViewBtn").style.backgroundColor = view === 'date' ? '#2b9348' : '#ccc';
+
+            // Always update the payslip after switching views
+            updatePayslip();
+
+            // Save application state after view switch
+            saveApplicationState();
+        }
+        
+        function clearPerDateAssignments() {
+            // Clear per-date assignments in memory
+            Object.keys(perDateAssignments).forEach(key => delete perDateAssignments[key]);
+
+            // Clear in localStorage too
+            localStorage.setItem(STORAGE_KEYS.PER_DATE_ASSIGNMENTS, JSON.stringify(perDateAssignments));
+
+            // Clear UI
+            const container = document.getElementById("dateAssignments");
+            container.innerHTML = "";
+
+            // Clear calendar selection
+            const perDateCalendar = document.getElementById("perDateCalendar")._flatpickr;
+            if (perDateCalendar) {
+                perDateCalendar.clear();
+            }
+        }
+
+        function syncBranchToDateView() {
+            console.log("Switching to Date View...");
+
+            // Get all selected dates from branch view blocks
+            const allDates = [];
+            const dateSettings = {};
+
+            // Collect dates from all branch blocks
+            document.querySelectorAll(".duty-block:not([data-date])").forEach(block => {
+                const branch = block.querySelector("select").value;
+                const datePicker = block.querySelector(".days-worked")?._flatpickr;
+                if (!datePicker || !datePicker.selectedDates.length) return;
+
+                const rate = parseFloat(block.querySelector(".daily-rate").value || 0);
+                const meal = parseFloat(block.querySelector(".meal-allowance").value || 0);
+                const transport = parseFloat(block.querySelector(".transport-allowance").value || 0);
+                const otHours = parseFloat(block.querySelector(".ot-hours").value || 0);
+                const lateHours = parseFloat(block.querySelector(".late-hours").value || 0);
+
+                // For each date in this branch block
+                datePicker.selectedDates.forEach(date => {
+                    const iso = date.toISOString().split('T')[0];
+                    allDates.push(date);
+
+                    // Only create settings for new dates
+                    if (!perDateAssignments[iso]) {
+                        dateSettings[iso] = {
+                            branch: branch,
+                            rate: rate,
+                            meal: meal,
+                            transport: transport,
+                            ot: otHours,
+                            late: lateHours
+                        };
+                    }
+                });
+            });
+
+            // Add new settings from branch view to per-date assignments
+            for (const iso in dateSettings) {
+                perDateAssignments[iso] = dateSettings[iso];
+            }
+
+            // Render all per-date assignments
+            const container = document.getElementById("dateAssignments");
+            container.innerHTML = ""; // Clear the container
+
+            for (const iso in perDateAssignments) {
+                renderPerDateBlock(iso);
+            }
+
+            // Update the date picker with all dates that have assignments
+            const perDateCalendar = document.getElementById("perDateCalendar")._flatpickr;
+            if (perDateCalendar) {
+                const dateArray = Object.keys(perDateAssignments).map(iso => new Date(iso));
+                if (dateArray.length > 0) {
+                    perDateCalendar.setDate(dateArray);
+                } else {
+                    perDateCalendar.clear();
+                }
+            }
+
+            // Save updated assignments
+            localStorage.setItem(STORAGE_KEYS.PER_DATE_ASSIGNMENTS, JSON.stringify(perDateAssignments));
+
+            // Log the final number of dates for debugging
+            console.log(`Date View now has ${Object.keys(perDateAssignments).length} dates`);
+        }
 
         function updatePayslip() {
             const name = document.getElementById("employee").value;
             const role = document.getElementById("role").value;
             const period = document.getElementById("payrollPeriod").value;
             const transfer = document.getElementById("transferMode").value;
+            const isBonusEligible = document.getElementById("bonusEligible").checked;
 
             let periodStart = null;
             let periodEnd = null;
@@ -812,7 +1157,7 @@
                 periodEnd = new Date(endStr);
             }
 
-            document.getElementById("selectedName").textContent = name.split(" ")[0]; // first name only
+            document.getElementById("selectedName").textContent = name.split(" ")[0];
             document.getElementById("employeeDisplay").textContent = name;
             document.getElementById("summaryRole").textContent = role;
             let formattedPeriod = period;
@@ -832,107 +1177,1033 @@
             document.getElementById("summaryPeriod").textContent = formattedPeriod;
             document.getElementById("summaryMode").textContent = transfer;
 
-            let totalPay = 0;
             const breakdown = document.getElementById("breakdown");
             breakdown.innerHTML = "";
 
-            const blocks = document.querySelectorAll(".duty-block");
-            blocks.forEach(block => {
-                const branch = block.querySelector("select").value;
-                const datePicker = block.querySelector(".days-worked")._flatpickr;
-                const days = datePicker ? datePicker.selectedDates : [];
-                
-                if (datePicker && periodStart && periodEnd) {
-                    datePicker.set("minDate", periodStart);
-                    datePicker.set("maxDate", periodEnd);
+            // Combined data structure to avoid duplicates by using a dateMap
+            const consolidatedData = {};
+
+            // Helper function to add a date to a branch's data
+            const addDateToBranch = (branch, date, rate, meal, transport, otHours, lateHours) => {
+                if (!consolidatedData[branch]) {
+                    consolidatedData[branch] = {
+                        days: [],
+                        rate: rate,
+                        meal: meal,
+                        transport: transport,
+                        otHours: otHours,
+                        lateHours: lateHours,
+                        dateMap: {} // Use an object as a Set to track unique dates
+                        };
+                    }
+
+                    // Only add the date if it's not already in this branch
+                    const dateKey = formatDateForComparison(date);
+                    if (!consolidatedData[branch].dateMap[dateKey]) {
+                        consolidatedData[branch].days.push(date);
+                        consolidatedData[branch].dateMap[dateKey] = true;
+                    }
+                };
+
+                // Process branch view duty blocks
+                const blocks = document.querySelectorAll(".duty-block:not([data-date])");
+                blocks.forEach(block => {
+                    const branch = block.querySelector("select").value;
+                    const datePicker = block.querySelector(".days-worked")?._flatpickr;
+                    const days = datePicker ? datePicker.selectedDates : [];
+
+                    if (datePicker && periodStart && periodEnd) {
+                        datePicker.set("minDate", periodStart);
+                        datePicker.set("maxDate", periodEnd);
+                    }
+
+                    const rate = parseFloat(block.querySelector(".daily-rate").value || 0);
+                    const meal = parseFloat(block.querySelector(".meal-allowance").value || 0);
+                    const transport = parseFloat(block.querySelector(".transport-allowance").value || 0);
+                    const otHours = parseFloat(block.querySelector(".ot-hours").value || 0);
+                    const lateHours = parseFloat(block.querySelector(".late-hours").value || 0);
+
+                    // Add all days from this branch block
+                    days.forEach(day => {
+                        addDateToBranch(branch, day, rate, meal, transport, otHours, lateHours);
+                    });
+                });
+
+                // Process per-date assignments
+                for (const isoDate in perDateAssignments) {
+                    const data = perDateAssignments[isoDate];
+                    const branch = data.branch;
+                    const day = new Date(isoDate);
+
+                    // Add the date to its branch
+                    addDateToBranch(
+                        branch,
+                        day,
+                        data.rate,
+                        data.meal,
+                        data.transport,
+                        data.ot,
+                        data.late
+                    );
                 }
 
-                const rate = parseFloat(block.querySelector(".daily-rate").value || 0);
-                const meal = parseFloat(block.querySelector(".meal-allowance").value || 0);
-               
-                const transport = parseFloat(block.querySelector(".transport-allowance").value || 0); // Check for transport allowance
+                // Now render consolidated blocks in the payslip
+                let totalPay = 0;
+                let totalBonus = 0;
 
-                const basic = days.length * rate;
-                const meals = days.length * meal;
-                const transports = days.length * transport; 
+                for (const branch in consolidatedData) {
+                    const data = consolidatedData[branch];
+                    const days = data.days;
+                    const rate = data.rate;
+                    const meal = data.meal;
+                    const transport = data.transport;
+                    const otHours = data.otHours;
+                    const lateHours = data.lateHours;
 
+                    let basic = 0;
+                    let holidayBonus = 0;
+                    days.forEach(d => {
+                        const formatted = formatDateForComparison(d);
+                        basic += rate;
+                        holidayBonus += getHolidayBonus(formatted, rate);
+                    });
 
-                const otHours = parseFloat(block.querySelector(".ot-hours").value || 0);
-                const lateHours = parseFloat(block.querySelector(".late-hours").value || 0);
-                const hourlyRate = rate / 8;
+                    const meals = days.length * meal;
+                    const transports = days.length * transport;
+                    const hourlyRate = rate / 8;
+                    const otPay = otHours * hourlyRate * 1.25;
+                    const lateDeduction = lateHours * hourlyRate;
 
-                const otPay = otHours * hourlyRate * 1.25;
-                const lateDeduction = lateHours * hourlyRate;
+                    // Calculate bonus
+                    let blockBonus = 0;
+                    if (isBonusEligible && Object.keys(salesBonusData).length > 0) {
+                        days.forEach(date => {
+                            const formattedDate = formatDateForComparison(date);
+                            const bonusAmount = salesBonusData[formattedDate];
+                            if (bonusAmount !== undefined && bonusAmount > 0) {
+                                blockBonus += bonusAmount;
+                            }
+                        });
+                        totalBonus += blockBonus;
+                    }
 
-                const subtotal = basic + meals + transports + otPay - lateDeduction;
-                totalPay += subtotal;
+                    const subtotal = basic + holidayBonus + meals + transports + otPay - lateDeduction + blockBonus;
+                    totalPay += subtotal;
 
-                const readableDays = days
-                    .slice()
-                    .sort((a, b) => a - b)
-                    .map(d => `<li>${formatDate(d)}</li>`)
-                    .join("");
+                    // Get unique dates and sort them chronologically
+                    const uniqueDateMap = {};
+                    days.forEach(d => {
+                        const dateKey = formatDateForComparison(d);
+                        uniqueDateMap[dateKey] = d;
+                    });
 
-                breakdown.innerHTML += `
-                    <div class="duty-summary">
-                        <h4>${branch}</h4>
-                        <strong style="display: flex; justify-content: space-between;">
-                        <span>DAYS WORKED</span>
-                        <span>${days.length} day${days.length !== 1 ? "s" : ""}</span>
-                        </strong>
-                        <ul>${readableDays}</ul>
-                        <p>Basic Pay <span style="float:right">₱${basic.toFixed(2)}</span></p>
-                        <p>Meal Allowance <span style="float:right">₱${meals.toFixed(2)}</span></p>
-                        ${transports > 0 ? `<p>Transport Allowance <span style="float:right">₱${transports.toFixed(2)}</span></p>` : ''}
-                        ${otPay > 0 ? `<p>Overtime Hours <span style="float:right">₱${otPay.toFixed(2)}</span></p>` : ''}
-                        ${lateDeduction > 0 ? `<p>Late Deduction <span style="float:right">–₱${lateDeduction.toFixed(2)}</span></p>` : ''}
-                        <hr>
-                        <strong>Subtotal <span style="float:right">₱${subtotal.toFixed(2)}</span></strong>
-                    </div>
-                `;
-            });
+                    // First convert all dates to Date objects if they aren't already
+                    const validDays = days.map(d => d instanceof Date ? d : new Date(d));
+                    // Sort chronologically (earliest to latest)
+                    validDays.sort((a, b) => a.getTime() - b.getTime());
+                    // Then remove duplicates by date string
+                    const uniqueDays = [];
+                    const seenDates = new Set();
+                    validDays.forEach(d => {
+                        const dateKey = formatDateForComparison(d);
+                        if (!seenDates.has(dateKey)) {
+                            seenDates.add(dateKey);
+                            uniqueDays.push(d);
+                        }
+                    });
 
-            for (const isoDate in perDateAssignments) {
-                const data = perDateAssignments[isoDate];
-                const day = new Date(isoDate);
-                const hourlyRate = data.rate / 8;
-                const basic = data.rate;
-                const meals = data.meal;
-                const transport = data.transport;
-                const otPay = data.ot * hourlyRate * 1.25;
-                const lateDeduction = data.late * hourlyRate;
-                const subtotal = basic + meals + transport + otPay - lateDeduction;
-                totalPay += subtotal;
+                    // Create the list of dates with bonus indicators
+                    const readableDays = uniqueDays.map(d => {
+                        const dateKey = formatDateForComparison(d);
+                        const bonusAmount = salesBonusData[dateKey];
+                        const hasBonus = isBonusEligible && bonusAmount !== undefined && bonusAmount > 0;
+                        const bonusIcon = hasBonus ?
+                            `<span title="₱${bonusAmount} Bonus" style="color: #2b9348; margin-left: 5px;">⭐</span>` : '';
+                        return `<li>${formatDate(d)}${bonusIcon}</li>`;
+                    }).join("");
 
-                breakdown.innerHTML += `
-                    <div class="duty-summary">
-                        <h4>${data.branch}</h4>
-                        <strong style="display: flex; justify-content: space-between;">
-                            <span>${formatDate(day)}</span>
-                            <span>1 day</span>
-                        </strong>
-                        <ul><li>${formatDate(day)}</li></ul>
-                        <p>Basic Pay <span style="float:right">₱${basic.toFixed(2)}</span></p>
-                        <p>Meal Allowance <span style="float:right">₱${meals.toFixed(2)}</span></p>
-                        ${transport > 0 ? `<p>Transport Allowance <span style="float:right">₱${transport.toFixed(2)}</span></p>` : ''}
-                        ${otPay > 0 ? `<p>Overtime Hours <span style="float:right">₱${otPay.toFixed(2)}</span></p>` : ''}
-                        ${lateDeduction > 0 ? `<p>Late Deduction <span style="float:right">–₱${lateDeduction.toFixed(2)}</span></p>` : ''}
-                        <hr>
-                        <strong>Subtotal <span style="float:right">₱${subtotal.toFixed(2)}</span></strong>
-                    </div>
-                `;
+                    // Bonus HTML
+                    let bonusHTML = '';
+                    if (blockBonus > 0) {
+                        bonusHTML = `<p style="color: #2b9348;"><strong>Sales Bonus</strong> <span style="float:right">₱${blockBonus.toFixed(2)}</span></p>`;
+                    }
+
+                    // Holiday bonus HTML
+                    const holidayHTML = holidayBonus > 0 ? `<p style="color: #2b9348;"><strong>Holiday Pay</strong> <span style="float:right">₱${holidayBonus.toFixed(2)}</span></p>` : '';
+
+                    // Add the consolidated block to the breakdown
+                    breakdown.innerHTML += `
+<div class="duty-summary">
+<h4>${branch}</h4>
+<strong style="display: flex; justify-content: space-between;">
+<span>DAYS WORKED</span>
+<span>${days.length} day${days.length !== 1 ? "s" : ""}</span>
+</strong>
+<ul>${readableDays}</ul>
+<p>Basic Pay <span style="float:right">₱${basic.toFixed(2)}</span></p>
+<p>Meal Allowance <span style="float:right">₱${meals.toFixed(2)}</span></p>
+${transports > 0 ? `<p>Transport Allowance <span style="float:right">₱${transports.toFixed(2)}</span></p>` : ''}
+${otPay > 0 ? `<p>Overtime Hours <span style="float:right">₱${otPay.toFixed(2)}</span></p>` : ''}
+${lateDeduction > 0 ? `<p>Late Deduction <span style="float:right">–₱${lateDeduction.toFixed(2)}</span></p>` : ''}
+${bonusHTML}
+${holidayHTML}
+<hr>
+<strong>Subtotal <span style="float:right">₱${subtotal.toFixed(2)}</span></strong>
+</div>
+`;
+                }
+
+                // Update total pay display
+                document.getElementById("totalPay").textContent = `₱${totalPay.toFixed(2)}`;
             }
 
 
-            document.getElementById("totalPay").textContent = `₱${totalPay.toFixed(2)}`;
+    window.onload = function () {
+        // Try to load saved state first
+        const stateLoaded = loadApplicationState();
+
+        // If no saved state, initialize normally
+        if (!stateLoaded) {
+            loadNames();
+            setupPerDateCalendar();
+            updatePayslip();
         }
 
-        window.onload = function () {
-            loadNames();
-            addDutyBlock();
-            setInterval(updatePayslip, 500);
-            setupPerDateCalendar();
+        // Add persistence event listeners
+        addPersistenceEventListeners();
+
+        // Add reset button
+        addResetButton();
+
+        // Add event listeners to key form elements
+        document.getElementById("employee").addEventListener("change", updatePayslip);
+        document.getElementById("role").addEventListener("change", updatePayslip);
+        document.getElementById("payrollPeriod").addEventListener("change", updatePayslip);
+        document.getElementById("transferMode").addEventListener("change", updatePayslip);
+
+        // Add bonus checkbox listener
+        document.getElementById("bonusEligible").addEventListener("change", updatePayslip);
+
+        // Set up a mutation observer to watch for changes to duty blocks
+        const observer = new MutationObserver(() => {
+            updatePayslip();
+            saveApplicationState();
+        });
+
+        observer.observe(document.getElementById("duties"), {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ["value"]
+        });
+
+        observer.observe(document.getElementById("dateAssignments"), {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ["value"]
+        });
+    };
+
+    function normalizeDate(dateStr) {
+        // Handle "DD MM YYYY" format (e.g., "29 03 2025")
+        if (/^\d{1,2}\s\d{1,2}\s\d{4}$/.test(dateStr)) {
+            const [day, month, year] = dateStr.split(' ');
+            return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+        }
+
+        // Handle "D MM YYYY" format (e.g., "1 04 2025")
+        if (/^\d\s\d{2}\s\d{4}$/.test(dateStr)) {
+            const [day, month, year] = dateStr.split(' ');
+            return `${year}-${month}-${day.padStart(2, '0')}`;
+        }
+
+        // Try to handle other formats by creating a date and extracting components directly
+        try {
+            const date = new Date(dateStr);
+            if (!isNaN(date.getTime())) {
+                const year = date.getFullYear();
+                // getMonth() is 0-indexed, so add 1
+                const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                const day = date.getDate().toString().padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            }
+        } catch (e) {
+            console.error("Failed to parse date:", dateStr);
+        }
+
+        return dateStr; // fallback
+    }
+
+    // This is a NEW function that will be used in updatePayslip to safely match dates
+    function formatDateForComparison(date) {
+        if (!date) return "";
+
+        // Direct component extraction to avoid timezone issues
+        const year = date.getFullYear();
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const day = date.getDate().toString().padStart(2, '0');
+
+        return `${year}-${month}-${day}`;
+    }
+    
+    function handleSalesBonusUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        Papa.parse(file, {
+            header: true,
+            skipEmptyLines: true,
+            complete: function (results) {
+                const data = results.data;
+                salesBonusData = {};
+
+                console.log("Raw CSV data:", data);
+
+                data.forEach(row => {
+                    try {
+                        // Parse the date in the original format
+                        let dateStr = row["Date"]?.trim();
+                        if (!dateStr) return;
+
+                        // Use a safer date normalization approach
+                        let normalizedDate = normalizeDate(dateStr);
+
+                        // Get the bonus value
+                        const bonus = parseFloat(row["Bonus"] || 0);
+                        if (!isNaN(bonus)) {
+                            salesBonusData[normalizedDate] = bonus;
+                        }
+
+                        console.log(`Parsed "${dateStr}" as "${normalizedDate}" with bonus: ${bonus}`);
+                    } catch (error) {
+                        console.error("Error processing row:", row, error);
+                    }
+                });
+
+                console.log("Processed sales bonus data:", salesBonusData);
+
+                // Save the updated sales bonus data
+                localStorage.setItem(STORAGE_KEYS.SALES_BONUS_DATA, JSON.stringify(salesBonusData));
+
+                // After loading the sales data, trigger a full refresh for the current employee
+                const currentEmployee = document.getElementById("employee").value;
+                if (currentEmployee) {
+                    // Force a complete refresh by updating the duty blocks first
+                    updateDutyBlocksFromCSV();
+                } else {
+                    // Just update the payslip if no employee is selected
+                    updatePayslip();
+                }
+
+                // Save application state after loading CSV
+                saveApplicationState();
+            }
+        });
+    }
+
+
+    // ============================================================================
+    // DATA PERSISTENCE LAYER
+    // This handles saving and loading all application data to/from localStorage
+    // ============================================================================
+
+    // Constants for localStorage keys
+    const STORAGE_KEYS = {
+        EMPLOYEE_NAMES: 'employeeNames',
+        ATTENDANCE_DATA: 'attendanceData',
+        SALES_BONUS_DATA: 'salesBonusData',
+        EMPLOYEE_SETTINGS: 'employeeSettings',
+        PER_DATE_ASSIGNMENTS: 'perDateAssignments',
+        CURRENT_EMPLOYEE: 'currentEmployee',
+        APP_STATE: 'appState'
+    };
+
+    // Save all application data
+    function saveApplicationState() {
+        // Save the current application state
+        const appState = {
+            lastUpdated: new Date().toISOString()
         };
+
+        // Store each data structure separately
+        localStorage.setItem(STORAGE_KEYS.ATTENDANCE_DATA, JSON.stringify(uploadedAttendanceData));
+        localStorage.setItem(STORAGE_KEYS.SALES_BONUS_DATA, JSON.stringify(salesBonusData));
+        localStorage.setItem(STORAGE_KEYS.PER_DATE_ASSIGNMENTS, JSON.stringify(perDateAssignments));
+        localStorage.setItem(STORAGE_KEYS.APP_STATE, JSON.stringify(appState));
+
+        // Save current employee selection
+        const currentEmployee = document.getElementById("employee").value;
+        if (currentEmployee) {
+            localStorage.setItem(STORAGE_KEYS.CURRENT_EMPLOYEE, currentEmployee);
+        }
+
+        // Save employee-specific settings for the current employee
+        saveEmployeeSettings(currentEmployee);
+
+        console.log("Application state saved to localStorage");
+    }
+
+    // Load all application data
+    function loadApplicationState() {
+        try {
+            // Load all data structures from localStorage
+            const attendanceData = localStorage.getItem(STORAGE_KEYS.ATTENDANCE_DATA);
+            const salesBonusData = localStorage.getItem(STORAGE_KEYS.SALES_BONUS_DATA);
+            const perDateAssignmentsData = localStorage.getItem(STORAGE_KEYS.PER_DATE_ASSIGNMENTS);
+            const appState = localStorage.getItem(STORAGE_KEYS.APP_STATE);
+
+            // Restore data if available
+            if (attendanceData) {
+                uploadedAttendanceData = JSON.parse(attendanceData);
+            }
+
+            if (salesBonusData) {
+                window.salesBonusData = JSON.parse(salesBonusData);
+            }
+
+            if (perDateAssignmentsData) {
+                // Restore per-date assignments
+                const savedAssignments = JSON.parse(perDateAssignmentsData);
+                Object.assign(perDateAssignments, savedAssignments);
+            }
+
+            // Load names and set current employee
+            loadNames();
+
+            // Load current employee selection
+            const currentEmployee = localStorage.getItem(STORAGE_KEYS.CURRENT_EMPLOYEE);
+            if (currentEmployee) {
+                const employeeSelect = document.getElementById("employee");
+                if (employeeSelect) {
+                    employeeSelect.value = currentEmployee;
+                }
+            }
+
+            // Load employee-specific settings for the current employee
+            loadEmployeeSettings(currentEmployee);
+
+            // Rebuild the UI based on loaded data
+            updateDutyBlocksFromCSV();
+            renderSavedPerDateBlocks();
+
+            console.log("Application state loaded from localStorage");
+            return true;
+        } catch (error) {
+            console.error("Failed to load application state:", error);
+            return false;
+        }
+    }
+
+    // Save employee-specific settings
+    function saveEmployeeSettings(employeeName) {
+        if (!employeeName) return;
+
+        // Get all current settings for this employee
+        const settings = {
+            bonusEligible: document.getElementById("bonusEligible").checked,
+            role: document.getElementById("role").value,
+            transferMode: document.getElementById("transferMode").value,
+            payrollPeriod: document.getElementById("payrollPeriod").value,
+            dutyBlocks: [] // Will store all duty block settings
+        };
+
+        // Save duty block settings
+        const dutyBlocks = document.querySelectorAll(".duty-block:not([data-date])");
+        dutyBlocks.forEach(block => {
+            if (block.dataset.date) return; // Skip per-date blocks
+
+            const dutyBlock = {
+                branch: block.querySelector("select").value,
+                days: [], // Will store all selected dates
+                rate: parseFloat(block.querySelector(".daily-rate").value || 0),
+                meal: parseFloat(block.querySelector(".meal-allowance").value || 0),
+                transport: parseFloat(block.querySelector(".transport-allowance").value || 0),
+                ot: parseFloat(block.querySelector(".ot-hours").value || 0),
+                late: parseFloat(block.querySelector(".late-hours").value || 0),
+                cashAdvance: parseFloat(block.querySelector(".cash-advance")?.value || 0),
+            };
+
+            // Save selected dates
+            const datePicker = block.querySelector(".days-worked")?._flatpickr;
+            if (datePicker) {
+                dutyBlock.days = datePicker.selectedDates.map(d => d.toISOString());
+            }
+
+            settings.dutyBlocks.push(dutyBlock);
+        });
+
+        // Get existing employee settings or initialize a new object
+        let allEmployeeSettings = {};
+        const storedSettings = localStorage.getItem(STORAGE_KEYS.EMPLOYEE_SETTINGS);
+        if (storedSettings) {
+            allEmployeeSettings = JSON.parse(storedSettings);
+        }
+
+        // Update settings for this employee
+        allEmployeeSettings[employeeName] = settings;
+
+        // Save all employee settings
+        localStorage.setItem(STORAGE_KEYS.EMPLOYEE_SETTINGS, JSON.stringify(allEmployeeSettings));
+    }
+
+    // Load employee-specific settings
+    function loadEmployeeSettings(employeeName) {
+        if (!employeeName) return;
+
+        // Get stored employee settings
+        const storedSettings = localStorage.getItem(STORAGE_KEYS.EMPLOYEE_SETTINGS);
+        if (!storedSettings) return;
+
+        const allEmployeeSettings = JSON.parse(storedSettings);
+        const settings = allEmployeeSettings[employeeName];
+        if (!settings) return;
+
+        // Apply settings to the form
+        document.getElementById("bonusEligible").checked = settings.bonusEligible || false;
+        document.getElementById("role").value = settings.role || "Barista";
+        document.getElementById("transferMode").value = settings.transferMode || "GoTyme";
+        document.getElementById("payrollPeriod").value = settings.payrollPeriod || "";
+
+        // We don't apply duty block settings here as those are handled by updateDutyBlocksFromCSV
+    }
+
+    // Render saved per-date assignments
+    function renderSavedPerDateBlocks() {
+        // Clear existing blocks
+        const container = document.getElementById("dateAssignments");
+        container.innerHTML = "";
+
+        // Render each saved per-date assignment
+        for (const isoDate in perDateAssignments) {
+            renderPerDateBlock(isoDate);
+        }
+    }
+
+    function removeDateAssignment(isoDate) {
+        // Remove from data structure
+        delete perDateAssignments[isoDate];
+
+        // Remove from UI
+        const block = document.querySelector(`details[data-date="${isoDate}"]`);
+        if (block) block.remove();
+
+        // Update date picker to reflect removed date
+        const perDateCalendar = document.getElementById("perDateCalendar")._flatpickr;
+        if (perDateCalendar) {
+            const currentDates = perDateCalendar.selectedDates.filter(d => {
+                return d.toISOString().split('T')[0] !== isoDate;
+            });
+            perDateCalendar.setDate(currentDates);
+        }
+
+        // Save updated state
+        localStorage.setItem(STORAGE_KEYS.PER_DATE_ASSIGNMENTS, JSON.stringify(perDateAssignments));
+        saveApplicationState();
+        updatePayslip();
+    }
+
+    function setupPerDateCalendar() {
+        flatpickr("#perDateCalendar", {
+            mode: "multiple",
+            dateFormat: "Y-m-d",
+            onChange: function (selectedDates, dateStr, instance) {
+                // Get all currently selected dates in the calendar
+                const currentlySelected = instance.selectedDates.map(d => d.toISOString().split('T')[0]);
+
+                // Find dates that are no longer selected (were removed)
+                Object.keys(perDateAssignments).forEach(iso => {
+                    if (!currentlySelected.includes(iso)) {
+                        // Remove this date assignment as it's been deselected
+                        delete perDateAssignments[iso];
+                        const block = document.querySelector(`details[data-date="${iso}"]`);
+                        if (block) block.remove();
+                    }
+                });
+
+                // Process newly selected dates
+                selectedDates.forEach(date => {
+                    const iso = date.toISOString().split('T')[0];
+                    if (!perDateAssignments[iso]) {
+                        const selectedName = document.getElementById("employee").value;
+                        const nickname = selectedName.split(" ")[0];
+                        const baseRate = defaultRateMap[nickname] || 650;
+
+                        perDateAssignments[iso] = {
+                            branch: "Matcha Bar Podium",
+                            rate: baseRate,
+                            meal: 150,
+                            transport: 0,
+                            ot: 0,
+                            late: 0,
+                        };
+                        renderPerDateBlock(iso);
+                    }
+                });
+
+                // Save the updated perDateAssignments
+                localStorage.setItem(STORAGE_KEYS.PER_DATE_ASSIGNMENTS, JSON.stringify(perDateAssignments));
+                saveApplicationState();
+                updatePayslip();
+            }
+        });
+    }
+
+    // Replace the existing syncBranchToDateView function with this:
+    function syncBranchToDateView() {
+        // Get all selected dates from the branch view
+        const allDates = [];
+        const dateSettings = {};
+
+        // Iterate through all branch duty blocks
+        const blocks = document.querySelectorAll(".duty-block:not([data-date])");
+        blocks.forEach(block => {
+            const branch = block.querySelector("select").value;
+            const datePicker = block.querySelector(".days-worked")?._flatpickr;
+            if (!datePicker || !datePicker.selectedDates.length) return;
+
+            const rate = parseFloat(block.querySelector(".daily-rate").value || 0);
+            const meal = parseFloat(block.querySelector(".meal-allowance").value || 0);
+            const transport = parseFloat(block.querySelector(".transport-allowance").value || 0);
+            const otHours = parseFloat(block.querySelector(".ot-hours").value || 0);
+            const lateHours = parseFloat(block.querySelector(".late-hours").value || 0);
+
+            // Save settings for each date
+            datePicker.selectedDates.forEach(date => {
+                const iso = date.toISOString().split('T')[0];
+                allDates.push(date);
+
+                // Only create new settings if they don't already exist
+                if (!perDateAssignments[iso]) {
+                    dateSettings[iso] = {
+                        branch: branch,
+                        rate: rate,
+                        meal: meal,
+                        transport: transport,
+                        ot: otHours,
+                        late: lateHours
+                    };
+                }
+            });
+        });
+
+        // Update existing date assignments with new settings without clearing all data
+        for (const iso in dateSettings) {
+            perDateAssignments[iso] = dateSettings[iso];
+            renderPerDateBlock(iso);
+        }
+
+        // Update the date picker with all collected dates
+        const perDateCalendar = document.getElementById("perDateCalendar")._flatpickr;
+        if (perDateCalendar && allDates.length > 0) {
+            // Get currently selected dates and merge with new ones
+            const currentlySelected = perDateCalendar.selectedDates || [];
+            const mergedDates = [...new Set([...currentlySelected, ...allDates])];
+            perDateCalendar.setDate(mergedDates);
+        }
+
+        // Save the updated assignments
+        localStorage.setItem(STORAGE_KEYS.PER_DATE_ASSIGNMENTS, JSON.stringify(perDateAssignments));
+    }
+
+    // Replace the existing syncDateToBranchView function with this:
+    // FIXED: Completely rewritten syncBranchToDateView function
+        function syncBranchToDateView() {
+            console.log("Switching to Date View...");
+
+            // Get all selected dates from branch view blocks
+            const allDates = [];
+            const dateSettings = {};
+
+            // Collect dates from all branch blocks
+            document.querySelectorAll(".duty-block:not([data-date])").forEach(block => {
+                const branch = block.querySelector("select").value;
+                const datePicker = block.querySelector(".days-worked")?._flatpickr;
+                if (!datePicker || !datePicker.selectedDates.length) return;
+
+                const rate = parseFloat(block.querySelector(".daily-rate").value || 0);
+                const meal = parseFloat(block.querySelector(".meal-allowance").value || 0);
+                const transport = parseFloat(block.querySelector(".transport-allowance").value || 0);
+                const otHours = parseFloat(block.querySelector(".ot-hours").value || 0);
+                const lateHours = parseFloat(block.querySelector(".late-hours").value || 0);
+
+                // For each date in this branch block
+                datePicker.selectedDates.forEach(date => {
+                    const iso = date.toISOString().split('T')[0];
+                    allDates.push(date);
+
+                    // Only create settings for new dates
+                    if (!perDateAssignments[iso]) {
+                        dateSettings[iso] = {
+                            branch: branch,
+                            rate: rate,
+                            meal: meal,
+                            transport: transport,
+                            ot: otHours,
+                            late: lateHours
+                        };
+                    }
+                });
+            });
+
+            // Add new settings from branch view to per-date assignments
+            for (const iso in dateSettings) {
+                perDateAssignments[iso] = dateSettings[iso];
+            }
+
+            // Render all per-date assignments
+            const container = document.getElementById("dateAssignments");
+            container.innerHTML = ""; // Clear the container
+
+            for (const iso in perDateAssignments) {
+                renderPerDateBlock(iso);
+            }
+
+            // Update the date picker with all dates that have assignments
+            const perDateCalendar = document.getElementById("perDateCalendar")._flatpickr;
+            if (perDateCalendar) {
+                const dateArray = Object.keys(perDateAssignments).map(iso => new Date(iso));
+                if (dateArray.length > 0) {
+                    perDateCalendar.setDate(dateArray);
+                } else {
+                    perDateCalendar.clear();
+                }
+            }
+
+            // Save updated assignments
+            localStorage.setItem(STORAGE_KEYS.PER_DATE_ASSIGNMENTS, JSON.stringify(perDateAssignments));
+
+            // Log the final number of dates for debugging
+            console.log(`Date View now has ${Object.keys(perDateAssignments).length} dates`);
+        }
+
+        // FIXED: Completely rewritten syncDateToBranchView function
+        function syncDateToBranchView() {
+            console.log("Switching to Branch View...");
+
+            // Group per-date assignments by branch
+            const branchGroups = {};
+
+            // Process each date in perDateAssignments
+            for (const iso in perDateAssignments) {
+                const data = perDateAssignments[iso];
+                const branch = data.branch;
+
+                if (!branchGroups[branch]) {
+                    branchGroups[branch] = {
+                        dates: [],
+                        rate: data.rate,
+                        meal: data.meal,
+                        transport: data.transport,
+                        otHours: data.ot,
+                        lateHours: data.late
+                    };
+                }
+
+                branchGroups[branch].dates.push(iso);
+            }
+
+            // Clear all existing duty blocks
+            const dutyContainer = document.getElementById("duties");
+            dutyContainer.innerHTML = "";
+
+            // Create a duty block for each branch
+            for (const branch in branchGroups) {
+                // Check if we had this branch in the original view
+                const shouldUseOriginalDates = originalBranchDates[branch] && originalBranchDates[branch].length > 0;
+
+                // Create the block
+                const block = document.createElement("details");
+                block.className = "duty-block";
+                block.open = true;
+
+                block.innerHTML = `
+        <summary style="font-weight: bold; font-size: 1.1rem; cursor: pointer;">${branch}</summary>
+        <div class="duty-content">
+            <label>Branch</label>
+            <select>
+                <option>Matcha Bar SM North EDSA</option>
+                <option>Matcha Bar Podium</option>
+                <option>Workshop</option>
+                <option>Pop-up</option>
+                <option>Other Events</option>
+            </select>
+            <label>Days Worked</label>
+            <input type="text" class="days-worked" placeholder="Select days" />
+            <label>Daily Rate (₱)</label>
+            <input type="number" value="${branchGroups[branch].rate}" class="daily-rate" />
+            <label>Meal Allowance per Day (₱)</label>
+            <input type="number" value="${branchGroups[branch].meal}" class="meal-allowance" />
+            <label>Transport Allowance per Day (₱) <span style="font-size: 12px;">(Optional)</span></label>
+            <input type="number" value="${branchGroups[branch].transport}" class="transport-allowance" />
+            <label>Overtime Hours</label>
+            <input type="number" step="0.01" value="${branchGroups[branch].otHours}" class="ot-hours" />
+            <label>Late Deduction (Hours Late)</label>
+            <input type="number" step="0.01" value="${branchGroups[branch].lateHours}" class="late-hours" />
+        </div>
+    `;
+
+                // Set branch value
+                const selectBranch = block.querySelector("select");
+                selectBranch.value = branch;
+
+                // Add event listeners
+                setupBranchBlockListeners(block);
+
+                dutyContainer.appendChild(block);
+
+                // Set up flatpickr for days worked
+                const daysInput = block.querySelector(".days-worked");
+                const fp = flatpickr(daysInput, {
+                    mode: "multiple",
+                    dateFormat: "Y-m-d",
+                    wrap: false,
+                    allowInput: true,
+                    onChange: function () {
+                        saveApplicationState();
+                        updatePayslip();
+                    },
+                    onReady: function (selectedDates, dateStr, instance) {
+                        const clearBtn = document.createElement("button");
+                        clearBtn.textContent = "Clear";
+                        clearBtn.type = "button";
+                        clearBtn.style.cssText = "margin-top: 5px; margin-bottom: 10px; background: #bbb; border: none; padding: 4px 10px; border-radius: 4px; font-size: 0.85rem;";
+                        clearBtn.onclick = () => {
+                            instance.clear();
+                            saveApplicationState();
+                            updatePayslip();
+                        };
+                        instance.calendarContainer.appendChild(clearBtn);
+                    }
+                });
+
+                // Set selected dates AFTER flatpickr is initialized
+                if (shouldUseOriginalDates) {
+                    // Use the dates from the original branch view
+                    console.log(`Using ${originalBranchDates[branch].length} original dates for ${branch}`);
+
+                    // Convert ISO strings to Date objects
+                    const dates = originalBranchDates[branch].map(iso => new Date(iso));
+                    fp.setDate(dates);
+                } else {
+                    // No original dates, use the ones from perDateAssignments
+                    const dates = branchGroups[branch].dates.map(iso => new Date(iso));
+                    fp.setDate(dates);
+                }
+            }
+
+            // If no branch groups were created, add at least one empty duty block
+            if (Object.keys(branchGroups).length === 0) {
+                addDutyBlock(document.getElementById("employee").value);
+            }
+
+            // Clear the original branch dates to avoid reusing them in future switches
+            originalBranchDates = {};
+
+            // Log the total number of branch groups for debugging
+            console.log(`Branch View now has ${Object.keys(branchGroups).length} branches`);
+        }
+
+
+    function setupBranchBlockListeners(block) {
+        const selectBranchEl = block.querySelector("select");
+        const summary = block.querySelector("summary");
+        selectBranchEl.addEventListener("change", () => {
+            summary.textContent = selectBranchEl.value;
+            saveApplicationState();
+            updatePayslip();
+        });
+
+        // Add remove button
+        const removeBtn = document.createElement("button");
+        removeBtn.textContent = "Remove Duty Block";
+        removeBtn.style.cssText = `
+    margin-top: 1rem;
+    background-color: #f8d7da;
+    color: #721c24;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+`;
+        removeBtn.onclick = () => {
+            block.remove();
+            saveApplicationState();
+            updatePayslip();
+        };
+        block.querySelector(".duty-content").appendChild(removeBtn);
+
+        // Add input change listeners
+        block.querySelector(".daily-rate").addEventListener("change", () => {
+            saveApplicationState();
+            updatePayslip();
+        });
+        block.querySelector(".meal-allowance").addEventListener("change", () => {
+            saveApplicationState();
+            updatePayslip();
+        });
+        block.querySelector(".transport-allowance").addEventListener("change", () => {
+            saveApplicationState();
+            updatePayslip();
+        });
+        block.querySelector(".ot-hours").addEventListener("change", () => {
+            saveApplicationState();
+            updatePayslip();
+        });
+        block.querySelector(".late-hours").addEventListener("change", () => {
+            saveApplicationState();
+            updatePayslip();
+        });
+    }
+
+    function addDutyBlock(employeeName = "") {
+        const container = document.getElementById("duties");
+        const blockIndex = document.querySelectorAll(".duty-block").length + 1;
+
+        const nickname = employeeName.split(" ")[0];
+
+        const details = document.createElement("details");
+        details.className = "duty-block";
+        details.open = true;
+
+        const defaultBranch = "Matcha Bar SM North EDSA";
+
+        details.innerHTML = `
+<summary style="font-weight: bold; font-size: 1.1rem; cursor: pointer;">${defaultBranch}</summary>
+<div class="duty-content">
+<label>Branch</label>
+<select>
+    <option>Matcha Bar SM North EDSA</option>
+    <option>Matcha Bar Podium</option>
+    <option>Workshop</option>
+    <option>Pop-up</option>
+    <option>Other Events</option>
+</select>
+<label>Days Worked</label>
+<input type="text" class="days-worked" placeholder="Select days" />
+<label>Daily Rate (₱)</label>
+<input type="number" value="${defaultRateMap[nickname] || 650}" class="daily-rate" />
+<label>Meal Allowance per Day (₱)</label>
+<input type="number" value="150" class="meal-allowance" />
+<label>Transport Allowance per Day (₱) <span style="font-size: 12px;">(Optional)</span></label>
+<input type="number" class="transport-allowance" />
+<label>Overtime Hours</label>
+<input type="number" step="0.01" class="ot-hours" />
+<label>Late Deduction (Hours Late)</label>
+<input type="number" step="0.01" class="late-hours" />
+<label>Cash Advance (₱) <span style="font-size: 12px;">(Optional)</span></label>
+<input type="number" step="0.01" class="cash-advance" />
+</div>
+`;
+
+        const selectBranch = details.querySelector("select");
+        const summary = details.querySelector("summary");
+        selectBranch.addEventListener("change", () => {
+            summary.textContent = selectBranch.value;
+            saveApplicationState();
+            updatePayslip(); // Add this line to update the payslip when branch changes
+        });
+
+        const removeBtn = document.createElement("button");
+        removeBtn.textContent = "Remove Duty Block";
+        removeBtn.style.cssText = `
+margin-top: 1rem;
+background-color: #f8d7da;
+color: #721c24;
+border: none;
+padding: 0.5rem 1rem;
+border-radius: 6px;
+display: block;
+margin-left: auto;
+margin-right: auto;
+`;
+        removeBtn.onclick = () => {
+            details.remove();
+            saveApplicationState();
+            updatePayslip(); // Add this line to update the payslip when block is removed
+        };
+        details.querySelector(".duty-content").appendChild(removeBtn);
+
+        container.appendChild(details);
+
+        const getAllSelectedDates = (excludeInput) => {
+            const allDates = [];
+            document.querySelectorAll(".days-worked").forEach(input => {
+                if (input === excludeInput) return;
+                const fp = input._flatpickr;
+                if (fp) allDates.push(...fp.selectedDates.map(d => d.toDateString()));
+            });
+            return allDates;
+        };
+
+        const fpInstance = flatpickr(details.querySelector(".days-worked"), {
+            mode: "multiple",
+            dateFormat: "Y-m-d",
+            wrap: false,
+            allowInput: true,
+            onReady: function (selectedDates, dateStr, instance) {
+                const clearBtn = document.createElement("button");
+                clearBtn.textContent = "Clear";
+                clearBtn.type = "button";
+                clearBtn.style.cssText = "margin-top: 5px; margin-bottom: 10px; background: #bbb; border: none; padding: 4px 10px; border-radius: 4px; font-size: 0.85rem;";
+                clearBtn.onclick = () => {
+                    instance.clear();
+                    saveApplicationState();
+                    updatePayslip(); // Add this line to update payslip when dates are cleared
+                };
+                instance.calendarContainer.appendChild(clearBtn);
+            },
+            onDayCreate: function (dObj, dStr, fp, dayElem) {
+                const otherDates = getAllSelectedDates(fp.input);
+                const currentDate = new Date(dayElem.dateObj).toDateString();
+                const isSelectedInOther = otherDates.includes(currentDate);
+
+                if (fp.selectedDates.map(d => d.toDateString()).includes(currentDate)) {
+                    dayElem.style.backgroundColor = "#2b9348"; // green
+                    dayElem.style.color = "#fff";
+                    dayElem.style.borderRadius = "50%";
+                } else if (isSelectedInOther) {
+                    dayElem.style.backgroundColor = "#d3d3d3"; // light gray
+                    dayElem.style.borderRadius = "50%";
+                }
+            },
+            onChange: function () {
+                fpInstance.redraw();
+                saveApplicationState();
+                updatePayslip(); // Add this critical line to update the payslip when dates change
+            }
+        });
+  
+  // Add input listeners to save state when fields change
+  details.querySelector(".daily-rate").addEventListener("change", () => {
+            saveApplicationState();
+            updatePayslip();
+        });
+        details.querySelector(".meal-allowance").addEventListener("change", () => {
+            saveApplicationState();
+            updatePayslip();
+        });
+        details.querySelector(".transport-allowance").addEventListener("change", () => {
+            saveApplicationState();
+            updatePayslip();
+        });
+        details.querySelector(".ot-hours").addEventListener("change", () => {
+            saveApplicationState();
+            updatePayslip();
+        });
+        details.querySelector(".late-hours").addEventListener("change", () => {
+            saveApplicationState();
+            updatePayslip();
+        });
+        details.querySelector(".cash-advance").addEventListener("change", () => {
+            saveApplicationState();
+            updatePayslip();
+        });
+
+    }
+
     </script>
 </body>
 

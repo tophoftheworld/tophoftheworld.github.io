@@ -1,4 +1,4 @@
-const APP_VERSION = "0.51"; 
+const APP_VERSION = "0.54"; 
 
 const ALLOW_PAST_CLOCKING = false;
 
@@ -61,10 +61,12 @@ import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.0/f
 import { getDocs, collection } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 
 
-setInterval(() => {
-    const now = new Date();
-    timestamp.textContent = `Current Time: ${now.toLocaleTimeString()}`;
-}, 1000);
+if (timestamp) {
+    setInterval(() => {
+        const now = new Date();
+        timestamp.textContent = `Current Time: ${now.toLocaleTimeString()}`;
+    }, 1000);
+}
 
 // setInterval(async () => {
 //     if (formatDate(viewDate) !== formatDate(today)) return;
@@ -373,6 +375,8 @@ async function updateSummaryUI() {
     if (datePicker._flatpickr) datePicker._flatpickr.jumpToDate(viewDate);
 
     dutyStatus = localData && JSON.parse(localData).clockIn && !JSON.parse(localData).clockOut ? 'out' : 'in';
+
+    updateOfflineBadges();
 }
 
 
@@ -480,61 +484,6 @@ document.getElementById("closeCameraBtn").addEventListener("click", () => {
     if (stream) stream.getTracks().forEach(t => t.stop());
 });
 
-async function saveAttendanceWithImageCompression() {
-    console.log("💾 Running saveAttendance with compression...");
-    const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
-    const now = new Date();
-    const time = now.toLocaleTimeString();
-    const existing = JSON.parse(localStorage.getItem(key)) || {};
-    
-    // Compress image to save storage space
-    let compressedSelfie = "";
-    if (selfieData) {
-        try {
-            compressedSelfie = await compressAndStoreImage(selfieData);
-            console.log("Image compressed for storage");
-        } catch (error) {
-            console.warn("Image compression failed, using original", error);
-            compressedSelfie = selfieData;
-        }
-    }
-    
-    // Add to sync queue (same as before)
-    let syncQueue = JSON.parse(localStorage.getItem("syncQueue") || "[]");
-
-    if (dutyStatus === 'in') {
-        const branch = document.getElementById("branchSelect")?.value || "Matcha Bar Podium";
-        const shift = document.getElementById("shiftSelect")?.value || "Opening";
-        
-        // Use compressed image for storage
-        existing.clockIn = { 
-            time, 
-            selfie: compressedSelfie, 
-            branch, 
-            shift,
-            timestamp: Date.now() // Add timestamp for sorting
-        };
-        
-        // Online/offline handling as before...
-        
-    } else {
-        // Clock out with compressed image
-        existing.clockOut = { 
-            time, 
-            selfie: compressedSelfie,
-            timestamp: Date.now() // Add timestamp for sorting
-        };
-        
-        // Online/offline handling as before...
-    }
-    
-    // Store locally
-    localStorage.setItem(key, JSON.stringify(existing));
-    updateCardTimes(existing);
-    updateDateUI();
-}
-
-
 async function saveAttendance() {
     console.log("💾 Running saveAttendance...");
     const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
@@ -562,7 +511,8 @@ async function saveAttendance() {
             selfie: selfieData,
             branch,
             shift,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            synced: false // Track sync status for this event specifically
         };
 
         if (navigator.onLine) {
@@ -572,7 +522,10 @@ async function saveAttendance() {
 
                 // Get existing data first to avoid overwriting clockOut
                 const docSnap = await getDoc(subDocRef);
-                let dataToSave = { clockIn: existing.clockIn };
+                let dataToSave = { clockIn: { ...existing.clockIn } };
+
+                // Remove synced flag from what we save to Firestore
+                delete dataToSave.clockIn.synced;
 
                 // If there's existing data with clockOut, preserve it
                 if (docSnap.exists()) {
@@ -580,18 +533,21 @@ async function saveAttendance() {
                     if (existingData.clockOut) {
                         console.log("Preserving existing clockOut data");
                         existing.clockOut = existingData.clockOut;
+                        existing.clockOut.synced = true; // Mark existing clockOut as synced
                     }
                 }
 
                 await setDoc(subDocRef, dataToSave, { merge: true });
-                existing.synced = true;
+                existing.clockIn.synced = true; // Mark just the clockIn as synced
                 console.log("✅ Clock-in saved to Firestore");
             } catch (err) {
                 console.warn('🔌 Failed to save to Firestore - will sync later', err);
-                existing.synced = false;
+                existing.clockIn.synced = false;
 
-                if (!syncQueue.includes(key)) {
-                    syncQueue.push(key);
+                // Add to sync queue with action information
+                const queueItem = `${key}:clockIn`;
+                if (!syncQueue.includes(queueItem)) {
+                    syncQueue.push(queueItem);
                     localStorage.setItem("syncQueue", JSON.stringify(syncQueue));
                 }
 
@@ -607,9 +563,12 @@ async function saveAttendance() {
             }
         } else {
             // Offline - mark for later sync
-            existing.synced = false;
-            if (!syncQueue.includes(key)) {
-                syncQueue.push(key);
+            existing.clockIn.synced = false;
+
+            // Add to sync queue with action information
+            const queueItem = `${key}:clockIn`;
+            if (!syncQueue.includes(queueItem)) {
+                syncQueue.push(queueItem);
                 localStorage.setItem("syncQueue", JSON.stringify(syncQueue));
             }
             alert("📴 You're offline. Your time will be saved locally and synced when back online.");
@@ -631,6 +590,7 @@ async function saveAttendance() {
                     if (docSnap.exists() && docSnap.data().clockIn) {
                         // Use the Firestore clockIn data
                         existing.clockIn = docSnap.data().clockIn;
+                        existing.clockIn.synced = true; // Mark as synced
                     } else {
                         // No clockIn found - can't clockOut
                         alert("⚠️ Unable to clock out: No clock-in record found");
@@ -652,7 +612,8 @@ async function saveAttendance() {
         existing.clockOut = {
             time,
             selfie: selfieData,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            synced: false // Track sync status for clockOut specifically
         };
 
         if (navigator.onLine) {
@@ -661,15 +622,21 @@ async function saveAttendance() {
                 const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
 
                 // We're specifically only updating the clockOut field
-                await setDoc(subDocRef, { clockOut: existing.clockOut }, { merge: true });
-                existing.synced = true;
+                // Remove synced flag from what we save to Firestore
+                const clockOutData = { ...existing.clockOut };
+                delete clockOutData.synced;
+
+                await setDoc(subDocRef, { clockOut: clockOutData }, { merge: true });
+                existing.clockOut.synced = true; // Mark just the clockOut as synced
                 console.log("✅ Clock-out saved to Firestore");
             } catch (err) {
                 console.warn('🔌 Failed to save to Firestore - will sync later', err);
-                existing.synced = false;
+                existing.clockOut.synced = false;
 
-                if (!syncQueue.includes(key)) {
-                    syncQueue.push(key);
+                // Add to sync queue with action information
+                const queueItem = `${key}:clockOut`;
+                if (!syncQueue.includes(queueItem)) {
+                    syncQueue.push(queueItem);
                     localStorage.setItem("syncQueue", JSON.stringify(syncQueue));
                 }
 
@@ -685,9 +652,12 @@ async function saveAttendance() {
             }
         } else {
             // Offline - mark for later sync
-            existing.synced = false;
-            if (!syncQueue.includes(key)) {
-                syncQueue.push(key);
+            existing.clockOut.synced = false;
+
+            // Add to sync queue with action information
+            const queueItem = `${key}:clockOut`;
+            if (!syncQueue.includes(queueItem)) {
+                syncQueue.push(queueItem);
                 localStorage.setItem("syncQueue", JSON.stringify(syncQueue));
             }
             alert("📴 You're offline. Your time will be saved locally and synced when back online.");
@@ -696,13 +666,19 @@ async function saveAttendance() {
         dutyStatus = 'in';
     }
 
+    // Calculate the overall sync status of the record
+    existing.synced = (!existing.clockIn || existing.clockIn.synced) &&
+        (!existing.clockOut || existing.clockOut.synced);
+
     // Store locally
     localStorage.setItem(key, JSON.stringify(existing));
     updateCardTimes(existing);
     updateDateUI();
+    updateOfflineBadges(); // Make sure badges are updated
 
     console.log("🎉 UI updated with time " + action);
 }
+
 
 
 
@@ -1207,17 +1183,17 @@ function closeImageModal() {
     modal.onclick = null;
 }
 
-document.getElementById("toggleHistoryBtn").addEventListener("click", async () => {
-    const historyDiv = document.getElementById("historyLog");
-    const contentDiv = document.getElementById("historyContent");
+// document.getElementById("toggleHistoryBtn").addEventListener("click", async () => {
+//     const historyDiv = document.getElementById("historyLog");
+//     const contentDiv = document.getElementById("historyContent");
 
-    if (historyDiv.style.display === "none") {
-        historyDiv.style.display = "block";
-        await loadHistoryLogs();
-    } else {
-        historyDiv.style.display = "none";
-    }
-});
+//     if (historyDiv.style.display === "none") {
+//         historyDiv.style.display = "block";
+//         await loadHistoryLogs();
+//     } else {
+//         historyDiv.style.display = "none";
+//     }
+// });
 
 async function loadHistoryLogs() {
     const contentDiv = document.getElementById("historyContent");
@@ -1347,9 +1323,13 @@ async function syncPendingData() {
 
     updateSyncStatusVisual('syncing');
 
-    for (const key of syncQueue) {
+    for (const queueItem of syncQueue) {
+        // Parse the queue item to get key and action
+        const [key, action] = queueItem.split(':');
+
+        if (!key) continue; // Skip invalid entries
+
         const localData = JSON.parse(localStorage.getItem(key) || "{}");
-        if (localData.synced) continue; // Skip already synced data
 
         // Extract user and date from key
         const [, user, date] = key.split('_');
@@ -1365,36 +1345,53 @@ async function syncPendingData() {
             // Prepare sync data with careful merging
             const syncData = {};
 
-            // Only sync clockIn if it doesn't exist on server OR local timestamp is newer
-            if (localData.clockIn &&
-                (!serverData.clockIn ||
-                    !serverData.clockIn.timestamp ||
-                    localData.clockIn.timestamp > serverData.clockIn.timestamp)) {
-                syncData.clockIn = localData.clockIn;
+            // Only sync the specific action (clockIn or clockOut)
+            if (action === 'clockIn' || !action) {
+                if (localData.clockIn &&
+                    (!serverData.clockIn ||
+                        !serverData.clockIn.timestamp ||
+                        localData.clockIn.timestamp > serverData.clockIn.timestamp)) {
+                    const clockInData = { ...localData.clockIn };
+                    delete clockInData.synced; // Remove sync flag before saving to Firestore
+                    syncData.clockIn = clockInData;
+                }
             }
 
-            // Only sync clockOut if it doesn't exist on server OR local timestamp is newer
-            if (localData.clockOut &&
-                (!serverData.clockOut ||
-                    !serverData.clockOut.timestamp ||
-                    localData.clockOut.timestamp > serverData.clockOut.timestamp)) {
-                syncData.clockOut = localData.clockOut;
+            if (action === 'clockOut' || !action) {
+                if (localData.clockOut &&
+                    (!serverData.clockOut ||
+                        !serverData.clockOut.timestamp ||
+                        localData.clockOut.timestamp > serverData.clockOut.timestamp)) {
+                    const clockOutData = { ...localData.clockOut };
+                    delete clockOutData.synced; // Remove sync flag before saving to Firestore
+                    syncData.clockOut = clockOutData;
+                }
             }
 
             // Only update if we have something to sync
             if (Object.keys(syncData).length > 0) {
                 await setDoc(ref, syncData, { merge: true });
                 console.log(`Synced fields: ${Object.keys(syncData).join(', ')}`);
+
+                // Update local storage with synced status
+                if (syncData.clockIn) {
+                    localData.clockIn.synced = true;
+                }
+                if (syncData.clockOut) {
+                    localData.clockOut.synced = true;
+                }
+
+                // Recalculate overall sync status
+                localData.synced = (!localData.clockIn || localData.clockIn.synced) &&
+                    (!localData.clockOut || localData.clockOut.synced);
+
+                localStorage.setItem(key, JSON.stringify(localData));
             } else {
                 console.log("No newer data to sync");
             }
 
-            // Mark as synced in localStorage
-            localData.synced = true;
-            localStorage.setItem(key, JSON.stringify(localData));
-
             successCount++;
-            console.log(`✅ Synced: ${key}`);
+            console.log(`✅ Synced: ${queueItem}`);
 
             if (syncQueue.length > 2 && (successCount + failCount) % 2 === 0) {
                 const progress = Math.round(((successCount + failCount) / syncQueue.length) * 100);
@@ -1402,7 +1399,7 @@ async function syncPendingData() {
             }
         } catch (err) {
             failCount++;
-            console.warn(`❌ Failed to sync ${key}:`, err);
+            console.warn(`❌ Failed to sync ${queueItem}:`, err);
         }
 
         if (syncQueue.length > 2 && (successCount + failCount) % 2 === 0) {
@@ -1414,9 +1411,6 @@ async function syncPendingData() {
     // Show completion toast
     if (successCount > 0) {
         showToast(`Synced ${successCount} records successfully`, 'online', 3000);
-        document.querySelectorAll('.panel-card .offline-badge').forEach(badge => {
-            badge.remove();
-        });
     }
 
     if (failCount > 0) {
@@ -1424,10 +1418,22 @@ async function syncPendingData() {
     }
 
     // Remove successful items from sync queue
-    const updatedQueue = syncQueue.filter(key => {
+    const updatedQueue = [];
+    for (const queueItem of syncQueue) {
+        const [key, action] = queueItem.split(':');
+        if (!key) continue;
+
         const data = JSON.parse(localStorage.getItem(key) || "{}");
-        return !data.synced;
-    });
+
+        // Check if the specific action still needs syncing
+        if (action === 'clockIn' && data.clockIn && !data.clockIn.synced) {
+            updatedQueue.push(queueItem);
+        } else if (action === 'clockOut' && data.clockOut && !data.clockOut.synced) {
+            updatedQueue.push(queueItem);
+        } else if (!action && !data.synced) {
+            updatedQueue.push(queueItem);
+        }
+    }
 
     localStorage.setItem("syncQueue", JSON.stringify(updatedQueue));
 
@@ -1445,7 +1451,7 @@ async function syncPendingData() {
         document.getElementById("networkStatus").textContent = "✅ Online - All data synced";
     } else {
         document.getElementById("networkStatus").textContent =
-            `⚠️ Online - ${successCount} synced, ${failCount} pending`;
+            `⚠️ Online - ${successCount} synced, ${updatedQueue.length} pending`;
     }
 
     console.log(`🔄 Sync complete: ${successCount} successful, ${failCount} failed`);
@@ -1521,29 +1527,30 @@ function updateOfflineBadges() {
         badge.remove();
     });
 
+    // Get the current syncQueue
     const syncQueue = JSON.parse(localStorage.getItem('syncQueue') || '[]');
+    if (syncQueue.length === 0 && navigator.onLine) {
+        return; // No unsynced data and we're online
+    }
 
-    if (syncQueue.length > 0) {
-        const todayKey = `attendance_${currentUser}_${formatDate(new Date())}`;
-        const todayData = JSON.parse(localStorage.getItem(todayKey) || '{}');
+    // Get today's data
+    const todayKey = `attendance_${currentUser}_${formatDate(new Date())}`;
+    const todayData = JSON.parse(localStorage.getItem(todayKey) || '{}');
 
-        // Only add badge if TODAY'S data is in the sync queue
-        if (syncQueue.includes(todayKey) && !todayData.synced) {
-            // Only add badge to clock out if that's what's not synced
-            if (todayData.clockOut && !todayData.clockOut.synced) {
-                addOfflineBadge('clockOutCard');
-            }
+    // Check if specific actions are in the sync queue
+    const clockInNeedsSync = syncQueue.includes(`${todayKey}:clockIn`) ||
+        (todayData.clockIn && !todayData.clockIn.synced);
 
-            // Only add badge to clock in if that's what's not synced
-            if (todayData.clockIn && (!todayData.synced || !todayData.clockIn.synced)) {
-                // Extra check - don't add badge if we already have clock in data on server
-                const cachedKey = `serverCache_${currentUser}_${formatDate(new Date())}`;
-                const serverData = JSON.parse(localStorage.getItem(cachedKey) || '{}');
-                if (!serverData.clockIn) {
-                    addOfflineBadge('clockInCard');
-                }
-            }
-        }
+    const clockOutNeedsSync = syncQueue.includes(`${todayKey}:clockOut`) ||
+        (todayData.clockOut && !todayData.clockOut.synced);
+
+    // Add badges based on individual sync status
+    if (clockInNeedsSync && todayData.clockIn) {
+        addOfflineBadge('clockInCard');
+    }
+
+    if (clockOutNeedsSync && todayData.clockOut) {
+        addOfflineBadge('clockOutCard');
     }
 }
 
@@ -1814,6 +1821,39 @@ document.addEventListener('DOMContentLoaded', setupRefreshControl);
 
 setupNetworkListeners();
 
+function setupNetworkListeners() {
+    window.addEventListener('online', async () => {
+        console.log('🌐 Network is online');
+        showToast('You are back online', 'online');
+        updateNetworkStatusUI();
+
+        // Wait a bit to ensure connection is stable before trying to sync
+        setTimeout(() => {
+            syncPendingData();
+        }, 2000);
+    });
+
+    window.addEventListener('offline', () => {
+        console.log('📴 Network is offline');
+        showToast('You are offline - changes will sync later', 'offline');
+        updateNetworkStatusUI();
+    });
+}
+
+// 5. Add this function to manually refresh sync status
+function refreshSyncStatus() {
+    const syncQueue = JSON.parse(localStorage.getItem('syncQueue') || '[]');
+    if (syncQueue.length > 0 && navigator.onLine) {
+        syncPendingData();
+    } else {
+        updateOfflineBadges();
+    }
+}
+
+// Call this function when appropriate to manually refresh statuses
+// For example after login or periodically
+setInterval(refreshSyncStatus, 60000);
+
 function setupNetworkUI() {
     // Create toast container with proper positioning
     if (!document.querySelector('.toast-container')) {
@@ -1894,3 +1934,781 @@ function showToast(message, type = '', duration = 3000) {
 
     return toast;
 }
+
+document.addEventListener('DOMContentLoaded', function () {
+    // Get username element
+    const userNameElement = document.getElementById('userName');
+    const switchUserModal = document.getElementById('switchUserModal');
+    const cancelSwitchUserBtn = document.getElementById('cancelSwitchUser');
+    const confirmSwitchUserBtn = document.getElementById('confirmSwitchUser');
+
+    // Add click event to username
+    if (userNameElement) {
+        userNameElement.addEventListener('click', function () {
+            // Show the switch user modal
+            switchUserModal.style.display = 'flex';
+        });
+    }
+
+    // Cancel button event
+    if (cancelSwitchUserBtn) {
+        cancelSwitchUserBtn.addEventListener('click', function () {
+            switchUserModal.style.display = 'none';
+        });
+    }
+
+    // Confirm button event - call the existing logoutUser function
+    if (confirmSwitchUserBtn) {
+        confirmSwitchUserBtn.addEventListener('click', function () {
+            logoutUser(); // This uses the existing logout function
+        });
+    }
+
+    // Close modal when clicking outside the content area
+    switchUserModal.addEventListener('click', function (event) {
+        if (event.target === switchUserModal) {
+            switchUserModal.style.display = 'none';
+        }
+    });
+});
+
+document.addEventListener('DOMContentLoaded', function () {
+    // Initialize bottom tabs
+    const dailyViewTab = document.getElementById('dailyViewTab');
+    const payrollViewTab = document.getElementById('payrollViewTab');
+    const summaryCardUI = document.getElementById('summaryCardUI');
+    const payrollView = document.getElementById('payrollView');
+
+    if (dailyViewTab && payrollViewTab && summaryCardUI && payrollView) {
+        // Switch to daily view
+        dailyViewTab.addEventListener('click', function () {
+            // Update active tab
+            dailyViewTab.classList.add('active');
+            payrollViewTab.classList.remove('active');
+
+            // Show daily view, hide payroll view
+            summaryCardUI.style.display = 'block';
+            payrollView.style.display = 'none';
+
+            // Hide history log if it's open
+            const historyLog = document.getElementById('historyLog');
+            if (historyLog) historyLog.style.display = 'none';
+
+            // Show timestamp
+            if (timestamp) timestamp.style.display = 'block';
+        });
+
+        // Switch to payroll view
+        payrollViewTab.addEventListener('click', function () {
+            // Update active tab
+            payrollViewTab.classList.add('active');
+            dailyViewTab.classList.remove('active');
+
+            // Hide daily view, show payroll view
+            summaryCardUI.style.display = 'none';
+            payrollView.style.display = 'block';
+
+            // Hide history log if it's open
+            const historyLog = document.getElementById('historyLog');
+            if (historyLog) historyLog.style.display = 'none';
+
+            // Hide timestamp
+            if (timestamp) timestamp.style.display = 'none';
+
+            // Load payroll data when switching to this view
+            if (typeof loadPayrollData === 'function') {
+                loadPayrollData();
+            }
+        });
+    }
+
+    // Add a change listener to the payroll period selector
+    const payrollPeriod = document.getElementById('payrollPeriod');
+    if (payrollPeriod) {
+        payrollPeriod.addEventListener('change', function () {
+            if (typeof loadPayrollData === 'function') {
+                loadPayrollData();
+            }
+        });
+    }
+
+    // Initialize username click for switch user modal
+    const userNameElement = document.getElementById('userName');
+    const switchUserModal = document.getElementById('switchUserModal');
+    const cancelSwitchUserBtn = document.getElementById('cancelSwitchUser');
+    const confirmSwitchUserBtn = document.getElementById('confirmSwitchUser');
+
+    if (userNameElement && switchUserModal) {
+        // Add click event to username
+        userNameElement.addEventListener('click', function () {
+            // Show the switch user modal
+            switchUserModal.style.display = 'flex';
+        });
+
+        // Cancel button event
+        if (cancelSwitchUserBtn) {
+            cancelSwitchUserBtn.addEventListener('click', function () {
+                switchUserModal.style.display = 'none';
+            });
+        }
+
+        // Confirm button event - call the existing logoutUser function
+        if (confirmSwitchUserBtn) {
+            confirmSwitchUserBtn.addEventListener('click', function () {
+                if (typeof logoutUser === 'function') {
+                    logoutUser(); // This uses the existing logout function
+                }
+            });
+        }
+
+        // Close modal when clicking outside the content area
+        switchUserModal.addEventListener('click', function (event) {
+            if (event.target === switchUserModal) {
+                switchUserModal.style.display = 'none';
+            }
+        });
+    }
+});
+
+// Helper function to generate mock data for the payroll view
+async function generateMockPayrollData(dates) {
+    // If we're online, try to fetch real data first
+    if (navigator.onLine && currentUser) {
+        try {
+            const realData = [];
+
+            for (const dateStr of dates) {
+                try {
+                    const docRef = doc(db, "attendance", currentUser, "dates", dateStr);
+                    const docSnap = await getDoc(docRef);
+
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
+
+                        // If we have clock in and out times, calculate hours
+                        let hours = null;
+                        if (data.clockIn && data.clockOut) {
+                            hours = calculateHours(data.clockIn.time, data.clockOut.time);
+                        }
+
+                        realData.push({
+                            date: dateStr,
+                            timeIn: data.clockIn?.time || null,
+                            timeOut: data.clockOut?.time || null,
+                            hours: hours
+                        });
+                    } else {
+                        // No data for this date
+                        realData.push({
+                            date: dateStr,
+                            timeIn: null,
+                            timeOut: null,
+                            hours: null
+                        });
+                    }
+                } catch (error) {
+                    console.error(`Error fetching data for ${dateStr}:`, error);
+                }
+            }
+
+            return realData;
+        } catch (error) {
+            console.error("Failed to fetch real attendance data:", error);
+            // Fall back to mock data
+        }
+    }
+
+    // Generate mock data if we couldn't get real data
+    return dates.map(date => {
+        const mockDate = new Date(date);
+        const dayOfWeek = mockDate.getDay();
+
+        // No work on weekends in our mock data
+        if (dayOfWeek === 0 || dayOfWeek === 6) {
+            return {
+                date: date,
+                timeIn: null,
+                timeOut: null,
+                hours: null
+            };
+        }
+
+        // Generate random attendance
+        const hasAttendance = Math.random() > 0.2; // 80% chance of attendance
+
+        if (!hasAttendance) {
+            return {
+                date: date,
+                timeIn: null,
+                timeOut: null,
+                hours: null
+            };
+        }
+
+        // Generate time in (around 9:30 AM)
+        const hourIn = 9;
+        const minuteIn = Math.floor(Math.random() * 60);
+        const timeIn = `${hourIn}:${minuteIn.toString().padStart(2, '0')} AM`;
+
+        // Generate time out (around 6:30 PM)
+        const hourOut = 6;
+        const minuteOut = Math.floor(Math.random() * 60);
+        const timeOut = `${hourOut}:${minuteOut.toString().padStart(2, '0')} PM`;
+
+        // Calculate hours (roughly)
+        const hours = 9 + (minuteOut - minuteIn) / 60;
+
+        return {
+            date: date,
+            timeIn: timeIn,
+            timeOut: timeOut,
+            hours: hours
+        };
+    });
+}
+
+function parsePeriod(periodStr) {
+    // For "March 29 - April 12, 2025" format (cross month)
+    const multiMonthParts = periodStr.match(/([A-Za-z]+)\s+(\d+)\s+-\s+([A-Za-z]+)\s+(\d+),\s+(\d+)/);
+    if (multiMonthParts) {
+        return [multiMonthParts[1], multiMonthParts[2], multiMonthParts[3], multiMonthParts[4], multiMonthParts[5]];
+    }
+
+    // For "March 13 - March 28, 2025" format (same month)
+    const sameMonthParts = periodStr.match(/([A-Za-z]+)\s+(\d+)\s+-\s+\1\s+(\d+),\s+(\d+)/);
+    if (sameMonthParts) {
+        return [sameMonthParts[1], sameMonthParts[2], sameMonthParts[1], sameMonthParts[3], sameMonthParts[4]];
+    }
+
+    return ['March', '29', 'April', '12', '2025']; // Default fallback
+}
+
+// Helper function to get month index from name
+function getMonthIndex(monthName) {
+    const months = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    return months.findIndex(m => m.toLowerCase().startsWith(monthName.toLowerCase()));
+}
+
+// Helper function to get all dates in a range
+function getDatesInRange(startDate, endDate) {
+    const dates = [];
+    let currentDate = new Date(startDate);
+
+    while (currentDate <= endDate) {
+        dates.push(formatDate(new Date(currentDate)));
+        currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    return dates;
+}
+
+// Helper function to calculate hours between two time strings
+function calculateHours(timeInStr, timeOutStr) {
+    try {
+        // Parse time strings
+        const [timeIn, meridianIn] = timeInStr.split(' ');
+        const [hoursIn, minutesIn] = timeIn.split(':').map(Number);
+
+        const [timeOut, meridianOut] = timeOutStr.split(' ');
+        const [hoursOut, minutesOut] = timeOut.split(':').map(Number);
+
+        // Convert to 24-hour format
+        let hours24In = hoursIn;
+        if (meridianIn === 'PM' && hoursIn !== 12) hours24In += 12;
+        if (meridianIn === 'AM' && hoursIn === 12) hours24In = 0;
+
+        let hours24Out = hoursOut;
+        if (meridianOut === 'PM' && hoursOut !== 12) hours24Out += 12;
+        if (meridianOut === 'AM' && hoursOut === 12) hours24Out = 0;
+
+        // Calculate difference in hours
+        const totalMinutesIn = hours24In * 60 + minutesIn;
+        const totalMinutesOut = hours24Out * 60 + minutesOut;
+
+        // If clock out is earlier than clock in, assume next day
+        let minutesDiff = totalMinutesOut - totalMinutesIn;
+        if (minutesDiff < 0) minutesDiff += 24 * 60;
+
+        return minutesDiff / 60;
+    } catch (error) {
+        console.error("Error calculating hours:", error);
+        return null;
+    }
+}
+
+// Function to load payroll data
+async function loadPayrollData() {
+    const tableBody = document.getElementById('payrollTableBody');
+    
+    if (tableBody) {
+        tableBody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;">Loading...</td></tr>';
+    }
+
+    // Update payroll period immediately
+    const periodLabel = document.getElementById('currentPeriodLabel');
+    if (periodLabel) {
+        periodLabel.textContent = selectedPeriod;
+    }
+
+    // Get the selected payroll period
+    const periodSelect = document.getElementById('payrollPeriod');
+    if (!periodSelect) return;
+
+    const selectedPeriod = periodSelect.value;
+    const cacheKey = `payroll_cache_${currentUser}_${selectedPeriod}`;
+    const cachedData = localStorage.getItem(cacheKey);
+
+    if (cachedData) {
+    // Use cached data immediately
+        updatePayrollUI(JSON.parse(cachedData));
+
+        // Then refresh in background if online
+        if (navigator.onLine) {
+            fetchFreshPayrollData(selectedPeriod, cacheKey);
+        }
+    } else {
+        // No cache, fetch new data
+        fetchFreshPayrollData(selectedPeriod, cacheKey);
+    }
+    
+
+    // Parse the period to get start and end dates
+    const [startMonth, startDay, endMonth, endDay, year] = parsePeriod(selectedPeriod);
+
+    // Create date objects for the period
+    const startDate = new Date(year, getMonthIndex(startMonth), parseInt(startDay));
+    const endDate = new Date(year, getMonthIndex(endMonth), parseInt(endDay));
+
+    // Get all dates in the period
+    const dates = getDatesInRange(startDate, endDate);
+
+    // Try to get real data
+    const payrollData = await fetchPayrollData(dates);
+
+    // Update the UI with the data
+    updatePayrollUI(payrollData);
+}
+
+async function fetchFreshPayrollData(selectedPeriod, cacheKey) {
+    // Parse period and get data as you currently do
+    const [startMonth, startDay, endMonth, endDay, year] = parsePeriod(selectedPeriod);
+    const startDate = new Date(year, getMonthIndex(startMonth), parseInt(startDay));
+    const endDate = new Date(year, getMonthIndex(endMonth), parseInt(endDay));
+    const dates = getDatesInRange(startDate, endDate);
+
+    const payrollData = await fetchPayrollData(dates);
+
+    // Cache the result
+    localStorage.setItem(cacheKey, JSON.stringify(payrollData));
+
+    // Update UI
+    updatePayrollUI(payrollData);
+}
+
+async function fetchPayrollData(dates) {
+    if (navigator.onLine && currentUser) {
+        try {
+            const realData = [];
+
+            for (const dateStr of dates) {
+                try {
+                    const docRef = doc(db, "attendance", currentUser, "dates", dateStr);
+                    const docSnap = await getDoc(docRef);
+
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
+
+                        // Get scheduled times based on shift
+                        let scheduledIn = null;
+                        let scheduledOut = null;
+
+                        if (data.clockIn?.shift) {
+                            const shift = data.clockIn.shift;
+                            const schedule = SHIFT_SCHEDULES[shift] || SHIFT_SCHEDULES["Opening"];
+                            scheduledIn = schedule.timeIn;
+                            scheduledOut = schedule.timeOut;
+                        }
+
+                        // If we have clock in and out times, calculate hours
+                        let hours = null;
+                        if (data.clockIn && data.clockOut) {
+                            hours = calculateHours(data.clockIn.time, data.clockOut.time);
+                        }
+
+                        // Format time without seconds
+                        let timeIn = null;
+                        if (data.clockIn?.time) {
+                            timeIn = data.clockIn.time.replace(/(\d+:\d+)(:\d+)?\s+(AM|PM)/i, '$1 $3');
+                        }
+
+                        let timeOut = null;
+                        if (data.clockOut?.time) {
+                            timeOut = data.clockOut.time.replace(/(\d+:\d+)(:\d+)?\s+(AM|PM)/i, '$1 $3');
+                        }
+
+                        realData.push({
+                            date: dateStr,
+                            timeIn: data.clockIn?.time || null,
+                            timeOut: data.clockOut?.time || null,
+                            branch: data.clockIn?.branch || null,
+                            shift: data.clockIn?.shift || null,
+                            scheduledIn: scheduledIn,
+                            scheduledOut: scheduledOut,
+                            hours: hours
+                        });
+                    } else {
+                        // No data for this date
+                        realData.push({
+                            date: dateStr,
+                            timeIn: null,
+                            timeOut: null,
+                            branch: null,
+                            shift: null,
+                            scheduledIn: null,
+                            scheduledOut: null,
+                            hours: null
+                        });
+                    }
+                } catch (error) {
+                    console.error(`Error fetching data for ${dateStr}:`, error);
+                    // Add empty data for this date in case of error
+                    realData.push({
+                        date: dateStr,
+                        timeIn: null,
+                        timeOut: null,
+                        branch: null,
+                        shift: null,
+                        scheduledIn: null,
+                        scheduledOut: null,
+                        hours: null
+                    });
+                }
+            }
+
+            return realData;
+        } catch (error) {
+            console.error("Failed to fetch real attendance data:", error);
+            // Fall back to mock data if there's an error
+        }
+    }
+
+    // Generate mock data if we couldn't get real data
+    return generateMockData(dates);
+}
+
+
+// Function to generate mock data
+function generateMockData(dates) {
+    const branches = ["Matcha Bar Podium", "Matcha Bar SM North", "Pop-up", "Workshop"];
+    const shifts = ["Opening", "Midshift", "Closing"];
+
+    return dates.map(date => {
+        const mockDate = new Date(date);
+        const dayOfWeek = mockDate.getDay();
+
+        // No work on weekends in our mock data
+        if (dayOfWeek === 0 || dayOfWeek === 6) {
+            return {
+                date: date,
+                timeIn: null,
+                timeOut: null,
+                branch: null,
+                shift: null,
+                scheduledIn: null,
+                scheduledOut: null,
+                hours: null
+            };
+        }
+
+        // Generate random attendance
+        const hasAttendance = Math.random() > 0.2; // 80% chance of attendance
+
+        if (!hasAttendance) {
+            return {
+                date: date,
+                timeIn: null,
+                timeOut: null,
+                branch: null,
+                shift: null,
+                scheduledIn: null,
+                scheduledOut: null,
+                hours: null
+            };
+        }
+
+        // Random branch and shift
+        const branch = branches[Math.floor(Math.random() * branches.length)];
+        const shift = shifts[Math.floor(Math.random() * shifts.length)];
+
+        // Get scheduled times based on shift
+        const schedule = SHIFT_SCHEDULES[shift] || SHIFT_SCHEDULES["Opening"];
+        const scheduledIn = schedule.timeIn;
+        const scheduledOut = schedule.timeOut;
+
+        // Generate time in (based on scheduled with possible lateness)
+        const isLate = Math.random() > 0.7; // 30% chance of being late
+        const [scheduledHour, scheduledMin] = scheduledIn.split(':')[0].trim();
+        const lateBy = isLate ? Math.floor(Math.random() * 30) : -Math.floor(Math.random() * 10);
+        const hourIn = scheduledHour;
+        const minuteIn = (parseInt(scheduledMin) + lateBy).toString().padStart(2, '0');
+        const timeIn = `${hourIn}:${minuteIn} AM`;
+
+        // Generate time out
+        const [scheduledOutHour, scheduledOutMin] = scheduledOut.split(':')[0].trim();
+        const earlyBy = Math.random() > 0.8 ? Math.floor(Math.random() * 20) : -Math.floor(Math.random() * 30);
+        const hourOut = scheduledOutHour;
+        const minuteOut = (parseInt(scheduledOutMin) - earlyBy).toString().padStart(2, '0');
+        const timeOut = `${hourOut}:${minuteOut} PM`;
+
+        // Calculate hours (roughly)
+        const hours = 9 + (parseInt(minuteOut) + earlyBy - parseInt(minuteIn) - lateBy) / 60;
+
+        return {
+            date: date,
+            timeIn: timeIn,
+            timeOut: timeOut,
+            branch: branch,
+            shift: shift,
+            scheduledIn: scheduledIn,
+            scheduledOut: scheduledOut,
+            hours: hours
+        };
+    });
+}
+
+function updatePayrollUI(payrollData) {
+    // Calculate summary values
+    const daysWorked = payrollData.filter(day => day.timeIn && day.timeOut).length;
+
+    // Calculate total late hours
+    const totalLateHours = payrollData.reduce((sum, day) => {
+        // If there's clock in data and scheduled data
+        if (day.timeIn && day.scheduledIn) {
+            const lateMinutes = compareTimes(day.timeIn, day.scheduledIn);
+            // Only count if actually late
+            return sum + (lateMinutes > 0 ? lateMinutes / 60 : 0);
+        }
+        return sum;
+    }, 0);
+
+    // Update summary cards
+    const summaryValues = document.querySelectorAll('.summary-value');
+    if (summaryValues.length >= 2) {
+        summaryValues[0].textContent = totalLateHours.toFixed(1); // Late hours
+        summaryValues[1].textContent = daysWorked; // Days worked
+    }
+
+    // Populate the table
+    const tableBody = document.getElementById('payrollTableBody');
+    if (!tableBody) return;
+
+    tableBody.innerHTML = '';
+
+    payrollData.forEach(day => {
+        const row = document.createElement('tr');
+
+        // Highlight row if it's today
+        const isToday = formatDate(new Date()) === day.date;
+        if (isToday) {
+            row.style.backgroundColor = 'rgba(43, 147, 72, 0.1)';
+            row.style.fontWeight = '600';
+        }
+
+        // Create a clickable date cell with mobile-optimized layout
+        const dateCell = document.createElement('td');
+        dateCell.className = 'date-cell';
+
+        const dateParts = new Date(day.date).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            weekday: 'short'
+        }).split(', ');
+
+        // Create two spans for date and day of week
+        const dateSpan = document.createElement('span');
+        dateSpan.className = 'date-day';
+        dateSpan.textContent = dateParts[1]; // Apr 12
+
+        const dowSpan = document.createElement('span');
+        dowSpan.className = 'date-dow';
+        dowSpan.textContent = dateParts[0]; // Mon
+
+        dateCell.appendChild(dateSpan);
+        dateCell.appendChild(dowSpan);
+
+        dateCell.style.cursor = 'pointer';
+        dateCell.style.color = '#2b9348';
+
+        // Add click handler to go to the daily view of this date
+        dateCell.addEventListener('click', () => {
+            const dateParts = day.date.split('-');
+            const selectedDate = new Date(
+                parseInt(dateParts[0]),
+                parseInt(dateParts[1]) - 1,
+                parseInt(dateParts[2])
+            );
+
+            // Update the view date and switch to daily view
+            viewDate = selectedDate;
+            updateDateUI();
+            updateSummaryUI();
+
+            // Switch tabs
+            document.getElementById('dailyViewTab').click();
+        });
+
+        row.appendChild(dateCell);
+
+        // Time in cell
+        const timeInCell = document.createElement('td');
+        timeInCell.textContent = day.timeIn || '--';
+        row.appendChild(timeInCell);
+
+        // Time out cell
+        const timeOutCell = document.createElement('td');
+        timeOutCell.textContent = day.timeOut || '--';
+        row.appendChild(timeOutCell);
+
+        // Branch cell
+        const branchCell = document.createElement('td');
+        branchCell.textContent = day.branch || '--';
+        row.appendChild(branchCell);
+
+        // Shift cell
+        const shiftCell = document.createElement('td');
+        shiftCell.textContent = day.shift || '--';
+        row.appendChild(shiftCell);
+
+        // Hours cell
+        const hoursCell = document.createElement('td');
+        hoursCell.textContent = day.hours ? day.hours.toFixed(1) : '--';
+
+        // Add visual indicator for overtime or short hours
+        if (day.hours > 9) {
+            hoursCell.style.color = '#ff6b6b';
+            hoursCell.style.fontWeight = '600';
+        } else if (day.hours && day.hours < 8) {
+            hoursCell.style.color = '#ff9500';
+        }
+
+        row.appendChild(hoursCell);
+
+        tableBody.appendChild(row);
+    });
+}
+
+async function populatePayrollPeriods() {
+    const periodSelect = document.getElementById('payrollPeriod');
+    if (!periodSelect) return;
+
+    // Clear existing options
+    periodSelect.innerHTML = '';
+
+    if (!navigator.onLine || !currentUser) {
+        // Fallback periods if offline - using correct cutoff dates
+        addPeriodOption(periodSelect, "March 29 - April 12, 2025");
+        addPeriodOption(periodSelect, "March 13 - March 28, 2025");
+        addPeriodOption(periodSelect, "February 27 - March 12, 2025");
+        return;
+    }
+
+    // Get all dates with attendance data
+    const attendanceDates = await getAttendanceDatesFromFirestore();
+    if (!attendanceDates || attendanceDates.length === 0) {
+        // No data, add default periods
+        addPeriodOption(periodSelect, "March 29 - April 12, 2025");
+        return;
+    }
+
+    // Sort dates
+    const sortedDates = attendanceDates.sort((a, b) => new Date(b) - new Date(a));
+
+    // Define payroll cutoff dates - always 3 days before 15th and end of month
+    const now = new Date();
+    const year = now.getFullYear();
+    const periods = [];
+
+    // Generate payroll periods for past 6 months
+    for (let i = 0; i < 6; i++) {
+        // Calculate reference month for this iteration (current month - i)
+        const refMonth = now.getMonth() - i;
+        const refYear = refMonth < 0 ? year - 1 : year;
+        const adjustedMonth = refMonth < 0 ? refMonth + 12 : refMonth;
+
+        // First period: 13th of previous month to 27th of this month (or corresponding dates)
+        const secondHalfEnd = new Date(refYear, adjustedMonth, 0); // Last day of previous month
+        const daysInPrevMonth = secondHalfEnd.getDate();
+
+        // For end date: 12th of current month (3 days before 15th)
+        const firstHalfEnd = new Date(refYear, adjustedMonth, 12);
+        // For start date: 28th/29th of previous month (depends on days in month, 3 days before end)
+        const firstHalfStart = new Date(refYear, adjustedMonth - 1, daysInPrevMonth - 2);
+
+        const periodText1 = formatPeriod(firstHalfStart, firstHalfEnd);
+
+        // Second period: 13th to 27th/28th/29th/30th of same month (depends on days in month)
+        const daysInMonth = new Date(refYear, adjustedMonth + 1, 0).getDate();
+        const secondHalfStart = new Date(refYear, adjustedMonth, 13);
+        const secondHalfEndDay = daysInMonth - 2; // 3 days before end of month
+        const secondHalfEnd2 = new Date(refYear, adjustedMonth, secondHalfEndDay);
+
+        const periodText2 = formatPeriod(secondHalfStart, secondHalfEnd2);
+
+        // Check if any attendance date falls within these periods
+        const hasDataPeriod1 = sortedDates.some(dateStr => {
+            const date = new Date(dateStr);
+            return date >= firstHalfStart && date <= firstHalfEnd;
+        });
+
+        const hasDataPeriod2 = sortedDates.some(dateStr => {
+            const date = new Date(dateStr);
+            return date >= secondHalfStart && date <= secondHalfEnd2;
+        });
+
+        if (hasDataPeriod1) {
+            periods.push(periodText1);
+        }
+
+        if (hasDataPeriod2) {
+            periods.push(periodText2);
+        }
+    }
+
+    // Add periods to select
+    if (periods.length === 0) {
+        // No periods with data, add current period
+        addPeriodOption(periodSelect, "March 29 - April 12, 2025");
+    } else {
+        periods.forEach(period => addPeriodOption(periodSelect, period));
+    }
+}
+
+// Helper function to format period text nicely
+function formatPeriod(startDate, endDate) {
+    const startMonth = startDate.toLocaleString('default', { month: 'long' });
+    const startDay = startDate.getDate();
+    const endMonth = endDate.toLocaleString('default', { month: 'long' });
+    const endDay = endDate.getDate();
+    const periodYear = endDate.getFullYear();
+
+    return `${startMonth} ${startDay} - ${endMonth} ${endDay}, ${periodYear}`;
+}
+
+function addPeriodOption(selectElement, periodText) {
+    const option = document.createElement('option');
+    option.textContent = periodText;
+    selectElement.appendChild(option);
+}
+
+// Call this when loading the payroll view
+document.getElementById('payrollViewTab').addEventListener('click', function () {
+    // First populate the periods, then load data
+    populatePayrollPeriods().then(() => {
+        if (typeof loadPayrollData === 'function') {
+            loadPayrollData();
+        }
+    });
+});

@@ -25,8 +25,9 @@
         </div>
     </div>
     <div class="container">
-        <!-- <h1>📍 Staff Time Log</h1> -->
         <div id="loginForm">
+            <img src="img/matchanese-logo.png"
+                class="logo" alt="Matchanese Logo" />
             <input type="tel" id="codeInput" inputmode="numeric" pattern="[0-9]*" placeholder="Enter Employee Code">
             <button id="loginButton">Log In</button>
         </div>
@@ -34,9 +35,21 @@
         <div id="mainInterface" style="display:none">
 
             <div class="header-block">
-                <img src="https://matchanese.com/cdn/shop/files/matchanese-2025-logo_e4944ef8-b626-4206-80c5-cc4fd9ed79ab.png?v=1738086945&width=60"
+                <img src="img/matchanese-logo.png"
                     class="logo" alt="Matchanese Logo" />
                 <h2 class="greeting"><span id="greetingText">Good Morning,</span><br><span id="userName" class="username"></span></h2>
+            </div>
+
+            <div id="switchUserModal" class="image-modal">
+                <div class="modal-content" style="padding: 1.5rem; max-width: 90%; text-align: center;">
+                    <p style="font-size: 1.2rem; margin-bottom: 1.5rem;">
+                        Would you like to switch users?
+                    </p>
+                    <div style="display: flex; gap: 1rem; justify-content: center;">
+                        <button id="cancelSwitchUser" class="retake-btn">Cancel</button>
+                        <button id="confirmSwitchUser" class="submit-btn">Switch User</button>
+                    </div>
+                </div>
             </div>
 
             <div id="networkStatusWrapper">
@@ -148,6 +161,28 @@
             </style>
             <br>
 
+            <div class="bottom-tabs">
+                <button class="tab-button active" id="dailyViewTab">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                    </svg>
+                    <span>Daily</span>
+                </button>
+                <button class="tab-button" id="payrollViewTab">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                        <line x1="8" y1="21" x2="16" y2="21"></line>
+                        <line x1="12" y1="17" x2="12" y2="21"></line>
+                    </svg>
+                    <span>Payroll</span>
+                </button>
+            </div>
+            
             <div id="summaryCardUI" class="summary-ui">
                 <div class="info-row">
                     <div class="date-block" id="dateDisplay">
@@ -157,8 +192,8 @@
                     </div>
                     <div class="dropdown-stack">
                         <select class="branch-label" id="branchSelect">
-                            <option selected>Matcha Bar Podium</option>
-                            <option>Matcha Bar SM North</option>
+                            <option selected>Podium</option>
+                            <option>SM North</option>
                             <option>Pop-up</option>
                             <option>Workshop</option>
                             <option>Other Events</option>
@@ -199,17 +234,19 @@
 
             </div>
 
-            <button id="toggleHistoryBtn" style="margin-top: 20px;">🕓 View Past 15 Logs</button>
+            
+
+            <!-- <button id="toggleHistoryBtn" style="margin-top: 20px;">🕓 View Past 15 Logs</button> -->
             
             <div id="historyLog" style="display: none; margin-top: 20px;">
                 <h3>📅 Recent Attendance Logs</h3>
                 <div id="historyContent" class="history-table"></div>
             </div>
 
-            <br><br><br><br><div class="panel timestamp-panel" id="timestamp">Current Time: --:--</div>
-            <button onclick="logoutUser()" style="background:#ccc; color:#000;">Switch User</button>
-            <button onclick="clearData()" style="background:#e63946; color:white; ">🧹 Clear All Data
-                (Debug)</button>
+            <!-- <br><br><br><br><div class="panel timestamp-panel" id="timestamp">Current Time: --:--</div> -->
+            <!-- <button onclick="logoutUser()" style="background:#ccc; color:#000;">Switch User</button> -->
+            <!-- <button onclick="clearData()" style="background:#e63946; color:white; ">🧹 Clear All Data
+                (Debug)</button> -->
 
             <!-- <div class="nav-date-row">
                 <button onclick="changeDay(-1)">⬅️</button>
@@ -254,7 +291,46 @@
                 </div>
             </div>
         </div>
-
+        
+        <!-- Add this container for the payroll view -->
+        <div id="payrollView" style="display: none;">
+            <div class="period-selector">
+                <select id="payrollPeriod">
+                    <option>March 29 - April 12, 2025</option>
+                    <option>March 13 - March 28, 2025</option>
+                    <option>February 27 - March 12, 2025</option>
+                </select>
+            </div>
+        
+            <div class="payroll-summary">
+                <div class="summary-card">
+                    <h3>Late Hours</h3>
+                    <p class="summary-value">0.0</p>
+                </div>
+                <div class="summary-card">
+                    <h3>Days Worked</h3>
+                    <p class="summary-value">0</p>
+                </div>
+            </div>
+        
+            <div class="attendance-list">
+                <table class="payroll-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Time In</th>
+                            <th>Time Out</th>
+                            <th>Branch</th>
+                            <th>Shift</th>
+                            <th>Hours</th>
+                        </tr>
+                    </thead>
+                    <tbody id="payrollTableBody">
+                        <!-- This will be populated dynamically -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
 
         <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
         <script type="module" src="js/script.js"></script>
