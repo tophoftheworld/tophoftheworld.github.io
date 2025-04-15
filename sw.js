@@ -1,5 +1,5 @@
 // Matchanese Attendance App - Service Worker
-const APP_VERSION = "0.47"; // IMPORTANT: Keep this in sync with script.js
+const APP_VERSION = "0.48"; // IMPORTANT: Keep this in sync with script.js
 const CACHE_NAME = `matchanese-v${APP_VERSION}`;
 const DYNAMIC_CACHE = `matchanese-dynamic-v${APP_VERSION}`;
 
