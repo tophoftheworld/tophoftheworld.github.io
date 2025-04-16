@@ -1272,3 +1272,150 @@ select option {
         display: none;
     }
 }
+
+/* Make the login form wider on desktop for better dropdown display */
+@media (min-width: 768px) {
+    #loginForm {
+        max-width: 360px;
+    }
+
+    /* Add hover effect for desktop */
+    .name-dropdown:hover {
+        border-color: #2b9348;
+    }
+
+    /* Dropdown arrow animation on focus */
+    .name-dropdown:focus {
+        background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 6L6 1L11 6' stroke='%232b9348' stroke-width='2'/%3E%3C/svg%3E");
+    }
+
+    /* Larger text for employee names */
+    .name-dropdown option {
+        font-size: 1rem;
+        padding: 0.5rem;
+    }
+}
+
+.employee-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    /* Fixed 5 columns per row */
+    gap: 12px;
+    width: 100%;
+    max-width: 800px;
+    margin: 0 auto 1.5rem auto;
+    /* Center the grid */
+}
+
+.grid-title {
+    grid-column: 1 / -1;
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    color: #333;
+    text-align: center;
+}
+
+.employee-square {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 1.5 / 1;
+    /* Create more uniform squares */
+    padding: 10px;
+    background-color: #f8f9fa;
+    border: 2px solid #e9ecef;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    color: #333;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    width: 100%;
+    /* Ensure all squares are the same width */
+}
+
+.employee-square:hover {
+    background-color: #e8f5e9;
+    border-color: #2b9348;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(43, 147, 72, 0.15);
+}
+
+.employee-square.selected {
+    background-color: #2b9348;
+    color: white;
+    border-color: #2b9348;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(43, 147, 72, 0.2);
+}
+
+/* Wider login form for desktop */
+@media (min-width: 768px) {
+    #loginForm {
+        max-width: 800px;
+        width: 90%;
+        height: auto !important;
+        /* Override the 90vh height */
+        padding: 2rem;
+        margin: 2rem auto;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+
+    /* Move "Select Employee" text above the grid */
+    #nameDropdown {
+        order: -1;
+        /* Move this above the grid */
+        margin-bottom: 2rem;
+    }
+
+    .employee-grid {
+        order: 0;
+        /* Place grid after dropdown but before other elements */
+    }
+
+    /* POS Mode indicator position fix */
+    .device-indicator {
+        order: 1;
+        /* Move below the grid */
+        margin-top: 2rem;
+    }
+}
+
+/* Adjust grid columns based on screen size */
+@media (max-width: 800px) {
+    .employee-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+@media (max-width: 640px) {
+    .employee-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (max-width: 480px) {
+    .employee-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+/* POS Mode indicator style */
+.device-indicator {
+    display: inline-block;
+    background-color: #f8f9fa;
+    color: #2b9348;
+    padding: 0.5rem 1rem;
+    border-radius: 99px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin-top: 2rem;
+    margin-bottom: 0.5rem;
+    border: 1px solid #e9ecef;
+    clear: both;
+}

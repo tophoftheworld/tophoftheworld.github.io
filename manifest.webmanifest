@@ -2,7 +2,7 @@
     "name": "Matchanese Attendance",
     "short_name": "Attendance",
     "description": "Staff time tracking app for Matchanese",
-    "start_url": "/?v=0.54",
+    "start_url": "/?v=0.61",
     "display": "standalone",
     "background_color": "#ffffff",
     "theme_color": "#2b9348",
@@ -18,5 +18,5 @@
             "type": "image/png"
         }
     ],
-    "version": "0.54"
+    "version": "0.61"
 }

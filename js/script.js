@@ -1,4 +1,4 @@
-const APP_VERSION = "0.54"; 
+const APP_VERSION = "0.61"; 
 
 const ALLOW_PAST_CLOCKING = false;
 
@@ -2709,6 +2709,196 @@ document.getElementById('payrollViewTab').addEventListener('click', function () 
     populatePayrollPeriods().then(() => {
         if (typeof loadPayrollData === 'function') {
             loadPayrollData();
+        }
+    });
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    const loginForm = document.getElementById('loginForm');
+    const codeInput = document.getElementById('codeInput');
+
+    // Only modify if we're on desktop and the login form exists
+    if (isDesktop() && loginForm && codeInput) {
+        const loginButton = document.getElementById('loginButton');
+        if (loginButton) {
+            loginButton.addEventListener('click', desktopLogin);
+        }
+
+        // Add a device indicator for POS mode
+        const deviceIndicator = document.createElement('div');
+        deviceIndicator.className = 'device-indicator';
+        deviceIndicator.textContent = '💻 POS Mode';
+        loginForm.appendChild(deviceIndicator);
+    }
+});
+
+function isDesktop() {
+    // Check if screen width is larger than typical mobile breakpoint
+    return window.innerWidth >= 768;
+}
+
+function desktopLogin() {
+    const nameDropdown = document.getElementById('nameDropdown');
+    if (!nameDropdown || !nameDropdown.value) {
+        alert("Please select an employee");
+        return;
+    }
+
+
+    // Set the selected code to the code input
+    const codeInput = document.getElementById('codeInput');
+    codeInput.value = nameDropdown.value;
+
+    // Call the original login function
+    loginUser();
+}
+
+// 4. Update the original codeInput event listener to ensure it doesn't interfere
+document.removeEventListener('DOMContentLoaded', () => {
+    const codeInput = document.getElementById('codeInput');
+    if (codeInput) {
+        codeInput.removeEventListener('keydown', (e) => {
+            if (e.key === "Enter") loginUser();
+        });
+
+        // Add it back conditionally
+        if (!isDesktop()) {
+            codeInput.addEventListener('keydown', (e) => {
+                if (e.key === "Enter") loginUser();
+            });
+        }
+    }
+});
+
+function formatEmployeeName(fullName) {
+    const nameParts = fullName.split(' ');
+    
+    // If name has only one or two parts, show the full name
+    if (nameParts.length > 1) {
+        return nameParts.slice(0, -1).join(' ');
+    }
+}
+
+function createEmployeeSquaresUI() {
+    const loginForm = document.getElementById('loginForm');
+    const codeInput = document.getElementById('codeInput');
+
+    if (!loginForm || !codeInput || !isDesktop()) return;
+
+    // First, clear any existing UI elements we might have added before
+    // (prevents duplicates if this runs more than once)
+    const existingGrid = loginForm.querySelector('.employee-grid');
+    if (existingGrid) existingGrid.remove();
+
+    const existingGridTitle = loginForm.querySelector('.grid-title');
+    if (existingGridTitle) existingGridTitle.remove();
+
+    // Remove any existing device indicators to avoid duplicates
+    const existingIndicators = loginForm.querySelectorAll('.device-indicator');
+    existingIndicators.forEach(el => el.remove());
+
+    // Hide the code input field and login button on desktop
+    codeInput.style.display = 'none';
+
+    // Create a container for the employee squares
+    const gridContainer = document.createElement('div');
+    gridContainer.className = 'employee-grid';
+
+    gridContainer.style.margin = '4rem auto';
+    gridContainer.style.justifyContent = 'center';
+
+    // Add all employees as squares with consistent formatting
+    for (const [code, name] of Object.entries(employees)) {
+        const employeeSquare = document.createElement('div');
+        employeeSquare.className = 'employee-square';
+        employeeSquare.setAttribute('data-code', code);
+
+        // Format the name - simplify to first name(s) without last name
+        const displayName = formatEmployeeName(name);
+        employeeSquare.textContent = displayName;
+
+        // Add click event
+        employeeSquare.addEventListener('click', function () {
+            // Show immediate visual feedback
+            document.querySelectorAll('.employee-square').forEach(square => {
+                square.classList.remove('selected');
+            });
+            this.classList.add('selected');
+
+            // Show loading toast immediately
+            showToast('Logging in...', 'syncing');
+
+            // Set the code and login
+            codeInput.value = this.getAttribute('data-code');
+            setTimeout(() => loginUser(), 50);
+        });
+
+        gridContainer.appendChild(employeeSquare);
+    }
+
+    // Add the grid to the form AFTER the title
+    loginForm.appendChild(gridContainer);
+
+    // Add POS mode indicator (only once) AFTER the grid
+    const deviceIndicator = document.createElement('div');
+    deviceIndicator.className = 'device-indicator';
+    deviceIndicator.textContent = '💻 POS Mode';
+    loginForm.appendChild(deviceIndicator);
+
+    // Hide the login button on desktop since we auto-login on selection
+    const loginButton = document.getElementById('loginButton');
+    if (loginButton) {
+        loginButton.style.display = 'none';
+    }
+
+    // Add a logo above everything else
+    const existingLogo = loginForm.querySelector('.logo');
+    if (!existingLogo) {
+        const logo = document.createElement('img');
+        logo.className = 'logo';
+        logo.src = 'logo.png'; // Update this with your actual logo path
+        logo.alt = 'Logo';
+        loginForm.insertBefore(logo, loginForm.firstChild);
+    }
+}
+
+const originalLoginUser = window.loginUser;
+
+// Override the loginUser function to handle employee square selection
+window.loginUser = function () {
+    const code = document.getElementById("codeInput").value.trim();
+
+    // Skip the empty code check if we're on desktop and have a selected employee
+    if (isDesktop() && document.querySelector('.employee-square.selected')) {
+        // Continue with login process without empty code alert
+    } else if (!code) {
+        return alert("Please enter a code");
+    }
+
+    // Continue with the original function
+    return originalLoginUser.apply(this, arguments);
+};
+
+// Call this function when DOM is loaded
+document.addEventListener('DOMContentLoaded', function () {
+    if (isDesktop()) {
+        createEmployeeSquaresUI();
+
+        // Also resize the login form container for better display
+        const loginForm = document.getElementById('loginForm');
+        if (loginForm) {
+            loginForm.style.height = 'auto'; // Override the 90vh height
+        }
+    }
+
+    // Add window resize handler to switch between mobile and desktop
+    window.addEventListener('resize', function () {
+        const wasDesktop = document.querySelector('.employee-grid') !== null;
+        const isDesktopNow = isDesktop();
+
+        if (wasDesktop !== isDesktopNow) {
+            // Refresh the page when switching between mobile and desktop modes
+            location.reload();
         }
     });
 });
