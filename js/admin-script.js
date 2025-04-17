@@ -1,6 +1,6 @@
 // Import Firebase modules
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
-import { getFirestore, collection, getDocs, doc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, setDoc, query, where } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 
 // Firebase configuration - you'll need to replace this with your actual Firebase config
 const firebaseConfig = {
@@ -39,9 +39,6 @@ const employees = {
     "131829": "Japhet Dizon"
 };
 
-// Add right after the employee data definition (around line 41)
-console.log("John Lester's ID is:", Object.keys(employees).find(key => employees[key] === "John Lester Cal"));
-
 // Shift schedules
 const SHIFT_SCHEDULES = {
     Opening: { timeIn: "9:30 AM", timeOut: "6:30 PM" },
@@ -60,33 +57,133 @@ const branchSelect = document.getElementById('branchSelect');
 const refreshBtn = document.getElementById('refreshBtn');
 const exportBtn = document.getElementById('exportBtn');
 const employeeTableBody = document.getElementById('employeeTableBody');
+const employeeEditModal = document.getElementById('employeeEditModal');
+const closeEditModal = document.getElementById('closeEditModal');
+const cancelEditBtn = document.getElementById('cancelEditBtn');
+const employeeEditForm = document.getElementById('employeeEditForm');
+const editEmployeeName = document.getElementById('editEmployeeName');
+const editBaseRate = document.getElementById('editBaseRate');
+const editEmployeeId = document.getElementById('editEmployeeId');
+
+// Add these to your DOMContentLoaded event listener
+closeEditModal.addEventListener('click', closeEditEmployeeModal);
+cancelEditBtn.addEventListener('click', closeEditEmployeeModal);
+employeeEditForm.addEventListener('submit', saveEmployeeChanges);
 
 // Global data store
 let attendanceData = {};
 let filteredData = {};
 let isInitialLoad = true;
 
+// Cache utility functions
+function getCacheKey(periodId, branchId) {
+    try {
+        console.log("Getting cache key for periodId:", periodId);
+        const { startDate, endDate } = getPeriodDates(periodId);
+        const formattedStartDate = formatDate(startDate);
+        const formattedEndDate = formatDate(endDate);
+
+        const key = `attendance_${formattedStartDate}_${formattedEndDate}_${branchId}`;
+        console.log("Generated key:", key);
+    } catch (e) {
+        // If the period isn't initialized yet, use the ID directly as a fallback
+        console.warn("Error generating cache key:", e);
+        return `attendance_${periodId}_${branchId}`;
+    }
+}
+
+function saveToCache(cacheKey, data) {
+    const cacheData = {
+        timestamp: Date.now(),
+        version: '1.0',
+        data: data
+    };
+    try {
+        localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+        console.log(`Data cached for ${cacheKey}`);
+    } catch (e) {
+        console.warn('Cache storage failed, likely quota exceeded', e);
+        clearOldCaches();
+    }
+}
+
+function getFromCache(periodId, branchId) {
+    const cacheKey = getCacheKey(periodId, branchId);
+    try {
+        const cachedData = localStorage.getItem(cacheKey);
+        if (!cachedData) return null;
+        
+        const parsedData = JSON.parse(cachedData);
+
+        // Check if cache is expired (24 hours)
+        const cacheAge = Date.now() - parsedData.timestamp;
+        if (cacheAge > 24 * 60 * 60 * 1000) {
+            console.log('Cache expired, removing');
+            localStorage.removeItem(cacheKey);
+            return null;
+        }
+
+        // Check version
+        if (parsedData.version !== '1.0') {
+            console.log('Cache version mismatch, removing');
+            localStorage.removeItem(cacheKey);
+            return null;
+        }
+
+        return parsedData.data;
+    } catch (e) {
+        console.warn('Error reading from cache', e);
+        return null;
+    }
+}
+
+function clearOldCaches() {
+    // Remove oldest caches when storage is full
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key.startsWith('attendance_')) {
+            keysToRemove.push(key);
+        }
+    }
+
+    // Sort by age and remove oldest
+    if (keysToRemove.length > 5) { // Keep only 5 most recent
+        keysToRemove.sort((a, b) => {
+            const dataA = JSON.parse(localStorage.getItem(a));
+            const dataB = JSON.parse(localStorage.getItem(b));
+            return dataA.timestamp - dataB.timestamp;
+        });
+
+        // Remove oldest caches
+        keysToRemove.slice(0, keysToRemove.length - 5).forEach(key => {
+            localStorage.removeItem(key);
+            console.log(`Removed old cache: ${key}`);
+        });
+    }
+}
+
 // Initialize the dashboard
 document.addEventListener('DOMContentLoaded', async function() {
     // Setup event listeners
     closeModal.addEventListener('click', closePhotoModal);
-    periodSelect.addEventListener('change', filterData);
+    periodSelect.addEventListener('change', async function () {
+        attendanceData = {};
+
+        localStorage.removeItem(getCacheKey(this.value, branchSelect.value));
+        await loadData();
+    });
     branchSelect.addEventListener('change', filterData);
-    refreshBtn.addEventListener('click', loadData);
+    refreshBtn.addEventListener('click', function () {
+        // Force refresh from server
+        refreshBtn.dataset.forceRefresh = 'true';
+        loadData();
+    });
     exportBtn.addEventListener('click', exportToCSV);
-    
-    if (!isInitialLoad && localStorage.attendanceData) {
-        attendanceData = JSON.parse(localStorage.attendanceData);
-        filterData(); // no need to refetch if already cached
-        hideLoading();
-        return;
-    }
 
     // Load initial data
     await loadData();
 
-    localStorage.attendanceData = JSON.stringify(attendanceData);
-    
     // After initial load, hide the loading overlay
     isInitialLoad = false;
 });
@@ -95,6 +192,35 @@ document.addEventListener('DOMContentLoaded', async function() {
 // Update the loadData function to only fetch minimal data initially
 async function loadData() {
     showLoading();
+
+    const periodId = periodSelect.value;
+    const branchId = branchSelect.value;
+
+    console.log("Loading data for:", periodId, branchId);
+
+    const cacheKey = getCacheKey(periodId, branchId);
+    console.log("Checking cache with key:", cacheKey);
+
+    // Check for cached data
+    if (!isInitialLoad && refreshBtn.dataset.forceRefresh !== 'true') {
+        const cachedData = getFromCache(periodId, branchId);
+        console.log("Cache check result:", cachedData ? "Found in cache" : "Not in cache");
+        if (cachedData) {
+            console.log('Using cached data');
+            attendanceData = cachedData;
+            filterData();
+            hideLoading();
+            return;
+        }
+    }
+    else
+    {
+        console.log("Skipping cache check:",
+            isInitialLoad ? "Initial load" : "Forced refresh");
+    }
+
+    // Reset force refresh flag
+    refreshBtn.dataset.forceRefresh = 'false';
 
     try {
         attendanceData = {};
@@ -111,7 +237,7 @@ async function loadData() {
                 allDates.add(doc.id);
             });
         }
-
+    
         const sortedDates = Array.from(allDates).map(d => new Date(d)).sort((a, b) => a - b);
         const minDate = sortedDates[0];
         const maxDate = sortedDates[sortedDates.length - 1];
@@ -158,8 +284,19 @@ async function loadData() {
                 `<option value="${p.id}">${p.label}</option>`
             ).join('');
 
-            // 🟢 Select latest by default (AFTER populating options)
-            periodSelect.value = window.payrollPeriods[window.payrollPeriods.length - 1].id;
+            // 🟢 Find the period that includes current date
+            const today = new Date();
+            let currentPeriodIndex = 0;
+            for (let i = 0; i < window.payrollPeriods.length; i++) {
+                const period = window.payrollPeriods[i];
+                if (today >= period.start && today <= period.end) {
+                    currentPeriodIndex = i;
+                    break;
+                }
+            }
+
+            // Select current period by default
+            periodSelect.value = window.payrollPeriods[currentPeriodIndex].id;
         } else {
             console.warn("No payroll periods found. Using default period.");
             // Add a default option
@@ -167,6 +304,10 @@ async function loadData() {
         }
 
         // 🔄 Step 4: Now load minimal attendance stats
+        const { startDate, endDate } = getPeriodDates(periodSelect.value);
+        const formattedStartDate = formatDate(startDate);
+        const formattedEndDate = formatDate(endDate);
+
         for (const employeeId of employeeIds) {
             attendanceData[employeeId] = {
                 id: employeeId,
@@ -175,39 +316,39 @@ async function loadData() {
                 lastClockIn: null,
                 lastClockInPhoto: null,
                 daysWorked: 0,
-                lateHours: 0
+                lateHours: 0,
+                baseRate: 0
             };
 
-            const attendanceRef = collection(db, "attendance", employeeId, "dates");
-            const snapshot = await getDocs(attendanceRef);
+            try {
+                // Get employee base rate
+                const employeeDocRef = doc(db, "employees", employeeId);
+                const employeeDoc = await getDoc(employeeDocRef);
+                if (employeeDoc.exists()) {
+                    const employeeData = employeeDoc.data();
+                    attendanceData[employeeId].baseRate = employeeData.baseRate || 0;
+                }
 
-            let lastClockInDate = null;
-            let totalLateHours = 0;
-            let daysWorkedCount = 0;
+                // Only fetch dates within the period range
+                const attendanceRef = collection(db, "attendance", employeeId, "dates");
 
-            const { startDate, endDate } = getPeriodDates(periodSelect.value);
+                // Use a where clause to only fetch dates in range
+                // Note: You'll need to create a composite index in Firebase for this query
+                const snapshot = await getDocs(query(
+                    attendanceRef.withConverter(null),
+                    where("__name__", ">=", formattedStartDate),
+                    where("__name__", "<=", formattedEndDate)
+                ));
 
-            console.log("Period date range:", {
-                startDate: startDate.toISOString(),
-                endDate: endDate.toISOString()
-            });
+                let lastClockInDate = null;
+                let totalLateHours = 0;
+                let daysWorkedCount = 0;
 
-            snapshot.forEach(doc => {
-                const dateStr = doc.id;
-                const dateData = doc.data();
+                snapshot.forEach(doc => {
+                    const dateStr = doc.id;
+                    const dateData = doc.data();
 
-                // Create date objects that ignore time component
-                const dateObj = new Date(dateStr);
-                const dateObjNoTime = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
-
-                const startDateNoTime = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
-                const endDateNoTime = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
-
-                // Compare dates without time component
-                const dateInRange = dateObjNoTime >= startDateNoTime && dateObjNoTime <= endDateNoTime;
-
-                if (dateInRange) {
-                    // Add each date to the employee's dates array
+                    // Process the data directly without date range checks since query handles it
                     attendanceData[employeeId].dates.push({
                         date: dateStr,
                         branch: dateData.clockIn?.branch || "N/A",
@@ -226,26 +367,25 @@ async function loadData() {
                         if (lateMinutes > 0) totalLateHours += lateMinutes / 60;
                     }
 
-                    if (dateData.clockIn && (!lastClockInDate || dateObj > lastClockInDate)) {
-                        lastClockInDate = dateObj;
-                        attendanceData[employeeId].lastClockIn = dateObj;
-                        attendanceData[employeeId].lastClockInPhoto = dateData.clockIn.selfie;
+                    if (dateData.clockIn) {
+                        const dateObj = new Date(dateStr);
+                        if (!lastClockInDate || dateObj > lastClockInDate) {
+                            lastClockInDate = dateObj;
+                            attendanceData[employeeId].lastClockIn = dateObj;
+                            attendanceData[employeeId].lastClockInPhoto = dateData.clockIn.selfie;
+                        }
                     }
-                }
-            });
+                });
 
-            attendanceData[employeeId].daysWorked = daysWorkedCount;
-            attendanceData[employeeId].lateHours = totalLateHours;
+                attendanceData[employeeId].daysWorked = daysWorkedCount;
+                attendanceData[employeeId].lateHours = totalLateHours;
+            } catch (error) {
+                console.error(`Error loading data for employee ${employeeId}:`, error);
+            }
         }
 
-        // Add this right before filterData() call in loadData function (around line 190)
-        const johnLesterId = "131029";
-        console.log("John Lester's loaded data:", attendanceData[johnLesterId]);
-
-        // Add right before filterData() call in loadData function (around line 190)
-        if (attendanceData["131029"] && attendanceData["131029"].dates.length === 0) {
-            console.log("John Lester has no dates in attendance data");
-        }
+        const saveCacheKey = getCacheKey(periodSelect.value, branchSelect.value);
+        saveToCache(saveCacheKey, attendanceData);
 
         filterData();
     } catch (error) {
@@ -258,27 +398,69 @@ async function loadData() {
 
 
 // Filter data based on selected period and branch
+// Update the filterData() function around line 212:
+// Filter data based on selected period and branch
 function filterData() {
     const period = periodSelect.value;
     const branch = branchSelect.value;
+    const { startDate, endDate } = getPeriodDates(period);
 
-    // Apply filters
-    filteredData = { ...attendanceData };
+    // First make a deep copy of original attendance data to avoid modifying it
+    filteredData = JSON.parse(JSON.stringify(attendanceData));
 
-    if (branch !== 'all') {
-        // Filter by branch
-        Object.keys(filteredData).forEach(employeeId => {
-            filteredData[employeeId].dates = filteredData[employeeId].dates.filter(date => {
-                return date.branch === getBranchName(branch);
-            });
+    // Apply period filters by recalculating key metrics
+    Object.keys(filteredData).forEach(employeeId => {
+        let lastClockInDate = null;
+        let totalLateHours = 0;
+        let daysWorkedCount = 0;
+
+        // Filter dates for selected period
+        filteredData[employeeId].dates = filteredData[employeeId].dates.filter(date => {
+            const dateObj = new Date(date.date);
+            const dateObjNoTime = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
+            const startDateNoTime = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+            const endDateNoTime = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+
+            // Check if date is in the selected period range
+            return dateObjNoTime >= startDateNoTime && dateObjNoTime <= endDateNoTime;
         });
-    }
+
+        // Apply branch filter if needed
+        if (branch !== 'all') {
+            const branchName = getBranchName(branch);
+            filteredData[employeeId].dates = filteredData[employeeId].dates.filter(date => {
+                return date.branch === branchName;
+            });
+        }
+
+        // Recalculate metrics based on filtered dates
+        filteredData[employeeId].dates.forEach(date => {
+            if (date.timeIn && date.timeOut) daysWorkedCount++;
+
+            if (date.scheduledIn && date.timeIn) {
+                const lateMinutes = compareTimes(date.timeIn, date.scheduledIn);
+                if (lateMinutes > 0) totalLateHours += lateMinutes / 60;
+            }
+
+            const dateObj = new Date(date.date);
+            if (date.timeIn && (!lastClockInDate || dateObj > lastClockInDate)) {
+                lastClockInDate = dateObj;
+                filteredData[employeeId].lastClockIn = dateObj;
+                filteredData[employeeId].lastClockInPhoto = date.timeInPhoto;
+            }
+        });
+
+        // Update the employee's metrics
+        filteredData[employeeId].daysWorked = daysWorkedCount;
+        filteredData[employeeId].lateHours = totalLateHours;
+        if (!lastClockInDate) {
+            filteredData[employeeId].lastClockIn = null;
+            filteredData[employeeId].lastClockInPhoto = null;
+        }
+    });
 
     // Update summary cards
     updateSummaryCards();
-
-    // Add this before renderEmployeeTable() call in filterData function (around line 212)
-    console.log("John Lester's filtered data:", filteredData["131029"]);
 
     // Render the filtered data
     renderEmployeeTable();
@@ -292,12 +474,17 @@ function updateSummaryCards() {
     // Count active employees (those with at least one clock-in for the period)
     let activeEmployees = 0;
     let totalLateHours = 0;
+    let totalPayrollAmount = 0;
 
     Object.values(filteredData).forEach(employee => {
         // Check if employee has at least one clock-in
         const hasAttendance = employee.dates.some(date => date.timeIn);
         if (hasAttendance) {
             activeEmployees++;
+            // Calculate pay for this employee and add to total
+            const baseRate = employee.baseRate || 0;
+            const daysWorked = employee.daysWorked;
+            totalPayrollAmount += calculateTotalPay(daysWorked, baseRate);
         }
 
         // Calculate late hours
@@ -315,23 +502,35 @@ function updateSummaryCards() {
     document.getElementById('totalEmployees').textContent = totalEmployees;
     document.getElementById('activeEmployees').textContent = activeEmployees;
     document.getElementById('totalLateHours').textContent = totalLateHours.toFixed(1);
+    document.getElementById('totalPayroll').textContent = `₱${totalPayrollAmount.toFixed(2)}`;
 }
 
 function renderEmployeeTable() {
-    // Add this at the beginning of renderEmployeeTable function (around line 218)
-    const johnLesterRow = Object.keys(filteredData).includes("131029");
-    console.log("Is John Lester included in filteredData keys?", johnLesterRow);
     
     employeeTableBody.innerHTML = '';
 
-    if (Object.keys(filteredData).length === 0) {
+    let filteredEmployees = Object.entries(filteredData)
+        .filter(([_, employee]) => employee.dates.length > 0);
+
+    if (activeOnlyToggle.checked) {
+        filteredEmployees = filteredEmployees.filter(([_, employee]) =>
+            employee.dates.some(date => date.timeIn)
+        );
+    }
+
+    filteredEmployees = filteredEmployees.filter(([_, employee]) =>
+        employee.dates.length > 0
+    );
+
+    if (filteredEmployees.length === 0) {
         const row = document.createElement('tr');
-        row.innerHTML = `<td colspan="5" class="no-data">No data available for the selected filters</td>`;
+        row.innerHTML = `<td colspan="7" class="no-data">No data available for the selected filters</td>`;
         employeeTableBody.appendChild(row);
         return;
     }
 
-    Object.entries(filteredData).forEach(([employeeId, employee]) => {
+    // Continue with the rest of the function using filteredEmployees
+    filteredEmployees.forEach(([employeeId, employee]) => {
         const row = document.createElement('tr');
         row.className = 'expandable-row';
         row.dataset.employeeId = employeeId;
@@ -354,12 +553,17 @@ function renderEmployeeTable() {
             </td>
             <td>${daysWorked}</td>
             <td class="${lateHours > 0 ? 'late' : ''}">${lateHours.toFixed(1)}</td>
+            <td class="base-rate">₱${employee.baseRate || 0}</td>
+            <td>₱${calculateTotalPay(daysWorked, employee.baseRate || 0).toFixed(2)}</td>
             <td class="time-cell">
+                ${employee.lastClockInPhoto ?
+                        `<img src="${employee.lastClockInPhoto}" class="thumb" data-photo="${employee.lastClockInPhoto}" alt="Last clock-in photo">` :
+                        ``}
                 <span class="date-readable">${lastClockIn}</span>
-                ${employee.lastClockInPhoto ? `<img src="${employee.lastClockInPhoto}" class="thumb" data-photo="${employee.lastClockInPhoto}" alt="Last clock-in photo">` : ''}
             </td>
             <td>
-                <button class="action-btn view-details-btn">View Details</button>
+                <button class="action-btn view-details-btn">Quick View</button>
+                <button class="action-btn edit-employee-btn">Edit</button>
             </td>
         `;
 
@@ -373,7 +577,7 @@ function renderEmployeeTable() {
 
         // Generate placeholder content
         const detailContent = document.createElement('td');
-        detailContent.colSpan = 5;
+        detailContent.colSpan = 7;
         detailContent.className = 'detail-content';
         detailContent.innerHTML = '<div class="loading-placeholder">Click "View Details" to load attendance details</div>';
 
@@ -409,41 +613,60 @@ function renderEmployeeTable() {
             openPhotoModal(photoUrl);
         });
     });
+
+    // Add event listeners for edit employee buttons
+    document.querySelectorAll('.edit-employee-btn').forEach(btn => {
+        btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            const row = this.closest('.expandable-row');
+            const employeeId = row.dataset.employeeId;
+            openEditEmployeeModal(employeeId);
+        });
+    });
 }
+
+// Add this function at the bottom of your JS file
+function calculateTotalPay(daysWorked, baseRate) {
+    const dailyMealAllowance = 150;
+    return (baseRate * daysWorked) + (dailyMealAllowance * daysWorked);
+}
+
 // Function to load employee details only when needed
 async function loadEmployeeDetails(employeeId, detailRow) {
     // Show loading indicator in the detail row
     detailRow.querySelector('.detail-content').innerHTML = '<div class="spinner"></div>';
 
     try {
-        // Get period dates range
         const period = periodSelect.value;
+        const branch = branchSelect.value;
         const { startDate, endDate } = getPeriodDates(period);
+        const formattedStartDate = formatDate(startDate);
+        const formattedEndDate = formatDate(endDate);
 
-        // Get attendance data for this employee
         const dates = [];
         const attendanceRef = collection(db, "attendance", employeeId, "dates");
-        const querySnapshot = await getDocs(attendanceRef);
+
+        // Only fetch dates within the period range
+        const querySnapshot = await getDocs(query(
+            attendanceRef.withConverter(null),
+            where("__name__", ">=", formattedStartDate),
+            where("__name__", "<=", formattedEndDate)
+        ));
 
         // Process each date document
         querySnapshot.forEach(doc => {
             const dateData = doc.data();
             const dateStr = doc.id;
-            const dateObj = new Date(dateStr);
 
-            // Create date objects that ignore time component
-            const dateObjNoTime = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
-            const startDateNoTime = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
-            const endDateNoTime = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+            // Add branch filter condition
+            const branchName = dateData.clockIn?.branch || "N/A";
+            const branchMatches = branch === 'all' || branchName === getBranchName(branch);
 
-            // Compare dates without time component
-            const dateInRange = dateObjNoTime >= startDateNoTime && dateObjNoTime <= endDateNoTime;
-
-            if (dateInRange) {
+            if (branchMatches) {
                 // Now we load the full data including photos
                 dates.push({
                     date: dateStr,
-                    branch: dateData.clockIn?.branch || "N/A",
+                    branch: branchName,
                     shift: dateData.clockIn?.shift || "N/A",
                     scheduledIn: SHIFT_SCHEDULES[dateData.clockIn?.shift || "Opening"].timeIn,
                     scheduledOut: SHIFT_SCHEDULES[dateData.clockIn?.shift || "Opening"].timeOut,
@@ -452,6 +675,33 @@ async function loadEmployeeDetails(employeeId, detailRow) {
                     timeInPhoto: dateData.clockIn?.selfie || null,
                     timeOutPhoto: dateData.clockOut?.selfie || null
                 });
+
+                // Add this after the push to update the main data store
+                if (dateData.clockIn?.selfie || dateData.clockOut?.selfie) {
+                    // Make sure attendanceData has this date entry
+                    if (!attendanceData[employeeId].dates) {
+                        attendanceData[employeeId].dates = [];
+                    }
+
+                    // Find or create the date entry
+                    let mainDateEntry = attendanceData[employeeId].dates.find(d => d.date === dateStr);
+                    if (!mainDateEntry) {
+                        mainDateEntry = {
+                            date: dateStr,
+                            branch: branchName,
+                            shift: dateData.clockIn?.shift || "N/A",
+                            scheduledIn: SHIFT_SCHEDULES[dateData.clockIn?.shift || "Opening"].timeIn,
+                            scheduledOut: SHIFT_SCHEDULES[dateData.clockIn?.shift || "Opening"].timeOut,
+                            timeIn: dateData.clockIn?.time || null,
+                            timeOut: dateData.clockOut?.time || null
+                        };
+                        attendanceData[employeeId].dates.push(mainDateEntry);
+                    }
+
+                    // Update with photos
+                    mainDateEntry.timeInPhoto = dateData.clockIn?.selfie || null;
+                    mainDateEntry.timeOutPhoto = dateData.clockOut?.selfie || null;
+                }
             }
         });
 
@@ -505,6 +755,8 @@ async function loadEmployeeDetails(employeeId, detailRow) {
             }
 
             const detailRowItem = document.createElement('tr');
+            // In loadEmployeeDetails function, update the row HTML to place photo above time and remove seconds
+            // Update the detailRowItem HTML in loadEmployeeDetails function
             detailRowItem.innerHTML = `
                 <td class="date-cell">
                     <span class="date-day">${formattedDate}</span>
@@ -513,12 +765,16 @@ async function loadEmployeeDetails(employeeId, detailRow) {
                 <td>${date.branch || 'N/A'}</td>
                 <td>${date.shift || 'N/A'}</td>
                 <td class="time-cell">
-                    ${date.timeIn || 'N/A'}
-                    ${date.timeInPhoto ? `<img src="${date.timeInPhoto}" class="thumb" data-photo="${date.timeInPhoto}" alt="Clock-in photo">` : ''}
+                    ${date.timeInPhoto ?
+                    `<img src="${date.timeInPhoto}" class="thumb" data-photo="${date.timeInPhoto}" alt="Clock-in photo">` :
+                    `<div style="height: 8px;"></div>`}
+                    ${date.timeIn ? formatTimeWithoutSeconds(date.timeIn) : 'N/A'}
                 </td>
                 <td class="time-cell">
-                    ${date.timeOut || 'N/A'}
-                    ${date.timeOutPhoto ? `<img src="${date.timeOutPhoto}" class="thumb" data-photo="${date.timeOutPhoto}" alt="Clock-out photo">` : ''}
+                    ${date.timeOutPhoto ?
+                    `<img src="${date.timeOutPhoto}" class="thumb" data-photo="${date.timeOutPhoto}" alt="Clock-out photo">` :
+                    `<div style="height: 8px;"></div>`}
+                    ${date.timeOut ? formatTimeWithoutSeconds(date.timeOut) : 'N/A'}
                 </td>
                 <td>${hours ? hours.toFixed(1) : 'N/A'}</td>
                 <td><span class="status-badge ${statusClass}">${status}</span></td>
@@ -547,6 +803,18 @@ async function loadEmployeeDetails(employeeId, detailRow) {
         console.error("Error loading employee details:", error);
         detailRow.querySelector('.detail-content').innerHTML = '<div class="error-message">Failed to load details. Please try again.</div>';
     }
+}
+
+// Add this new function to format time without seconds
+function formatTimeWithoutSeconds(timeStr) {
+    if (!timeStr) return 'N/A';
+
+    // Split time into components
+    const [time, meridian] = timeStr.split(' ');
+    const [hours, minutes, seconds] = time.split(':');
+
+    // Return without seconds
+    return `${hours}:${minutes} ${meridian}`;
 }
 
 // Generate mock attendance data for testing
@@ -612,7 +880,7 @@ async function generateMockData() {
 // Helper function to get random branch
 function getRandomBranch() {
     const branches = [
-        "Matcha Bar Podium",
+        "Podium",
         "SM North",
         "Pop-up",
         "Workshop",
@@ -696,10 +964,12 @@ function getPeriodDates(periodId) {
         };
     }
 
-    return {
-        startDate: found.start,
-        endDate: found.end
+    const result = {
+        startDate: found ? found.start : fallbackStartDate,
+        endDate: found ? found.end : fallbackEndDate
     };
+    console.log(`Period ${periodId} dates:`, formatDate(result.startDate), formatDate(result.endDate));
+    return result;
 }
 
 // Helper function to get all dates in a range
@@ -765,7 +1035,7 @@ function compareTimes(t1, t2) {
 // Helper function to get branch name from branch ID
 function getBranchName(branchId) {
     const branchMap = {
-        'podium': 'Matcha Bar Podium',
+        'podium': 'Podium',
         'smnorth': 'SM North',
         'popup': 'Pop-up',
         'workshop': 'Workshop',
@@ -777,61 +1047,180 @@ function getBranchName(branchId) {
 
 // Export data to CSV
 function exportToCSV() {
-    // Get the selected period name for the filename
-    const periodText = periodSelect.options[periodSelect.selectedIndex].text;
-    const branchText = branchSelect.options[branchSelect.selectedIndex].text;
-    const filename = `attendance_${periodText.replace(/\s+/g, '_')}_${branchText.replace(/\s+/g, '_')}.csv`;
+    // Show loading overlay during export
+    showLoading();
 
-    // Build CSV header
-    let csv = 'Employee ID,Employee Name,Branch,Date,Shift,Clock In,Clock Out,Hours,Status\n';
+    // Load JSZip library if not already available
+    if (typeof JSZip === 'undefined') {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+        script.onload = createZipArchive;
+        document.head.appendChild(script);
+    } else {
+        createZipArchive();
+    }
+}
 
-    // Loop through each employee
-    Object.entries(filteredData).forEach(([employeeId, employee]) => {
-        const employeeName = employees[employeeId] || `Employee ${employeeId}`;
+function showExportProgress(message) {
+    // Check if the progress element already exists
+    let progressDiv = document.getElementById('exportProgress');
 
-        // Loop through each date
-        employee.dates.forEach(date => {
-            const dateObj = new Date(date.date);
-            const formattedDate = formatDate(dateObj);
+    if (!progressDiv) {
+        progressDiv = document.createElement('div');
+        progressDiv.id = 'exportProgress';
+        progressDiv.className = 'export-progress';
+        progressDiv.innerHTML = `
+            <div class="progress-message">Preparing export...</div>
+            <div class="progress-spinner"></div>
+        `;
+        document.body.appendChild(progressDiv);
+    }
 
-            // Calculate hours
-            const hours = date.timeIn && date.timeOut ? calculateHours(date.timeIn, date.timeOut) : 0;
+    if (message) {
+        progressDiv.querySelector('.progress-message').textContent = message;
+    }
 
-            // Determine status
-            let status = 'Absent';
-            if (date.timeIn && date.timeOut) {
-                if (date.scheduledIn && compareTimes(date.timeIn, date.scheduledIn) > 0) {
-                    status = 'Late';
-                } else if (date.scheduledOut && compareTimes(date.timeOut, date.scheduledOut) < 0) {
-                    status = 'Early Out';
-                } else {
-                    status = 'Present';
+    progressDiv.style.display = 'flex';
+}
+
+// Add this function to hide the progress
+function hideExportProgress() {
+    const progressDiv = document.getElementById('exportProgress');
+    if (progressDiv) {
+        progressDiv.style.display = 'none';
+    }
+}
+
+async function createZipArchive() {
+    showExportProgress("Preparing export files...");
+    try {
+        const zip = new JSZip();
+        const photoFolder = zip.folder("photos");
+
+        // Get the selected period name for the filename
+        const periodText = periodSelect.options[periodSelect.selectedIndex].text;
+        const branchText = branchSelect.options[branchSelect.selectedIndex].text;
+        const filenameBase = `attendance_${periodText.replace(/\s+/g, '_')}_${branchText.replace(/\s+/g, '_')}`;
+
+        // Build CSV header
+        let csv = 'Employee ID,Employee Name,Base Rate,Total Pay,Branch,Date,Shift,Clock In,Clock Out,Hours,Status,Clock In Photo,Clock Out Photo\n';
+
+        // Track photo promises
+        const photoPromises = [];
+        const photoMap = {};
+
+        // Loop through each employee
+        Object.entries(filteredData).forEach(([employeeId, employee]) => {
+            const employeeName = employees[employeeId] || `Employee ${employeeId}`;
+
+            // Loop through each date
+            employee.dates.forEach((date, index) => {
+                const dateObj = new Date(date.date);
+                const formattedDate = formatDate(dateObj);
+
+                // Calculate hours
+                const hours = date.timeIn && date.timeOut ? calculateHours(date.timeIn, date.timeOut) : 0;
+
+                // Determine status
+                let status = 'Absent';
+                if (date.timeIn && date.timeOut) {
+                    if (date.scheduledIn && compareTimes(date.timeIn, date.scheduledIn) > 0) {
+                        status = 'Late';
+                    } else if (date.scheduledOut && compareTimes(date.timeOut, date.scheduledOut) < 0) {
+                        status = 'Early Out';
+                    } else {
+                        status = 'Present';
+                    }
                 }
-            }
 
-            // Add row to CSV
-            csv += `${employeeId},${employeeName},${date.branch || 'N/A'},${formattedDate},${date.shift || 'N/A'},${date.timeIn || 'N/A'},${date.timeOut || 'N/A'},${hours ? hours.toFixed(1) : 0},${status}\n`;
+                // Handle Clock In Photo
+                let timeInPhotoFilename = 'N/A';
+                if (date.timeInPhoto) {
+                    timeInPhotoFilename = `${employeeId}_${formattedDate}_in.jpg`;
+                    photoMap[timeInPhotoFilename] = date.timeInPhoto;
+
+                    // Add promise to fetch the photo
+                    photoPromises.push(
+                        fetch(date.timeInPhoto)
+                            .then(response => response.blob())
+                            .then(blob => {
+                                photoFolder.file(timeInPhotoFilename, blob);
+                            })
+                            .catch(error => {
+                                console.error(`Failed to fetch photo ${date.timeInPhoto}:`, error);
+                            })
+                    );
+                }
+
+                // Handle Clock Out Photo
+                let timeOutPhotoFilename = 'N/A';
+                if (date.timeOutPhoto) {
+                    timeOutPhotoFilename = `${employeeId}_${formattedDate}_out.jpg`;
+                    photoMap[timeOutPhotoFilename] = date.timeOutPhoto;
+
+                    // Add promise to fetch the photo
+                    photoPromises.push(
+                        fetch(date.timeOutPhoto)
+                            .then(response => response.blob())
+                            .then(blob => {
+                                photoFolder.file(timeOutPhotoFilename, blob);
+                            })
+                            .catch(error => {
+                                console.error(`Failed to fetch photo ${date.timeOutPhoto}:`, error);
+                            })
+                    );
+                }
+
+                // Add row to CSV
+                csv += `${employeeId},${employeeName},${employee.baseRate || 0},${calculateTotalPay(employee.daysWorked, employee.baseRate || 0).toFixed(2)},${date.branch || 'N/A'},${formattedDate},${date.shift || 'N/A'},${date.timeIn || 'N/A'},${date.timeOut || 'N/A'},${hours ? hours.toFixed(1) : 0},${status},${timeInPhotoFilename},${timeOutPhotoFilename}\n`;
+            });
         });
-    });
 
-    // Create download link
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', filename);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+        // Add CSV file to zip
+        zip.file(`${filenameBase}.csv`, csv);
+
+        // Add a JSON export with all data
+        zip.file(`${filenameBase}.json`, JSON.stringify(filteredData, null, 2));
+
+        showExportProgress(`Downloading ${photoPromises.length} photos...`);
+
+        // Wait for all photo fetches to complete
+        await Promise.all(photoPromises);
+
+        showExportProgress("Generating ZIP file...");
+
+        // Generate the zip file
+        const content = await zip.generateAsync({ type: 'blob' });
+
+        // Create download link
+        const url = URL.createObjectURL(content);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', `${filenameBase}.zip`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        hideExportProgress();
+        hideLoading();
+    } catch (error) {
+        console.error("Error generating export:", error);
+        alert("Failed to generate export. Please try again.");
+
+        hideExportProgress();
+        hideLoading();
+    }
 }
 
 function generatePayrollPeriods(minDate, maxDate) {
     const periods = [];
 
     const today = new Date();
-    if (maxDate < today) {
-        maxDate = today;
+    const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0); // Last day of current month
+
+    if (maxDate < endOfMonth) {
+        maxDate = endOfMonth;
     }
 
     // Helper to normalize date without time component
@@ -895,3 +1284,103 @@ function generatePayrollPeriods(minDate, maxDate) {
 
     return periods.reverse(); // Most recent first
 }
+
+// Add this event listener after the existing ones in renderEmployeeTable
+// At the end of renderEmployeeTable function (around line 280)
+
+// Add event listeners for base rate inputs
+document.querySelectorAll('.base-rate-input').forEach(input => {
+    input.addEventListener('change', async function () {
+        const employeeId = this.dataset.employeeId;
+        const newBaseRate = parseFloat(this.value) || 0;
+
+        try {
+            // Update in local data
+            attendanceData[employeeId].baseRate = newBaseRate;
+
+            // Update the total pay display
+            const daysWorked = attendanceData[employeeId].daysWorked;
+            const totalPay = calculateTotalPay(daysWorked, newBaseRate);
+            const row = this.closest('tr');
+            row.querySelector('td:nth-child(5)').textContent = `₱${totalPay.toFixed(2)}`;
+
+            // Update in Firebase
+            const employeeDocRef = doc(db, "employees", employeeId);
+            await updateDoc(employeeDocRef, {
+                baseRate: newBaseRate
+            });
+
+            console.log(`Base rate updated for ${employees[employeeId]} to ${newBaseRate}`);
+        } catch (error) {
+            console.error(`Error updating base rate for employee ${employeeId}:`, error);
+            alert("Failed to update base rate. Please try again.");
+            // Revert to previous value
+            this.value = attendanceData[employeeId].baseRate || 0;
+        }
+    });
+});
+
+// Open employee edit modal
+function openEditEmployeeModal(employeeId) {
+    // Get employee data
+    const employee = attendanceData[employeeId];
+
+    // Fill form with current data
+    editEmployeeName.value = employees[employeeId] || '';
+    editBaseRate.value = employee.baseRate || 0;
+    editEmployeeId.value = employeeId;
+
+    // Show modal
+    employeeEditModal.style.display = 'flex';
+}
+
+// Close employee edit modal
+function closeEditEmployeeModal() {
+    employeeEditModal.style.display = 'none';
+}
+
+// Save employee changes
+async function saveEmployeeChanges(e) {
+    e.preventDefault();
+
+    const employeeId = editEmployeeId.value;
+    const newName = editEmployeeName.value.trim();
+    const newBaseRate = parseFloat(editBaseRate.value) || 0;
+
+    try {
+        // Update in memory
+        employees[employeeId] = newName;
+        attendanceData[employeeId].baseRate = newBaseRate;
+
+        // Update Firebase - using setDoc instead of updateDoc
+        const employeeDocRef = doc(db, "employees", employeeId);
+        await setDoc(employeeDocRef, {
+            name: newName,
+            baseRate: newBaseRate
+        }, { merge: true }); // This ensures we only update these fields if the doc exists
+
+        // Update UI
+        const row = document.querySelector(`.expandable-row[data-employee-id="${employeeId}"]`);
+        row.querySelector('.employee-name').textContent = newName;
+        row.querySelector('.base-rate').textContent = `₱${newBaseRate}`;
+
+        // Update total pay
+        const daysWorked = attendanceData[employeeId].daysWorked;
+        const totalPay = calculateTotalPay(daysWorked, newBaseRate);
+        row.querySelector('td:nth-child(5)').textContent = `₱${totalPay.toFixed(2)}`;
+
+        console.log(`Employee ${employeeId} updated: name=${newName}, baseRate=${newBaseRate}`);
+
+        // Close modal
+        closeEditEmployeeModal();
+    } catch (error) {
+        console.error("Error updating employee:", error);
+        alert("Failed to update employee details. Please try again.");
+    }
+}
+
+// Add this to your DOM elements section
+const activeOnlyToggle = document.getElementById('activeOnlyToggle');
+
+// Add this to your DOMContentLoaded event listener setup
+activeOnlyToggle.addEventListener('change', filterData);

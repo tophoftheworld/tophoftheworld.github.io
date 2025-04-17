@@ -20,6 +20,30 @@
         </div>
     </div>
 
+    <!-- Employee Edit Modal -->
+    <div class="modal" id="employeeEditModal">
+        <div class="modal-content">
+            <span class="close-modal" id="closeEditModal">&times;</span>
+            <h2>Edit Employee Details</h2>
+            <form id="employeeEditForm">
+                <div class="form-group">
+                    <label for="editEmployeeName">Employee Name</label>
+                    <input type="text" id="editEmployeeName" required>
+                </div>
+                <div class="form-group">
+                    <label for="editBaseRate">Base Rate</label>
+                    <input type="number" id="editBaseRate" min="0" step="10" required>
+                </div>
+                <input type="hidden" id="editEmployeeId">
+                <div class="form-actions">
+                    <button type="submit" class="submit-btn">Save Changes</button>
+                    <button type="button" class="cancel-btn" id="cancelEditBtn">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+
     <div class="container">
         <div class="admin-header">
             <div class="logo-section">
@@ -39,12 +63,19 @@
                     <label class="control-label">Branch</label>
                     <select id="branchSelect">
                         <option value="all">All Branches</option>
-                        <option value="podium">Matcha Bar Podium</option>
+                        <option value="podium">Podium</option>
                         <option value="smnorth">SM North</option>
                         <option value="popup">Pop-up</option>
                         <option value="workshop">Workshop</option>
                         <option value="other">Other Events</option>
                     </select>
+                </div>
+                <div class="control-item">
+                    <label class="control-label">Display</label>
+                    <div class="toggle-container">
+                        <input type="checkbox" id="activeOnlyToggle" checked>
+                        <label for="activeOnlyToggle">Active Employees</label>
+                    </div>
                 </div>
                 <button class="export-btn" id="exportBtn">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
@@ -71,23 +102,23 @@
         <div class="summary-cards">
             <div class="summary-card">
                 <div class="card-title">Total Employees</div>
-                <div class="card-value" id="totalEmployees">18</div>
+                <div class="card-value" id="totalEmployees">0</div>
                 <div class="card-subtitle">All staff</div>
             </div>
             <div class="summary-card">
                 <div class="card-title">Active Employees</div>
-                <div class="card-value" id="activeEmployees">15</div>
+                <div class="card-value" id="activeEmployees">0</div>
                 <div class="card-subtitle">For this period</div>
             </div>
             <div class="summary-card">
                 <div class="card-title">Total Late Hours</div>
-                <div class="card-value" id="totalLateHours">24.5</div>
+                <div class="card-value" id="totalLateHours">0.0</div>
                 <div class="card-subtitle">For this period</div>
             </div>
-            <div class="summary-card future-feature">
-                <div class="card-title">Payroll Amount</div>
-                <div class="card-value">Coming Soon</div>
-                <div class="card-subtitle">Future feature</div>
+            <div class="summary-card">
+                <div class="card-title">Total Payroll</div>
+                <div class="card-value" id="totalPayroll">₱0.00</div>
+                <div class="card-subtitle">For this period</div>
             </div>
         </div>
 
@@ -104,6 +135,8 @@
                         <th>Employee</th>
                         <th>Days Worked</th>
                         <th>Late Hours</th>
+                        <th>Base Rate</th>
+                        <th>Total Pay</th>
                         <th>Last Clock-in</th>
                         <th>Actions</th>
                     </tr>
@@ -118,11 +151,12 @@
             <button class="page-btn" data-page="1">1</button>
             <button class="page-btn active" data-page="2">2</button>
             <button class="page-btn" data-page="3">3</button>
-            <span class="pagination-info">Showing 10 of 18 employees</span>
+            <span class="pagination-info">Showing 0 of 18 employees</span>
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script type="module" src="js/admin-script.js"></script>
 </body>
 
