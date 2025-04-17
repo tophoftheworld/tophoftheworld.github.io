@@ -77,6 +77,12 @@
                         <label for="activeOnlyToggle">Active Employees</label>
                     </div>
                 </div>
+                <!-- <div class="control-item">
+                    <input type="file" id="utakImportInput" accept=".csv" />
+                </div> -->
+                <!-- <div class="control-item">
+                    <button class="danger-btn" id="clearLogsBtn">🧹 Clear Logs</button>
+                </div> -->
                 <button class="export-btn" id="exportBtn">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
                         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -111,9 +117,9 @@
                 <div class="card-subtitle">For this period</div>
             </div>
             <div class="summary-card">
-                <div class="card-title">Total Late Hours</div>
+                <div class="card-title">Holidays</div>
                 <div class="card-value" id="totalLateHours">0.0</div>
-                <div class="card-subtitle">For this period</div>
+                <div class="card-subtitle">in this period</div>
             </div>
             <div class="summary-card">
                 <div class="card-title">Total Payroll</div>
@@ -125,8 +131,11 @@
         <!-- Wrap table in a container for loading overlay -->
         <div class="data-table-container">
             <!-- Loading overlay just for the table -->
+            <!-- Update your loading overlay in the HTML file -->
             <div class="loading-overlay" id="loadingOverlay">
                 <div class="spinner"></div>
+                <!-- Add this line below the spinner -->
+                <!-- <div class="loading-message" id="refreshIndicator">Loading data...</div> -->
             </div>
 
             <table class="data-table" id="employeeTable">

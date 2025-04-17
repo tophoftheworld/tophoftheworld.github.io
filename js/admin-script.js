@@ -1,6 +1,7 @@
 // Import Firebase modules
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
 import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, setDoc, query, where } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+import { deleteDoc} from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 
 // Firebase configuration - you'll need to replace this with your actual Firebase config
 const firebaseConfig = {
@@ -39,6 +40,183 @@ const employees = {
     "131829": "Japhet Dizon"
 };
 
+const importedNameMap = {
+    "Acerr": "Acerr Franco",
+    "Avi": "Laville Laborte",
+    "Bea": "Beatrice Grace Boldo",
+    "Charles": "Charles Francis Tan",
+    "Denzel": "Denzel Genesis Fernandez",
+    "Gab": "Gabrielle Hannah Catalan",
+    "Ja": "Japhet Dizon",
+    "Jas": "Jasmine Ferrer",
+    "Lester": "John Lester Cal",
+    "Liezel": "Liezel Acebedo",
+    "Mae": "Sheila Mae Salvajan",
+    "Paul": "Paul John Garin",
+    "Raniel": "Raniel Buenaventura",
+    "Raschel": "Raschel Joy Cruz",
+    "Sarah": "Sarah Perpinan",
+    "Toph": "Cristopher David", // assumed alias
+    "rhobbie": "Rhobbie Ryza Saligumba"
+};
+
+// Add this after the SHIFT_SCHEDULES constant
+const HOLIDAYS_2025 = {
+    // Regular Holidays
+    "2025-01-01": { name: "New Year's Day", type: "regular" },
+    "2025-04-01": { name: "Eid'l Fitr (Feast of Ramadhan)", type: "regular" },
+    "2025-04-09": { name: "Araw ng Kagitingan", type: "regular" },
+    "2025-04-17": { name: "Maundy Thursday", type: "regular" },
+    "2025-04-18": { name: "Good Friday", type: "regular" },
+    "2025-05-01": { name: "Labor Day", type: "regular" },
+    "2025-06-12": { name: "Independence Day", type: "regular" },
+    "2025-08-25": { name: "National Heroes Day", type: "regular" },
+    "2025-11-30": { name: "Bonifacio Day", type: "regular" },
+    "2025-12-25": { name: "Christmas Day", type: "regular" },
+    "2025-12-30": { name: "Rizal Day", type: "regular" },
+    // Special (Non-Working) Holidays
+    "2025-01-29": { name: "Chinese New Year", type: "special" },
+    "2025-02-25": { name: "EDSA People Power Revolution Anniversary", type: "special" },
+    "2025-04-19": { name: "Black Saturday", type: "special" },
+    "2025-08-21": { name: "Ninoy Aquino Day", type: "special" },
+    "2025-10-31": { name: "All Saints' Day Eve", type: "special" },
+    "2025-11-01": { name: "All Saints' Day", type: "special" },
+    "2025-12-08": { name: "Feast of the Immaculate Conception", type: "special" },
+    "2025-12-24": { name: "Christmas Eve", type: "special" },
+    "2025-12-31": { name: "New Year's Eve", type: "special" }
+};
+
+function getEmployeeIdFromImportedName(name) {
+    const cleanName = name.replace(/^"|"$/g, '').trim().toLowerCase();
+    const mappedName = Object.keys(importedNameMap).find(alias => alias.toLowerCase() === cleanName);
+
+    if (!mappedName) return null;
+    return Object.keys(employees).find(id => employees[id] === importedNameMap[mappedName]);
+}
+
+// document.getElementById('utakImportInput').addEventListener('change', handleUtakImport);
+
+async function handleUtakImport(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    showLoading();
+
+    const text = await file.text();
+    const rows = text.split('\n').map(row => row.split(','));
+
+    const header = rows[0].map(h => h.trim().replace(/^"|"$/g, ''));
+
+    console.log("🪵 CSV Header Detected:", header); // <-- Debug here
+
+    const expectedColumns = [
+        "Staff", "In Date", "In Time", "Out Date", "Out time",
+        "Total Duration Hours", "Total Duration Mins",
+        "Break In Date", "Break In Time", "Break Out Date", "Break Out time",
+        "Total Break Duration Hours", "Total Break Duration Mins"
+    ];
+
+    // Validate format
+    if (!expectedColumns.every((col, i) => header[i]?.trim().toLowerCase() === col.toLowerCase())) {
+        hideLoading();
+        alert("Invalid CSV format. Please use the Utak export format.");
+        return;
+    }
+
+    const updates = {};
+    for (let i = 1; i < rows.length; i++) {
+        console.log(`📄 Row ${i} raw values:`, rows[i]);
+
+        const [rawStaff, rawInDate, rawInTime, rawOutDate, rawOutTime] = rows[i];
+        if (!rawStaff || !rawInDate || !rawInTime || !rawOutDate || !rawOutTime) continue;
+
+        const staff = rawStaff.replace(/^"|"$/g, '').trim();
+        const inDate = rawInDate.replace(/^"|"$/g, '').trim();
+        const inTime = rawInTime.replace(/^"|"$/g, '').trim();
+        const outTime = rawOutTime.replace(/^"|"$/g, '').trim();
+
+        const empId = getEmployeeIdFromImportedName(staff);
+        if (!empId) {
+            console.warn("⚠️ Unknown staff alias:", `"${staff}"`, i);
+            continue;
+        }
+
+        const parsedDate = new Date(inDate);
+        if (isNaN(parsedDate.getTime())) {
+            console.warn(`⛔ Skipping row ${i}: Invalid date "${inDate}"`);
+            continue;
+        }
+        const dateKey = formatDate(parsedDate);
+
+        const timeInFormatted = inTime.replace(/\s+/g, ' ').trim();
+        const timeOutFormatted = outTime.replace(/\s+/g, ' ').trim();
+
+        if (!updates[empId]) updates[empId] = {};
+        updates[empId][dateKey] = {
+            clockIn: {
+                time: timeInFormatted,
+                branch: "Podium",
+                shift: "Custom"
+            },
+            clockOut: {
+                time: timeOutFormatted
+            }
+        };
+    }
+
+    if (Object.keys(updates).length === 0) {
+        console.warn("⚠️ No valid updates found from CSV. Check name mapping or data range.");
+        hideLoading();
+        alert("CSV parsed but contains no valid records to import.");
+        return;
+    }
+
+
+    // Push to Firebase
+    const batch = [];
+    for (const [empId, days] of Object.entries(updates)) {
+        for (const [dateKey, entry] of Object.entries(days)) {
+            const ref = doc(db, "attendance", empId, "dates", dateKey);
+
+            console.log("Writing to:", empId, dateKey, entry);
+
+            if (!empId) {
+                console.warn("⚠️ Unknown staff name:", staff);
+                continue;
+            }
+
+            batch.push(setDoc(ref, entry, { merge: true }));
+        }
+    }
+
+    try {
+        await Promise.all(batch);
+        alert("✅ CSV import successful!");
+        refreshBtn.dataset.forceRefresh = 'true';
+        isInitialLoad = false;
+        periodSelect.dispatchEvent(new Event('change'));
+
+        localStorage.removeItem(getCacheKey(periodSelect.value, branchSelect.value));
+
+        await loadData(); // Reload with fresh data
+    } catch (error) {
+        console.error("CSV import failed:", error);
+        alert("❌ Import failed. Check console for details.");
+    } finally {
+        hideLoading();
+    }
+}
+
+function convertTo12Hour(timeStr) {
+    if (!timeStr) return null;
+    const [hourStr, minStr] = timeStr.split(':');
+    let hours = parseInt(hourStr, 10);
+    const minutes = parseInt(minStr, 10);
+    const meridian = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12 || 12;
+    return `${hours}:${minutes.toString().padStart(2, '0')} ${meridian}`;
+}
+
 // Shift schedules
 const SHIFT_SCHEDULES = {
     Opening: { timeIn: "9:30 AM", timeOut: "6:30 PM" },
@@ -65,6 +243,14 @@ const editEmployeeName = document.getElementById('editEmployeeName');
 const editBaseRate = document.getElementById('editBaseRate');
 const editEmployeeId = document.getElementById('editEmployeeId');
 
+const refreshIndicator = document.createElement('div');
+refreshIndicator.className = 'refresh-indicator';
+refreshIndicator.innerHTML = `
+    <div class="refresh-spinner"></div>
+    <div class="refresh-text">Refreshing data...</div>
+`;
+document.body.appendChild(refreshIndicator);
+
 // Add these to your DOMContentLoaded event listener
 closeEditModal.addEventListener('click', closeEditEmployeeModal);
 cancelEditBtn.addEventListener('click', closeEditEmployeeModal);
@@ -75,61 +261,93 @@ let attendanceData = {};
 let filteredData = {};
 let isInitialLoad = true;
 
-// Cache utility functions
+async function clearAllTimeLogs() {
+    const employeeIds = Object.keys(employees);
+
+    for (const employeeId of employeeIds) {
+        const attendanceRef = collection(db, "attendance", employeeId, "dates");
+        const snapshot = await getDocs(attendanceRef);
+
+        const deletions = snapshot.docs.map(docSnap =>
+            deleteDoc(doc(db, "attendance", employeeId, "dates", docSnap.id))
+        );
+
+        await Promise.all(deletions);
+        console.log(`🧹 Cleared logs for ${employeeId}`);
+    }
+
+    console.log("✅ All attendance logs cleared.");
+}
+
 function getCacheKey(periodId, branchId) {
     try {
-        console.log("Getting cache key for periodId:", periodId);
-        const { startDate, endDate } = getPeriodDates(periodId);
-        const formattedStartDate = formatDate(startDate);
-        const formattedEndDate = formatDate(endDate);
-
-        const key = `attendance_${formattedStartDate}_${formattedEndDate}_${branchId}`;
+        let key = `attendance_${periodId}_${branchId}`;
         console.log("Generated key:", key);
+        return key;
     } catch (e) {
-        // If the period isn't initialized yet, use the ID directly as a fallback
         console.warn("Error generating cache key:", e);
-        return `attendance_${periodId}_${branchId}`;
+        return `attendance_fallback_${Date.now()}`;
     }
 }
 
 function saveToCache(cacheKey, data) {
     const cacheData = {
         timestamp: Date.now(),
-        version: '1.0',
+        version: '1.1',
         data: data
     };
+
     try {
-        localStorage.setItem(cacheKey, JSON.stringify(cacheData));
-        console.log(`Data cached for ${cacheKey}`);
+        const serialized = JSON.stringify(cacheData);
+        localStorage.setItem(cacheKey, serialized);
+
+        // Add this key to our cache registry
+        updateCacheRegistry(cacheKey);
+
+        console.log(`Data cached for ${cacheKey} (${Math.round(serialized.length / 1024)}KB)`);
     } catch (e) {
         console.warn('Cache storage failed, likely quota exceeded', e);
         clearOldCaches();
+
+        // Try again after clearing
+        try {
+            localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+        } catch (retryError) {
+            console.error('Cache storage failed even after clearing old caches', retryError);
+        }
     }
 }
 
 function getFromCache(periodId, branchId) {
     const cacheKey = getCacheKey(periodId, branchId);
+
     try {
         const cachedData = localStorage.getItem(cacheKey);
-        if (!cachedData) return null;
-        
+        if (!cachedData) {
+            console.log(`No cache found for ${cacheKey}`);
+            return null;
+        }
+
         const parsedData = JSON.parse(cachedData);
 
-        // Check if cache is expired (24 hours)
+        // Check cache expiration (4 hours for regular use)
         const cacheAge = Date.now() - parsedData.timestamp;
-        if (cacheAge > 24 * 60 * 60 * 1000) {
+        const expirationTime = 4 * 60 * 60 * 1000; // 4 hours
+
+        if (cacheAge > expirationTime) {
             console.log('Cache expired, removing');
             localStorage.removeItem(cacheKey);
             return null;
         }
 
         // Check version
-        if (parsedData.version !== '1.0') {
+        if (parsedData.version !== '1.1') {
             console.log('Cache version mismatch, removing');
             localStorage.removeItem(cacheKey);
             return null;
         }
 
+        console.log(`Using cached data from ${new Date(parsedData.timestamp).toLocaleTimeString()}`);
         return parsedData.data;
     } catch (e) {
         console.warn('Error reading from cache', e);
@@ -137,29 +355,90 @@ function getFromCache(periodId, branchId) {
     }
 }
 
-function clearOldCaches() {
-    // Remove oldest caches when storage is full
-    const keysToRemove = [];
-    for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key.startsWith('attendance_')) {
-            keysToRemove.push(key);
+function updateCacheRegistry(newKey) {
+    try {
+        // Get the current registry
+        let registry = JSON.parse(localStorage.getItem('cache_registry') || '[]');
+
+        // Add the new key if it doesn't exist
+        if (!registry.includes(newKey)) {
+            registry.push(newKey);
+
+            // Store timestamp with key for smarter clearing
+            const registryWithTimestamps = {};
+            registry.forEach(key => {
+                try {
+                    const item = localStorage.getItem(key);
+                    if (item) {
+                        const parsed = JSON.parse(item);
+                        registryWithTimestamps[key] = parsed.timestamp || Date.now();
+                    }
+                } catch (e) {
+                    // If we can't parse, just use current time
+                    registryWithTimestamps[key] = Date.now();
+                }
+            });
+
+            // Save updated registry
+            localStorage.setItem('cache_registry', JSON.stringify(registry));
+            localStorage.setItem('cache_timestamps', JSON.stringify(registryWithTimestamps));
         }
+    } catch (e) {
+        console.warn('Error updating cache registry', e);
     }
+}
 
-    // Sort by age and remove oldest
-    if (keysToRemove.length > 5) { // Keep only 5 most recent
-        keysToRemove.sort((a, b) => {
-            const dataA = JSON.parse(localStorage.getItem(a));
-            const dataB = JSON.parse(localStorage.getItem(b));
-            return dataA.timestamp - dataB.timestamp;
-        });
+function clearOldCaches() {
+    try {
+        // Get registry and timestamps
+        const registry = JSON.parse(localStorage.getItem('cache_registry') || '[]');
+        const timestamps = JSON.parse(localStorage.getItem('cache_timestamps') || '{}');
 
-        // Remove oldest caches
-        keysToRemove.slice(0, keysToRemove.length - 5).forEach(key => {
+        if (registry.length <= 5) {
+            console.log('Cache size within limits, no clearing needed');
+            return;
+        }
+
+        // Convert to array and sort by timestamp (oldest first)
+        const keysByAge = Object.entries(timestamps)
+            .sort(([, timeA], [, timeB]) => timeA - timeB)
+            .map(([key]) => key);
+
+        // Keep last 5 caches (most recent)
+        const keysToKeep = keysByAge.slice(-5);
+        const keysToRemove = registry.filter(key => !keysToKeep.includes(key));
+
+        // Remove old caches
+        keysToRemove.forEach(key => {
             localStorage.removeItem(key);
             console.log(`Removed old cache: ${key}`);
         });
+
+        // Update registry
+        localStorage.setItem('cache_registry', JSON.stringify(keysToKeep));
+
+        // Update timestamps
+        const newTimestamps = {};
+        keysToKeep.forEach(key => {
+            newTimestamps[key] = timestamps[key];
+        });
+        localStorage.setItem('cache_timestamps', JSON.stringify(newTimestamps));
+
+        console.log(`Cleared ${keysToRemove.length} old caches, keeping ${keysToKeep.length}`);
+    } catch (e) {
+        console.warn('Error clearing old caches', e);
+
+        // Fallback: clear all attendance caches
+        try {
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('attendance_')) {
+                    localStorage.removeItem(key);
+                }
+            }
+        } catch (clearError) {
+            console.error('Failed to clear caches', clearError);
+        }
     }
 }
 
@@ -171,7 +450,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         attendanceData = {};
 
         localStorage.removeItem(getCacheKey(this.value, branchSelect.value));
-        await loadData();
+        await loadData(this.value);
     });
     branchSelect.addEventListener('change', filterData);
     refreshBtn.addEventListener('click', function () {
@@ -188,48 +467,42 @@ document.addEventListener('DOMContentLoaded', async function() {
     isInitialLoad = false;
 });
 
-// Load attendance data from Firestore or mock data
-// Update the loadData function to only fetch minimal data initially
-async function loadData() {
-    showLoading();
-
-    const periodId = periodSelect.value;
-    const branchId = branchSelect.value;
-
-    console.log("Loading data for:", periodId, branchId);
-
-    const cacheKey = getCacheKey(periodId, branchId);
-    console.log("Checking cache with key:", cacheKey);
-
-    // Check for cached data
-    if (!isInitialLoad && refreshBtn.dataset.forceRefresh !== 'true') {
-        const cachedData = getFromCache(periodId, branchId);
-        console.log("Cache check result:", cachedData ? "Found in cache" : "Not in cache");
-        if (cachedData) {
-            console.log('Using cached data');
-            attendanceData = cachedData;
-            filterData();
-            hideLoading();
-            return;
-        }
+async function initializePayrollPeriods() {
+    // If periods are already initialized, just return
+    if (window.payrollPeriods && window.payrollPeriods.length > 0) {
+        return;
     }
-    else
-    {
-        console.log("Skipping cache check:",
-            isInitialLoad ? "Initial load" : "Forced refresh");
-    }
-
-    // Reset force refresh flag
-    refreshBtn.dataset.forceRefresh = 'false';
 
     try {
-        attendanceData = {};
+        console.log("Initializing payroll periods");
 
-        // 🔍 Step 1: Collect all dates across all employees
+        // Check if we have cached periods
+        const cachedPeriods = localStorage.getItem('payroll_periods');
+        if (cachedPeriods) {
+            window.payrollPeriods = JSON.parse(cachedPeriods);
+            console.log("Loaded periods from cache:", window.payrollPeriods.length);
+
+            // Restore date objects (they were serialized as strings)
+            window.payrollPeriods.forEach(period => {
+                period.start = new Date(period.start);
+                period.end = new Date(period.end);
+            });
+
+            // Update dropdown
+            updatePeriodDropdown();
+            return;
+        }
+
+        // Otherwise, we need to collect all dates
         const allDates = new Set();
         const employeeIds = Object.keys(employees);
 
-        for (const employeeId of employeeIds) {
+        // Use a single employee to get all dates or a small sample
+        // This is much faster than querying all employees
+        const sampleSize = Math.min(3, employeeIds.length);
+        const sampleIds = employeeIds.slice(0, sampleSize);
+
+        for (const employeeId of sampleIds) {
             const attendanceRef = collection(db, "attendance", employeeId, "dates");
             const snapshot = await getDocs(attendanceRef);
 
@@ -237,128 +510,272 @@ async function loadData() {
                 allDates.add(doc.id);
             });
         }
-    
-        const sortedDates = Array.from(allDates).map(d => new Date(d)).sort((a, b) => a - b);
-        const minDate = sortedDates[0];
-        const maxDate = sortedDates[sortedDates.length - 1];
 
-        // 📆 Step 2: Generate payroll periods from available data
-        window.payrollPeriods = generatePayrollPeriods(minDate, maxDate);
-
-        // Replace the current default period creation code with this
-        // If no payroll periods could be generated, create a default one
-        if (!window.payrollPeriods || window.payrollPeriods.length === 0) {
-            const today = new Date();
-            const month = today.getMonth();
-            const year = today.getFullYear();
-
-            // Determine current period based on today's date
-            let periodStart, periodEnd;
-
-            if (today.getDate() <= 12) {
-                // First half of month - period is from 29th of previous month to 12th of current
-                const prevMonth = new Date(year, month, 0);
-                const daysInPrevMonth = prevMonth.getDate();
-                const startDay = Math.min(29, daysInPrevMonth);
-
-                periodStart = new Date(year, month - 1, startDay);
-                periodEnd = new Date(year, month, 12);
-            } else {
-                // Second half of month - period is from 13th to end of month
-                periodStart = new Date(year, month, 13);
-                periodEnd = new Date(year, month + 1, 0); // Last day of current month
-            }
-
-            const id = `${formatDate(periodStart)}_${formatDate(periodEnd)}`;
-            const label = `${periodStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${periodEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-
-            window.payrollPeriods = [{ id, start: periodStart, end: periodEnd, label }];
-
-            console.log("Created default period:", label);
-        }
-
-
-        // 🧾 Step 3: Populate dropdown (MOVE THIS BEFORE SETTING VALUE)
-        if (window.payrollPeriods && window.payrollPeriods.length > 0) {
-            periodSelect.innerHTML = window.payrollPeriods.map(p =>
-                `<option value="${p.id}">${p.label}</option>`
-            ).join('');
-
-            // 🟢 Find the period that includes current date
-            const today = new Date();
-            let currentPeriodIndex = 0;
-            for (let i = 0; i < window.payrollPeriods.length; i++) {
-                const period = window.payrollPeriods[i];
-                if (today >= period.start && today <= period.end) {
-                    currentPeriodIndex = i;
-                    break;
-                }
-            }
-
-            // Select current period by default
-            periodSelect.value = window.payrollPeriods[currentPeriodIndex].id;
+        if (allDates.size === 0) {
+            console.warn("No attendance data found — using default period");
+            window.payrollPeriods = generateDefaultPeriods();
         } else {
-            console.warn("No payroll periods found. Using default period.");
-            // Add a default option
-            periodSelect.innerHTML = '<option value="default">Current Period</option>';
+            // Generate periods from the available dates
+            const sortedDates = Array.from(allDates).map(d => new Date(d)).sort((a, b) => a - b);
+            const minDate = sortedDates[0];
+            const maxDate = sortedDates[sortedDates.length - 1];
+            window.payrollPeriods = generatePayrollPeriods(minDate, maxDate);
         }
 
-        // 🔄 Step 4: Now load minimal attendance stats
-        const { startDate, endDate } = getPeriodDates(periodSelect.value);
+        // Cache the periods
+        localStorage.setItem('payroll_periods', JSON.stringify(window.payrollPeriods));
+
+        // Update dropdown
+        updatePeriodDropdown();
+    } catch (error) {
+        console.error("Error initializing payroll periods:", error);
+        window.payrollPeriods = generateDefaultPeriods();
+        updatePeriodDropdown();
+    }
+}
+
+function generateDefaultPeriods() {
+    const today = new Date();
+    const month = today.getMonth();
+    const year = today.getFullYear();
+
+    // Generate 3 periods: current, previous, and before previous
+    const periods = [];
+
+    // Current period
+    if (today.getDate() <= 12) {
+        // First half of month
+        const prevMonth = new Date(year, month, 0);
+        const daysInPrevMonth = prevMonth.getDate();
+        const startDay = Math.min(29, daysInPrevMonth);
+
+        const periodStart = new Date(year, month - 1, startDay);
+        const periodEnd = new Date(year, month, 12);
+
+        const id = `${formatDate(periodStart)}_${formatDate(periodEnd)}`;
+        const label = `${periodStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${periodEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+
+        periods.push({ id, start: periodStart, end: periodEnd, label });
+    } else {
+        // Second half of month
+        const periodStart = new Date(year, month, 13);
+        const periodEnd = new Date(year, month + 1, 0); // Last day of current month
+
+        const id = `${formatDate(periodStart)}_${formatDate(periodEnd)}`;
+        const label = `${periodStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${periodEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+
+        periods.push({ id, start: periodStart, end: periodEnd, label });
+    }
+
+    // Add previous periods (2 more)
+    for (let i = 1; i <= 2; i++) {
+        const lastPeriod = periods[periods.length - 1];
+        const prevStart = new Date(lastPeriod.start);
+        prevStart.setDate(prevStart.getDate() - 15); // Roughly half a month
+
+        const prevEnd = new Date(lastPeriod.start);
+        prevEnd.setDate(prevEnd.getDate() - 1); // Day before start of last period
+
+        const id = `${formatDate(prevStart)}_${formatDate(prevEnd)}`;
+        const label = `${prevStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${prevEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+
+        periods.push({ id, start: prevStart, end: prevEnd, label });
+    }
+
+    return periods;
+}
+
+function updatePeriodDropdown() {
+    if (!window.payrollPeriods || window.payrollPeriods.length === 0) {
+        periodSelect.innerHTML = '<option value="default">No Data</option>';
+        return;
+    }
+
+    periodSelect.innerHTML = window.payrollPeriods.map(p =>
+        `<option value="${p.id}">${p.label}</option>`
+    ).join('');
+
+    // Set to current period if available
+    const today = new Date();
+    let currentPeriodIndex = 0;
+
+    for (let i = 0; i < window.payrollPeriods.length; i++) {
+        const period = window.payrollPeriods[i];
+        if (today >= period.start && today <= period.end) {
+            currentPeriodIndex = i;
+            break;
+        }
+    }
+
+    periodSelect.value = window.payrollPeriods[currentPeriodIndex].id;
+}
+
+// Load attendance data from Firestore or mock data
+// Update the loadData function to only fetch minimal data initially
+async function loadData(selectedPeriodId = null) {
+    const periodId = selectedPeriodId || periodSelect.value;
+    const branchId = branchSelect.value;
+    const cacheKey = getCacheKey(periodId, branchId);
+
+    console.log("Loading data for:", periodId, branchId);
+
+    // Always show instant data from cache first if available
+    const cachedData = getFromCache(periodId, branchId);
+    if (cachedData) {
+        console.log('Using cached data initially');
+        attendanceData = cachedData;
+        filterData();
+        hideLoading();
+
+        // If not a forced refresh and not initial load, we can return early
+        if (!isInitialLoad && refreshBtn.dataset.forceRefresh !== 'true') {
+            console.log('Using cached data only (no background refresh)');
+            return;
+        }
+
+        // Otherwise, we'll continue to fetch updates in the background
+        console.log('Continuing with background data refresh');
+    } else {
+        // No cache available, show loading indicator
+        showLoading();
+    }
+
+    // Reset force refresh flag
+    refreshBtn.dataset.forceRefresh = 'false';
+
+    try {
+        // First, get all employee IDs
+        const employeeIds = Object.keys(employees);
+
+        // We'll use this to track any changes
+        let hasChanges = false;
+
+        // Initialize data structure if not from cache
+        if (!cachedData) {
+            attendanceData = {};
+            employeeIds.forEach(employeeId => {
+                attendanceData[employeeId] = {
+                    id: employeeId,
+                    name: employees[employeeId],
+                    dates: [],
+                    lastClockIn: null,
+                    lastClockInPhoto: null,
+                    daysWorked: 0,
+                    lateHours: 0,
+                    baseRate: 0
+                };
+            });
+        }
+
+        // Initialize or update payroll periods
+        await initializePayrollPeriods();
+
+        // Get selected period dates
+        const { startDate, endDate } = getPeriodDates(periodId);
         const formattedStartDate = formatDate(startDate);
         const formattedEndDate = formatDate(endDate);
 
-        for (const employeeId of employeeIds) {
-            attendanceData[employeeId] = {
-                id: employeeId,
-                name: employees[employeeId],
-                dates: [],
-                lastClockIn: null,
-                lastClockInPhoto: null,
-                daysWorked: 0,
-                lateHours: 0,
-                baseRate: 0
-            };
-
+        // Fetch employee data in parallel - this is much faster!
+        const employeePromises = employeeIds.map(async (employeeId) => {
             try {
+                // Always ensure the employee exists in the data structure
+                if (!attendanceData[employeeId]) {
+                    attendanceData[employeeId] = {
+                        id: employeeId,
+                        name: employees[employeeId],
+                        dates: [],
+                        lastClockIn: null,
+                        lastClockInPhoto: null,
+                        daysWorked: 0,
+                        lateHours: 0,
+                        baseRate: 0
+                    };
+                }
+
                 // Get employee base rate
                 const employeeDocRef = doc(db, "employees", employeeId);
                 const employeeDoc = await getDoc(employeeDocRef);
                 if (employeeDoc.exists()) {
                     const employeeData = employeeDoc.data();
-                    attendanceData[employeeId].baseRate = employeeData.baseRate || 0;
+                    const oldBaseRate = attendanceData[employeeId].baseRate || 0;
+                    const newBaseRate = employeeData.baseRate || 0;
+
+                    if (oldBaseRate !== newBaseRate) {
+                        attendanceData[employeeId].baseRate = newBaseRate;
+                        hasChanges = true;
+                    }
                 }
 
-                // Only fetch dates within the period range
+                // Get attendance data
                 const attendanceRef = collection(db, "attendance", employeeId, "dates");
 
                 // Use a where clause to only fetch dates in range
-                // Note: You'll need to create a composite index in Firebase for this query
                 const snapshot = await getDocs(query(
-                    attendanceRef.withConverter(null),
+                    attendanceRef,
                     where("__name__", ">=", formattedStartDate),
                     where("__name__", "<=", formattedEndDate)
                 ));
 
-                let lastClockInDate = null;
+                // Skip if no data and we already have no data
+                if (snapshot.empty && attendanceData[employeeId].dates.length === 0) {
+                    return;
+                }
+
+                let lastClockInDate = attendanceData[employeeId].lastClockIn
+                    ? new Date(attendanceData[employeeId].lastClockIn)
+                    : null;
                 let totalLateHours = 0;
                 let daysWorkedCount = 0;
+                let datesMap = {};
 
+                // Create a map of existing dates for quick lookup
+                if (attendanceData[employeeId].dates) {
+                    attendanceData[employeeId].dates.forEach(date => {
+                        datesMap[date.date] = date;
+                    });
+                }
+
+                // Process each date in the snapshot
                 snapshot.forEach(doc => {
                     const dateStr = doc.id;
                     const dateData = doc.data();
 
-                    // Process the data directly without date range checks since query handles it
-                    attendanceData[employeeId].dates.push({
+                    // Create the new entry
+                    const newEntry = {
                         date: dateStr,
                         branch: dateData.clockIn?.branch || "N/A",
                         shift: dateData.clockIn?.shift || "N/A",
                         scheduledIn: SHIFT_SCHEDULES[dateData.clockIn?.shift || "Opening"].timeIn,
                         scheduledOut: SHIFT_SCHEDULES[dateData.clockIn?.shift || "Opening"].timeOut,
                         timeIn: dateData.clockIn?.time || null,
-                        timeOut: dateData.clockOut?.time || null
-                    });
+                        timeOut: dateData.clockOut?.time || null,
+                        timeInPhoto: dateData.clockIn?.selfie || null,
+                        timeOutPhoto: dateData.clockOut?.selfie || null
+                    };
 
+                    // Check if this is a new or updated entry
+                    const existingEntry = datesMap[dateStr];
+                    let entryChanged = false;
+
+                    if (!existingEntry) {
+                        // Completely new entry
+                        entryChanged = true;
+                    } else {
+                        // Check if any fields changed
+                        for (const key of Object.keys(newEntry)) {
+                            if (JSON.stringify(newEntry[key]) !== JSON.stringify(existingEntry[key])) {
+                                entryChanged = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (entryChanged) {
+                        datesMap[dateStr] = newEntry;
+                        hasChanges = true;
+                    }
+
+                    // Update stats
                     if (dateData.clockIn && dateData.clockOut) daysWorkedCount++;
 
                     if (dateData.clockIn?.shift) {
@@ -371,31 +788,66 @@ async function loadData() {
                         const dateObj = new Date(dateStr);
                         if (!lastClockInDate || dateObj > lastClockInDate) {
                             lastClockInDate = dateObj;
-                            attendanceData[employeeId].lastClockIn = dateObj;
-                            attendanceData[employeeId].lastClockInPhoto = dateData.clockIn.selfie;
                         }
                     }
                 });
 
-                attendanceData[employeeId].daysWorked = daysWorkedCount;
-                attendanceData[employeeId].lateHours = totalLateHours;
+                // Update the employee data if we have changes
+                if (hasChanges) {
+                    // Convert dates map back to array
+                    attendanceData[employeeId].dates = Object.values(datesMap);
+                    attendanceData[employeeId].daysWorked = daysWorkedCount;
+                    attendanceData[employeeId].lateHours = totalLateHours;
+                    attendanceData[employeeId].lastClockIn = lastClockInDate;
+
+                    // Find the selfie for the last clock in
+                    if (lastClockInDate) {
+                        const lastDateStr = formatDate(lastClockInDate);
+                        const lastDateEntry = datesMap[lastDateStr];
+                        if (lastDateEntry) {
+                            attendanceData[employeeId].lastClockInPhoto = lastDateEntry.timeInPhoto;
+                        }
+                    }
+                }
             } catch (error) {
                 console.error(`Error loading data for employee ${employeeId}:`, error);
+                // Make sure we have an entry for this employee even if error occurred
+                if (!attendanceData[employeeId]) {
+                    attendanceData[employeeId] = {
+                        id: employeeId,
+                        name: employees[employeeId],
+                        dates: [],
+                        lastClockIn: null,
+                        lastClockInPhoto: null,
+                        daysWorked: 0,
+                        lateHours: 0,
+                        baseRate: 0
+                    };
+                }
             }
+        });
+
+        // Wait for all employee data to load
+        await Promise.all(employeePromises);
+
+        // If we've made changes, save to cache and update the UI
+        if (hasChanges) {
+            console.log("Data changed, updating cache and UI");
+            saveToCache(cacheKey, attendanceData);
+            filterData();
+        } else if (!cachedData) {
+            // Initial load with no data, still need to update UI
+            filterData();
         }
-
-        const saveCacheKey = getCacheKey(periodSelect.value, branchSelect.value);
-        saveToCache(saveCacheKey, attendanceData);
-
-        filterData();
     } catch (error) {
         console.error("❌ Error loading data:", error);
-        alert("Failed to load data. Please try again.");
+        if (!cachedData) {
+            alert("Failed to load data. Please try again.");
+        }
     } finally {
         hideLoading();
     }
 }
-
 
 // Filter data based on selected period and branch
 // Update the filterData() function around line 212:
@@ -435,7 +887,9 @@ function filterData() {
 
         // Recalculate metrics based on filtered dates
         filteredData[employeeId].dates.forEach(date => {
-            if (date.timeIn && date.timeOut) daysWorkedCount++;
+            if (date.timeIn || date.timeOut) {
+                daysWorkedCount++;
+            }
 
             if (date.scheduledIn && date.timeIn) {
                 const lateMinutes = compareTimes(date.timeIn, date.scheduledIn);
@@ -466,15 +920,21 @@ function filterData() {
     renderEmployeeTable();
 }
 
-// Update summary cards with calculated values
+// Replace the updateSummaryCards function
 function updateSummaryCards() {
     // Calculate summary values
     const totalEmployees = Object.keys(employees).length;
 
     // Count active employees (those with at least one clock-in for the period)
     let activeEmployees = 0;
-    let totalLateHours = 0;
     let totalPayrollAmount = 0;
+
+    // Get period dates
+    const period = periodSelect.value;
+    const { startDate, endDate } = getPeriodDates(period);
+
+    // Count holidays in the period
+    const holidays = countHolidaysInPeriod(startDate, endDate);
 
     Object.values(filteredData).forEach(employee => {
         // Check if employee has at least one clock-in
@@ -483,26 +943,67 @@ function updateSummaryCards() {
             activeEmployees++;
             // Calculate pay for this employee and add to total
             const baseRate = employee.baseRate || 0;
-            const daysWorked = employee.daysWorked;
-            totalPayrollAmount += calculateTotalPay(daysWorked, baseRate);
+            totalPayrollAmount += calculateTotalPay(0, baseRate, employee.dates);
         }
-
-        // Calculate late hours
-        employee.dates.forEach(date => {
-            if (date.scheduledIn && date.timeIn) {
-                const lateMinutes = compareTimes(date.timeIn, date.scheduledIn);
-                if (lateMinutes > 0) {
-                    totalLateHours += lateMinutes / 60;
-                }
-            }
-        });
     });
 
     // Update cards
     document.getElementById('totalEmployees').textContent = totalEmployees;
     document.getElementById('activeEmployees').textContent = activeEmployees;
-    document.getElementById('totalLateHours').textContent = totalLateHours.toFixed(1);
-    document.getElementById('totalPayroll').textContent = `₱${totalPayrollAmount.toFixed(2)}`;
+    document.getElementById('totalLateHours').textContent = `${holidays.regular} regular, ${holidays.special} special`; // Replace late hours with holidays
+    document.getElementById('totalPayroll').textContent = `₱${totalPayrollAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    // Update the late hours label to say "Holidays"
+    // const lateHoursLabel = document.querySelector('label[for="totalLateHours"]');
+    // if (lateHoursLabel) {
+    //     lateHoursLabel.textContent = "Holidays";
+    // }
+
+    const holidaysList = [];
+    for (const dateStr in HOLIDAYS_2025) {
+        const holiday = HOLIDAYS_2025[dateStr];
+        const holidayDate = new Date(dateStr);
+        if (holidayDate >= startDate && holidayDate <= endDate) {
+            holidaysList.push({
+                date: dateStr,
+                name: holiday.name,
+                type: holiday.type
+            });
+        }
+    }
+
+    const holidayDisplay = document.getElementById('totalLateHours');
+
+    if (holidaysList.length > 0) {
+        // Sort holidays by date
+        holidaysList.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        let htmlContent = '';
+
+        // Format each holiday in a compact, elegant format
+        holidaysList.forEach(holiday => {
+            const date = new Date(holiday.date);
+            const formattedDate = date.toLocaleDateString('en-US', {
+                month: 'long',
+                day: 'numeric'
+            });
+
+            // Type class for styling (regular or special)
+            const typeClass = holiday.type === 'regular' ? 'regular-holiday' : 'special-holiday';
+
+            // Create the holiday entry with name and date on separate lines
+            htmlContent += `
+                <div class="holiday-entry">
+                    <div class="holiday-date">${formattedDate}</div>
+                    <div class="holiday-name ${typeClass}">${holiday.name}</div>
+                </div>
+            `;
+        });
+
+        holidayDisplay.innerHTML = `<div class="holidays-container">${htmlContent}</div>`;
+    } else {
+        holidayDisplay.textContent = "No holidays";
+    }
 }
 
 function renderEmployeeTable() {
@@ -553,8 +1054,8 @@ function renderEmployeeTable() {
             </td>
             <td>${daysWorked}</td>
             <td class="${lateHours > 0 ? 'late' : ''}">${lateHours.toFixed(1)}</td>
-            <td class="base-rate">₱${employee.baseRate || 0}</td>
-            <td>₱${calculateTotalPay(daysWorked, employee.baseRate || 0).toFixed(2)}</td>
+            <td class="base-rate">₱${(employee.baseRate || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            <td>₱${calculateTotalPay(daysWorked, employee.baseRate || 0, employee.dates).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
             <td class="time-cell">
                 ${employee.lastClockInPhoto ?
                         `<img src="${employee.lastClockInPhoto}" class="thumb" data-photo="${employee.lastClockInPhoto}" alt="Last clock-in photo">` :
@@ -625,10 +1126,131 @@ function renderEmployeeTable() {
     });
 }
 
-// Add this function at the bottom of your JS file
-function calculateTotalPay(daysWorked, baseRate) {
+function getHolidayPayMultiplier(dateStr) {
+    if (HOLIDAYS_2025[dateStr]) {
+        // Regular holiday: 200% of daily rate
+        if (HOLIDAYS_2025[dateStr].type === "regular") {
+            return 2.0;
+        }
+        // Special non-working holiday: 130% of daily rate
+        else if (HOLIDAYS_2025[dateStr].type === "special") {
+            return 1.3;
+        }
+    }
+    // Regular day: 100% of daily rate
+    return 1.0;
+}
+
+// Add this function before the updateSummaryCards function
+function countHolidaysInPeriod(startDate, endDate) {
+    let regularCount = 0;
+    let specialCount = 0;
+
+    // Get all dates in the range
+    const dates = getDatesInRange(startDate, endDate);
+
+    // Count holidays
+    dates.forEach(dateStr => {
+        if (HOLIDAYS_2025[dateStr]) {
+            if (HOLIDAYS_2025[dateStr].type === 'regular') {
+                regularCount++;
+            } else if (HOLIDAYS_2025[dateStr].type === 'special') {
+                specialCount++;
+            }
+        }
+    });
+
+    return { regular: regularCount, special: specialCount, total: regularCount + specialCount };
+}
+
+// Add this function after the getHolidayPayMultiplier function
+function calculateDeductions(timeIn, timeOut, scheduledIn, scheduledOut) {
+    const LATE_THRESHOLD_MINUTES = 30;
+    const UNDERTIME_THRESHOLD_MINUTES = 30;
+
+    let deductions = 0;
+
+    // Calculate late minutes
+    if (timeIn && scheduledIn) {
+        const lateMinutes = compareTimes(timeIn, scheduledIn);
+        console.log("Late minutes:", lateMinutes, "for", timeIn, scheduledIn);
+        if (lateMinutes > LATE_THRESHOLD_MINUTES) {
+            // Convert minutes to hours and calculate deduction
+            const lateHours = lateMinutes / 60;
+            deductions += lateHours;
+            console.log("Adding late deduction:", lateHours, "hours");
+        }
+    }
+
+    // Calculate undertime minutes
+    if (timeOut && scheduledOut) {
+        const undertimeMinutes = compareTimes(scheduledOut, timeOut);
+        console.log("Undertime minutes:", undertimeMinutes, "for", timeOut, scheduledOut);
+        if (undertimeMinutes > UNDERTIME_THRESHOLD_MINUTES) {
+            // Convert minutes to hours and calculate deduction
+            const undertimeHours = undertimeMinutes / 60;
+            deductions += undertimeHours;
+            console.log("Adding undertime deduction:", undertimeHours, "hours");
+        }
+    }
+
+    return deductions;
+}
+
+// Replace the existing calculateTotalPay function with this one
+// Replace the existing calculateTotalPay function with this one
+function calculateTotalPay(daysWorked, baseRate, datesWorked = []) {
     const dailyMealAllowance = 150;
-    return (baseRate * daysWorked) + (dailyMealAllowance * daysWorked);
+    let totalPay = 0;
+    let totalDeductions = 0;
+
+    if (datesWorked.length === 0) {
+        // If no dates provided, use the old calculation method
+        return (baseRate * daysWorked) + (dailyMealAllowance * daysWorked);
+    }
+
+    // Calculate pay for each day based on holiday status
+    datesWorked.forEach(dateObj => {
+        if (dateObj.timeIn && dateObj.timeOut) {
+            const dateStr = dateObj.date;
+            const multiplier = getHolidayPayMultiplier(dateStr);
+            const dailyRate = baseRate;
+
+            // Calculate deductions for late/undertime
+            const deductionHours = calculateDeductions(
+                dateObj.timeIn,
+                dateObj.timeOut,
+                dateObj.scheduledIn,
+                dateObj.scheduledOut
+            );
+
+            // Calculate hourly rate (daily rate / 8 hours)
+            const hourlyRate = dailyRate / 8;
+
+            // Calculate deduction amount
+            const deductionAmount = deductionHours * hourlyRate;
+            totalDeductions += deductionAmount;
+
+            // Add base pay with holiday multiplier
+            totalPay += dailyRate * multiplier;
+
+            // Add meal allowance (not affected by multiplier)
+            totalPay += dailyMealAllowance;
+
+            // If it's a holiday, add the holiday name to the date object for display
+            if (HOLIDAYS_2025[dateStr]) {
+                dateObj.holiday = HOLIDAYS_2025[dateStr].name;
+                dateObj.holidayType = HOLIDAYS_2025[dateStr].type;
+            }
+
+            // Add deduction info to date object
+            dateObj.deductionHours = deductionHours;
+            dateObj.deductionAmount = deductionAmount;
+        }
+    });
+
+    // Return the final pay amount after deductions
+    return totalPay - totalDeductions;
 }
 
 // Function to load employee details only when needed
@@ -710,6 +1332,7 @@ async function loadEmployeeDetails(employeeId, detailRow) {
         detailTable.className = 'detail-table';
 
         // Add table header
+        // In the loadEmployeeDetails function, update the header:
         detailTable.innerHTML = `
             <thead>
                 <tr>
@@ -718,8 +1341,8 @@ async function loadEmployeeDetails(employeeId, detailRow) {
                     <th>Shift</th>
                     <th>Time In</th>
                     <th>Time Out</th>
-                    <th>Hours</th>
-                    <th>Status</th>
+                    <th>Holiday Pay</th>
+                    <th>Deductions</th>
                 </tr>
             </thead>
             <tbody></tbody>
@@ -757,28 +1380,40 @@ async function loadEmployeeDetails(employeeId, detailRow) {
             const detailRowItem = document.createElement('tr');
             // In loadEmployeeDetails function, update the row HTML to place photo above time and remove seconds
             // Update the detailRowItem HTML in loadEmployeeDetails function
+            // In the detailRowItem.innerHTML = section, add a holiday column after the status column
             detailRowItem.innerHTML = `
-                <td class="date-cell">
-                    <span class="date-day">${formattedDate}</span>
-                    <span class="date-dow">${dayOfWeek}</span>
-                </td>
-                <td>${date.branch || 'N/A'}</td>
-                <td>${date.shift || 'N/A'}</td>
-                <td class="time-cell">
-                    ${date.timeInPhoto ?
+            <td class="date-cell">
+                <span class="date-day">${formattedDate}</span>
+                <span class="date-dow">${dayOfWeek}</span>
+                ${HOLIDAYS_2025[date.date] ?
+                            `<span class="holiday-badge ${HOLIDAYS_2025[date.date].type}">${HOLIDAYS_2025[date.date].name}</span>` :
+                            ''}
+            </td>
+            <td>${date.branch || 'N/A'}</td>
+            <td>${date.shift || 'N/A'}</td>
+            <td class="time-cell">
+                ${date.timeInPhoto ?
                     `<img src="${date.timeInPhoto}" class="thumb" data-photo="${date.timeInPhoto}" alt="Clock-in photo">` :
                     `<div style="height: 8px;"></div>`}
-                    ${date.timeIn ? formatTimeWithoutSeconds(date.timeIn) : 'N/A'}
-                </td>
-                <td class="time-cell">
-                    ${date.timeOutPhoto ?
+                ${date.timeIn ? formatTimeWithoutSeconds(date.timeIn) : 'N/A'}
+            </td>
+            <td class="time-cell">
+                ${date.timeOutPhoto ?
                     `<img src="${date.timeOutPhoto}" class="thumb" data-photo="${date.timeOutPhoto}" alt="Clock-out photo">` :
                     `<div style="height: 8px;"></div>`}
-                    ${date.timeOut ? formatTimeWithoutSeconds(date.timeOut) : 'N/A'}
-                </td>
-                <td>${hours ? hours.toFixed(1) : 'N/A'}</td>
-                <td><span class="status-badge ${statusClass}">${status}</span></td>
-            `;
+                ${date.timeOut ? formatTimeWithoutSeconds(date.timeOut) : 'N/A'}
+            </td>
+            <td>${HOLIDAYS_2025[date.date] ?
+                    `₱${(filteredData[employeeId].baseRate * (HOLIDAYS_2025[date.date].type === "regular" ? 2.0 : 1.3)).toFixed(2)}` :
+                    `₱${filteredData[employeeId].baseRate.toFixed(2)}`}
+            </td>
+            <td>${date.timeIn && date.timeOut ?
+                            (calculateDeductions(date.timeIn, date.timeOut, date.scheduledIn, date.scheduledOut) > 0 ?
+                                `₱${((calculateDeductions(date.timeIn, date.timeOut, date.scheduledIn, date.scheduledOut) * (filteredData[employeeId].baseRate / 8))).toFixed(2)}` :
+                                '₱0.00') :
+                            'N/A'}
+            </td>
+        `;
 
             detailTableBody.appendChild(detailRowItem);
         });
@@ -803,6 +1438,39 @@ async function loadEmployeeDetails(employeeId, detailRow) {
         console.error("Error loading employee details:", error);
         detailRow.querySelector('.detail-content').innerHTML = '<div class="error-message">Failed to load details. Please try again.</div>';
     }
+}
+
+// Add this function after the getRandomShift function
+function guessShift(timeIn, timeOut) {
+    if (!timeIn || !timeOut) return "Custom";
+
+    // Convert times to minutes since midnight for easier comparison
+    const [inTime, inMeridian] = timeIn.split(' ');
+    const [inHours, inMinutes] = inTime.split(':').map(Number);
+    const inTotalMinutes = (inMeridian === 'PM' && inHours !== 12 ? inHours + 12 : inHours % 12) * 60 + inMinutes;
+
+    const [outTime, outMeridian] = timeOut.split(' ');
+    const [outHours, outMinutes] = outTime.split(':').map(Number);
+    const outTotalMinutes = (outMeridian === 'PM' && outHours !== 12 ? outHours + 12 : outHours % 12) * 60 + outMinutes;
+
+    // Define shift start times in minutes
+    const openingStart = 9 * 60 + 30;  // 9:30 AM
+    const midshiftStart = 11 * 60;     // 11:00 AM
+    const closingStart = 13 * 60;      // 1:00 PM
+
+    // Calculate differences
+    const diffFromOpening = Math.abs(inTotalMinutes - openingStart);
+    const diffFromMidshift = Math.abs(inTotalMinutes - midshiftStart);
+    const diffFromClosing = Math.abs(inTotalMinutes - closingStart);
+
+    // Determine closest shift
+    const closestDiff = Math.min(diffFromOpening, diffFromMidshift, diffFromClosing);
+
+    if (closestDiff === diffFromOpening) return "Opening";
+    if (closestDiff === diffFromMidshift) return "Midshift";
+    if (closestDiff === diffFromClosing) return "Closing";
+
+    return "Custom";
 }
 
 // Add this new function to format time without seconds
@@ -927,13 +1595,30 @@ function closePhotoModal() {
     photoModal.style.display = 'none';
 }
 
-// Show loading overlay
-function showLoading() {
+// Loading state management
+let loadingState = 'idle'; // 'idle', 'initial', 'refreshing'
+
+function showLoading(message = 'Loading data...') {
+    if (loadingState === 'idle') {
+        loadingState = 'initial';
+    }
+
+    // Show the loading overlay
     loadingOverlay.style.display = 'flex';
+
+    // Update the loading message if it exists, otherwise create it
+    let loadingMessage = loadingOverlay.querySelector('.loading-message');
+    if (!loadingMessage) {
+        loadingMessage = document.createElement('div');
+        loadingMessage.className = 'loading-message';
+        loadingOverlay.appendChild(loadingMessage);
+    }
+
+    loadingMessage.textContent = message;
 }
 
-// Hide loading overlay
 function hideLoading() {
+    loadingState = 'idle';
     loadingOverlay.style.display = 'none';
 }
 
@@ -1213,77 +1898,95 @@ async function createZipArchive() {
     }
 }
 
-function generatePayrollPeriods(minDate, maxDate) {
+function generatePayrollPeriods(startDate, endDate) {
     const periods = [];
+    const normalize = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    startDate = normalize(startDate);
+    endDate = normalize(endDate);
 
-    const today = new Date();
-    const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0); // Last day of current month
+    let current = new Date(startDate);
 
-    if (maxDate < endOfMonth) {
-        maxDate = endOfMonth;
-    }
+    while (current <= endDate) {
+        const year = current.getFullYear();
+        const month = current.getMonth();
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        const endOfMonthCutoff = daysInMonth - 3; // 3 days before end of month
 
-    // Helper to normalize date without time component
-    const normalizeDate = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+        // First cutoff: 13th to 3 days before end of month
+        const firstStart = new Date(year, month, 13);
+        const firstEnd = new Date(year, month, endOfMonthCutoff);
 
-    minDate = normalizeDate(minDate);
-    maxDate = normalizeDate(maxDate);
-
-    // Find the next period end after minDate
-    let currentPeriod = new Date(minDate);
-
-    // Find first period
-    if (currentPeriod.getDate() <= 12) {
-        // We're in the first half of a month
-        const nextPeriodEnd = new Date(currentPeriod.getFullYear(), currentPeriod.getMonth(), 12);
-        currentPeriod = nextPeriodEnd;
-    } else if (currentPeriod.getDate() <= 28) {
-        // We're in the second half of a month
-        const nextPeriodEnd = new Date(currentPeriod.getFullYear(), currentPeriod.getMonth() + 1, 0); // Last day of month
-        currentPeriod = nextPeriodEnd;
-    } else {
-        // We're in the last days of a month, go to the middle of next month
-        const nextPeriodEnd = new Date(currentPeriod.getFullYear(), currentPeriod.getMonth() + 1, 12);
-        currentPeriod = nextPeriodEnd;
-    }
-
-    // Now generate all periods up to maxDate
-    while (currentPeriod <= maxDate) {
-        let periodStart, periodEnd;
-
-        if (currentPeriod.getDate() <= 12) {
-            // This is a mid-month end date (12th)
-            periodEnd = new Date(currentPeriod.getFullYear(), currentPeriod.getMonth(), 12);
-            // Start date is 29th of previous month (or last day if February)
-            const prevMonth = new Date(currentPeriod.getFullYear(), currentPeriod.getMonth(), 0);
-            const daysInPrevMonth = prevMonth.getDate();
-            const startDay = Math.min(29, daysInPrevMonth);
-            periodStart = new Date(currentPeriod.getFullYear(), currentPeriod.getMonth() - 1, startDay);
-        } else {
-            // This is an end-of-month date
-            periodEnd = new Date(currentPeriod.getFullYear(), currentPeriod.getMonth() + 1, 0);
-            // Start date is 13th of current month
-            periodStart = new Date(currentPeriod.getFullYear(), currentPeriod.getMonth(), 13);
+        if (firstStart <= endDate) {
+            periods.push({
+                id: `${formatDate(firstStart)}_${formatDate(firstEnd)}`,
+                start: firstStart,
+                end: firstEnd,
+                label: `${firstStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${firstEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+            });
         }
 
-        if (periodEnd >= minDate && periodStart <= maxDate) {
-            const id = `${formatDate(periodStart)}_${formatDate(periodEnd)}`;
-            const label = `${periodStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${periodEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-            periods.push({ id, start: periodStart, end: periodEnd, label });
+        // Second cutoff: 2 days before end of month to 12th of next month
+        const secondStart = new Date(year, month, endOfMonthCutoff + 1); // day after first period ends
+        const secondEnd = new Date(year, month + 1, 12);
+
+        if (secondStart <= endDate) {
+            periods.push({
+                id: `${formatDate(secondStart)}_${formatDate(secondEnd)}`,
+                start: secondStart,
+                end: secondEnd,
+                label: `${secondStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${secondEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+            });
         }
 
-        // Move to next period end
-        if (currentPeriod.getDate() <= 12) {
-            // Current end is mid-month, next is end of month
-            currentPeriod = new Date(currentPeriod.getFullYear(), currentPeriod.getMonth() + 1, 0);
-        } else {
-            // Current end is end of month, next is mid-month of next month
-            currentPeriod = new Date(currentPeriod.getFullYear(), currentPeriod.getMonth() + 1, 12);
+        current = new Date(year, month + 1, 1); // Move to next month
+    }
+
+    // Make sure we have at least 6 periods
+    const minPeriods = 6;
+    if (periods.length < minPeriods) {
+        // Find the earliest period
+        const earliestPeriod = periods.reduce((earliest, period) =>
+            period.start < earliest.start ? period : earliest, periods[0]);
+
+        // Add more periods by extending backward
+        let lastStart = new Date(earliestPeriod.start);
+
+        while (periods.length < minPeriods) {
+            // Go back to previous period
+            const prevEnd = new Date(lastStart);
+            prevEnd.setDate(prevEnd.getDate() - 1);
+
+            // Determine previous period dates based on current cutoff rules
+            const prevEndMonth = prevEnd.getMonth();
+            const prevEndYear = prevEnd.getFullYear();
+            const daysInPrevMonth = new Date(prevEndYear, prevEndMonth + 1, 0).getDate();
+
+            let prevStart;
+            if (prevEnd.getDate() <= 12) {
+                // If we're in the early month period (1-12), previous period starts at daysInPrevMonth-2
+                const prevMonthLastCutoff = daysInPrevMonth - 2;
+                prevStart = new Date(prevEndYear, prevEndMonth - 1, prevMonthLastCutoff);
+            } else {
+                // If we're in the late month period, previous period starts on 13th
+                prevStart = new Date(prevEndYear, prevEndMonth, 13);
+            }
+
+            const id = `${formatDate(prevStart)}_${formatDate(prevEnd)}`;
+            const label = `${prevStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${prevEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+
+            periods.push({
+                id, start: prevStart, end: prevEnd, label
+            });
+
+            lastStart = prevStart;
         }
     }
 
-    return periods.reverse(); // Most recent first
+    // Sort periods with most recent first
+    return periods.sort((a, b) => b.start - a.start);
 }
+
+
 
 // Add this event listener after the existing ones in renderEmployeeTable
 // At the end of renderEmployeeTable function (around line 280)
@@ -1384,3 +2087,148 @@ const activeOnlyToggle = document.getElementById('activeOnlyToggle');
 
 // Add this to your DOMContentLoaded event listener setup
 activeOnlyToggle.addEventListener('change', filterData);
+// Background data refresh functionality
+let backgroundRefreshInProgress = false;
+
+function showBackgroundRefresh() {
+    refreshIndicator.style.display = 'flex';
+}
+
+function hideBackgroundRefresh() {
+    refreshIndicator.style.display = 'none';
+}
+
+async function backgroundRefresh() {
+    // Don't start another refresh if one is in progress
+    if (backgroundRefreshInProgress) {
+        console.log("Background refresh already in progress, skipping");
+        return;
+    }
+
+    backgroundRefreshInProgress = true;
+    showBackgroundRefresh();
+
+    try {
+        console.log("Starting background data refresh");
+
+        // Use current period and branch
+        const periodId = periodSelect.value;
+        const branchId = branchSelect.value;
+
+        // Check when data was last refreshed
+        const cacheKey = getCacheKey(periodId, branchId);
+        const cachedData = localStorage.getItem(cacheKey);
+
+        // Only refresh if we have cached data that's older than 15 minutes
+        if (cachedData) {
+            const parsedCache = JSON.parse(cachedData);
+            const lastRefresh = parsedCache.timestamp;
+            const refreshAge = Date.now() - lastRefresh;
+            const minRefreshInterval = 15 * 60 * 1000; // 15 minutes
+
+            if (refreshAge < minRefreshInterval) {
+                console.log(`Data is fresh (${Math.round(refreshAge / 60000)}min old), skipping refresh`);
+                hideBackgroundRefresh();
+                backgroundRefreshInProgress = false;
+                return;
+            }
+        }
+
+        // Force a refresh with the current period and branch
+        console.log("Refreshing data in the background");
+        await loadData(periodId);
+    } catch (error) {
+        console.error("Error in background refresh:", error);
+        // Failed silently - no need to alert user since this is in the background
+    } finally {
+        hideBackgroundRefresh();
+        backgroundRefreshInProgress = false;
+    }
+}
+
+// Set up periodic background refresh
+function setupBackgroundRefresh() {
+    // Check for updates every 5 minutes
+    const refreshInterval = 5 * 60 * 1000; // 5 minutes
+
+    // First refresh after 30 seconds (give time for initial load)
+    setTimeout(() => {
+        backgroundRefresh();
+
+        // Then set up regular interval
+        setInterval(backgroundRefresh, refreshInterval);
+    }, 30 * 1000);
+
+    // Also refresh when tab becomes visible again
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            // Wait a second after becoming visible
+            setTimeout(backgroundRefresh, 1000);
+        }
+    });
+}
+
+// Add this to your DOMContentLoaded event listener
+document.addEventListener('DOMContentLoaded', async function () {
+    // Existing setup code...
+
+    // Set up background refresh after initial load
+    setupBackgroundRefresh();
+});
+
+document.addEventListener('DOMContentLoaded', async function () {
+    console.time('app-init');
+
+    // Setup event listeners
+    closeModal.addEventListener('click', closePhotoModal);
+    periodSelect.addEventListener('change', async function () {
+        localStorage.removeItem('last_selected_period');
+        localStorage.setItem('last_selected_period', this.value);
+        await loadData(this.value);
+    });
+
+    branchSelect.addEventListener('change', function () {
+        localStorage.removeItem('last_selected_branch');
+        localStorage.setItem('last_selected_branch', this.value);
+        filterData();
+    });
+
+    refreshBtn.addEventListener('click', function () {
+        // Force refresh from server
+        refreshBtn.dataset.forceRefresh = 'true';
+        loadData();
+    });
+
+    exportBtn.addEventListener('click', exportToCSV);
+
+    // Check for any previously selected period or branch
+    const lastSelectedPeriod = localStorage.getItem('last_selected_period');
+    const lastSelectedBranch = localStorage.getItem('last_selected_branch');
+
+    if (lastSelectedBranch) {
+        branchSelect.value = lastSelectedBranch;
+    }
+
+    // Initialize payroll periods first (this is fast because it uses cache)
+    await initializePayrollPeriods();
+
+    // If we have a previous selection and it's still valid, use that
+    if (lastSelectedPeriod) {
+        const isValidSelection = window.payrollPeriods &&
+            window.payrollPeriods.some(p => p.id === lastSelectedPeriod);
+
+        if (isValidSelection) {
+            periodSelect.value = lastSelectedPeriod;
+        }
+    }
+
+    // Load initial data (this will use cache if available)
+    await loadData();
+
+    // Set up background refresh after initial load
+    setupBackgroundRefresh();
+
+    // After initial load, hide the loading overlay and mark as initialized
+    isInitialLoad = false;
+    console.timeEnd('app-init');
+});

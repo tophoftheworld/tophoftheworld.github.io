@@ -1,4 +1,4 @@
-const APP_VERSION = "0.67"; 
+const APP_VERSION = "0.70"; 
 
 const ALLOW_PAST_CLOCKING = false;
 
@@ -68,11 +68,10 @@ const SHIFT_SCHEDULES = {
 };
 
 // At top of your script.js
-import { db, storage } from './firebase-setup.js';
+import { db } from './firebase-setup.js';
 import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 import { getDocs, collection } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 
-import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-storage.js";
 
 if (timestamp) {
     setInterval(() => {
@@ -543,7 +542,7 @@ async function saveAttendance() {
     const now = new Date();
     const time = now.toLocaleTimeString();
 
-    // Create a fresh copy of the existing data
+    // IMPORTANT: Create a fresh copy of the existing data to avoid reference issues
     const existing = JSON.parse(localStorage.getItem(key) || "{}");
 
     // Track offline changes
@@ -558,40 +557,27 @@ async function saveAttendance() {
         const branch = document.getElementById("branchSelect")?.value || "Podium";
         const shift = document.getElementById("shiftSelect")?.value || "Opening";
 
-        // Prepare clock in data without the image first
+        // Create new clock in data - don't modify existing.clockOut if it exists
         existing.clockIn = {
             time,
+            selfie: selfieData,
             branch,
             shift,
             timestamp: Date.now(),
-            synced: false
+            synced: false // Track sync status for this event specifically
         };
 
-        // Handle photo storage differently based on connection
         if (navigator.onLine) {
             try {
-                // Upload photo to Firebase Storage
-                const photoUrl = await uploadPhotoToStorage(selfieData, currentUser, formatDate(viewDate), 'clockIn');
-
-                // Add URL to the data
-                existing.clockIn.photoUrl = photoUrl;
-
-                // Keep selfie data for display in this session, but mark that it's synced
-                existing.clockIn.selfie = selfieData;
-
                 const dateKey = formatDate(viewDate);
                 const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
 
                 // Get existing data first to avoid overwriting clockOut
                 const docSnap = await getDoc(subDocRef);
-                let dataToSave = {
-                    clockIn: {
-                        ...existing.clockIn,
-                        // Don't save these to Firestore
-                        synced: undefined,
-                        selfie: undefined
-                    }
-                };
+                let dataToSave = { clockIn: { ...existing.clockIn } };
+
+                // Remove synced flag from what we save to Firestore
+                delete dataToSave.clockIn.synced;
 
                 // If there's existing data with clockOut, preserve it
                 if (docSnap.exists()) {
@@ -609,10 +595,6 @@ async function saveAttendance() {
             } catch (err) {
                 console.warn('🔌 Failed to save to Firestore - will sync later', err);
                 existing.clockIn.synced = false;
-                existing.clockIn.selfie = selfieData; // Keep selfie data for local display
-
-                // Queue the image for later upload
-                queueImageForUpload(selfieData, currentUser, formatDate(viewDate), 'clockIn');
 
                 // Add to sync queue with action information
                 const queueItem = `${key}:clockIn`;
@@ -632,12 +614,8 @@ async function saveAttendance() {
                 }
             }
         } else {
-            // Offline - keep selfie in localStorage for now and queue for later
-            existing.clockIn.selfie = selfieData;
+            // Offline - mark for later sync
             existing.clockIn.synced = false;
-
-            // Queue the image for later upload
-            queueImageForUpload(selfieData, currentUser, formatDate(viewDate), 'clockIn');
 
             // Add to sync queue with action information
             const queueItem = `${key}:clockIn`;
@@ -650,7 +628,8 @@ async function saveAttendance() {
 
         dutyStatus = 'out';
     } else {
-        // CLOCK OUT LOGIC - Similar structure as clock in
+        // CLOCK OUT LOGIC - Make sure we don't overwrite clockIn
+
         // First check if there's clockIn data in existing
         if (!existing.clockIn) {
             // If no clockIn exists locally, try to get it from Firestore
@@ -684,32 +663,20 @@ async function saveAttendance() {
         // Now we can safely add clockOut data
         existing.clockOut = {
             time,
+            selfie: selfieData,
             timestamp: Date.now(),
-            synced: false
+            synced: false // Track sync status for clockOut specifically
         };
 
-        // Handle photo storage
         if (navigator.onLine) {
             try {
-                // Upload photo to Firebase Storage
-                const photoUrl = await uploadPhotoToStorage(selfieData, currentUser, formatDate(viewDate), 'clockOut');
-
-                // Add URL to the data
-                existing.clockOut.photoUrl = photoUrl;
-
-                // Keep selfie data for display in this session
-                existing.clockOut.selfie = selfieData;
-
                 const dateKey = formatDate(viewDate);
                 const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
 
                 // We're specifically only updating the clockOut field
-                const clockOutData = {
-                    ...existing.clockOut,
-                    // Don't save these to Firestore
-                    synced: undefined,
-                    selfie: undefined
-                };
+                // Remove synced flag from what we save to Firestore
+                const clockOutData = { ...existing.clockOut };
+                delete clockOutData.synced;
 
                 await setDoc(subDocRef, { clockOut: clockOutData }, { merge: true });
                 existing.clockOut.synced = true; // Mark just the clockOut as synced
@@ -717,10 +684,6 @@ async function saveAttendance() {
             } catch (err) {
                 console.warn('🔌 Failed to save to Firestore - will sync later', err);
                 existing.clockOut.synced = false;
-                existing.clockOut.selfie = selfieData; // Keep selfie for local display
-
-                // Queue the image for later upload
-                queueImageForUpload(selfieData, currentUser, formatDate(viewDate), 'clockOut');
 
                 // Add to sync queue with action information
                 const queueItem = `${key}:clockOut`;
@@ -740,12 +703,8 @@ async function saveAttendance() {
                 }
             }
         } else {
-            // Offline - keep selfie in localStorage for now
-            existing.clockOut.selfie = selfieData;
+            // Offline - mark for later sync
             existing.clockOut.synced = false;
-
-            // Queue the image for later upload
-            queueImageForUpload(selfieData, currentUser, formatDate(viewDate), 'clockOut');
 
             // Add to sync queue with action information
             const queueItem = `${key}:clockOut`;
@@ -771,6 +730,9 @@ async function saveAttendance() {
 
     console.log("🎉 UI updated with time " + action);
 }
+
+
+
 
 function clearData() {
     if (confirm("Are you sure you want to clear all local data?")) {
@@ -952,22 +914,6 @@ function markOfflineData() {
     }
 }
 
-function getImageSource(data, type) {
-    if (!data || !data[type]) return "";
-
-    // First check for local selfie data (base64)
-    if (data[type].selfie) {
-        return data[type].selfie;
-    }
-
-    // Then check for photo URL
-    if (data[type].photoUrl) {
-        return data[type].photoUrl;
-    }
-
-    return "";
-}
-
 function updateCardTimes(data) {
     const isToday = formatDate(viewDate) === formatDate(today);
     const hasNoData = !data.clockIn && !data.clockOut;
@@ -1081,12 +1027,11 @@ function updateCardTimes(data) {
 
         label.textContent = "Timed In";
         
-        const imageSource = getImageSource(data, 'clockIn');
-        if (imageSource && clockInPhoto.src !== imageSource) {
-            clockInPhoto.src = imageSource;
+        if (clockInPhoto.src !== data.clockIn.selfie) {
+            clockInPhoto.src = data.clockIn.selfie;
         }
         clockInPhoto.style.display = "block";
-        clockInPhoto.onclick = () => openImageModal(imageSource);
+        clockInPhoto.onclick = () => openImageModal(data.clockIn.selfie);
         clockInOverlay.classList.add("overlayed");
 
     }
@@ -1172,13 +1117,13 @@ function updateCardTimes(data) {
 
         outOverlayColor = compareTimes(displayOutTime, scheduledTimeOut) >= 0 ? "green" : "red";
 
-        const imageSource = getImageSource(data, 'clockOut');
-        if (imageSource && clockOutPhoto.src !== imageSource) {
-            clockOutPhoto.src = imageSource;
+        if (clockOutPhoto.src !== data.clockOut.selfie) {
+            clockOutPhoto.src = data.clockOut.selfie;
         }
-        clockOutPhoto.style.display = "block";
-        clockOutPhoto.onclick = () => openImageModal(imageSource);
 
+        clockOutPhoto.style.display = "block";
+        clockOutPhoto.onclick = () => openImageModal(data.clockOut.selfie);
+        
         clockOutOverlay.classList.remove("default-green", "red", "green");
         clockOutOverlay.classList.add("overlayed");
 
@@ -1417,9 +1362,6 @@ document.getElementById("shiftSelect").addEventListener("change", async () => {
 });
 
 async function syncPendingData() {
-    // First process any queued images
-    await processImageUploadQueue();
-
     const syncQueue = JSON.parse(localStorage.getItem("syncQueue") || "[]");
 
     if (syncQueue.length === 0) {
@@ -1463,7 +1405,6 @@ async function syncPendingData() {
                         localData.clockIn.timestamp > serverData.clockIn.timestamp)) {
                     const clockInData = { ...localData.clockIn };
                     delete clockInData.synced; // Remove sync flag before saving to Firestore
-                    delete clockInData.selfie;  // Don't save selfie data to Firestore
                     syncData.clockIn = clockInData;
                 }
             }
@@ -1475,7 +1416,6 @@ async function syncPendingData() {
                         localData.clockOut.timestamp > serverData.clockOut.timestamp)) {
                     const clockOutData = { ...localData.clockOut };
                     delete clockOutData.synced; // Remove sync flag before saving to Firestore
-                    delete clockOutData.selfie;  // Don't save selfie data to Firestore
                     syncData.clockOut = clockOutData;
                 }
             }
@@ -1530,7 +1470,6 @@ async function syncPendingData() {
     }
 
     // Remove successful items from sync queue
-    // (rest of function remains the same)
     const updatedQueue = [];
     for (const queueItem of syncQueue) {
         const [key, action] = queueItem.split(':');
@@ -1942,7 +1881,6 @@ function setupNetworkListeners() {
 
         // Wait a bit to ensure connection is stable before trying to sync
         setTimeout(() => {
-            processImageUploadQueue(); // Process image queue first
             syncPendingData();
         }, 2000);
     });
@@ -2845,12 +2783,6 @@ document.addEventListener('DOMContentLoaded', () => {
         deviceIndicator.textContent = '💻 POS Mode';
         loginForm.appendChild(deviceIndicator);
     }
-
-    if (navigator.onLine) {
-        setTimeout(() => {
-            processImageUploadQueue();
-        }, 5000); // Give app time to initialize first
-    }
 });
 
 function isDesktop() {
@@ -3023,86 +2955,3 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 });
-
-// Add this function to script.js
-async function uploadPhotoToStorage(selfieData, userId, dateKey, type) {
-    try {
-        // Convert base64 to blob
-        const response = await fetch(selfieData);
-        const blob = await response.blob();
-
-        // Create reference to Firebase Storage
-        const storageRef = ref(storage, `attendance/${userId}/${dateKey}/${type}.jpg`);
-
-        // Upload blob
-        const snapshot = await uploadBytes(storageRef, blob);
-
-        // Get download URL
-        const downloadURL = await getDownloadURL(snapshot.ref);
-
-        console.log(`✅ Photo uploaded to Storage: ${type}`);
-        return downloadURL;
-    } catch (error) {
-        console.error(`❌ Failed to upload photo to Storage: ${error}`);
-        throw error;
-    }
-}
-
-// Add this function to handle queuing images for offline use
-function queueImageForUpload(imageData, userId, dateKey, type) {
-    const queue = JSON.parse(localStorage.getItem("imageUploadQueue") || "[]");
-    queue.push({
-        imageData,
-        userId,
-        dateKey,
-        type,
-        timestamp: Date.now()
-    });
-    localStorage.setItem("imageUploadQueue", JSON.stringify(queue));
-    console.log(`📸 Queued image for later upload: ${type}`);
-}
-
-// Add this function to process queued images when online
-async function processImageUploadQueue() {
-    if (!navigator.onLine) return;
-
-    const queue = JSON.parse(localStorage.getItem("imageUploadQueue") || "[]");
-    if (queue.length === 0) return;
-
-    console.log(`🔄 Processing ${queue.length} queued images`);
-
-    const updatedQueue = [...queue];
-
-    for (let i = 0; i < queue.length; i++) {
-        const item = queue[i];
-        try {
-            // Upload photo
-            const photoUrl = await uploadPhotoToStorage(
-                item.imageData,
-                item.userId,
-                item.dateKey,
-                item.type
-            );
-
-            // Update Firestore with the photo URL
-            const docRef = doc(db, "attendance", item.userId, "dates", item.dateKey);
-            await setDoc(docRef, {
-                [`${item.type}`]: {
-                    photoUrl: photoUrl
-                }
-            }, { merge: true });
-
-            // Remove from queue
-            updatedQueue.splice(updatedQueue.findIndex(qItem =>
-                qItem.userId === item.userId &&
-                qItem.dateKey === item.dateKey &&
-                qItem.type === item.type
-            ), 1);
-
-            localStorage.setItem("imageUploadQueue", JSON.stringify(updatedQueue));
-            console.log(`✅ Processed queued image: ${item.type}`);
-        } catch (err) {
-            console.error(`❌ Failed to process queued image: ${err}`);
-        }
-    }
-}

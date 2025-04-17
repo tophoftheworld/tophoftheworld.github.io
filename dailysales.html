@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Matchanese Daily Sales Report</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f9f9f9;
+            margin: 0;
+            padding: 2rem;
+            display: flex;
+            justify-content: center;
+        }
+
+        .container {
+            max-width: 380px;
+            width: 100%;
+            background: #fff;
+            padding: 2rem 1.5rem;
+            border-radius: 16px;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+            margin: 3rem auto;
+        }
+
+        h2 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            margin-bottom: 1.2rem;
+            text-align: center;
+            color: #222;
+        }
+
+        .logo {
+            display: block;
+            margin: 0 auto 0.75rem;
+            height: 60px;
+        }
+
+        label {
+            font-weight: 600;
+            font-size: 0.95rem;
+            display: block;
+            margin: 0.5rem 0 0.5rem;
+            color: #333;
+        }
+
+        input,
+        select {
+            padding: 0.85rem 1rem;
+            font-size: 1rem;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            background: #fff;
+            transition: transform 0.15s ease;
+        }
+
+        input,
+        select,
+        .input-wrapper input,
+        #totalDisplay {
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+
+
+        input:focus,
+        select:focus {
+            outline: none;
+            border-color: #2b9348;
+            box-shadow: 0 0 0 2px #2b934850;
+            transform: scale(1.05);
+        }
+
+
+        .total-sales-display {
+            margin-top: 1.2rem;
+            font-size: 1.25rem;
+            font-weight: 600;
+            text-align: center;
+            color: #2b9348;
+        }
+
+        .input-wrapper {
+            position: relative;
+            margin-bottom: 1rem;
+        }
+
+        .input-wrapper span {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #555;
+            font-size: 1rem;
+        }
+
+        .input-wrapper input {
+            padding-left: 2rem;
+        }
+
+
+        #recordDate {
+            /* background-color: #eaffea; */
+            font-weight: 500;
+            text-align: center;
+            font-size: 1rem;
+            color: #111;
+        }
+
+        .group-card {
+            background: #f9f9f9;
+            padding-top: 0.5rem;
+            padding-bottom: 0.5rem;
+            padding-left: 1rem;
+            padding-right: 1rem;
+            border-radius: 10px;
+            margin-bottom: 1rem;
+        }
+
+        .subheader {
+            font-weight: 600;
+            font-size: 1rem;
+            margin-bottom: 0.75rem;
+            margin-top: 1rem;
+            color: #444;
+        }
+
+        #totalDisplay {
+            background-color: #eaffea;
+            font-size: 1.5rem;
+            font-weight: 800;
+            text-align: center;
+            color: #208f34;
+            border: 2px solid #b6e8c1;
+            border-radius: 10px;
+            margin-top: 0rem;
+            margin-bottom: 1rem;
+        }
+
+        #cashLeft {
+            background-color: #dbffe6;
+            font-size: 1.5rem;
+            font-weight: 800;
+            text-align: center;
+            color: #137a2f;
+            border: 2px solid #a9e6c0;
+            border-radius: 10px;
+        }
+
+        
+        input:read-only {
+            /* background-color: #f3fff5; */
+            font-weight: bold;
+        }
+
+        button {
+            width: 100%;
+            padding: 0.85rem;
+            font-size: 1rem;
+            background-color: #2b9348;
+            color: #fff;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            margin-top: 1.5rem;
+        }
+
+        button:hover:not([disabled]) {
+            background-color: #238636;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div style="text-align: center; margin-bottom: 1.5rem;">
+            <img src="img/matchanese-logo.png" alt="Matchanese Logo"
+                style="height: 60px; margin-bottom: 0.75rem;">
+            <h2 style="margin: 0; font-size: 1.75rem;">Daily Sales Report</h2>
+        </div>
+
+        <label for="recordDate">Record Date</label>
+        <input type="text" id="recordDate" readonly />
+        
+        <label for="staffName">Staff Name</label>
+        <select id="staffName" onchange="toggleOtherField()">
+            <option value="">-- Select --</option>
+            <option value="Acerr">Acerr</option>
+            <option value="Raniel">Raniel</option>
+            <option value="Raschel">Raschel</option>
+            <option value="Denzel">Denzel</option>
+            <option value="Liezel">Liezel</option>
+            <option value="Sarah">Sarah</option>
+            <option value="Other">Other</option>
+        </select>
+        <input type="text" id="otherStaffName" placeholder="Enter name" style="display: none; margin-top: 0.5rem;" />
+        
+        <!-- Payments -->
+        <label for="totalDisplay">Total Sales</label>
+        <input type="text" id="totalDisplay" readonly value="₱0.00" />
+
+        <div class="group-card">
+            <label for="cash">Cash Payment</label>
+            <div class="input-wrapper">
+                <span>₱</span>
+                <input type="text" inputmode="numeric" pattern="[0-9,]*" id="cash" placeholder="0" step="any" />
+            </div>
+            
+            <label for="gcash">GCash Payment</label>
+            <div class="input-wrapper">
+                <span>₱</span>
+                <input type="text" inputmode="numeric" pattern="[0-9,]*" id="gcash" placeholder="0" step="any" />
+            </div>
+            
+            <label for="maya">Maya Payment</label>
+            <div class="input-wrapper">
+                <span>₱</span>
+                <input type="text" inputmode="numeric" pattern="[0-9,]*" id="maya" placeholder="0" step="any" />
+            </div>
+            
+            <label for="card">Card Payment</label>
+            <div class="input-wrapper">
+                <span>₱</span>
+                <input type="text" inputmode="numeric" pattern="[0-9,]*" id="card" placeholder="0" step="any" />
+            </div>
+            
+            <label for="grab">Grab Sales</label>
+            <div class="input-wrapper">
+                <span>₱</span>
+                <input type="text" inputmode="numeric" pattern="[0-9,]*" id="grab" placeholder="0" step="any" />
+            </div>
+        </div>
+
+        <div class="group-card">
+        <label for="expenses">Cash Expenses</label>
+        <div class="input-wrapper">
+            <span>₱</span>
+            <input type="text" inputmode="numeric" pattern="[0-9,]*" id="expenses" placeholder="0" step="any" />
+        </div>
+        </div>
+        
+        <label for="cashLeft">Actual Cash Left</label>
+        <input type="text" id="cashLeft" readonly value="₱0.00" />
+
+        <button onclick="submitSales()">Submit</button>
+    </div>
+
+    <div id="toast" style="
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background-color: #2b9348;
+      color: #fff;
+      padding: 1rem 1.25rem;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 500;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.4s ease, transform 0.4s ease;
+      z-index: 9999;
+    "></div>
+
+
+    <script type="module">
+        import { db } from './js/firebase-setup.js';
+        import {
+            collection,
+            setDoc,
+            doc,
+            serverTimestamp
+        } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+
+        window.submitSales = async function () {
+            const recordDate = document.getElementById("recordDate").dataset.iso;
+            const recordDateRaw = document.getElementById("recordDate").value;
+
+            const staff = document.getElementById("staffName").value === "Other"
+                ? document.getElementById("otherStaffName").value
+                : document.getElementById("staffName").value;
+
+            const record = {
+                dateDisplay: recordDateRaw,
+                staff,
+                cash: parseFloat(document.getElementById("cash").dataset.raw || 0),
+                card: parseFloat(document.getElementById("card").dataset.raw || 0),
+                gcash: parseFloat(document.getElementById("gcash").dataset.raw || 0),
+                maya: parseFloat(document.getElementById("maya").dataset.raw || 0),
+                grab: parseFloat(document.getElementById("grab").dataset.raw || 0),
+                expenses: parseFloat(document.getElementById("expenses").dataset.raw || 0),
+                totalSales: 0,
+                actualCashLeft: 0,
+                timestamp: serverTimestamp()
+            };
+
+            record.totalSales = record.cash + record.card + record.gcash + record.maya + record.grab;
+            record.actualCashLeft = record.cash - record.expenses;
+
+            try {
+                await setDoc(doc(db, "sales", recordDate), record);
+
+                showToast(`✅ Sales submitted!`);    
+            } catch (e) {
+                showToast("❌ Failed to submit. Please try again.");
+                console.error("Error saving record to Firestore:", e);
+            }
+        };
+    </script>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+                const now = new Date();
+                document.getElementById("recordDate").value = formatDate(now);
+                document.getElementById("recordDate").dataset.iso = now.toISOString().slice(0, 10); // e.g., 2025-04-26
+            });
+
+            flatpickr("#recordDate", {
+                dateFormat: "Y-m-d",
+                defaultDate: new Date(),
+                allowInput: false,
+                onChange: function (selectedDates) {
+                    document.getElementById("recordDate").value = formatDate(selectedDates[0]);
+                    document.getElementById("recordDate").dataset.iso = selectedDates[0].toISOString().slice(0, 10);
+                }
+            });
+
+            function formatDate(date) {
+                return date.toLocaleDateString("en-PH", {
+                    weekday: 'long',
+                    month: 'long',
+                    day: 'numeric'
+                });
+            }
+
+            const inputs = ['cash', 'card', 'gcash', 'maya', 'grab', 'expenses'];
+
+                inputs.forEach(id => {
+                    const el = document.getElementById(id);
+
+                    // Store raw value in dataset for persistence
+                    el.addEventListener('input', () => {
+                        el.dataset.raw = el.value.replace(/[^0-9.]/g, '');
+                    });
+
+                    // Format on blur
+                    el.addEventListener('blur', () => {
+                        const raw = el.dataset.raw || '0';
+                        const parsed = parseFloat(raw.replace(/,/g, '')); // FIXED
+                        if (!isNaN(parsed)) {
+                            el.value = parsed.toLocaleString('en-US', {
+                                minimumFractionDigits: 0,
+                                maximumFractionDigits: 2
+                            });
+                        } else {
+                            el.value = '';
+                        }
+                        updateTotal();
+                    });
+
+                    // Restore raw value when focusing again
+                    el.addEventListener('focus', () => {
+                        el.value = el.dataset.raw || '';
+                    });
+                });
+
+                function updateTotal() {
+                    const paymentInputs = ['cash', 'card', 'gcash', 'maya', 'grab'];
+                    const total = paymentInputs.reduce((sum, id) => {
+                        const raw = document.getElementById(id).dataset.raw || '0';
+                        const val = parseFloat(raw) || 0;
+                        return sum + val;
+                    }, 0);
+
+                    const cashRaw = document.getElementById('cash').dataset.raw || '0';
+                    const cashVal = parseFloat(cashRaw) || 0;
+
+                    const expensesRaw = document.getElementById('expenses').dataset.raw || '0';
+                    const expensesVal = parseFloat(expensesRaw) || 0;
+
+                    const cashLeft = cashVal - expensesVal;
+
+                    document.getElementById("totalDisplay").value =
+                        `₱${total.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+
+                    document.getElementById("cashLeft").value =
+                        `₱${cashLeft.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+                }
+
+
+
+            function toggleOtherField() {
+                const isOther = document.getElementById("staffName").value === "Other";
+                document.getElementById("otherStaffName").style.display = isOther ? "block" : "none";
+            }
+
+            function submitSales() {
+                const record = {
+                    date: document.getElementById("recordDate").value,
+                    staff: document.getElementById("staffName").value === "Other"
+                        ? document.getElementById("otherStaffName").value
+                        : document.getElementById("staffName").value,
+                    cash: parseFloat(document.getElementById("cash").value) || 0,
+                    card: parseFloat(document.getElementById("card").value) || 0,
+                    gcash: parseFloat(document.getElementById("gcash").value) || 0,
+                    maya: parseFloat(document.getElementById("maya").value) || 0,
+                    grab: parseFloat(document.getElementById("grab").value) || 0
+                };
+                const total = record.cash + record.card + record.gcash + record.maya + record.grab;
+                showToast(`✅ Sales submitted!<br><strong>${record.staff}</strong><br>${record.date}<br>Total: ₱${total.toLocaleString('en-US', { minimumFractionDigits: 2 })}`);
+            }
+            
+            function showToast(message) {
+                const toast = document.getElementById("toast");
+                toast.innerHTML = message;
+                toast.style.opacity = "1";
+                toast.style.transform = "translate(-50%, -50%)";
+
+                setTimeout(() => {
+                    toast.style.opacity = "0";
+                    toast.style.transform = "translate(-50%, -40%)";
+                }, 3500);
+            }
+
+    </script>
+</body>
+
+</html>
