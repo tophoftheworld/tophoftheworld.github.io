@@ -249,31 +249,31 @@
             <label for="cash">Cash Payment</label>
             <div class="input-wrapper">
                 <span>₱</span>
-                <input type="text" inputmode="numeric" pattern="[0-9,]*" id="cash" placeholder="0" step="any" />
+                <input type="text" inputmode="decimal" pattern="[0-9,]*" id="cash" placeholder="0" step="any" />
             </div>
             
             <label for="gcash">GCash Payment</label>
             <div class="input-wrapper">
                 <span>₱</span>
-                <input type="text" inputmode="numeric" pattern="[0-9,]*" id="gcash" placeholder="0" step="any" />
+                <input type="text" inputmode="decimal" pattern="[0-9,]*" id="gcash" placeholder="0" step="any" />
             </div>
             
             <label for="maya">Maya Payment</label>
             <div class="input-wrapper">
                 <span>₱</span>
-                <input type="text" inputmode="numeric" pattern="[0-9,]*" id="maya" placeholder="0" step="any" />
+                <input type="text" inputmode="decimal" pattern="[0-9,]*" id="maya" placeholder="0" step="any" />
             </div>
             
             <label for="card">Card Payment</label>
             <div class="input-wrapper">
                 <span>₱</span>
-                <input type="text" inputmode="numeric" pattern="[0-9,]*" id="card" placeholder="0" step="any" />
+                <input type="text" inputmode="decimal" pattern="[0-9,]*" id="card" placeholder="0" step="any" />
             </div>
             
             <label for="grab">Grab Sales</label>
             <div class="input-wrapper">
                 <span>₱</span>
-                <input type="text" inputmode="numeric" pattern="[0-9,]*" id="grab" placeholder="0" step="any" />
+                <input type="text" inputmode="decimal" pattern="[0-9,]*" id="grab" placeholder="0" step="any" />
             </div>
         </div>
 
@@ -281,7 +281,7 @@
         <label for="expenses">Cash Expenses</label>
         <div class="input-wrapper">
             <span>₱</span>
-            <input type="text" inputmode="numeric" pattern="[0-9,]*" id="expenses" placeholder="0" step="any" />
+            <input type="text" inputmode="decimal" pattern="[0-9,]*" id="expenses" placeholder="0" step="any" />
         </div>
         </div>
         
@@ -319,7 +319,9 @@
         } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 
         window.submitSales = async function () {
-            const recordDate = document.getElementById("recordDate").dataset.iso;
+            const selectedDate = flatpickrInstance.selectedDates[0];
+            const recordDate = selectedDate.toISOString().slice(0, 10);
+
             const recordDateRaw = document.getElementById("recordDate").value;
 
             const staff = document.getElementById("staffName").value === "Other"
@@ -361,13 +363,17 @@
                 document.getElementById("recordDate").dataset.iso = now.toISOString().slice(0, 10); // e.g., 2025-04-26
             });
 
+            let flatpickrInstance;
+
             flatpickr("#recordDate", {
                 dateFormat: "Y-m-d",
                 defaultDate: new Date(),
                 allowInput: false,
                 onChange: function (selectedDates) {
                     document.getElementById("recordDate").value = formatDate(selectedDates[0]);
-                    document.getElementById("recordDate").dataset.iso = selectedDates[0].toISOString().slice(0, 10);
+                },
+                onReady: function (selectedDates, dateStr, instance) {
+                    flatpickrInstance = instance;
                 }
             });
 
