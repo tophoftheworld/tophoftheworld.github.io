@@ -320,7 +320,7 @@
 
         window.submitSales = async function () {
             const selectedDate = flatpickrInstance.selectedDates[0];
-            const recordDate = selectedDate.toISOString().slice(0, 10);
+            const recordDate = selectedDate.toLocaleDateString('en-CA'); // Format: YYYY-MM-DD
 
             const recordDateRaw = document.getElementById("recordDate").value;
 
