@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Matchanese Sales Dashboard</title>
+    <link rel="icon" href="data:,">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"
+        integrity="sha512-ElRFoEQdI5Ht6kZvyzXhYG9NqjtkmlkfYk0wr6wHxU9JEHakS7UJZNeml5ALk+8IKlU6jDgMabC3vkumRokgJA=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script type="module" src="./js/firebase-setup.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f9f9f9;
+            color: #333;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: auto;
+        }
+
+        h1 {
+            font-size: 1.8rem;
+            color: #2b9348;
+            margin-bottom: 1rem;
+        }
+
+        .controls {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            margin-bottom: 2rem;
+        }
+
+        .summary-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .summary-card {
+            background: white;
+            border-radius: 10px;
+            padding: 1.2rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            border-left: 4px solid #2b9348;
+        }
+
+        .card-title {
+            font-size: 0.9rem;
+            color: #666;
+            margin-bottom: 0.5rem;
+        }
+
+        .card-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #2b9348;
+        }
+
+        input[type="text"] {
+            padding: 0.6rem 1rem;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        th,
+        td {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid #eee;
+            text-align: left;
+            font-size: 0.9rem;
+        }
+
+        th {
+            background-color: #f5f5f5;
+            font-weight: 600;
+            color: #333;
+            cursor: pointer;
+        }
+
+        td.total {
+            font-weight: 700;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        #salesChartContainer {
+            margin-top: 2rem;
+            margin-bottom: 2rem;
+            position: relative;
+            height: 300px;
+            width: 100%;
+            border: 1px solid #eee;
+            background-color: white;
+            border-radius: 10px;
+            padding: 1rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        #salesChart {
+            width: 100% !important;
+            height: 100% !important;
+            display: block;
+        }
+
+        .date-shortcut-btn {
+            padding: 0.6rem 1rem;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+
+        .date-shortcut-btn:hover {
+            background: #f0f9f2;
+            border-color: #2b9348;
+        }
+
+        .flatpickr-monthDropdown-months {
+            appearance: menulist;
+            background: white;
+            border: 1px solid #eee;
+            border-radius: 4px;
+            padding: 2px 5px;
+        }
+
+        .flatpickr-monthDropdown-month {
+            background-color: white;
+            color: #333;
+            padding: 4px 8px;
+        }
+
+        .flatpickr-months .flatpickr-month {
+            background: #f5f5f5;
+            color: #333;
+            fill: #333;
+        }
+
+        .graph-type-btn {
+            padding: 0.4rem 0.8rem;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+
+        .graph-type-btn:hover, .graph-type-btn.active {
+            background: #f0f9f2;
+            border-color: #2b9348;
+        }
+
+        .graph-type-btn.active {
+            background: #2b9348;
+            color: white;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Sales Data Dashboard</h1>
+
+        <div class="controls">
+            <input type="text" id="dateRange" placeholder="Select date range" />
+        </div>
+
+        <div class="summary-cards" id="summaryCards"></div>
+
+        <div id="salesChartContainer">
+            <canvas id="salesChart"></canvas>
+        </div>
+
+        <div class="data-table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Day</th>
+                        <th>Staff</th>
+                        <th>Total Sales</th>
+                        <th>Cash</th>
+                        <th>GCash</th>
+                        <th>Maya</th>
+                        <th>Card</th>
+                        <th>Grab</th>
+                        <th>Expenses</th>
+                        <th>Cash Left</th>
+                    </tr>
+                </thead>
+                <tbody id="salesTableBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script type="module">
+        import { db } from './js/firebase-setup.js';
+        import { collection, getDocs } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
+
+        const tbody = document.getElementById("salesTableBody");
+        const summaryEl = document.getElementById("summaryCards");
+        const dateRangeInput = document.getElementById("dateRange");
+        let salesData = [];
+        let myChart = null;
+
+        flatpickr("#dateRange", {
+            mode: "range",
+            dateFormat: "Y-m-d",
+            defaultDate: [
+                new Date(new Date().getFullYear(), new Date().getMonth(), 1),
+                new Date()
+            ],
+            onChange: filterAndRender
+        });
+
+        // Add date range shortcuts
+        const dateRangeEl = document.getElementById("dateRange");
+        const controlsEl = document.querySelector(".controls");
+
+        // Create shortcuts container
+        const shortcutsDiv = document.createElement("div");
+        shortcutsDiv.className = "date-shortcuts";
+        shortcutsDiv.style.display = "flex";
+        shortcutsDiv.style.gap = "0.5rem";
+
+        // Add shortcut buttons
+        // When creating shortcut buttons, add "Previous Year"
+        ["Month to Date", "Previous Month", "Last 3 Months", "Last 12 Months"].forEach(label => {
+            const btn = document.createElement("button");
+            btn.innerText = label;
+            btn.className = "date-shortcut-btn";
+            btn.onclick = () => setDateRangeShortcut(label);
+            shortcutsDiv.appendChild(btn);
+        });
+
+        dateRangeInput.parentNode.insertBefore(shortcutsDiv, dateRangeInput.nextSibling);
+
+        function setDateRangeShortcut(type) {
+            const now = new Date();
+            let start, end;
+
+            switch (type) {
+                case "Month to Date":
+                    start = new Date(now.getFullYear(), now.getMonth(), 1);
+                    end = now;
+                    break;
+                case "Previous Month":
+                    start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                    end = new Date(now.getFullYear(), now.getMonth(), 0);
+                    break;
+                case "Last 3 Months":
+                    start = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+                    end = now;
+                    break;
+                case "Last 12 Months":
+                    end = new Date(); // Today
+                    start = new Date();
+                    start.setFullYear(start.getFullYear() - 1); // One year ago from today
+                    break;
+            }
+
+            dateRangeInput._flatpickr.setDate([start, end]);
+            filterAndRender();
+        }
+
+        async function loadSalesData() {
+            const snapshot = await getDocs(collection(db, "sales"));
+            salesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            filterAndRender();
+        }
+
+        function filterAndRender() {
+            const [start, end] = dateRangeInput._flatpickr.selectedDates;
+            if (!start || !end) return;
+
+            const days = [];
+            const cursor = new Date(start);
+            while (cursor <= end) {
+                days.push(new Date(cursor));
+                cursor.setDate(cursor.getDate() + 1);
+            }
+
+            const dataMap = new Map(salesData.map(item => [item.id, item]));
+            let monthTotal = 0, weekdayTotal = 0, weekendTotal = 0, weekdayCount = 0, weekendCount = 0;
+
+            // For chart data
+            const labels = [];
+            const totals = [];
+
+            days.sort((a, b) => b - a);
+
+            days.forEach(date => {
+                const id = adjustDateForTimezone(date);
+                const data = dataMap.get(id);
+                const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+
+                if (data?.totalSales) {
+                    monthTotal += data.totalSales;
+                    if (isWeekend) {
+                        weekendTotal += data.totalSales;
+                        weekendCount++;
+                    } else {
+                        weekdayTotal += data.totalSales;
+                        weekdayCount++;
+                    }
+                }
+
+                // Add data for chart
+                labels.unshift(date.toLocaleDateString("en-PH", { month: 'short', day: 'numeric' }));
+                totals.unshift(data?.totalSales || 0);
+            });
+
+            // Update table based on current view
+            updateTableForView(days, dataMap, currentGraphView);
+
+            summaryEl.innerHTML = `
+    <div class="summary-card">
+        <div class="card-title">Monthly Total</div>
+        <div class="card-value">${format(monthTotal)}</div>
+    </div>
+    <div class="summary-card">
+        <div class="card-title">Weekday Average</div>
+        <div class="card-value">${format(weekdayCount ? weekdayTotal / weekdayCount : 0)}</div>
+    </div>
+    <div class="summary-card">
+        <div class="card-title">Weekend Average</div>
+        <div class="card-value">${format(weekendCount ? weekendTotal / weekendCount : 0)}</div>
+    </div>
+`;
+
+            // Render the chart with the sales data
+            renderChart(labels, totals, currentGraphView);
+        }
+
+        // New function to update table based on view type
+        function updateTableForView(days, dataMap, viewType) {
+            tbody.innerHTML = "";
+
+            if (viewType === 'daily') {
+                // Daily view - show each day
+                days.forEach(date => {
+                    const id = adjustDateForTimezone(date);
+                    const data = dataMap.get(id);
+
+                    const tr = document.createElement("tr");
+                    const cells = [
+                        date.toLocaleDateString("en-PH", { month: 'long', day: 'numeric' }),
+                        date.toLocaleDateString("en-PH", { weekday: 'long' }),
+                        data?.staff || "-",
+                        format(data?.totalSales, true),
+                        format(data?.cash),
+                        format(data?.gcash),
+                        format(data?.maya),
+                        format(data?.card),
+                        format(data?.grab),
+                        format(data?.expenses),
+                        format(data?.actualCashLeft)
+                    ];
+
+                    cells.forEach((text, i) => {
+                        const td = document.createElement("td");
+                        td.innerHTML = text;
+                        if (i === 3) td.classList.add("total");
+                        tr.appendChild(td);
+                    });
+                    tbody.appendChild(tr);
+                });
+            }
+            else if (viewType === 'weekly') {
+                // Weekly view - group by week
+                const weeklyData = groupDataByWeek(
+                    days.map(d => d.toLocaleDateString("en-PH", { month: 'short', day: 'numeric' })),
+                    days.map(d => {
+                        const id = adjustDateForTimezone(d);
+                        const data = dataMap.get(id);
+                        return data?.totalSales || 0;
+                    })
+                );
+
+                Object.keys(weeklyData.originalData).forEach((weekKey, index) => {
+                    const weekInfo = weeklyData.originalData[weekKey];
+                    const dateRange = weeklyData.labels[index];
+
+                    // Calculate weekly totals
+                    let weekTotals = {
+                        totalSales: weekInfo.total,
+                        cash: 0, gcash: 0, maya: 0, card: 0, grab: 0, expenses: 0, cashLeft: 0
+                    };
+
+                    // Sum up payment methods for the week
+                    weekInfo.dates.forEach(date => {
+                        const id = adjustDateForTimezone(date);
+                        const data = dataMap.get(id);
+                        if (data) {
+                            weekTotals.cash += data.cash || 0;
+                            weekTotals.gcash += data.gcash || 0;
+                            weekTotals.maya += data.maya || 0;
+                            weekTotals.card += data.card || 0;
+                            weekTotals.grab += data.grab || 0;
+                            weekTotals.expenses += data.expenses || 0;
+                            weekTotals.cashLeft += data.actualCashLeft || 0;
+                        }
+                    });
+
+                    const tr = document.createElement("tr");
+                    const cells = [
+                        dateRange,
+                        weekKey,
+                        "-", // No specific staff for weekly view
+                        format(weekTotals.totalSales, true),
+                        format(weekTotals.cash),
+                        format(weekTotals.gcash),
+                        format(weekTotals.maya),
+                        format(weekTotals.card),
+                        format(weekTotals.grab),
+                        format(weekTotals.expenses),
+                        format(weekTotals.cashLeft)
+                    ];
+
+                    cells.forEach((text, i) => {
+                        const td = document.createElement("td");
+                        td.innerHTML = text;
+                        if (i === 3) td.classList.add("total");
+                        tr.appendChild(td);
+                    });
+                    tbody.appendChild(tr);
+                });
+            }
+            else if (viewType === 'monthly') {
+                // Monthly view - group by month
+                const monthlyData = groupDataByMonth(
+                    days.map(d => d.toLocaleDateString("en-PH", { month: 'short', day: 'numeric' })),
+                    days.map(d => {
+                        const id = adjustDateForTimezone(d);
+                        const data = dataMap.get(id);
+                        return data?.totalSales || 0;
+                    })
+                );
+
+                // Group days by month
+                const monthGroups = {};
+                days.forEach(date => {
+                    const monthKey = date.toLocaleDateString("en-PH", { month: 'short' });
+                    if (!monthGroups[monthKey]) {
+                        monthGroups[monthKey] = [];
+                    }
+                    monthGroups[monthKey].push(date);
+                });
+
+                Object.keys(monthGroups).forEach(monthKey => {
+                    const monthDays = monthGroups[monthKey];
+
+                    // Calculate monthly totals
+                    let monthTotals = {
+                        totalSales: 0, cash: 0, gcash: 0, maya: 0,
+                        card: 0, grab: 0, expenses: 0, cashLeft: 0
+                    };
+
+                    monthDays.forEach(date => {
+                        const id = adjustDateForTimezone(date);
+                        const data = dataMap.get(id);
+                        if (data) {
+                            monthTotals.totalSales += data.totalSales || 0;
+                            monthTotals.cash += data.cash || 0;
+                            monthTotals.gcash += data.gcash || 0;
+                            monthTotals.maya += data.maya || 0;
+                            monthTotals.card += data.card || 0;
+                            monthTotals.grab += data.grab || 0;
+                            monthTotals.expenses += data.expenses || 0;
+                            monthTotals.cashLeft += data.actualCashLeft || 0;
+                        }
+                    });
+
+                    const tr = document.createElement("tr");
+                    const cells = [
+                        monthKey + " 2025",
+                        "-", // No specific day for monthly view
+                        "-", // No specific staff for monthly view
+                        format(monthTotals.totalSales, true),
+                        format(monthTotals.cash),
+                        format(monthTotals.gcash),
+                        format(monthTotals.maya),
+                        format(monthTotals.card),
+                        format(monthTotals.grab),
+                        format(monthTotals.expenses),
+                        format(monthTotals.cashLeft)
+                    ];
+
+                    cells.forEach((text, i) => {
+                        const td = document.createElement("td");
+                        td.innerHTML = text;
+                        if (i === 3) td.classList.add("total");
+                        tr.appendChild(td);
+                    });
+                    tbody.appendChild(tr);
+                });
+            }
+        }
+
+        function format(num, allowEmpty = false) {
+            const value = parseFloat(num);
+            if (isNaN(value)) return allowEmpty ? "-" : "₱0.00";
+            return `₱${value.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+        }
+
+        function renderChart(labels, data, viewType) {
+        const canvas = document.getElementById('salesChart');
+        const ctx = canvas.getContext('2d');
+
+        // Set canvas dimensions
+        canvas.style.display = 'block';
+        canvas.height = 300;
+        canvas.width = document.getElementById('salesChartContainer').offsetWidth - 40;
+
+        // If there's an existing chart, destroy it
+        if (myChart !== null) {
+            myChart.destroy();
+        }
+
+        // Process data according to view type
+        let processedLabels = [...labels];
+        let processedData = [...data];
+
+        if (viewType === 'weekly') {
+            // Group by weeks
+            const weeklyData = groupDataByWeek(labels, data);
+            processedLabels = weeklyData.labels;
+            processedData = weeklyData.data;
+        } else if (viewType === 'monthly') {
+            // Group by months
+            const monthlyData = groupDataByMonth(labels, data);
+            processedLabels = monthlyData.labels;
+            processedData = monthlyData.data;
+        }
+
+        // Create chart
+        myChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: processedLabels,
+                datasets: [{
+                    label: viewType === 'daily' ? 'Daily Sales' :
+                        viewType === 'weekly' ? 'Weekly Sales' : 'Monthly Sales',
+                    data: processedData,
+                    borderColor: '#2b9348',
+                    backgroundColor: 'rgba(43, 147, 72, 0.1)',
+                    tension: 0.3,
+                    fill: true,
+                    pointRadius: 4,
+                    pointBackgroundColor: '#2b9348'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function (context) {
+                                return format(context.raw);
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: value => format(value)
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Helper function to group data by week - with date range display
+    function groupDataByWeek(labels, data) {
+        const weeks = {};
+        const dateMap = {}; // To track start and end dates of each week
+
+        labels.forEach((label, index) => {
+            // Parse date from label
+            const dateParts = label.split(' ');
+            const month = getMonthNumber(dateParts[0]);
+            const day = parseInt(dateParts[1]);
+
+            // Create a date object for 2025
+            const date = new Date(2025, month, day);
+
+            // Get ISO week number
+            const weekNum = getISOWeek(date);
+            const weekKey = `Week ${weekNum}`;
+
+            if (!weeks[weekKey]) {
+                weeks[weekKey] = { total: 0, count: 0, dates: [] };
+                dateMap[weekKey] = { start: new Date(date), end: new Date(date) };
+            } else {
+                // Track earliest and latest date in this week
+                if (date < dateMap[weekKey].start) dateMap[weekKey].start = new Date(date);
+                if (date > dateMap[weekKey].end) dateMap[weekKey].end = new Date(date);
+            }
+
+            weeks[weekKey].total += data[index];
+            weeks[weekKey].count++;
+            weeks[weekKey].dates.push(date);
+        });
+
+        // Create readable labels with date ranges
+        const weekLabels = Object.keys(weeks);
+        const formattedLabels = weekLabels.map(weekKey => {
+            const start = dateMap[weekKey].start;
+            const end = dateMap[weekKey].end;
+            return `${start.toLocaleDateString("en-PH", { month: 'short', day: 'numeric' })} - ${end.toLocaleDateString("en-PH", { month: 'short', day: 'numeric' })}`;
+        });
+
+        const weekData = weekLabels.map(week => weeks[week].total);
+
+        return { labels: formattedLabels, data: weekData, originalData: weeks };
+    }
+
+    // Helper function to calculate ISO week number
+    function getISOWeek(date) {
+        const target = new Date(date.valueOf());
+
+        // ISO week date weeks start on Monday, so correct the day number
+        const dayNr = (date.getDay() + 6) % 7;
+
+        // ISO 8601 states that week 1 is the week with the first Thursday of that year
+        // Set target date to the Thursday in the target week
+        target.setDate(target.getDate() - dayNr + 3);
+
+        // Store the timestamp of target date
+        const firstThursday = target.valueOf();
+
+        // Set target to first Thursday of the year
+        // First, get the first day of the year
+        target.setMonth(0, 1);
+
+        // Not a Thursday? Correct the date to the next Thursday
+        if (target.getDay() !== 4) {
+            target.setMonth(0, 1 + ((4 - target.getDay()) + 7) % 7);
+        }
+
+        // The week number is the number of weeks between the first Thursday of the year
+        // and the Thursday in the target week
+        return 1 + Math.ceil((firstThursday - target) / 604800000); // 604800000 = 7 * 24 * 3600 * 1000
+    }
+
+    // Helper function to group data by month
+    function groupDataByMonth(labels, data) {
+        const months = {};
+
+        labels.forEach((label, index) => {
+            // Parse month from label
+            const month = label.split(' ')[0];
+
+            if (!months[month]) {
+                months[month] = { total: 0, count: 0 };
+            }
+
+            months[month].total += data[index];
+            months[month].count++;
+        });
+
+        // Convert to arrays
+        const monthLabels = Object.keys(months);
+        const monthData = monthLabels.map(month => months[month].total);
+
+        return { labels: monthLabels, data: monthData };
+    }
+
+    // Helper function to get month number from abbreviation
+    function getMonthNumber(monthAbbr) {
+        const months = {
+            'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'May': 4, 'Jun': 5,
+            'Jul': 6, 'Aug': 7, 'Sep': 8, 'Oct': 9, 'Nov': 10, 'Dec': 11
+        };
+        return months[monthAbbr];
+    }
+
+        function adjustDateForTimezone(date) {
+                // Get the date with timezone adjustment
+                const adjustedDate = new Date(Date.UTC(
+                    date.getFullYear(),
+                    date.getMonth(),
+                    date.getDate()
+                ));
+                return adjustedDate.toISOString().split('T')[0];
+            }
+
+        loadSalesData();
+
+        // Create graph type selector
+        const graphTypeDiv = document.createElement("div");
+        graphTypeDiv.className = "graph-type-selector";
+        graphTypeDiv.style.display = "flex";
+        graphTypeDiv.style.alignItems = "center";
+        graphTypeDiv.style.gap = "0.5rem";
+
+        // Add label
+        const graphLabel = document.createElement("span");
+        graphLabel.textContent = "View:";
+        graphLabel.style.fontSize = "0.9rem";
+        graphTypeDiv.appendChild(graphLabel);
+
+        // Create buttons
+        ["Daily", "Weekly", "Monthly"].forEach(type => {
+            const btn = document.createElement("button");
+            btn.innerText = type;
+            btn.className = "graph-type-btn";
+            btn.dataset.type = type.toLowerCase();
+            btn.onclick = () => changeGraphView(type.toLowerCase());
+            if (type === "Daily") btn.classList.add("active");
+            graphTypeDiv.appendChild(btn);
+        });
+
+        // Add to controls
+        controlsEl.appendChild(graphTypeDiv);
+
+        // Default view type
+        let currentGraphView = "daily";
+
+        // Function to change graph view
+        function changeGraphView(type) {
+            currentGraphView = type;
+            document.querySelectorAll('.graph-type-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.type === type);
+            });
+            filterAndRender();
+        }
+    </script>
+</body>
+
+</html>

@@ -1,4 +1,4 @@
-const APP_VERSION = "0.70"; 
+const APP_VERSION = "0.73"; 
 
 const ALLOW_PAST_CLOCKING = false;
 
@@ -71,7 +71,7 @@ const SHIFT_SCHEDULES = {
 import { db } from './firebase-setup.js';
 import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 import { getDocs, collection } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
-
+import { storage, ref as storageRef, uploadBytes, getDownloadURL } from './firebase-setup.js';
 
 if (timestamp) {
     setInterval(() => {
@@ -225,7 +225,7 @@ async function loginUser() {
     }
 }
 
-// Optimized cacheMostRecentAttendance function
+// Modify the cacheMostRecentAttendance function to handle missing networkStatus element
 async function cacheMostRecentAttendance(userCode) {
     try {
         // Only cache the most recent 7 days instead of 30
@@ -238,10 +238,14 @@ async function cacheMostRecentAttendance(userCode) {
             date.setDate(date.getDate() - 1);
         }
 
-        // Update UI to show background sync is happening
+        // Update UI to show background sync is happening - safely check if element exists
         const networkStatus = document.getElementById("networkStatus");
-        const originalText = networkStatus.textContent;
-        networkStatus.textContent = "🔄 Caching recent data...";
+        let originalText = "";
+
+        if (networkStatus) {
+            originalText = networkStatus.textContent;
+            networkStatus.textContent = "🔄 Caching recent data...";
+        }
 
         // Fetch recent attendance data
         for (const dateKey of last7Days) {
@@ -259,8 +263,11 @@ async function cacheMostRecentAttendance(userCode) {
             await new Promise(resolve => setTimeout(resolve, 50));
         }
 
-        // Restore network status
-        networkStatus.textContent = originalText;
+        // Restore network status if the element exists
+        if (networkStatus) {
+            networkStatus.textContent = originalText;
+        }
+
         console.log("✅ Cached recent attendance for offline use");
 
         // Cache older data in chunks if needed
@@ -497,6 +504,29 @@ function submitPhoto() {
     saveAttendance();
 }
 
+async function uploadSelfieToStorage(imageDataUrl, userId, dateKey, actionType) {
+    try {
+        // Convert base64 data to blob for storage
+        const response = await fetch(imageDataUrl);
+        const blob = await response.blob();
+
+        // Create a unique filename
+        const filename = `${userId}_${dateKey}_${actionType}_${Date.now()}.jpg`;
+        const fileRef = storageRef(storage, `selfies/${filename}`);
+
+        // Upload to Firebase Storage
+        await uploadBytes(fileRef, blob);
+
+        // Get the download URL
+        const downloadURL = await getDownloadURL(fileRef);
+        return downloadURL;
+    } catch (error) {
+        console.error("Error uploading selfie:", error);
+        // If upload fails, return the original data URL as fallback
+        return imageDataUrl;
+    }
+}
+
 function updateSyncStatusVisual(status, count = 0) {
     const cards = document.querySelectorAll('.panel-card .offline-badge');
 
@@ -538,6 +568,7 @@ document.getElementById("closeCameraBtn").addEventListener("click", () => {
 
 async function saveAttendance() {
     console.log("💾 Running saveAttendance...");
+    const dateKey = formatDate(viewDate);
     const key = `attendance_${currentUser}_${formatDate(viewDate)}`;
     const now = new Date();
     const time = now.toLocaleTimeString();
@@ -569,7 +600,9 @@ async function saveAttendance() {
 
         if (navigator.onLine) {
             try {
-                const dateKey = formatDate(viewDate);
+                const selfieUrl = await uploadSelfieToStorage(selfieData, currentUser, dateKey, 'clockIn');
+                existing.clockIn.selfie = selfieUrl;
+
                 const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
 
                 // Get existing data first to avoid overwriting clockOut
@@ -635,7 +668,6 @@ async function saveAttendance() {
             // If no clockIn exists locally, try to get it from Firestore
             if (navigator.onLine) {
                 try {
-                    const dateKey = formatDate(viewDate);
                     const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
                     const docSnap = await getDoc(subDocRef);
 
@@ -670,7 +702,9 @@ async function saveAttendance() {
 
         if (navigator.onLine) {
             try {
-                const dateKey = formatDate(viewDate);
+                const selfieUrl = await uploadSelfieToStorage(selfieData, currentUser, dateKey, 'clockOut');
+                existing.clockOut.selfie = selfieUrl;
+
                 const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
 
                 // We're specifically only updating the clockOut field
@@ -1405,6 +1439,19 @@ async function syncPendingData() {
                         localData.clockIn.timestamp > serverData.clockIn.timestamp)) {
                     const clockInData = { ...localData.clockIn };
                     delete clockInData.synced; // Remove sync flag before saving to Firestore
+
+                    if (clockInData.selfie && clockInData.selfie.startsWith('data:image')) {
+                        try {
+                            // Upload image to Firebase Storage and get URL
+                            clockInData.selfie = await uploadSelfieToStorage(
+                                clockInData.selfie, user, date, 'clockIn'
+                            );
+                        } catch (err) {
+                            console.error("Failed to upload clockIn image during sync:", err);
+                            // Continue with sync even if image upload fails
+                        }
+                    }
+
                     syncData.clockIn = clockInData;
                 }
             }
@@ -1416,6 +1463,19 @@ async function syncPendingData() {
                         localData.clockOut.timestamp > serverData.clockOut.timestamp)) {
                     const clockOutData = { ...localData.clockOut };
                     delete clockOutData.synced; // Remove sync flag before saving to Firestore
+
+                    if (clockOutData.selfie && clockOutData.selfie.startsWith('data:image')) {
+                        try {
+                            // Upload image to Firebase Storage and get URL
+                            clockOutData.selfie = await uploadSelfieToStorage(
+                                clockOutData.selfie, user, date, 'clockOut'
+                            );
+                        } catch (err) {
+                            console.error("Failed to upload clockOut image during sync:", err);
+                            // Continue with sync even if image upload fails
+                        }
+                    }
+
                     syncData.clockOut = clockOutData;
                 }
             }
@@ -2652,7 +2712,6 @@ function updatePayrollUI(payrollData) {
     });
 }
 
-
 async function populatePayrollPeriods() {
     const periodSelect = document.getElementById('payrollPeriod');
     if (!periodSelect) return;
@@ -2661,85 +2720,115 @@ async function populatePayrollPeriods() {
     periodSelect.innerHTML = '';
 
     if (!navigator.onLine || !currentUser) {
-        // Fallback periods if offline - using correct cutoff dates
-        addPeriodOption(periodSelect, "March 29 - April 12, 2025");
-        addPeriodOption(periodSelect, "March 13 - March 28, 2025");
-        addPeriodOption(periodSelect, "February 27 - March 12, 2025");
+        // Fallback periods if offline
+        addPeriodOption(periodSelect, "May 29 - Jun 12, 2025");
+        addPeriodOption(periodSelect, "May 13 - May 28, 2025");
+        addPeriodOption(periodSelect, "Apr 29 - May 12, 2025");
+        addPeriodOption(periodSelect, "Apr 13 - Apr 27, 2025");
         return;
     }
 
-    // Get all dates with attendance data
-    const attendanceDates = await getAttendanceDatesFromFirestore();
-    if (!attendanceDates || attendanceDates.length === 0) {
-        // No data, add default periods
-        addPeriodOption(periodSelect, "March 29 - April 12, 2025");
-        return;
-    }
-
-    // Sort dates
-    const sortedDates = attendanceDates.sort((a, b) => new Date(b) - new Date(a));
-
-    // Define payroll cutoff dates - always 3 days before 15th and end of month
+    // Define the current date and a range of 6 months back
     const now = new Date();
-    const year = now.getFullYear();
-    const periods = [];
+    const sixMonthsAgo = new Date(now);
+    sixMonthsAgo.setMonth(now.getMonth() - 6);
 
-    // Generate payroll periods for past 6 months
-    for (let i = 0; i < 6; i++) {
-        // Calculate reference month for this iteration (current month - i)
-        const refMonth = now.getMonth() - i;
-        const refYear = refMonth < 0 ? year - 1 : year;
-        const adjustedMonth = refMonth < 0 ? refMonth + 12 : refMonth;
+    // Generate base periods
+    const periods = generatePayrollPeriods(sixMonthsAgo, now);
 
-        // First period: 13th of previous month to 27th of this month (or corresponding dates)
-        const secondHalfEnd = new Date(refYear, adjustedMonth, 0); // Last day of previous month
-        const daysInPrevMonth = secondHalfEnd.getDate();
+    try {
+        // Get all dates with attendance data
+        const attendanceDates = await getAttendanceDatesFromFirestore();
 
-        // For end date: 12th of current month (3 days before 15th)
-        const firstHalfEnd = new Date(refYear, adjustedMonth, 12);
-        // For start date: 28th/29th of previous month (depends on days in month, 3 days before end)
-        const firstHalfStart = new Date(refYear, adjustedMonth - 1, daysInPrevMonth - 2);
+        if (attendanceDates && attendanceDates.length > 0) {
+            // Filter periods that have attendance data
+            const sortedDates = attendanceDates.sort((a, b) => new Date(b) - new Date(a));
 
-        const periodText1 = formatPeriod(firstHalfStart, firstHalfEnd);
+            const periodsWithData = periods.filter(period => {
+                return sortedDates.some(dateStr => {
+                    const date = new Date(dateStr);
+                    return date >= period.start && date <= period.end;
+                });
+            });
 
-        // Second period: 13th to 27th/28th/29th/30th of same month (depends on days in month)
-        const daysInMonth = new Date(refYear, adjustedMonth + 1, 0).getDate();
-        const secondHalfStart = new Date(refYear, adjustedMonth, 13);
-        const secondHalfEndDay = daysInMonth - 2; // 3 days before end of month
-        const secondHalfEnd2 = new Date(refYear, adjustedMonth, secondHalfEndDay);
-
-        const periodText2 = formatPeriod(secondHalfStart, secondHalfEnd2);
-
-        // Check if any attendance date falls within these periods
-        const hasDataPeriod1 = sortedDates.some(dateStr => {
-            const date = new Date(dateStr);
-            return date >= firstHalfStart && date <= firstHalfEnd;
-        });
-
-        const hasDataPeriod2 = sortedDates.some(dateStr => {
-            const date = new Date(dateStr);
-            return date >= secondHalfStart && date <= secondHalfEnd2;
-        });
-
-        if (hasDataPeriod1) {
-            periods.push(periodText1);
+            // Add periods to select
+            if (periodsWithData.length > 0) {
+                periodsWithData.forEach(period => {
+                    addPeriodOption(periodSelect, period.label);
+                });
+            } else {
+                // No periods with data, add default periods
+                periods.slice(0, 4).forEach(period => {
+                    addPeriodOption(periodSelect, period.label);
+                });
+            }
+        } else {
+            // No attendance data, add default periods
+            periods.slice(0, 4).forEach(period => {
+                addPeriodOption(periodSelect, period.label);
+            });
         }
-
-        if (hasDataPeriod2) {
-            periods.push(periodText2);
-        }
-    }
-
-    // Add periods to select
-    if (periods.length === 0) {
-        // No periods with data, add current period
-        addPeriodOption(periodSelect, "March 29 - April 12, 2025");
-    } else {
-        periods.forEach(period => addPeriodOption(periodSelect, period));
+    } catch (error) {
+        console.error("Error fetching attendance dates:", error);
+        // Fallback to default periods on error
+        periods.slice(0, 4).forEach(period => {
+            addPeriodOption(periodSelect, period.label);
+        });
     }
 }
 
-// Helper function to format period text nicely
+function generatePayrollPeriods(startDate, endDate) {
+    const periods = [];
+    const normalize = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    startDate = normalize(startDate);
+    endDate = normalize(endDate);
+
+    let current = new Date(startDate);
+    while (current <= endDate) {
+        const year = current.getFullYear();
+        const month = current.getMonth();
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+        // First cutoff: always the 12th of the month (3 days before 15th)
+        const firstCutoffDay = 12;
+
+        // Second cutoff: 3 days before end of month
+        const secondCutoffDay = daysInMonth - 3;
+
+        // Late month period: (13th to 3 days before end of month)
+        const lateStart = new Date(year, month, 13);
+        const lateEnd = new Date(year, month, secondCutoffDay);
+
+        // Early month period: (3 days before end of prev month + 1) to 12th
+        const earlyStart = new Date(year, month, secondCutoffDay + 1);
+        const earlyEnd = new Date(year, month + 1, firstCutoffDay);
+
+        if (lateStart <= endDate) {
+            const lateLabel = formatPeriod(lateStart, lateEnd);
+            periods.push({
+                start: lateStart,
+                end: lateEnd,
+                label: lateLabel
+            });
+        }
+
+        if (earlyStart <= endDate) {
+            const earlyLabel = formatPeriod(earlyStart, earlyEnd);
+            periods.push({
+                start: earlyStart,
+                end: earlyEnd,
+                label: earlyLabel
+            });
+        }
+
+        // Move to next month
+        current = new Date(year, month + 1, 1);
+    }
+
+    // Sort periods with most recent first
+    return periods.sort((a, b) => b.end - a.end);
+}
+
 function formatPeriod(startDate, endDate) {
     const startMonth = startDate.toLocaleString('default', { month: 'long' });
     const startDay = startDate.getDate();

@@ -227,6 +227,9 @@
 
         <label for="recordDate">Record Date</label>
         <input type="text" id="recordDate" readonly />
+
+        <input type="file" id="csvUploader" accept=".csv" style="display:none" />
+        <button id="uploadCSVBtn" style="margin-top: 1rem;">Upload CSV</button>
         
         <label for="staffName">Staff Name</label>
         <select id="staffName" onchange="toggleOtherField()">
@@ -308,7 +311,7 @@
       z-index: 9999;
     "></div>
 
-
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
     <script type="module">
         import { db } from './js/firebase-setup.js';
         import {
@@ -354,9 +357,69 @@
                 console.error("Error saving record to Firestore:", e);
             }
         };
+
+        // import Papa from "https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js";
+
+        document.getElementById("uploadCSVBtn").addEventListener("click", () => {
+            document.getElementById("csvUploader").click();
+        });
+
+        document.getElementById("csvUploader").addEventListener("change", (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                complete: async function (results) {
+                    for (const row of results.data) {
+                        try {
+                            const clean = (val) => parseFloat(String(val || "0").replace(/[^\d.-]/g, "")) || 0;
+
+                            const cash = clean(row["Cash"]);
+                            const gcash = clean(row["GCash"]);
+                            const maya = clean(row["Maya"]);
+                            const bpi = clean(row["BPI"]);
+                            const ub = clean(row["Unionbank"]);
+                            const cardExtra = clean(row["Card Payment"]);
+                            const card = bpi + ub + cardExtra;
+                            const expenses = clean(row["Expenses (₱)"]);
+                            const staff = row["Reported by"]?.trim() || "";
+                            const dateDisplay = row["Record Date & Time"]?.trim() || "";
+                            const dateFromCSV = new Date(row["Record Date & Time"]);
+                            const docId = getLocalISODateString(dateFromCSV);
+                            const totalSales = cash + gcash + maya + card + ub + bpi;
+                            const actualCashLeft = cash - expenses;
+
+                            const payload = {
+                                dateDisplay,
+                                staff,
+                                cash, gcash, maya, card,
+                                expenses,
+                                totalSales,
+                                actualCashLeft,
+                                timestamp: serverTimestamp()
+                            };
+
+                            await setDoc(doc(db, "sales", docId), payload);
+                        } catch (err) {
+                            console.error("❌ Error parsing row:", row, err);
+                        }
+                    }
+
+                    showToast("✅ CSV upload complete!");
+                }
+            });
+        });
+
     </script>
 
     <script>
+        function getLocalISODateString(date) {
+                const tzOffset = date.getTimezoneOffset() * 60000;
+                return new Date(date - tzOffset).toISOString().slice(0, 10);
+            }
+
         document.addEventListener("DOMContentLoaded", () => {
                 const now = new Date();
                 document.getElementById("recordDate").value = formatDate(now);
