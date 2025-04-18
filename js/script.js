@@ -1,4 +1,4 @@
-const APP_VERSION = "0.73"; 
+const APP_VERSION = "0.74"; 
 
 const ALLOW_PAST_CLOCKING = false;
 
