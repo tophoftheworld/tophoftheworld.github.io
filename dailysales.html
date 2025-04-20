@@ -244,11 +244,9 @@
             <h2 style="margin: 0; font-size: 1.75rem;">Daily Sales Report</h2>
         </div>
 
-        <label for="recordDate">Record Date</label>
-        <input type="text" id="recordDate" readonly />
 
-        <input type="file" id="csvUploader" accept=".csv" style="display:none" />
-        <button id="uploadCSVBtn" style="margin-top: 1rem;">Upload CSV</button>
+        <!-- <input type="file" id="csvUploader" accept=".csv" style="display:none" />
+        <button id="uploadCSVBtn" style="margin-top: 1rem;">Upload CSV</button> -->
         
         <label for="staffName">Staff Name</label>
         <select id="staffName" onchange="toggleOtherField()">
@@ -262,6 +260,9 @@
             <option value="Other">Other</option>
         </select>
         <input type="text" id="otherStaffName" placeholder="Enter name" style="display: none; margin-top: 0.5rem;" />
+
+        <label for="recordDate">Record Date</label>
+        <input type="text" id="recordDate" readonly />
         
         <!-- Payments -->
         <label for="totalDisplay">Total Sales</label>
