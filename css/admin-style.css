@@ -797,3 +797,45 @@ button:hover {
 .special-holiday {
     color: #6c757d;
 }
+
+.back-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background-color: #28a745;
+    color: white;
+    border: none;
+    padding: 0.6rem 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.2s;
+}
+
+.back-btn:hover {
+    background-color: #3a5a8c;
+}
+
+#employee-details-table {
+    width: 100%;
+}
+
+#employee-details-table .data-table {
+    width: 100%;
+}
+
+.delete-entry-btn {
+    background-color: #e74c3c;
+    color: white;
+    border: none;
+    padding: 0.3rem 0.6rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: background-color 0.2s;
+}
+
+.delete-entry-btn:hover {
+    background-color: #c0392b;
+}

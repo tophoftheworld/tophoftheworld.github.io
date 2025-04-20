@@ -90,7 +90,7 @@
             font-size: 1.25rem;
             font-weight: 600;
             text-align: center;
-            color: #2b9348;
+            color: #137a2f;
         }
 
         .input-wrapper {
@@ -139,24 +139,24 @@
         }
 
         #totalDisplay {
+            background-color: #dbffe6;
+            font-size: 1.5rem;
+            font-weight: 800;
+            text-align: center;
+            color: #137a2f;
+            border: 2px solid #b6e8c1;
+            border-radius: 10px;
+            margin-top: 0rem;
+            margin-bottom: 0rem;
+        }
+
+        #cashLeft {
             background-color: #eaffea;
             font-size: 1.5rem;
             font-weight: 800;
             text-align: center;
             color: #208f34;
             border: 2px solid #b6e8c1;
-            border-radius: 10px;
-            margin-top: 0rem;
-            margin-bottom: 1rem;
-        }
-
-        #cashLeft {
-            background-color: #dbffe6;
-            font-size: 1.5rem;
-            font-weight: 800;
-            text-align: center;
-            color: #137a2f;
-            border: 2px solid #a9e6c0;
             border-radius: 10px;
         }
 
@@ -213,7 +213,26 @@
             box-sizing: border-box;
         }
 
+        .split-row {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 1rem;
+        }
 
+        .split-column {
+        flex: 1;
+        min-width: 0;
+        }
+
+        #walkInSales {
+            background-color: #eaffea;
+            font-size: 1.5rem;  /* Match the cash left size */
+            font-weight: 800;   /* Match the cash left weight */
+            text-align: center;
+            color: #208f34;
+            border: 2px solid #b6e8c1;
+            border-radius: 10px;
+        }
     </style>
 </head>
 
@@ -247,6 +266,18 @@
         <!-- Payments -->
         <label for="totalDisplay">Total Sales</label>
         <input type="text" id="totalDisplay" readonly value="₱0.00" />
+        
+        <!-- Add this new divided row section -->
+        <div class="split-row">
+            <div class="split-column">
+                <label for="walkInSales">Walk-In Sales</label>
+                <input type="text" id="walkInSales" readonly value="₱0.00" />
+            </div>
+            <div class="split-column">
+                <label for="cashLeft">Cash Left</label>
+                <input type="text" id="cashLeft" readonly value="₱0.00" />
+            </div>
+        </div>
 
         <div class="group-card">
             <label for="cash">Cash Payment</label>
@@ -287,9 +318,6 @@
             <input type="text" inputmode="decimal" pattern="[0-9,]*" id="expenses" placeholder="0" step="any" />
         </div>
         </div>
-        
-        <label for="cashLeft">Actual Cash Left</label>
-        <input type="text" id="cashLeft" readonly value="₱0.00" />
 
         <button onclick="submitSales()">Submit</button>
     </div>
@@ -480,28 +508,35 @@
                 });
 
                 function updateTotal() {
-                    const paymentInputs = ['cash', 'card', 'gcash', 'maya', 'grab'];
-                    const total = paymentInputs.reduce((sum, id) => {
-                        const raw = document.getElementById(id).dataset.raw || '0';
-                        const val = parseFloat(raw) || 0;
-                        return sum + val;
-                    }, 0);
+                        const paymentInputs = ['cash', 'card', 'gcash', 'maya', 'grab'];
+                        const total = paymentInputs.reduce((sum, id) => {
+                            const raw = document.getElementById(id).dataset.raw || '0';
+                            const val = parseFloat(raw) || 0;
+                            return sum + val;
+                        }, 0);
 
-                    const cashRaw = document.getElementById('cash').dataset.raw || '0';
-                    const cashVal = parseFloat(cashRaw) || 0;
+                        const cashRaw = document.getElementById('cash').dataset.raw || '0';
+                        const cashVal = parseFloat(cashRaw) || 0;
 
-                    const expensesRaw = document.getElementById('expenses').dataset.raw || '0';
-                    const expensesVal = parseFloat(expensesRaw) || 0;
+                        const expensesRaw = document.getElementById('expenses').dataset.raw || '0';
+                        const expensesVal = parseFloat(expensesRaw) || 0;
 
-                    const cashLeft = cashVal - expensesVal;
+                        const cashLeft = cashVal - expensesVal;
 
-                    document.getElementById("totalDisplay").value =
-                        `₱${total.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+                        // Calculate walk-in sales (total minus grab)
+                        const grabRaw = document.getElementById('grab').dataset.raw || '0';
+                        const grabVal = parseFloat(grabRaw) || 0;
+                        const walkInSales = total - grabVal;
 
-                    document.getElementById("cashLeft").value =
-                        `₱${cashLeft.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
-                }
+                        document.getElementById("totalDisplay").value =
+                            `₱${total.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
 
+                        document.getElementById("walkInSales").value =
+                            `₱${walkInSales.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+
+                        document.getElementById("cashLeft").value =
+                            `₱${cashLeft.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+                    }
 
 
             function toggleOtherField() {
@@ -536,7 +571,6 @@
                     toast.style.transform = "translate(-50%, -40%)";
                 }, 3500);
             }
-
     </script>
 </body>
 

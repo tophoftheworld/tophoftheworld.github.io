@@ -207,6 +207,8 @@ async function handleUtakImport(e) {
     }
 }
 
+let currentEmployeeView = null; // null for all employees view, employeeId for single employee view
+
 function convertTo12Hour(timeStr) {
     if (!timeStr) return null;
     const [hourStr, minStr] = timeStr.split(':');
@@ -852,6 +854,7 @@ async function loadData(selectedPeriodId = null) {
 // Filter data based on selected period and branch
 // Update the filterData() function around line 212:
 // Filter data based on selected period and branch
+// Replace the existing filterData function with this updated version
 function filterData() {
     const period = periodSelect.value;
     const branch = branchSelect.value;
@@ -859,6 +862,15 @@ function filterData() {
 
     // First make a deep copy of original attendance data to avoid modifying it
     filteredData = JSON.parse(JSON.stringify(attendanceData));
+
+    // If we're in single employee view, filter to just that employee
+    if (currentEmployeeView) {
+        const singleEmployeeData = {};
+        if (filteredData[currentEmployeeView]) {
+            singleEmployeeData[currentEmployeeView] = filteredData[currentEmployeeView];
+        }
+        filteredData = singleEmployeeData;
+    }
 
     // Apply period filters by recalculating key metrics
     Object.keys(filteredData).forEach(employeeId => {
@@ -1063,7 +1075,8 @@ function renderEmployeeTable() {
                 <span class="date-readable">${lastClockIn}</span>
             </td>
             <td>
-                <button class="action-btn view-details-btn">Quick View</button>
+                <button class="action-btn view-details-btn">View</button>
+                <button class="action-btn open-btn">Open</button>
                 <button class="action-btn edit-employee-btn">Edit</button>
             </td>
         `;
@@ -1124,6 +1137,44 @@ function renderEmployeeTable() {
             openEditEmployeeModal(employeeId);
         });
     });
+
+    // Add this after the other button event listeners in renderEmployeeTable function
+    document.querySelectorAll('.open-btn').forEach(btn => {
+        btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            const row = this.closest('.expandable-row');
+            const employeeId = row.dataset.employeeId;
+
+            // Set the current view to this employee
+            currentEmployeeView = employeeId;
+
+            // Update the UI to show we're in single employee view
+            updateViewMode();
+
+            // Refilter data to show only this employee
+            filterData();
+        });
+    });
+
+    // Add this at the end of the renderEmployeeTable function, just before the closing brace
+    // After setting up all the event listeners
+
+    // If we're in single employee view, automatically load and expand details
+    if (currentEmployeeView) {
+        const detailRow = document.querySelector(`.detail-row[data-employee-id="${currentEmployeeView}"]`);
+        const row = document.querySelector(`.expandable-row[data-employee-id="${currentEmployeeView}"]`);
+
+        if (detailRow && row) {
+            // Load details if not loaded
+            if (detailRow.dataset.loaded === 'false') {
+                loadEmployeeDetails(currentEmployeeView, detailRow);
+            }
+
+            // Expand the row
+            row.classList.add('expanded');
+            detailRow.classList.add('expanded');
+        }
+    }
 }
 
 function getHolidayPayMultiplier(dateStr) {
@@ -1393,19 +1444,19 @@ async function loadEmployeeDetails(employeeId, detailRow) {
             <td>${date.shift || 'N/A'}</td>
             <td class="time-cell">
                 ${date.timeInPhoto ?
-                    `<img src="${date.timeInPhoto}" class="thumb" data-photo="${date.timeInPhoto}" alt="Clock-in photo">` :
-                    `<div style="height: 8px;"></div>`}
+                            `<img src="${date.timeInPhoto}" class="thumb" data-photo="${date.timeInPhoto}" alt="Clock-in photo">` :
+                            `<div style="height: 8px;"></div>`}
                 ${date.timeIn ? formatTimeWithoutSeconds(date.timeIn) : 'N/A'}
             </td>
             <td class="time-cell">
                 ${date.timeOutPhoto ?
-                    `<img src="${date.timeOutPhoto}" class="thumb" data-photo="${date.timeOutPhoto}" alt="Clock-out photo">` :
-                    `<div style="height: 8px;"></div>`}
+                            `<img src="${date.timeOutPhoto}" class="thumb" data-photo="${date.timeOutPhoto}" alt="Clock-out photo">` :
+                            `<div style="height: 8px;"></div>`}
                 ${date.timeOut ? formatTimeWithoutSeconds(date.timeOut) : 'N/A'}
             </td>
             <td>${HOLIDAYS_2025[date.date] ?
-                    `₱${(filteredData[employeeId].baseRate * (HOLIDAYS_2025[date.date].type === "regular" ? 2.0 : 1.3)).toFixed(2)}` :
-                    `₱${filteredData[employeeId].baseRate.toFixed(2)}`}
+                            `₱${(filteredData[employeeId].baseRate * (HOLIDAYS_2025[date.date].type === "regular" ? 2.0 : 1.3)).toFixed(2)}` :
+                            `₱${filteredData[employeeId].baseRate.toFixed(2)}`}
             </td>
             <td>${date.timeIn && date.timeOut ?
                             (calculateDeductions(date.timeIn, date.timeOut, date.scheduledIn, date.scheduledOut) > 0 ?
@@ -1413,7 +1464,10 @@ async function loadEmployeeDetails(employeeId, detailRow) {
                                 '₱0.00') :
                             'N/A'}
             </td>
-        `;
+            <td>
+                <button class="action-btn delete-entry-btn" data-date="${date.date}" data-employee="${employeeId}">Delete</button>
+            </td>
+            `;
 
             detailTableBody.appendChild(detailRowItem);
         });
@@ -1431,6 +1485,15 @@ async function loadEmployeeDetails(employeeId, detailRow) {
                 e.stopPropagation();
                 const photoUrl = this.dataset.photo;
                 openPhotoModal(photoUrl);
+            });
+        });
+
+        detailRow.querySelectorAll('.delete-entry-btn').forEach(btn => {
+            btn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                const dateStr = this.dataset.date;
+                const employeeId = this.dataset.employee;
+                deleteAttendanceEntry(employeeId, dateStr);
             });
         });
 
@@ -1986,10 +2049,360 @@ function generatePayrollPeriods(startDate, endDate) {
     return periods.sort((a, b) => b.start - a.start);
 }
 
+function updateViewMode() {
+    const container = document.querySelector('.container');
+
+    // Clear any existing back button
+    const existingBackBtn = document.getElementById('backToAllBtn');
+    if (existingBackBtn) {
+        existingBackBtn.remove();
+    }
+
+    // Get the table container and employee table elements
+    const tableContainer = document.querySelector('.data-table-container');
+    const employeeTable = document.getElementById('employeeTable');
+
+    if (currentEmployeeView) {
+        // Single employee view - restructure the page
+        const employeeName = employees[currentEmployeeView] || 'Employee';
+        const employee = filteredData[currentEmployeeView];
+
+        // 1. Update page title
+        document.querySelector('.app-title').textContent = `${employeeName} - Attendance`;
+
+        // 2. Create back button
+        const backBtn = document.createElement('button');
+        backBtn.id = 'backToAllBtn';
+        backBtn.className = 'back-btn';
+        backBtn.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" 
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M19 12H5M12 19l-7-7 7-7"/>
+            </svg>
+            Back to All Employees
+        `;
+
+        // Add event listener to back button
+        backBtn.addEventListener('click', function () {
+            // Remove the single employee view
+            if (document.getElementById('employee-details-table')) {
+                document.getElementById('employee-details-table').remove();
+            }
+
+            // Show the original table again
+            employeeTable.style.display = 'table';
+
+            currentEmployeeView = null;
+            updateViewMode();
+            filterData();
+        });
+
+        // Add the back button before the table
+        container.insertBefore(backBtn, tableContainer);
+
+        // 3. Update summary cards with employee-specific info
+        if (employee) {
+            // First card: Total Employees → Days worked
+            const totalEmpCard = document.getElementById('totalEmployees');
+            const totalEmpLabel = totalEmpCard.closest('.summary-card').querySelector('.card-title');
+            const totalEmpSubtitle = totalEmpCard.closest('.summary-card').querySelector('.card-subtitle');
+
+            totalEmpLabel.textContent = "Total Employees";
+            totalEmpCard.textContent = "18"; // Keep total employees count
+            totalEmpSubtitle.textContent = "Days worked";
+
+            // Second card: Active Employees → This employee's days worked
+            const activeEmpCard = document.getElementById('activeEmployees');
+            const activeEmpLabel = activeEmpCard.closest('.summary-card').querySelector('.card-title');
+            const activeEmpSubtitle = activeEmpCard.closest('.summary-card').querySelector('.card-subtitle');
+
+            activeEmpLabel.textContent = "Active Employees";
+            activeEmpCard.textContent = employee.daysWorked;
+            activeEmpSubtitle.textContent = "This period";
+
+            // Third card: Keep holidays info
+            // No changes needed
+
+            // Fourth card: Update to show this employee's pay
+            const totalPayCard = document.getElementById('totalPayroll');
+            totalPayCard.textContent = `₱${calculateTotalPay(0, employee.baseRate || 0, employee.dates).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        }
+
+        // 4. Hide the main employee table
+        employeeTable.style.display = 'none';
+
+        // 5. Load the employee details and make them the main table
+        // First check if we already have a details table
+        let detailsTable = document.getElementById('employee-details-table');
+        if (!detailsTable) {
+            // Create a container for the employee details
+            const detailsContainer = document.createElement('div');
+            detailsContainer.id = 'employee-details-table';
+
+            // Add loading indicator
+            detailsContainer.innerHTML = '<div class="spinner"></div>';
+            tableContainer.appendChild(detailsContainer);
+
+            // Load the employee details
+            loadEmployeeDetailsAsMainTable(currentEmployeeView, detailsContainer);
+        }
+    } else {
+        // All employees view - restore original view
+        document.querySelector('.app-title').textContent = 'Admin Dashboard';
+
+        // Show the original table
+        employeeTable.style.display = 'table';
+
+        // Remove any employee details table
+        const detailsTable = document.getElementById('employee-details-table');
+        if (detailsTable) {
+            detailsTable.remove();
+        }
+
+        // Reset the card titles and subtitles to original values
+        const totalEmpCard = document.getElementById('totalEmployees');
+        const totalEmpLabel = totalEmpCard.closest('.summary-card').querySelector('.card-title');
+        const totalEmpSubtitle = totalEmpCard.closest('.summary-card').querySelector('.card-subtitle');
+
+        totalEmpLabel.textContent = "Total Employees";
+        totalEmpSubtitle.textContent = "All staff";
+
+        const activeEmpCard = document.getElementById('activeEmployees');
+        const activeEmpLabel = activeEmpCard.closest('.summary-card').querySelector('.card-title');
+        const activeEmpSubtitle = activeEmpCard.closest('.summary-card').querySelector('.card-subtitle');
+
+        activeEmpLabel.textContent = "Active Employees";
+        activeEmpSubtitle.textContent = "For this period";
+
+        // Update summary cards with overall data
+        updateSummaryCards();
+    }
+}
+
+async function loadEmployeeDetailsAsMainTable(employeeId, container) {
+    try {
+        const period = periodSelect.value;
+        const branch = branchSelect.value;
+        const { startDate, endDate } = getPeriodDates(period);
+        const formattedStartDate = formatDate(startDate);
+        const formattedEndDate = formatDate(endDate);
+
+        const dates = [];
+        const attendanceRef = collection(db, "attendance", employeeId, "dates");
+
+        // Only fetch dates within the period range
+        const querySnapshot = await getDocs(query(
+            attendanceRef.withConverter(null),
+            where("__name__", ">=", formattedStartDate),
+            where("__name__", "<=", formattedEndDate)
+        ));
+
+        // Process each date document
+        querySnapshot.forEach(doc => {
+            const dateData = doc.data();
+            const dateStr = doc.id;
+
+            // Add branch filter condition
+            const branchName = dateData.clockIn?.branch || "N/A";
+            const branchMatches = branch === 'all' || branchName === getBranchName(branch);
+
+            if (branchMatches) {
+                // Now we load the full data including photos
+                dates.push({
+                    date: dateStr,
+                    branch: branchName,
+                    shift: dateData.clockIn?.shift || "N/A",
+                    scheduledIn: SHIFT_SCHEDULES[dateData.clockIn?.shift || "Opening"].timeIn,
+                    scheduledOut: SHIFT_SCHEDULES[dateData.clockIn?.shift || "Opening"].timeOut,
+                    timeIn: dateData.clockIn?.time || null,
+                    timeOut: dateData.clockOut?.time || null,
+                    timeInPhoto: dateData.clockIn?.selfie || null,
+                    timeOutPhoto: dateData.clockOut?.selfie || null
+                });
+            }
+        });
+
+        // Create the employee details table
+        const detailTable = document.createElement('table');
+        detailTable.className = 'data-table';
+        detailTable.id = 'employeeDetailTable';
+
+        // Add table header with delete column
+        detailTable.innerHTML = `
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Branch</th>
+                    <th>Shift</th>
+                    <th>Time In</th>
+                    <th>Time Out</th>
+                    <th>Holiday Pay</th>
+                    <th>Deductions</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        `;
+
+        const detailTableBody = detailTable.querySelector('tbody');
+
+        // Sort dates in descending order
+        const sortedDates = [...dates].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+        // Add rows for each date
+        sortedDates.forEach(date => {
+            const dateObj = new Date(date.date);
+            const formattedDate = formatDate(dateObj);
+            const dayOfWeek = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
+
+            const detailRowItem = document.createElement('tr');
+            detailRowItem.dataset.date = date.date;
+            detailRowItem.innerHTML = `
+                <td class="date-cell">
+                    <span class="date-day">${formattedDate}</span>
+                    <span class="date-dow">${dayOfWeek}</span>
+                    ${HOLIDAYS_2025[date.date] ?
+                    `<span class="holiday-badge ${HOLIDAYS_2025[date.date].type}">${HOLIDAYS_2025[date.date].name}</span>` :
+                    ''}
+                </td>
+                <td>${date.branch || 'N/A'}</td>
+                <td>${date.shift || 'N/A'}</td>
+                <td class="time-cell">
+                    ${date.timeInPhoto ?
+                    `<img src="${date.timeInPhoto}" class="thumb" data-photo="${date.timeInPhoto}" alt="Clock-in photo">` :
+                    `<div style="height: 8px;"></div>`}
+                    ${date.timeIn ? formatTimeWithoutSeconds(date.timeIn) : 'N/A'}
+                </td>
+                <td class="time-cell">
+                    ${date.timeOutPhoto ?
+                    `<img src="${date.timeOutPhoto}" class="thumb" data-photo="${date.timeOutPhoto}" alt="Clock-out photo">` :
+                    `<div style="height: 8px;"></div>`}
+                    ${date.timeOut ? formatTimeWithoutSeconds(date.timeOut) : 'N/A'}
+                </td>
+                <td>${HOLIDAYS_2025[date.date] ?
+                    `₱${(filteredData[employeeId].baseRate * (HOLIDAYS_2025[date.date].type === "regular" ? 2.0 : 1.3)).toFixed(2)}` :
+                    `₱${filteredData[employeeId].baseRate.toFixed(2)}`}
+                </td>
+                <td>${date.timeIn && date.timeOut ?
+                    (calculateDeductions(date.timeIn, date.timeOut, date.scheduledIn, date.scheduledOut) > 0 ?
+                        `₱${((calculateDeductions(date.timeIn, date.timeOut, date.scheduledIn, date.scheduledOut) * (filteredData[employeeId].baseRate / 8))).toFixed(2)}` :
+                        '₱0.00') :
+                    'N/A'}
+                </td>
+                <td>
+                    <button class="action-btn delete-entry-btn" data-date="${date.date}" data-employee="${employeeId}">Delete</button>
+                </td>
+            `;
+
+            detailTableBody.appendChild(detailRowItem);
+        });
+
+        // Replace loading indicator with the table
+        container.innerHTML = '';
+        container.appendChild(detailTable);
+
+        // Add event listeners for photo thumbnails
+        container.querySelectorAll('.thumb').forEach(thumb => {
+            thumb.addEventListener('click', function (e) {
+                e.stopPropagation();
+                const photoUrl = this.dataset.photo;
+                openPhotoModal(photoUrl);
+            });
+        });
+
+        // Add event listeners for delete buttons
+        container.querySelectorAll('.delete-entry-btn').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const dateStr = this.dataset.date;
+                const employeeId = this.dataset.employee;
+                deleteAttendanceEntry(employeeId, dateStr);
+            });
+        });
+
+    } catch (error) {
+        console.error("Error loading employee details:", error);
+        container.innerHTML = '<div class="error-message">Failed to load details. Please try again.</div>';
+    }
+}
+
+// 2. Now add a function to handle the deletion of an attendance entry
+async function deleteAttendanceEntry(employeeId, dateStr) {
+    if (!employeeId || !dateStr) {
+        console.error("Missing required parameters for deletion");
+        return;
+    }
+
+    // Show a confirmation dialog
+    if (!confirm(`Are you sure you want to delete the attendance record for ${dateStr}?`)) {
+        return; // User cancelled
+    }
+
+    showLoading("Deleting attendance entry...");
+
+    try {
+        // Reference to the document to delete
+        const entryRef = doc(db, "attendance", employeeId, "dates", dateStr);
+        
+        // Delete from Firestore
+        await deleteDoc(entryRef);
+        
+        console.log(`Deleted attendance entry for ${employeeId} on ${dateStr}`);
+        
+        // Remove from local data
+        if (attendanceData[employeeId]) {
+            attendanceData[employeeId].dates = attendanceData[employeeId].dates.filter(date => date.date !== dateStr);
+            
+            // Recalculate metrics
+            let daysWorkedCount = 0;
+            let totalLateHours = 0;
+            
+            attendanceData[employeeId].dates.forEach(date => {
+                if (date.timeIn && date.timeOut) {
+                    daysWorkedCount++;
+                }
+                
+                if (date.scheduledIn && date.timeIn) {
+                    const lateMinutes = compareTimes(date.timeIn, date.scheduledIn);
+                    if (lateMinutes > 0) totalLateHours += lateMinutes / 60;
+                }
+            });
+            
+            attendanceData[employeeId].daysWorked = daysWorkedCount;
+            attendanceData[employeeId].lateHours = totalLateHours;
+        }
+        
+        // Update cache
+        const periodId = periodSelect.value;
+        const branchId = branchSelect.value;
+        const cacheKey = getCacheKey(periodId, branchId);
+        saveToCache(cacheKey, attendanceData);
+        
+        // Reload the view to reflect changes
+        if (currentEmployeeView) {
+            // If we're in the single employee view, reload just that view
+            const container = document.getElementById('employee-details-table');
+            if (container) {
+                loadEmployeeDetailsAsMainTable(employeeId, container);
+            }
+            
+            // Also update the summary cards
+            updateViewMode();
+        } else {
+            // Otherwise reload all data
+            filterData();
+        }
+        
+        alert("Attendance entry deleted successfully");
+    } catch (error) {
+        console.error("Error deleting attendance entry:", error);
+        alert("Failed to delete attendance entry: " + error.message);
+    } finally {
+        hideLoading();
+    }
+}
 
 
-// Add this event listener after the existing ones in renderEmployeeTable
-// At the end of renderEmployeeTable function (around line 280)
 
 // Add event listeners for base rate inputs
 document.querySelectorAll('.base-rate-input').forEach(input => {
