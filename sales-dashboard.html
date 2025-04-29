@@ -202,6 +202,7 @@
                         <th>Day</th>
                         <th>Staff</th>
                         <th>Total Sales</th>
+                        <th>Walk-In Sales</th>
                         <th>Cash</th>
                         <th>GCash</th>
                         <th>Maya</th>
@@ -239,6 +240,18 @@
         // Add date range shortcuts
         const dateRangeEl = document.getElementById("dateRange");
         const controlsEl = document.querySelector(".controls");
+
+        // Walk-in vs Total toggle
+        const toggleBtn = document.createElement("button");
+        toggleBtn.innerText = "Showing: Walk-In + Grab";
+        toggleBtn.className = "graph-type-btn active";
+        toggleBtn.onclick = () => {
+            showGrabInChart = !showGrabInChart;
+            toggleBtn.innerText = `Showing: ${showGrabInChart ? "Walk-In + Grab" : "Walk-In Only"}`;
+            filterAndRender();
+        };
+        controlsEl.appendChild(toggleBtn);
+
 
         // Create shortcuts container
         const shortcutsDiv = document.createElement("div");
@@ -317,20 +330,29 @@
                 const data = dataMap.get(id);
                 const isWeekend = date.getDay() === 0 || date.getDay() === 6;
 
-                if (data?.totalSales) {
-                    monthTotal += data.totalSales;
+                if (data) {
+                    // Calculate Total Sales properly
+                    const totalSales = calculateTotalSales(data);
+                    const walkInSales = calculateWalkInSales(data);
+
+                    monthTotal += totalSales;
                     if (isWeekend) {
-                        weekendTotal += data.totalSales;
+                        weekendTotal += totalSales;
                         weekendCount++;
                     } else {
-                        weekdayTotal += data.totalSales;
+                        weekdayTotal += totalSales;
                         weekdayCount++;
                     }
-                }
 
-                // Add data for chart
-                labels.unshift(date.toLocaleDateString("en-PH", { month: 'short', day: 'numeric' }));
-                totals.unshift(data?.totalSales || 0);
+                    // Add data for chart
+                    labels.unshift(date.toLocaleDateString("en-PH", { month: 'short', day: 'numeric' }));
+                    // Use either walk-in only or total sales based on toggle
+                    totals.unshift(showGrabInChart ? totalSales : walkInSales);
+                } else {
+                    // No data for this date
+                    labels.unshift(date.toLocaleDateString("en-PH", { month: 'short', day: 'numeric' }));
+                    totals.unshift(0);
+                }
             });
 
             // Update table based on current view
@@ -354,67 +376,80 @@
             // Render the chart with the sales data
             renderChart(labels, totals, currentGraphView);
         }
-
+        
         // New function to update table based on view type
         function updateTableForView(days, dataMap, viewType) {
             tbody.innerHTML = "";
 
+            // In your updateTableForView function, for the daily view:
+            // In your daily view section of updateTableForView:
             if (viewType === 'daily') {
-                // Daily view - show each day
                 days.forEach(date => {
                     const id = adjustDateForTimezone(date);
                     const data = dataMap.get(id);
 
-                    const tr = document.createElement("tr");
-                    const cells = [
-                        date.toLocaleDateString("en-PH", { month: 'long', day: 'numeric' }),
-                        date.toLocaleDateString("en-PH", { weekday: 'long' }),
-                        data?.staff || "-",
-                        format(data?.totalSales, true),
-                        format(data?.cash),
-                        format(data?.gcash),
-                        format(data?.maya),
-                        format(data?.card),
-                        format(data?.grab),
-                        format(data?.expenses),
-                        format(data?.actualCashLeft)
-                    ];
+                    if (data) {
+                        // Calculate Walk-In Sales and Total Sales
+                        const walkInSales = calculateWalkInSales(data);
+                        const totalSales = calculateTotalSales(data);
 
-                    cells.forEach((text, i) => {
-                        const td = document.createElement("td");
-                        td.innerHTML = text;
-                        if (i === 3) td.classList.add("total");
-                        tr.appendChild(td);
-                    });
-                    tbody.appendChild(tr);
+                        const tr = document.createElement("tr");
+                        const cells = [
+                            date.toLocaleDateString("en-PH", { month: 'long', day: 'numeric' }),
+                            date.toLocaleDateString("en-PH", { weekday: 'long' }),
+                            data?.staff || "-",
+                            format(totalSales, true),        // Total Sales
+                            format(walkInSales, true),       // Walk-In Sales
+                            format(data?.cash),
+                            format(data?.gcash),
+                            format(data?.maya),
+                            format(data?.card),
+                            format(data?.grab),
+                            format(data?.expenses),
+                            format(data?.actualCashLeft)
+                        ];
+
+                        cells.forEach((text, i) => {
+                            const td = document.createElement("td");
+                            td.innerHTML = text;
+                            if (i === 3) td.classList.add("total");
+                            tr.appendChild(td);
+                        });
+                        tbody.appendChild(tr);
+                    }
                 });
             }
             else if (viewType === 'weekly') {
-                // Weekly view - group by week
-                const weeklyData = groupDataByWeek(
+                // Group days by week
+                const weekGroups = groupDataByWeek(
                     days.map(d => d.toLocaleDateString("en-PH", { month: 'short', day: 'numeric' })),
                     days.map(d => {
                         const id = adjustDateForTimezone(d);
                         const data = dataMap.get(id);
-                        return data?.totalSales || 0;
+                        return data ? calculateTotalSales(data) : 0;
                     })
                 );
 
-                Object.keys(weeklyData.originalData).forEach((weekKey, index) => {
-                    const weekInfo = weeklyData.originalData[weekKey];
-                    const dateRange = weeklyData.labels[index];
+                Object.keys(weekGroups.originalData).forEach((weekKey, index) => {
+                    const weekInfo = weekGroups.originalData[weekKey];
+                    const dateRange = weekGroups.labels[index];
 
                     // Calculate weekly totals
                     let weekTotals = {
-                        totalSales: weekInfo.total,
+                        walkInSales: 0,
+                        totalSales: 0,
                         cash: 0, gcash: 0, maya: 0, card: 0, grab: 0, expenses: 0, cashLeft: 0
                     };
 
-                    // Sum up payment methods for the week
                     weekInfo.dates.forEach(date => {
                         const id = adjustDateForTimezone(date);
                         const data = dataMap.get(id);
                         if (data) {
+                            // Add to weekly totals using our calculation functions
+                            weekTotals.walkInSales += calculateWalkInSales(data);
+                            weekTotals.totalSales += calculateTotalSales(data);
+
+                            // Sum other payment methods
                             weekTotals.cash += data.cash || 0;
                             weekTotals.gcash += data.gcash || 0;
                             weekTotals.maya += data.maya || 0;
@@ -431,6 +466,7 @@
                         weekKey,
                         "-", // No specific staff for weekly view
                         format(weekTotals.totalSales, true),
+                        format(weekTotals.walkInSales, true),
                         format(weekTotals.cash),
                         format(weekTotals.gcash),
                         format(weekTotals.maya),
@@ -449,17 +485,9 @@
                     tbody.appendChild(tr);
                 });
             }
-            else if (viewType === 'monthly') {
-                // Monthly view - group by month
-                const monthlyData = groupDataByMonth(
-                    days.map(d => d.toLocaleDateString("en-PH", { month: 'short', day: 'numeric' })),
-                    days.map(d => {
-                        const id = adjustDateForTimezone(d);
-                        const data = dataMap.get(id);
-                        return data?.totalSales || 0;
-                    })
-                );
 
+            // Updated monthly view in updateTableForView function
+            else if (viewType === 'monthly') {
                 // Group days by month
                 const monthGroups = {};
                 days.forEach(date => {
@@ -475,15 +503,20 @@
 
                     // Calculate monthly totals
                     let monthTotals = {
-                        totalSales: 0, cash: 0, gcash: 0, maya: 0,
-                        card: 0, grab: 0, expenses: 0, cashLeft: 0
+                        walkInSales: 0,
+                        totalSales: 0,
+                        cash: 0, gcash: 0, maya: 0, card: 0, grab: 0, expenses: 0, cashLeft: 0
                     };
 
                     monthDays.forEach(date => {
                         const id = adjustDateForTimezone(date);
                         const data = dataMap.get(id);
                         if (data) {
-                            monthTotals.totalSales += data.totalSales || 0;
+                            // Add to monthly totals using our calculation functions
+                            monthTotals.walkInSales += calculateWalkInSales(data);
+                            monthTotals.totalSales += calculateTotalSales(data);
+
+                            // Sum other payment methods
                             monthTotals.cash += data.cash || 0;
                             monthTotals.gcash += data.gcash || 0;
                             monthTotals.maya += data.maya || 0;
@@ -500,6 +533,7 @@
                         "-", // No specific day for monthly view
                         "-", // No specific staff for monthly view
                         format(monthTotals.totalSales, true),
+                        format(monthTotals.walkInSales, true),
                         format(monthTotals.cash),
                         format(monthTotals.gcash),
                         format(monthTotals.maya),
@@ -517,6 +551,34 @@
                     });
                     tbody.appendChild(tr);
                 });
+            }
+        }
+
+        function calculateWalkInSales(data) {
+            // Check if there's grab data
+            const hasGrabData = 'grab' in data && data.grab !== undefined;
+
+            if (hasGrabData) {
+                // For entries with grab data: Walk-In = sum of payment methods
+                return (data.cash || 0) + (data.gcash || 0) + (data.maya || 0) + (data.card || 0);
+            } else {
+                // For entries without grab data: use the saved totalSales
+                return data.totalSales || 0;
+            }
+        }
+
+        // Function to calculate Total Sales
+        function calculateTotalSales(data) {
+            // Check if there's grab data
+            const hasGrabData = 'grab' in data && data.grab !== undefined;
+
+            if (hasGrabData) {
+                // For entries with grab data: Total = Walk-In + Grab
+                const walkInSales = calculateWalkInSales(data);
+                return walkInSales + (data.grab || 0);
+            } else {
+                // For entries without grab data: use the saved totalSales
+                return data.totalSales || 0;
             }
         }
 
@@ -744,6 +806,7 @@
 
         // Default view type
         let currentGraphView = "daily";
+        let showGrabInChart = true;
 
         // Function to change graph view
         function changeGraphView(type) {

@@ -253,6 +253,9 @@
 
         <!-- <input type="file" id="csvUploader" accept=".csv" style="display:none" />
         <button id="uploadCSVBtn" style="margin-top: 1rem;">Upload CSV</button> -->
+
+        <input type="file" id="grabCSVUploader" accept=".csv" style="display:none" />
+        <button id="uploadGrabCSVBtn" style="margin-top: 1rem;">Upload Grab CSV</button>
         
         <div class="split-row">
             <div class="split-column">
@@ -367,11 +370,13 @@
     <script type="module">
         import { db } from './js/firebase-setup.js';
         import {
-            collection,
+                collection,
             setDoc,
             doc,
+            getDoc, // ✅ add this
             serverTimestamp
         } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+
 
         window.submitSales = async function () {
             const selectedDate = flatpickrInstance.selectedDates[0];
@@ -383,27 +388,32 @@
                 ? document.getElementById("otherStaffName").value
                 : document.getElementById("staffName").value;
 
+            // Get the raw values from inputs
+            const cash = parseFloat(document.getElementById("cash").dataset.raw || 0);
+            const card = parseFloat(document.getElementById("card").dataset.raw || 0);
+            const gcash = parseFloat(document.getElementById("gcash").dataset.raw || 0);
+            const maya = parseFloat(document.getElementById("maya").dataset.raw || 0);
+            const grab = parseFloat(document.getElementById("grab").dataset.raw || 0);
+            const expenses = parseFloat(document.getElementById("expenses").dataset.raw || 0);
+
             const record = {
                 dateDisplay: recordDateRaw,
                 staff,
-                cash: parseFloat(document.getElementById("cash").dataset.raw || 0),
-                card: parseFloat(document.getElementById("card").dataset.raw || 0),
-                gcash: parseFloat(document.getElementById("gcash").dataset.raw || 0),
-                maya: parseFloat(document.getElementById("maya").dataset.raw || 0),
-                grab: parseFloat(document.getElementById("grab").dataset.raw || 0),
-                expenses: parseFloat(document.getElementById("expenses").dataset.raw || 0),
-                totalSales: 0,
-                actualCashLeft: 0,
+                cash,
+                card,
+                gcash,
+                maya,
+                grab,
+                expenses,
+                walkInSales: cash + card + gcash + maya, // NEW: Store walk-in sales (excluding grab)
+                totalSales: cash + card + gcash + maya + grab, // Total including grab
+                actualCashLeft: cash - expenses,
                 timestamp: serverTimestamp()
             };
 
-            record.totalSales = record.cash + record.card + record.gcash + record.maya + record.grab;
-            record.actualCashLeft = record.cash - record.expenses;
-
             try {
                 await setDoc(doc(db, "sales", recordDate), record);
-
-                showToast(`✅ Sales submitted!`);    
+                showToast(`✅ Sales submitted!`);
             } catch (e) {
                 showToast("❌ Failed to submit. Please try again.");
                 console.error("Error saving record to Firestore:", e);
@@ -463,6 +473,68 @@
         //         }
         //     });
         // });
+
+        document.getElementById("uploadGrabCSVBtn").addEventListener("click", () => {
+                document.getElementById("grabCSVUploader").click();
+            });
+            
+            document.getElementById("grabCSVUploader").addEventListener("change", (e) => {
+                    console.log("Grab CSV file selected:", e.target.files[0]);
+            });
+
+
+        document.getElementById("grabCSVUploader").addEventListener("change", (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                complete: async function (results) {
+                    for (const row of results.data) {
+                        try {
+                            
+                            // console.log("Parsed row:", row); 
+
+                            // Adjust the column name based on your CSV
+                            const rawDate = row["Date"] || row["date"];
+                            const rawGrabNet = row["Net Sales (₱)"];
+                            if (!rawDate || !rawGrabNet) continue;
+
+                            const [day, month, year] = rawDate.split("/");
+                            const dateObj = new Date(`${year}-${month}-${day}`);
+
+                            const docId = getLocalISODateString(dateObj); // e.g. "2025-04-19"
+
+                            const grabNet = parseFloat(String(rawGrabNet).replace(/[^\d.-]/g, '')) || 0;
+                            
+                            console.log(`[${docId}] Grab: ₱${grabNet}`);
+
+                            const salesRef = doc(db, "sales", docId);
+                            const existing = await getDoc(salesRef);
+                            const prevData = existing.exists() ? existing.data() : {};
+
+                            const updatedRecord = {
+                                ...prevData,
+                                grab: grabNet,
+                                totalSales: (prevData.totalSales || 0) - (prevData.grab || 0) + grabNet,
+                                walkInSales: (prevData.cash || 0) + (prevData.card || 0) + (prevData.gcash || 0) + (prevData.maya || 0),
+                                timestamp: serverTimestamp()
+                            };
+
+                            console.log("Updating Firestore with:", updatedRecord);
+
+
+                            await setDoc(salesRef, updatedRecord, { merge: true });
+                        } catch (err) {
+                            console.error("❌ Error processing row:", row, err);
+                        }
+                    }
+
+                    showToast("✅ Grab CSV upload complete!");
+                }
+            });
+        });
 
     </script>
 
