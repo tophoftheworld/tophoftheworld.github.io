@@ -1,5 +1,4 @@
-// Menu data structure
-const menuData = {
+export const menuData = {
     categories: [
         {
             id: "matcha-lattes",
@@ -44,14 +43,26 @@ const menuData = {
             description: "Hand-Whisked Ceremonial Matcha",
             price: 180,
             // tags: ["classic"],
-            type: "Iced"
+            type: "Iced",
+            customizations: {
+                size: true,      // Can customize size
+                serving: true,   // Can customize serving
+                sweetness: false, // Can customize sweetness
+                milk: false      // Cannot customize milk
+            }
         },
         {
             categoryId: "matcha-lite",
             name: "<span class=\"text-span-2\">matchanese</span> coconut",
             description: "Hand-whisked Ceremonial Matcha over Coconut Juice",
             price: 190,
-            type: "Iced"
+            type: "Iced",
+            customizations: {
+                size: true,      // Can customize size
+                serving: true,   // Can customize serving
+                sweetness: false, // Can customize sweetness
+                milk: false      // Cannot customize milk
+            }
         },
         {
             categoryId: "specials",
@@ -59,7 +70,13 @@ const menuData = {
             description: "Coconut Juice Topped with matcha Cream and Matcha Powder",
             price: 270,
             // tags: ["best-seller"],
-            type: "Iced"
+            type: "Iced",
+            customizations: {
+                size: true,      // Can customize size
+                serving: true,   // Can customize serving
+                sweetness: false, // Can customize sweetness
+                milk: false      // Cannot customize milk
+            }
         },
         {
             categoryId: "specials",

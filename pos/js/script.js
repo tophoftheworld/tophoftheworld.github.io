@@ -1,3 +1,5 @@
+import { menuData } from './menu-data.js';
+import { queueSync, syncWithFirebase, loadFromFirebase } from './firebase-sync.js';
 
 // Customization options
 const customizationOptions = {
@@ -21,6 +23,11 @@ const customizationOptions = {
     'oat': 50  // Additional charge for oat milk
   }
 };
+
+let customerName = '';
+
+let selectedDate = new Date();
+let currentDate = new Date();
 
 function initializeMenu(container) {
   // Create menu categories
@@ -209,28 +216,39 @@ function updateOrderDisplay() {
     orderItemName.className = 'order-item-name';
     orderItemName.textContent = item.name.replace(/<[^>]*>/g, ''); // Remove HTML tags
 
+    orderItemName.style.cursor = 'pointer';
+    orderItemName.addEventListener('click', () => editOrderItem(index));
+
     // Add customization text
     if (item.customizations) {
       const customText = document.createElement('div');
+      customText.className = 'edit-custm-text';
       customText.style.fontSize = '12px';
       customText.style.fontWeight = '300';
       customText.style.color = '#666';
-      // Create individual elements for customizations
-      const customSpan = document.createElement('span');
-      customSpan.textContent = `${item.customizations.size} | ${item.customizations.serving} | `;
+      customText.style.cursor = 'pointer';
 
-      // Create special span for sweetness percentage
-      const sweetnessSpan = document.createElement('span');
-      sweetnessSpan.style.fontFamily = 'Montserrat, sans-serif';
-      sweetnessSpan.style.fontWeight = '700';
-      sweetnessSpan.textContent = item.customizations.sweetness;
+      // Only add customizations that exist
+      const customDisplay = [];
 
-      const milkSpan = document.createElement('span');
-      milkSpan.textContent = ` | ${item.customizations.milk}`;
+      if (item.customizations.size) customDisplay.push(item.customizations.size);
+      if (item.customizations.serving) customDisplay.push(item.customizations.serving);
+      if (item.customizations.sweetness) {
+        const sweetnessSpan = document.createElement('span');
+        sweetnessSpan.style.fontFamily = 'Montserrat, sans-serif';
+        sweetnessSpan.style.fontWeight = '700';
+        sweetnessSpan.textContent = item.customizations.sweetness;
+        customDisplay.push(sweetnessSpan.outerHTML);
+      }
+      if (item.customizations.milk) customDisplay.push(item.customizations.milk);
 
-      customText.appendChild(customSpan);
-      customText.appendChild(sweetnessSpan);
-      customText.appendChild(milkSpan);
+      customText.innerHTML = customDisplay.join(' | ');
+
+      // Add click handler for editing customization
+      customText.addEventListener('click', (e) => {
+        e.stopPropagation();
+        editOrderItem(index);
+      });
 
       orderItemName.appendChild(customText);
     }
@@ -313,68 +331,184 @@ document.querySelector('.menu-header').addEventListener('click', () => {
 
 function displayOrderHistory() {
   const ordersContent = document.getElementById('ordersContent');
-  ordersContent.innerHTML = '';
+  const orderGrid = ordersContent.querySelector('.orders-grid') || document.createElement('div');
 
-  const pendingOrders = orderHistory.filter(order => order.status === 'pending').reverse();
-  const completedOrders = orderHistory.filter(order => order.status === 'completed').reverse();
-
-  if (orderHistory.length === 0) {
-    const emptyMessage = document.createElement('div');
-    emptyMessage.className = 'empty-order-message';
-    emptyMessage.textContent = 'No orders yet';
-    emptyMessage.style.margin = '80px auto';
-    ordersContent.appendChild(emptyMessage);
-    return;
+  if (!orderGrid.parentNode) {
+    orderGrid.className = 'orders-grid';
+    ordersContent.appendChild(orderGrid);
   }
 
-  // Pending Orders Section
-  if (pendingOrders.length > 0) {
-    const pendingSection = document.createElement('div');
-    pendingSection.className = 'orders-section';
-    
-    const pendingLabel = document.createElement('div');
-    pendingLabel.className = 'orders-section-label';
-    pendingLabel.textContent = 'PENDING ORDERS';
-    pendingSection.appendChild(pendingLabel);
-    
-    const pendingCardsRow = document.createElement('div');
-    pendingCardsRow.className = 'order-cards-row';
-    
-    pendingOrders.forEach(order => {
-      const orderCard = createOrderCard(order, false);
-      pendingCardsRow.appendChild(orderCard);
-    });
-    
-    pendingSection.appendChild(pendingCardsRow);
-    ordersContent.appendChild(pendingSection);
+  orderGrid.innerHTML = '';  // Clear only the grid
+
+  const today = new Date();
+  const isToday = selectedDate.toDateString() === today.toDateString();
+
+  // Filter orders by selected date
+  const selectedDateOrders = orderHistory.filter(order => {
+    const orderDate = new Date(order.timestamp);
+    return orderDate.toDateString() === selectedDate.toDateString();
+  });
+
+  if (isToday) {
+    const pendingOrders = selectedDateOrders.filter(order => order.status === 'pending').reverse();
+    const completedOrders = selectedDateOrders.filter(order => order.status === 'completed').reverse();
+    const voidedOrders = selectedDateOrders.filter(order => order.status === 'voided').reverse(); // Add voided orders
+
+    if (selectedDateOrders.length === 0) {
+      const emptyMessage = document.createElement('div');
+      emptyMessage.className = 'empty-order-message';
+      emptyMessage.textContent = 'No orders yet';
+      emptyMessage.style.margin = '80px auto';
+      orderGrid.appendChild(emptyMessage);
+      return;
+    }
+
+    // Pending Orders Section
+    if (pendingOrders.length > 0) {
+      const pendingSection = document.createElement('div');
+      pendingSection.className = 'orders-section';
+
+      const pendingLabel = document.createElement('div');
+      pendingLabel.className = 'orders-section-label';
+      pendingLabel.textContent = 'PENDING ORDERS';
+      pendingSection.appendChild(pendingLabel);
+
+      const pendingCardsRow = document.createElement('div');
+      pendingCardsRow.className = 'order-cards-row';
+
+      pendingOrders.forEach(order => {
+        const orderCard = createOrderCard(order, false);
+        pendingCardsRow.appendChild(orderCard);
+      });
+
+      pendingSection.appendChild(pendingCardsRow);
+      orderGrid.appendChild(pendingSection);
+    }
+
+    // Completed Orders Section
+    if (completedOrders.length > 0) {
+      const completedSection = document.createElement('div');
+      completedSection.className = 'orders-section';
+
+      const completedLabel = document.createElement('div');
+      completedLabel.className = 'orders-section-label';
+      completedLabel.textContent = 'COMPLETED ORDERS';
+      completedSection.appendChild(completedLabel);
+
+      const completedCardsRow = document.createElement('div');
+      completedCardsRow.className = 'order-cards-row';
+
+      completedOrders.forEach(order => {
+        const orderCard = createOrderCard(order, true);
+        completedCardsRow.appendChild(orderCard);
+      });
+
+      completedSection.appendChild(completedCardsRow);
+      orderGrid.appendChild(completedSection);
+    }
+
+    // Voided Orders Section
+    if (voidedOrders.length > 0) {
+      const voidedSection = document.createElement('div');
+      voidedSection.className = 'orders-section';
+
+      const voidedLabel = document.createElement('div');
+      voidedLabel.className = 'orders-section-label';
+      voidedLabel.textContent = 'VOIDED ORDERS';
+      voidedSection.appendChild(voidedLabel);
+
+      const voidedCardsRow = document.createElement('div');
+      voidedCardsRow.className = 'order-cards-row';
+
+      voidedOrders.forEach(order => {
+        const orderCard = createOrderCard(order, false, true); // Pass true for voided
+        voidedCardsRow.appendChild(orderCard);
+      });
+
+      voidedSection.appendChild(voidedCardsRow);
+      orderGrid.appendChild(voidedSection);
+    }
+  } else {
+    const completedOrders = selectedDateOrders.filter(order => order.status === 'completed').reverse();
+    const voidedOrders = selectedDateOrders.filter(order => order.status === 'voided').reverse();
+
+    if (selectedDateOrders.length === 0) {
+      const emptyMessage = document.createElement('div');
+      emptyMessage.className = 'empty-order-message';
+      emptyMessage.textContent = 'No orders for this date';
+      emptyMessage.style.margin = '80px auto';
+      orderGrid.appendChild(emptyMessage);
+      return;
+    }
+
+    if (completedOrders.length > 0) {
+      const completedSection = document.createElement('div');
+      completedSection.className = 'orders-section';
+
+      const completedLabel = document.createElement('div');
+      completedLabel.className = 'orders-section-label';
+      completedLabel.textContent = 'COMPLETED ORDERS';
+      completedSection.appendChild(completedLabel);
+
+      const completedCardsRow = document.createElement('div');
+      completedCardsRow.className = 'order-cards-row';
+
+      completedOrders.forEach(order => {
+        const orderCard = createOrderCard(order, true);
+        completedCardsRow.appendChild(orderCard);
+      });
+
+      completedSection.appendChild(completedCardsRow);
+      orderGrid.appendChild(completedSection);
+    }
+    if (voidedOrders.length > 0) {
+      const voidedSection = document.createElement('div');
+      voidedSection.className = 'orders-section';
+
+      const voidedLabel = document.createElement('div');
+      voidedLabel.className = 'orders-section-label';
+      voidedLabel.textContent = 'VOIDED ORDERS';
+      voidedSection.appendChild(voidedLabel);
+
+      const voidedCardsRow = document.createElement('div');
+      voidedCardsRow.className = 'order-cards-row';
+
+      voidedOrders.forEach(order => {
+        const orderCard = createOrderCard(order, false, true); // Pass true for voided
+        voidedCardsRow.appendChild(orderCard);
+      });
+
+      voidedSection.appendChild(voidedCardsRow);
+      orderGrid.appendChild(voidedSection);
+    }
   }
 
-  // Completed Orders Section
-  if (completedOrders.length > 0) {
-    const completedSection = document.createElement('div');
-    completedSection.className = 'orders-section';
-    
-    const completedLabel = document.createElement('div');
-    completedLabel.className = 'orders-section-label';
-    completedLabel.textContent = 'COMPLETED ORDERS';
-    completedSection.appendChild(completedLabel);
-    
-    const completedCardsRow = document.createElement('div');
-    completedCardsRow.className = 'order-cards-row';
-    
-    completedOrders.forEach(order => {
-      const orderCard = createOrderCard(order, true);
-      completedCardsRow.appendChild(orderCard);
+
+  updateTotalSalesDisplay();
+}
+
+function calculateTotalSales(date) {
+    const selectedDateOrders = orderHistory.filter(order => {
+        const orderDate = new Date(order.timestamp);
+        return orderDate.toDateString() === date.toDateString() && 
+               (order.status === 'pending' || order.status === 'completed'); // Exclude voided
     });
     
-    completedSection.appendChild(completedCardsRow);
-    ordersContent.appendChild(completedSection);
+    return selectedDateOrders.reduce((total, order) => total + order.total, 0);
+}
+
+
+function updateTotalSalesDisplay() {
+  const totalSales = calculateTotalSales(selectedDate);
+  const salesAmount = document.querySelector('.sales-amount');
+  if (salesAmount) {
+    salesAmount.textContent = `₱${totalSales.toFixed(2)}`;
   }
 }
 
-function createOrderCard(order, isCompleted) {
+function createOrderCard(order, isCompleted, isVoided = false) {
   const orderCard = document.createElement('div');
-  orderCard.className = 'order-card' + (isCompleted ? ' completed' : '');
+  orderCard.className = 'order-card' + (isCompleted ? ' completed' : '') + (isVoided ? ' voided' : '');
 
   const orderHeader = document.createElement('div');
   orderHeader.className = 'order-card-header';
@@ -385,10 +519,11 @@ function createOrderCard(order, isCompleted) {
   const orderId = document.createElement('div');
   orderId.className = 'order-id';
   orderId.textContent = `ORDER-${order.id}`;
+  orderId.style.color = isVoided ? '#ff4444' : '#1d8a00';
 
   const customerName = document.createElement('div');
   customerName.className = 'customer-name';
-  customerName.textContent = '[Name]';
+  customerName.textContent = order.customerName || '';
 
   orderHeaderTop.appendChild(orderId);
   orderHeaderTop.appendChild(customerName);
@@ -451,20 +586,20 @@ function createOrderCard(order, isCompleted) {
       const customizations = document.createElement('div');
       customizations.className = 'item-customizations';
 
-      const customSpan = document.createElement('span');
-      customSpan.textContent = `${item.customizations.size} | ${item.customizations.serving} | `;
+      const customDisplay = [];
 
-      const sweetnessSpan = document.createElement('span');
-      sweetnessSpan.style.fontFamily = 'Montserrat, sans-serif';
-      sweetnessSpan.style.fontWeight = '700';
-      sweetnessSpan.textContent = item.customizations.sweetness;
+      if (item.customizations.size) customDisplay.push(item.customizations.size);
+      if (item.customizations.serving) customDisplay.push(item.customizations.serving);
+      if (item.customizations.sweetness) {
+        const sweetnessSpan = document.createElement('span');
+        sweetnessSpan.style.fontFamily = 'Montserrat, sans-serif';
+        sweetnessSpan.style.fontWeight = '700';
+        sweetnessSpan.textContent = item.customizations.sweetness;
+        customDisplay.push(sweetnessSpan.outerHTML);
+      }
+      if (item.customizations.milk) customDisplay.push(item.customizations.milk);
 
-      const milkSpan = document.createElement('span');
-      milkSpan.textContent = ` | ${item.customizations.milk}`;
-
-      customizations.appendChild(customSpan);
-      customizations.appendChild(sweetnessSpan);
-      customizations.appendChild(milkSpan);
+      customizations.innerHTML = customDisplay.join(' | ');
       itemDiv.appendChild(customizations);
     }
 
@@ -474,8 +609,9 @@ function createOrderCard(order, isCompleted) {
   orderCard.appendChild(orderItemsList);
   orderCard.appendChild(orderMetaBottom);
 
+  // Replace the button logic section (starting after orderCard.appendChild(orderMetaBottom);)
   // Action buttons for pending orders
-  if (!isCompleted) {
+  if (!isCompleted && !isVoided) {
     const orderButtons = document.createElement('div');
     orderButtons.className = 'order-buttons';
 
@@ -500,45 +636,62 @@ function createOrderCard(order, isCompleted) {
     orderCard.appendChild(orderButtons);
   }
 
-  // Action buttons for completed orders
-  if (isCompleted) {
+  // Action buttons for completed orders (not voided)
+  if (isCompleted && !isVoided) {
+    const today = new Date();
+    const isToday = selectedDate.toDateString() === today.toDateString();
+
     const orderButtons = document.createElement('div');
     orderButtons.className = 'order-buttons';
 
-    const returnBtn = document.createElement('button');
-    returnBtn.className = 'order-action-btn order-return-btn';
-    returnBtn.innerHTML = '<img src="images/return-icon.png" class="btn-icon" alt="Return">RETURN';
-    returnBtn.addEventListener('click', () => returnToPending(order.id));
+    // Only show RETURN button if viewing today's date
+    if (isToday) {
+      const returnBtn = document.createElement('button');
+      returnBtn.className = 'order-action-btn order-return-btn';
+      returnBtn.innerHTML = '<img src="images/return-icon.png" class="btn-icon" alt="Return">RETURN';
+      returnBtn.addEventListener('click', () => returnToPending(order.id));
+      orderButtons.appendChild(returnBtn);
+    }
 
     const voidBtn = document.createElement('button');
     voidBtn.className = 'order-action-btn order-void-btn';
     voidBtn.innerHTML = '<img src="images/cancel-icon.png" class="btn-icon" alt="Void">VOID';
     voidBtn.addEventListener('click', () => voidOrder(order.id));
-
-    orderButtons.appendChild(returnBtn);
     orderButtons.appendChild(voidBtn);
+
     orderCard.appendChild(orderButtons);
+  }
+
+  // If voided, show "VOIDED" text instead of buttons
+  if (isVoided) {
+    const voidedText = document.createElement('div');
+    voidedText.className = 'voided-text';
+    voidedText.textContent = 'VOIDED';
+    orderCard.appendChild(voidedText);
   }
 
   return orderCard;
 }
 
+// Find and replace the editOrder function:
 function editOrder(orderId) {
-  // Find the order
   const order = orderHistory.find(o => o.id === orderId);
   if (!order) return;
 
-  // Load order items into current order
   currentOrder = order.items.map(item => ({ ...item }));
+  customerName = order.customerName || '';
 
-  // Remove from order history
   const orderIndex = orderHistory.findIndex(o => o.id === orderId);
   if (orderIndex > -1) {
     orderHistory.splice(orderIndex, 1);
     localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+    
+    // Mark as deleted in Firebase if it has a firebaseId
+    if (order.firebaseId) {
+      queueSync('update', orderId, { ...order, status: 'deleted' });
+    }
   }
 
-  // Switch to menu view
   const menuContainer = document.getElementById('menu-container');
   const orderPanel = document.getElementById('order-panel');
   const ordersContainer = document.getElementById('orders-container');
@@ -550,6 +703,7 @@ function editOrder(orderId) {
   menuHeader.innerHTML = 'MATCHA BAR <span class="light">MENU</span>';
 
   updateOrderDisplay();
+  updateOrderHeader();
 }
 
 function returnToPending(orderId) {
@@ -561,20 +715,46 @@ function returnToPending(orderId) {
   }
 }
 
-function voidOrder(orderId) {
+// Replace existing cancelOrder function:
+function cancelOrder(orderId) {
+  showConfirmationModal(
+    'cancel',
+    orderId,
+    'CANCEL ORDER',
+    'Are you sure you want to cancel this order?'
+  );
+}
+
+// Add new confirmed cancel function:
+function cancelOrderConfirmed(orderId) {
   const orderIndex = orderHistory.findIndex(order => order.id === orderId);
   if (orderIndex > -1) {
-    orderHistory[orderIndex].status = 'voided';  // Mark as voided
+    orderHistory.splice(orderIndex, 1);
     localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
     displayOrderHistory();
   }
 }
 
-function cancelOrder(orderId) {
+// Replace existing voidOrder function:
+function voidOrder(orderId) {
+  showConfirmationModal(
+    'void',
+    orderId,
+    'VOID ORDER',
+    'Are you sure you want to void this order?'
+  );
+}
+
+// Add new confirmed void function:
+function voidOrderConfirmed(orderId) {
   const orderIndex = orderHistory.findIndex(order => order.id === orderId);
   if (orderIndex > -1) {
-    orderHistory.splice(orderIndex, 1);
+    orderHistory[orderIndex].status = 'voided';
     localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+
+    // Queue for Firebase sync
+    queueSync('update', orderId, orderHistory[orderIndex]);
+
     displayOrderHistory();
   }
 }
@@ -584,8 +764,82 @@ function completeOrder(orderId) {
   if (orderIndex > -1) {
     orderHistory[orderIndex].status = 'completed';
     localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+
+    // Queue for Firebase sync
+    queueSync('update', orderId, orderHistory[orderIndex]);
+
     displayOrderHistory();
   }
+}
+
+function showConfirmationModal(action, orderId, title, message) {
+  const existingModal = document.querySelector('.modal-overlay');
+  if (existingModal) {
+    existingModal.remove();
+  }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+
+  const header = document.createElement('h2');
+  header.className = 'modal-header';
+  header.textContent = title;
+  modal.appendChild(header);
+
+  modal.style.cssText = `
+  width: 300px;
+  padding: 20px;
+  border-radius: 8px;
+  background: #fff;
+  font-family: 'Montserrat', sans-serif;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+`;
+
+  header.style.cssText = `
+  border-bottom: 0px;
+`;
+
+
+  const messageText = document.createElement('p');
+  messageText.style.cssText = `
+    font-family: 'Montserrat', sans-serif;
+    font-size: 14px;
+    text-align: center;
+    margin: 20px 0;
+    color: #333;
+  `;
+  messageText.textContent = message;
+  modal.appendChild(messageText);
+
+  const footer = document.createElement('div');
+  footer.className = 'modal-footer';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'checkout-button modal-cancel';
+  cancelBtn.textContent = 'NO';
+  cancelBtn.addEventListener('click', () => overlay.remove());
+
+  const confirmBtn = document.createElement('button');
+  confirmBtn.className = 'checkout-button modal-add';
+  confirmBtn.textContent = 'YES';
+  confirmBtn.addEventListener('click', () => {
+    if (action === 'cancel') {
+      cancelOrderConfirmed(orderId);
+    } else if (action === 'void') {
+      voidOrderConfirmed(orderId);
+    }
+    overlay.remove();
+  });
+
+  footer.appendChild(cancelBtn);
+  footer.appendChild(confirmBtn);
+  modal.appendChild(footer);
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
 }
 
 // // Initialize checkout button
@@ -602,7 +856,8 @@ function completeOrder(orderId) {
 // Add these functions to your JavaScript file
 
 
-function showCustomizationModal(item) {
+// Replace the existing showCustomizationModal function:
+function showCustomizationModal(item, editMode = false, editIndex = -1) {
   const existingModal = document.querySelector('.modal-overlay');
   if (existingModal) {
     existingModal.remove();
@@ -626,23 +881,36 @@ function showCustomizationModal(item) {
   const optionsGrid = document.createElement('div');
   optionsGrid.className = 'modal-options-grid';
 
-  // Size options
-  const sizeSection = createOptionSection('Size', ['regular', 'large'], 'large');
-  optionsGrid.appendChild(sizeSection);
+  // Get current customizations if editing
+  const currentCustomizations = editMode && item.customizations ? item.customizations : {};
+  
+  const allowedCustomizations = item.customizations || null;
+  const showAll = !allowedCustomizations; 
 
-  // Serving options
-  const servingSection = createOptionSection('Serving', ['iced', 'hot'], 'iced');
-  optionsGrid.appendChild(servingSection);
+  if (!allowedCustomizations || allowedCustomizations.size) {
+    const sizeSection = createOptionSection('Size', ['regular', 'large'], currentCustomizations.size || 'large');
+    optionsGrid.appendChild(sizeSection);
+  }
 
-  modal.appendChild(optionsGrid);
+  if (!allowedCustomizations || allowedCustomizations.serving) {
+    const servingSection = createOptionSection('Serving', ['iced', 'hot'], currentCustomizations.serving || 'iced');
+    optionsGrid.appendChild(servingSection);
+  }
 
-  // Sweetness options (full width)
-  const sweetnessSection = createOptionSection('Sweetness', ['0%', '50%', '100%', '150%', '200%'], '100%');
-  modal.appendChild(sweetnessSection);
+  // Add the optionsGrid to modal before checking sweetness and milk
+  if (optionsGrid.children.length > 0) {
+    modal.appendChild(optionsGrid);
+  }
 
-  // Milk options (full width)
-  const milkSection = createOptionSection('Milk', ['dairy', 'oat'], 'dairy');
-  modal.appendChild(milkSection);
+  if (!allowedCustomizations || allowedCustomizations.sweetness) {
+    const sweetnessSection = createOptionSection('Sweetness', ['0%', '50%', '100%', '150%', '200%'], currentCustomizations.sweetness || '100%');
+    modal.appendChild(sweetnessSection);
+  }
+
+  if (!allowedCustomizations || allowedCustomizations.milk) {
+    const milkSection = createOptionSection('Milk', ['dairy', 'oat'], currentCustomizations.milk || 'dairy');
+    modal.appendChild(milkSection);
+  }
 
   // Quantity section
   const quantitySection = document.createElement('div');
@@ -662,7 +930,7 @@ function showCustomizationModal(item) {
 
   const quantityDisplay = document.createElement('span');
   quantityDisplay.className = 'quantity-display';
-  quantityDisplay.textContent = '1';
+  quantityDisplay.textContent = editMode ? item.quantity : '1';
 
   const plusBtn = document.createElement('button');
   plusBtn.className = 'quantity-btn';
@@ -686,8 +954,14 @@ function showCustomizationModal(item) {
 
   const addBtn = document.createElement('button');
   addBtn.className = 'checkout-button modal-add';
-  addBtn.textContent = 'ADD TO ORDER';
-  addBtn.addEventListener('click', () => addCustomizedItemToOrder(item, overlay));
+  addBtn.textContent = editMode ? 'UPDATE ORDER' : 'ADD TO ORDER';
+  addBtn.addEventListener('click', () => {
+    if (editMode) {
+      updateCustomizedItemInOrder(item, editIndex, overlay);
+    } else {
+      addCustomizedItemToOrder(item, overlay);
+    }
+  });
 
   footer.appendChild(cancelBtn);
   footer.appendChild(addBtn);
@@ -695,6 +969,37 @@ function showCustomizationModal(item) {
 
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
+}
+
+function editOrderItem(index) {
+  const item = currentOrder[index];
+  showCustomizationModal(item, true, index);
+}
+
+function updateCustomizedItemInOrder(baseItem, editIndex, overlay) {
+  const options = getSelectedOptions();
+
+  // Calculate additional price - only add if options exist
+  let additionalPrice = 0;
+  if (options.size && customizationOptions.size[options.size]) {
+    additionalPrice += customizationOptions.size[options.size];
+  }
+  if (options.milk && customizationOptions.milk[options.milk]) {
+    additionalPrice += customizationOptions.milk[options.milk];
+  }
+
+  // Update item with new customizations
+  currentOrder[editIndex] = {
+    ...baseItem,
+    customizations: options,
+    basePrice: baseItem.basePrice || baseItem.price,
+    price: (baseItem.basePrice || baseItem.price) + additionalPrice,
+    quantity: options.quantity,
+    id: baseItem.id || Date.now()
+  };
+
+  updateOrderDisplay();
+  overlay.remove();
 }
 
 function createOptionSection(title, options, defaultOption) {
@@ -755,24 +1060,38 @@ function updateModalQuantity(change) {
 }
 
 function getSelectedOptions() {
-  const options = {
-    size: document.querySelector('.option-button.active[data-group="size"]').dataset.option,
-    serving: document.querySelector('.option-button.active[data-group="serving"]').dataset.option,
-    sweetness: document.querySelector('.option-button.active[data-group="sweetness"]').dataset.option,
-    milk: document.querySelector('.option-button.active[data-group="milk"]').dataset.option,
-    quantity: parseInt(document.querySelector('.modal-quantity .quantity-display').textContent)
-  };
-  
+  const options = {};
+
+  // Only get options that exist in the DOM
+  const sizeButton = document.querySelector('.option-button.active[data-group="size"]');
+  if (sizeButton) options.size = sizeButton.dataset.option;
+
+  const servingButton = document.querySelector('.option-button.active[data-group="serving"]');
+  if (servingButton) options.serving = servingButton.dataset.option;
+
+  const sweetnessButton = document.querySelector('.option-button.active[data-group="sweetness"]');
+  if (sweetnessButton) options.sweetness = sweetnessButton.dataset.option;
+
+  const milkButton = document.querySelector('.option-button.active[data-group="milk"]');
+  if (milkButton) options.milk = milkButton.dataset.option;
+
+  const quantity = document.querySelector('.modal-quantity .quantity-display');
+  if (quantity) options.quantity = parseInt(quantity.textContent);
+
   return options;
 }
 
 function addCustomizedItemToOrder(baseItem, overlay) {
   const options = getSelectedOptions();
 
-  // Calculate additional price
+  // Calculate additional price - only add if options exist
   let additionalPrice = 0;
-  additionalPrice += customizationOptions.size[options.size];
-  additionalPrice += customizationOptions.milk[options.milk];
+  if (options.size && customizationOptions.size[options.size]) {
+    additionalPrice += customizationOptions.size[options.size];
+  }
+  if (options.milk && customizationOptions.milk[options.milk]) {
+    additionalPrice += customizationOptions.milk[options.milk];
+  }
 
   // Check if this exact customization already exists in the order
   const existingItemIndex = currentOrder.findIndex(orderItem =>
@@ -841,7 +1160,9 @@ function calculateOrderTotal() {
 
 function clearOrder() {
   currentOrder = [];
+  customerName = '';  // Add this line
   updateOrderDisplay();
+  updateOrderHeader();  // Add this line
 }
 
 function showCashPaymentModal() {
@@ -905,7 +1226,7 @@ function showCashPaymentModal() {
   chargeButton.textContent = 'CHARGE';
   chargeButton.addEventListener('click', () => {
     completeCashPayment();
-    overlay.remove();  // Close modal after charge
+    // overlay.remove();  // Close modal after charge
   });
   modal.appendChild(chargeButton);
 
@@ -1012,7 +1333,7 @@ function showGCashPaymentModal() {
   sentButton.textContent = 'PAYMENT SENT';
   sentButton.addEventListener('click', () => {
     completeDigitalPayment('GCash');
-    overlay.remove();
+    // overlay.remove();
   });
   modal.appendChild(sentButton);
 
@@ -1062,7 +1383,7 @@ function showMayaPaymentModal() {
   sentButton.textContent = 'PAYMENT SENT';
   sentButton.addEventListener('click', () => {
     completeDigitalPayment('Maya');
-    overlay.remove();
+    // overlay.remove();
   });
   modal.appendChild(sentButton);
 
@@ -1084,44 +1405,293 @@ function selectCashAmount(amount, modal) {
 function completeCashPayment() {
   const now = new Date();
   const order = {
-    id: now.getTime().toString().slice(-5),  // Use last 5 digits of timestamp
+    id: now.getTime().toString().slice(-5),
     items: [...currentOrder],
     total: calculateOrderTotal(),
-    paymentMethod: 'Cash',  // or method for digital payments
+    paymentMethod: 'Cash',
     timestamp: now.toISOString(),
-    status: 'pending'
+    status: 'pending',
+    customerName: customerName
   };
 
   // Save to order history
   orderHistory.push(order);
   localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
 
-  alert('Cash payment successful!');
-  clearOrder();
+  // Queue for Firebase sync
+  queueSync('create', order.id, order);
+
+  showOrderConfirmation();
 }
 
 function completeDigitalPayment(method) {
   const now = new Date();
   const order = {
-    id: now.getTime().toString().slice(-5),  // Use last 5 digits of timestamp
+    id: now.getTime().toString().slice(-5),
     items: [...currentOrder],
     total: calculateOrderTotal(),
-    paymentMethod: method,  // or method for digital payments
+    paymentMethod: method,
     timestamp: now.toISOString(),
-    status: 'pending'
+    status: 'pending',
+    customerName: customerName
   };
 
   // Save to order history
   orderHistory.push(order);
   localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
 
-  alert(`${method} payment successful!`);
-  clearOrder();
+  // Queue for Firebase sync
+  queueSync('create', order.id, order);
+
+  showOrderConfirmation();
 }
 
-// Update the DOMContentLoaded event listener to include payment handlers:
-document.addEventListener('DOMContentLoaded', () => {
-  initializeMenu(document.getElementById('menuContent')); // Use the existing function
+function showOrderConfirmation() {
+  const modal = document.querySelector('.payment-modal');
+  const overlay = document.querySelector('.payment-modal-overlay');
+  const modalContent = modal.querySelectorAll(':not(.modal-header)');
+
+  // Fade out content
+  modalContent.forEach(element => {
+    element.style.transition = 'opacity 0.3s ease';
+    element.style.opacity = '0';
+  });
+
+  // Remove header and animate modal to square
+  setTimeout(() => {
+    modalContent.forEach(element => element.remove());
+
+    // Remove header and animate to square
+    const header = modal.querySelector('.modal-header');
+    if (header) header.remove();
+
+    // Animate modal to square shape
+    modal.style.cssText = `
+      transition: all 0.3s ease;
+      padding: 40px;
+      width: 125px;
+      height: 125px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+    `;
+
+    // Add loading icon
+    const loadingContainer = document.createElement('div');
+    loadingContainer.className = 'loading-container';
+    loadingContainer.style.cssText = `
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    `;
+
+    const loadingIcon = document.createElement('div');
+    loadingIcon.className = 'loading-icon';
+    loadingIcon.innerHTML = '<img src="images/loading-icon.png" alt="Loading" style="width: 50px; height: 50px; animation: spin 1s linear infinite;">';
+
+    loadingContainer.appendChild(loadingIcon);
+    modal.appendChild(loadingContainer);
+
+    // Show success message after 1 second
+    setTimeout(() => {
+      loadingContainer.remove();
+
+      const successMessage = document.createElement('div');
+      successMessage.className = 'order-success';
+      successMessage.innerHTML = 'ORDER<br>SENT!';
+      successMessage.style.cssText = `
+        width: 100%;
+        text-align: center;
+        font-family: "Cocogoose pro trial", sans-serif;
+        font-size: 20px;
+        font-weight: 200px;
+        color: #1d8a00;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+      `;
+      modal.appendChild(successMessage);
+
+      // Fade in success message
+      setTimeout(() => {
+        successMessage.style.opacity = '1';
+      }, 50);
+
+      // Fade out and close after 1.5 seconds
+      setTimeout(() => {
+        successMessage.style.opacity = '0';
+        modal.style.opacity = '0';
+        overlay.style.opacity = '0';
+
+        setTimeout(() => {
+          if (overlay) overlay.remove();
+          clearOrder();
+        }, 300);
+      }, 1500);
+    }, 1000);
+  }, 300);
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  initializeMenu(document.getElementById('menuContent'));
   updateOrderDisplay();
-  initializePaymentHandlers(); // Add this line
+  initializePaymentHandlers();
+  initializeDatePicker();
+
+  // Sync with Firebase on startup
+  await syncWithFirebase();
+
+  const orderHeader = document.getElementById('orderHeader');
+  if (orderHeader) {
+    orderHeader.addEventListener('click', showNameInputModal);
+  }
+
+  // Optional: Load recent orders from Firebase if local storage is empty
+  if (orderHistory.length === 0) {
+    const firebaseOrders = await loadFromFirebase();
+    if (firebaseOrders.length > 0) {
+      orderHistory = firebaseOrders;
+      localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+      displayOrderHistory();
+    }
+  }
 });
+
+// Replace the existing showNameInputModal function:
+function showNameInputModal() {
+  const existingModal = document.querySelector('.name-input-modal');
+  if (existingModal) {
+    existingModal.remove();
+  }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay name-input-modal';
+
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+
+  const header = document.createElement('h2');
+  header.className = 'modal-header';
+  header.textContent = "Who's this order for?";
+  modal.appendChild(header);
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = 'Enter name';
+  input.value = customerName;
+  input.maxLength = 30;
+  
+  // Add Enter key handler
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      updateCustomerName(input.value, overlay);
+    }
+  });
+  
+  modal.appendChild(input);
+
+  const footer = document.createElement('div');
+  footer.className = 'modal-footer';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'checkout-button modal-cancel';
+  cancelBtn.innerHTML = '<img src="images/cancel-icon.png" class="btn-icon" alt="Cancel">CANCEL';
+  cancelBtn.addEventListener('click', () => overlay.remove());
+
+  const okBtn = document.createElement('button');
+  okBtn.className = 'checkout-button modal-add';
+  okBtn.innerHTML = '<img src="images/done-icon.png" class="btn-icon" alt="OK">OK';
+  okBtn.addEventListener('click', () => updateCustomerName(input.value, overlay));
+
+  footer.appendChild(cancelBtn);
+  footer.appendChild(okBtn);
+  modal.appendChild(footer);
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  setTimeout(() => input.focus(), 100);
+}
+
+function updateCustomerName(name, overlay) {
+  customerName = name.trim();
+  updateOrderHeader();
+  overlay.remove();
+}
+
+// Replace the existing updateOrderHeader function:
+function updateOrderHeader() {
+  const headerText = document.querySelector('.order-header-text');
+  if (customerName) {
+    headerText.innerHTML = `<span style="font-weight: 700;">${customerName.toUpperCase()}</span><span style="font-weight: 300;">'S ORDER</span>`;
+  } else {
+    headerText.innerHTML = 'YOUR <span class="light">ORDER</span>';
+  }
+}
+
+function initializeDatePicker() {
+  const dateDisplay = document.getElementById('dateDisplay');
+  const prevDayBtn = document.getElementById('prevDay');
+  const nextDayBtn = document.getElementById('nextDay');
+
+  // Initialize Flatpickr
+  flatpickr(dateDisplay, {
+    defaultDate: new Date(),
+    onChange: function (selectedDates, dateStr, instance) {
+      selectedDate = selectedDates[0];
+      updateDateDisplay();
+      displayOrderHistory();
+    },
+    maxDate: "today",
+    disableMobile: true
+  });
+
+  // Previous day button
+  prevDayBtn.addEventListener('click', () => {
+    selectedDate.setDate(selectedDate.getDate() - 1);
+    updateDateDisplay();
+    displayOrderHistory();
+  });
+
+  // Next day button
+  nextDayBtn.addEventListener('click', () => {
+    selectedDate.setDate(selectedDate.getDate() + 1);
+    updateDateDisplay();
+    displayOrderHistory();
+  });
+
+  updateDateDisplay();
+}
+
+function updateDateDisplay() {
+  const dateDisplay = document.getElementById('dateDisplay');
+  const nextDayBtn = document.getElementById('nextDay');
+  const today = new Date();
+
+  // Check if selected date is today
+  const isToday = selectedDate.toDateString() === today.toDateString();
+
+  // Update display
+  if (isToday) {
+    dateDisplay.textContent = 'TODAY';
+    // Keep "TODAY" in Cocogoose
+    dateDisplay.style.fontFamily = "'Cocogoose pro trial', sans-serif";
+    dateDisplay.style.fontWeight = '300';
+  } else {
+    dateDisplay.textContent = selectedDate.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric'
+    });
+    // Change to Montserrat for dates
+    dateDisplay.style.fontFamily = "'Montserrat', sans-serif";
+    dateDisplay.style.fontWeight = '600';
+  }
+
+  // Disable next button if today is selected
+  nextDayBtn.disabled = isToday;
+
+  updateTotalSalesDisplay();
+}
