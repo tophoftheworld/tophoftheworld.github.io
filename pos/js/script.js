@@ -1,5 +1,5 @@
 import { menuData } from './menu-data.js';
-import { queueSync, syncWithFirebase, loadFromFirebase } from './firebase-sync.js';
+import { queueSync, initializeMenuItems, loadOrdersFromFirebase } from './firebase-sync.js';
 
 // Customization options
 const customizationOptions = {
@@ -759,14 +759,16 @@ function voidOrderConfirmed(orderId) {
   }
 }
 
+
 function completeOrder(orderId) {
   const orderIndex = orderHistory.findIndex(order => order.id === orderId);
   if (orderIndex > -1) {
     orderHistory[orderIndex].status = 'completed';
     localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
 
-    // Queue for Firebase sync
-    queueSync('update', orderId, orderHistory[orderIndex]);
+    // Pass order date to sync queue
+    const orderDate = new Date(orderHistory[orderIndex].timestamp).toISOString().split('T')[0];
+    queueSync('update', orderId, orderHistory[orderIndex], orderDate);
 
     displayOrderHistory();
   }
@@ -1418,8 +1420,8 @@ function completeCashPayment() {
   orderHistory.push(order);
   localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
 
-  // Queue for Firebase sync
-  queueSync('create', order.id, order);
+  const orderDate = now.toISOString().split('T')[0];
+  queueSync('create', order.id, order, orderDate);
 
   showOrderConfirmation();
 }
@@ -1440,8 +1442,8 @@ function completeDigitalPayment(method) {
   orderHistory.push(order);
   localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
 
-  // Queue for Firebase sync
-  queueSync('create', order.id, order);
+  const orderDate = now.toISOString().split('T')[0];
+  queueSync('create', order.id, order, orderDate);
 
   showOrderConfirmation();
 }
@@ -1540,22 +1542,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   initializePaymentHandlers();
   initializeDatePicker();
 
-  // Sync with Firebase on startup
-  await syncWithFirebase();
+  // Initialize menu items in Firebase on first run
+  await initializeMenuItems();
 
+  // Order header event listener
   const orderHeader = document.getElementById('orderHeader');
   if (orderHeader) {
     orderHeader.addEventListener('click', showNameInputModal);
-  }
-
-  // Optional: Load recent orders from Firebase if local storage is empty
-  if (orderHistory.length === 0) {
-    const firebaseOrders = await loadFromFirebase();
-    if (firebaseOrders.length > 0) {
-      orderHistory = firebaseOrders;
-      localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
-      displayOrderHistory();
-    }
   }
 });
 
