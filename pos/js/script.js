@@ -136,6 +136,7 @@ function createMenuItemElement(item) {
 
 // Order management
 let currentOrder = [];
+let orderHistory = JSON.parse(localStorage.getItem('orderHistory') || '[]');
 
 function addToOrder(item) {
   // Check if item is already in order
@@ -285,6 +286,306 @@ function updateOrderDisplay() {
   const total = subtotal; // Add tax calculation here if needed
   // document.querySelector('.order-subtotal .price').textContent = '₱ ' + subtotal.toFixed(2);
   document.querySelector('.order-total .price').textContent = '₱ ' + total.toFixed(2);
+}
+
+// Toggle between menu and orders view
+document.querySelector('.menu-header').addEventListener('click', () => {
+  const menuContainer = document.getElementById('menu-container');
+  const orderPanel = document.getElementById('order-panel');
+  const ordersContainer = document.getElementById('orders-container');
+  const menuHeader = document.querySelector('.menu-header');
+
+  if (menuContainer.style.display === 'none') {
+    // Switch to menu view
+    menuContainer.style.display = 'flex';
+    orderPanel.style.display = 'flex';
+    ordersContainer.style.display = 'none';
+    menuHeader.innerHTML = 'MATCHA BAR <span class="light">MENU</span>';
+  } else {
+    // Switch to orders view
+    menuContainer.style.display = 'none';
+    orderPanel.style.display = 'none';
+    ordersContainer.style.display = 'flex';
+    menuHeader.innerHTML = 'MATCHA BAR <span class="light">ORDERS</span>';
+    displayOrderHistory();
+  }
+});
+
+function displayOrderHistory() {
+  const ordersContent = document.getElementById('ordersContent');
+  ordersContent.innerHTML = '';
+
+  const pendingOrders = orderHistory.filter(order => order.status === 'pending').reverse();
+  const completedOrders = orderHistory.filter(order => order.status === 'completed').reverse();
+
+  if (orderHistory.length === 0) {
+    const emptyMessage = document.createElement('div');
+    emptyMessage.className = 'empty-order-message';
+    emptyMessage.textContent = 'No orders yet';
+    emptyMessage.style.margin = '80px auto';
+    ordersContent.appendChild(emptyMessage);
+    return;
+  }
+
+  // Pending Orders Section
+  if (pendingOrders.length > 0) {
+    const pendingSection = document.createElement('div');
+    pendingSection.className = 'orders-section';
+    
+    const pendingLabel = document.createElement('div');
+    pendingLabel.className = 'orders-section-label';
+    pendingLabel.textContent = 'PENDING ORDERS';
+    pendingSection.appendChild(pendingLabel);
+    
+    const pendingCardsRow = document.createElement('div');
+    pendingCardsRow.className = 'order-cards-row';
+    
+    pendingOrders.forEach(order => {
+      const orderCard = createOrderCard(order, false);
+      pendingCardsRow.appendChild(orderCard);
+    });
+    
+    pendingSection.appendChild(pendingCardsRow);
+    ordersContent.appendChild(pendingSection);
+  }
+
+  // Completed Orders Section
+  if (completedOrders.length > 0) {
+    const completedSection = document.createElement('div');
+    completedSection.className = 'orders-section';
+    
+    const completedLabel = document.createElement('div');
+    completedLabel.className = 'orders-section-label';
+    completedLabel.textContent = 'COMPLETED ORDERS';
+    completedSection.appendChild(completedLabel);
+    
+    const completedCardsRow = document.createElement('div');
+    completedCardsRow.className = 'order-cards-row';
+    
+    completedOrders.forEach(order => {
+      const orderCard = createOrderCard(order, true);
+      completedCardsRow.appendChild(orderCard);
+    });
+    
+    completedSection.appendChild(completedCardsRow);
+    ordersContent.appendChild(completedSection);
+  }
+}
+
+function createOrderCard(order, isCompleted) {
+  const orderCard = document.createElement('div');
+  orderCard.className = 'order-card' + (isCompleted ? ' completed' : '');
+
+  const orderHeader = document.createElement('div');
+  orderHeader.className = 'order-card-header';
+
+  const orderHeaderTop = document.createElement('div');
+  orderHeaderTop.className = 'order-header-top';
+
+  const orderId = document.createElement('div');
+  orderId.className = 'order-id';
+  orderId.textContent = `ORDER-${order.id}`;
+
+  const customerName = document.createElement('div');
+  customerName.className = 'customer-name';
+  customerName.textContent = '[Name]';
+
+  orderHeaderTop.appendChild(orderId);
+  orderHeaderTop.appendChild(customerName);
+
+  const orderDateTime = document.createElement('div');
+  orderDateTime.className = 'order-datetime';
+  const date = new Date(order.timestamp);
+  orderDateTime.textContent = date.toLocaleString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  });
+
+  orderHeader.appendChild(orderHeaderTop);
+  orderHeader.appendChild(orderDateTime);
+  orderCard.appendChild(orderHeader);
+
+  const orderMetaBottom = document.createElement('div');
+  orderMetaBottom.className = 'order-meta-bottom';
+
+  const orderTotalRow = document.createElement('div');
+  orderTotalRow.className = 'order-total-row';
+
+  const orderTotal = document.createElement('div');
+  orderTotal.className = 'order-card-total';
+  orderTotal.textContent = `₱${order.total.toFixed(2)}`;
+
+  const orderMethod = document.createElement('div');
+  orderMethod.className = 'order-card-method';
+  orderMethod.textContent = order.paymentMethod.toUpperCase();
+
+  orderTotalRow.appendChild(orderMethod);
+  orderTotalRow.appendChild(orderTotal);
+
+  orderMetaBottom.appendChild(orderTotalRow);
+
+  const orderItemsList = document.createElement('div');
+  orderItemsList.className = 'order-items-list';
+
+  order.items.forEach(item => {
+    const itemDiv = document.createElement('div');
+    itemDiv.className = 'order-card-item';
+
+    const itemName = document.createElement('div');
+    itemName.className = 'item-name';
+
+    const quantitySpan = document.createElement('span');
+    quantitySpan.style.fontFamily = 'Montserrat, sans-serif';
+    quantitySpan.textContent = `${item.quantity}x `;
+
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = item.name.replace(/<[^>]*>/g, '');
+
+    itemName.appendChild(quantitySpan);
+    itemName.appendChild(nameSpan);
+    itemDiv.appendChild(itemName);
+
+    // Add customizations if available
+    if (item.customizations) {
+      const customizations = document.createElement('div');
+      customizations.className = 'item-customizations';
+
+      const customSpan = document.createElement('span');
+      customSpan.textContent = `${item.customizations.size} | ${item.customizations.serving} | `;
+
+      const sweetnessSpan = document.createElement('span');
+      sweetnessSpan.style.fontFamily = 'Montserrat, sans-serif';
+      sweetnessSpan.style.fontWeight = '700';
+      sweetnessSpan.textContent = item.customizations.sweetness;
+
+      const milkSpan = document.createElement('span');
+      milkSpan.textContent = ` | ${item.customizations.milk}`;
+
+      customizations.appendChild(customSpan);
+      customizations.appendChild(sweetnessSpan);
+      customizations.appendChild(milkSpan);
+      itemDiv.appendChild(customizations);
+    }
+
+    orderItemsList.appendChild(itemDiv);
+  });
+
+  orderCard.appendChild(orderItemsList);
+  orderCard.appendChild(orderMetaBottom);
+
+  // Action buttons for pending orders
+  if (!isCompleted) {
+    const orderButtons = document.createElement('div');
+    orderButtons.className = 'order-buttons';
+
+    const editBtn = document.createElement('button');
+    editBtn.className = 'order-action-btn order-edit-btn';
+    editBtn.innerHTML = '<img src="images/edit-icon.png" class="btn-icon" alt="Edit">EDIT';
+    editBtn.addEventListener('click', () => editOrder(order.id));
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'order-action-btn order-cancel-btn';
+    cancelBtn.innerHTML = '<img src="images/cancel-icon.png" class="btn-icon" alt="Cancel">CANCEL';
+    cancelBtn.addEventListener('click', () => cancelOrder(order.id));
+
+    const doneBtn = document.createElement('button');
+    doneBtn.className = 'order-action-btn order-done-btn';
+    doneBtn.innerHTML = '<img src="images/done-icon.png" class="btn-icon" alt="Done">DONE';
+    doneBtn.addEventListener('click', () => completeOrder(order.id));
+
+    orderButtons.appendChild(cancelBtn);
+    orderButtons.appendChild(editBtn);
+    orderButtons.appendChild(doneBtn);
+    orderCard.appendChild(orderButtons);
+  }
+
+  // Action buttons for completed orders
+  if (isCompleted) {
+    const orderButtons = document.createElement('div');
+    orderButtons.className = 'order-buttons';
+
+    const returnBtn = document.createElement('button');
+    returnBtn.className = 'order-action-btn order-return-btn';
+    returnBtn.innerHTML = '<img src="images/return-icon.png" class="btn-icon" alt="Return">RETURN';
+    returnBtn.addEventListener('click', () => returnToPending(order.id));
+
+    const voidBtn = document.createElement('button');
+    voidBtn.className = 'order-action-btn order-void-btn';
+    voidBtn.innerHTML = '<img src="images/cancel-icon.png" class="btn-icon" alt="Void">VOID';
+    voidBtn.addEventListener('click', () => voidOrder(order.id));
+
+    orderButtons.appendChild(returnBtn);
+    orderButtons.appendChild(voidBtn);
+    orderCard.appendChild(orderButtons);
+  }
+
+  return orderCard;
+}
+
+function editOrder(orderId) {
+  // Find the order
+  const order = orderHistory.find(o => o.id === orderId);
+  if (!order) return;
+
+  // Load order items into current order
+  currentOrder = order.items.map(item => ({ ...item }));
+
+  // Remove from order history
+  const orderIndex = orderHistory.findIndex(o => o.id === orderId);
+  if (orderIndex > -1) {
+    orderHistory.splice(orderIndex, 1);
+    localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+  }
+
+  // Switch to menu view
+  const menuContainer = document.getElementById('menu-container');
+  const orderPanel = document.getElementById('order-panel');
+  const ordersContainer = document.getElementById('orders-container');
+  const menuHeader = document.querySelector('.menu-header');
+
+  menuContainer.style.display = 'flex';
+  orderPanel.style.display = 'flex';
+  ordersContainer.style.display = 'none';
+  menuHeader.innerHTML = 'MATCHA BAR <span class="light">MENU</span>';
+
+  updateOrderDisplay();
+}
+
+function returnToPending(orderId) {
+  const orderIndex = orderHistory.findIndex(order => order.id === orderId);
+  if (orderIndex > -1) {
+    orderHistory[orderIndex].status = 'pending';
+    localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+    displayOrderHistory();
+  }
+}
+
+function voidOrder(orderId) {
+  const orderIndex = orderHistory.findIndex(order => order.id === orderId);
+  if (orderIndex > -1) {
+    orderHistory[orderIndex].status = 'voided';  // Mark as voided
+    localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+    displayOrderHistory();
+  }
+}
+
+function cancelOrder(orderId) {
+  const orderIndex = orderHistory.findIndex(order => order.id === orderId);
+  if (orderIndex > -1) {
+    orderHistory.splice(orderIndex, 1);
+    localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+    displayOrderHistory();
+  }
+}
+
+function completeOrder(orderId) {
+  const orderIndex = orderHistory.findIndex(order => order.id === orderId);
+  if (orderIndex > -1) {
+    orderHistory[orderIndex].status = 'completed';
+    localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+    displayOrderHistory();
+  }
 }
 
 // // Initialize checkout button
@@ -781,11 +1082,39 @@ function selectCashAmount(amount, modal) {
 }
 
 function completeCashPayment() {
+  const now = new Date();
+  const order = {
+    id: now.getTime().toString().slice(-5),  // Use last 5 digits of timestamp
+    items: [...currentOrder],
+    total: calculateOrderTotal(),
+    paymentMethod: 'Cash',  // or method for digital payments
+    timestamp: now.toISOString(),
+    status: 'pending'
+  };
+
+  // Save to order history
+  orderHistory.push(order);
+  localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+
   alert('Cash payment successful!');
   clearOrder();
 }
 
 function completeDigitalPayment(method) {
+  const now = new Date();
+  const order = {
+    id: now.getTime().toString().slice(-5),  // Use last 5 digits of timestamp
+    items: [...currentOrder],
+    total: calculateOrderTotal(),
+    paymentMethod: method,  // or method for digital payments
+    timestamp: now.toISOString(),
+    status: 'pending'
+  };
+
+  // Save to order history
+  orderHistory.push(order);
+  localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+
   alert(`${method} payment successful!`);
   clearOrder();
 }

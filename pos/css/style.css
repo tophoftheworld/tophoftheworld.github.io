@@ -24,7 +24,7 @@ body {
   max-width: none;
   margin: 0;
   padding-right: 5%;
-  padding-left: 5%;
+  padding-left: 0%;
   flex-direction: row;
   opacity: 1;
 }
@@ -221,9 +221,9 @@ body {
 .kiosk-container {
   display: flex;
   width: 100%;
-  height: 80vh;
+  height: calc(80vh - 40px);
+  /* Reduce height slightly to prevent cutoff */
   margin-top: 0;
-  /* Remove any top margin causing floating */
 }
 
 .content.menu {
@@ -263,6 +263,21 @@ body {
   font-weight: 600;
 }
 
+.order-header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0px;
+}
+
+.customer-name {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 16px;
+  font-weight: 500;
+  color: #666;
+  text-align: right;
+}
+
 .order-items {
   flex-grow: 1;
   overflow-y: auto;
@@ -296,6 +311,37 @@ body {
   font-weight: 600;
   font-size: 18px;
   margin-top: 5px;
+}
+
+.order-total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 10px;
+  margin-bottom: 10px;
+  border-top: 2px solid #cacaca;
+  padding-top: 10px;
+}
+
+.order-card-total {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 0;
+}
+
+.order-card-method {
+  background-color: #1d8a00;
+  color: white;
+  font-family: 'Cocogoose pro trial', sans-serif;
+  font-size: 12px;
+  font-weight: 300;
+  padding: 4px 8px;
+  border-radius: 4px;
+  display: inline-block;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  width: fit-content;
 }
 
 .checkout-button {
@@ -710,6 +756,328 @@ body {
 
 .charge-button:hover {
   background-color: #166d00;
+}
+
+.orders-grid {
+  display: flex;
+  gap: 20px;
+  padding: 20px 20px 40px 20px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  height: 80%;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.order-card {
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  width: 280px;
+  flex: 0 0 auto;
+}
+
+.order-id {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 16px;
+  font-weight: 600;  /* Changed from 400 */
+  margin-bottom: 10px;
+  color: #1d8a00;
+}
+
+.order-items-list {
+  margin-bottom: 15px;
+  flex-grow: 1;
+}
+
+.order-datetime {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: #666;
+  margin-bottom: 10px;
+}
+
+.order-card-item span:nth-child(2) {
+  font-family: 'Montserrat', sans-serif;
+}
+
+.order-id,
+.order-card-total,
+.order-card-item .quantity {
+  font-family: 'Montserrat', sans-serif;
+}
+
+/* .order-card-item .item-customizations>span {
+  font-family: 'Cocogoose pro trial', sans-serif;
+} */
+
+.order-card-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 10px;
+}
+
+.order-card-left {
+  display: flex;
+  flex-direction: column;
+}
+
+.order-card-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.order-card-item {
+  font-family: 'Cocogoose pro trial', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+}
+
+.order-card-item .item-name {
+  margin-bottom: 5px;
+}
+
+.order-card-item .item-customizations {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 5px;
+  font-weight: 300;
+}
+
+.order-card-total {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 5px;
+  padding-top: 10px;
+}
+
+.order-card-method {
+  background-color: #1d8a00;
+  color: white;
+  font-family: 'Cocogoose pro trial', sans-serif;
+  font-size: 12px;
+  font-weight: 300;
+  padding: 4px 8px;
+  border-radius: 4px;
+  display: inline-block;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-top: 5px;
+  width: fit-content;
+}
+
+.order-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.order-id {
+  margin-bottom: 0;
+}
+
+.order-datetime {
+  margin-bottom: 0;
+  text-align: right;
+}
+
+.orders-grid::-webkit-scrollbar {
+  height: 0;
+  /* Chrome, Safari, Opera */
+  display: none;
+}
+
+.content.orders {
+  display: flex;
+  overflow-y: hidden;
+  height: calc(100% - 40px);
+  /* Account for padding */
+  padding-bottom: 20px;
+}
+
+.menu-header {
+  cursor: pointer;
+}
+
+.order-footer-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: auto;
+}
+
+.order-footer-row .order-card-total {
+  margin-bottom: 0;
+  border-top: 0;
+  padding-top: 0;
+}
+
+.order-card {
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  width: 280px;
+  flex: 0 0 auto;
+  height: 400px;
+  /* Fixed height */
+}
+
+.order-card.completed {
+  background-color: #f0f0f0;
+}
+
+.order-items-list {
+  margin-bottom: 15px;
+  flex-grow: 1;
+  overflow-y: auto;
+  min-height: 100px;
+}
+
+.order-buttons {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.order-action-btn {
+  flex: 1;
+  padding: 12px;
+  border: none;
+  border-radius: 4px;
+  font-family: 'Cocogoose pro trial', sans-serif;
+  font-size: 12px;
+  font-weight: 300;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.order-cancel-btn {
+  background-color: #f0f0f0;
+  color: #333;
+}
+
+.order-done-btn {
+  background-color: #1d8a00;
+  color: white;
+}
+
+.orders-section-label {
+  position: sticky;
+  left: 0;
+  font-family: 'Cocogoose pro trial', sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin: 0 0 10px 0;
+  padding: 10px 0 0 20px;
+  color: #333;
+  background-color: #f7f7f7;
+  z-index: 10;
+}
+
+.orders-section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.order-cards-row {
+  display: flex;
+  gap: 20px;
+}
+
+.order-cancel-btn,
+.order-void-btn {
+  background-color: transparent;
+  border: 2px solid #ff4444;
+  color: #ff4444;
+}
+
+.order-cancel-btn:hover,
+.order-void-btn:hover {
+  background-color: #cc0000;
+}
+
+.order-edit-btn,
+.order-return-btn {
+  background-color: transparent;
+  border: 2px solid #1d8a00;
+  color: #1d8a00;
+}
+
+.order-edit-btn:hover,
+.order-return-btn:hover {
+  background-color: #1d8a00;
+  color: white;
+}
+
+.order-meta-bottom {
+  margin-top: 10px;
+  margin-bottom: 10px;
+  /* text-align: right; */
+}
+
+.btn-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.order-id {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1d8a00;
+  text-align: left;
+}
+
+.order-datetime {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: #666;
+  text-align: left;
+}
+
+.order-card-total {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 5px;
+}
+
+.order-card-method {
+  background-color: #1d8a00;
+  color: white;
+  font-family: 'Cocogoose pro trial', sans-serif;
+  font-size: 10px;
+  font-weight: 300;
+  padding: 4px 8px;
+  border-radius: 4px;
+  display: inline-block;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  width: fit-content;
+  margin-right: auto;
 }
 
 /* Responsive styles */
