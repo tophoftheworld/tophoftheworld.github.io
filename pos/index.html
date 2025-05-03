@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Matchanese Menu</title>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="css/normalize.css">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body class="body">
+    <div class="menu-wrapper">
+        <h1 class="menu-header">MATCHA BAR <span class="light">MENU</span></h1>
+        <div class="kiosk-container">
+            <div id="menu-container" class="content menu">
+                <div class="left-menu" id="menuContent">
+                    <!-- Menu content will be loaded dynamically here -->
+                </div>
+            </div>
+            <div id="order-panel" class="right-panel">
+                <h2 class="order-header">YOUR <span class="light">ORDER</span></h2>
+                <div class="order-items">
+                    <!-- Order items will be displayed here -->
+                    <div class="empty-order-message">Your order is empty</div>
+                </div>
+                <div class="order-summary">
+                    <div class="order-total">
+                        <span>Total:</span>
+                        <span class="price">₱ 0.00</span>
+                    </div>
+                </div>
+                <div class="payment-methods">
+                    <button class="payment-button" id="cash-payment">CASH</button>
+                    <button class="payment-button" id="gcash-payment">GCASH</button>
+                    <button class="payment-button" id="maya-payment">MAYA</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/menu-data.js"></script>
+    <script src="js/script.js"></script>
+</body>
+
+</html>

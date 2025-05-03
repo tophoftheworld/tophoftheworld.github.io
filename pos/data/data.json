@@ -1,0 +1,207 @@
+{
+  "categories": [
+    {
+      "id": "matcha-lattes",
+      "name": "Matcha Lattes"
+    },
+    {
+      "id": "matcha-lite",
+      "name": "Matcha Lite"
+    },
+    {
+      "id": "specials",
+      "name": "Specials"
+    },
+    {
+      "id": "coffee",
+      "name": "Coffee"
+    },
+    {
+      "id": "add-ons",
+      "name": "Add-Ons"
+    }
+  ],
+  "items": [
+    {
+      "id": "matchanese-latte",
+      "categoryId": "matcha-lattes",
+      "name": "matchanese latte",
+      "description": "Premium hand-whisked Matcha over Dairy Milk",
+      "price": 190,
+      "tags": ["signature"],
+      "type": "Iced"
+    },
+    {
+      "id": "matchanese-oat-latte",
+      "categoryId": "matcha-lattes",
+      "name": "matchanese oat latte",
+      "description": "Premium hand-whisked Matcha over Oat Milk",
+      "price": 240,
+      "type": "Iced"
+    },
+    {
+      "id": "spanish-matchanese-latte",
+      "categoryId": "matcha-lattes",
+      "name": "spanish matchanese latte",
+      "description": "Our signature matchanese latte topped with salted foam",
+      "price": 220,
+      "type": "Iced"
+    },
+    {
+      "id": "matchanese-sea-salt-latte",
+      "categoryId": "matcha-lattes",
+      "name": "matchanese sea salt latte",
+      "description": "Our signature matchanese latte topped with salted foam",
+      "price": 240,
+      "tags": ["must-try"],
+      "type": "Iced"
+    },
+    {
+      "id": "salted-caramel-matchanese",
+      "categoryId": "matcha-lattes",
+      "name": "salted caramel matchanese",
+      "description": "Premium hand-whisked Matcha with Milk and Salted Caramel",
+      "price": 250,
+      "type": "Iced"
+    },
+    {
+      "id": "white-chocolate-matchanese",
+      "categoryId": "matcha-lattes",
+      "name": "white chocolate matchanese",
+      "description": "Premium hand-whisked Matcha with Milk and White Chocolate",
+      "price": 250,
+      "type": "Iced"
+    },
+    {
+      "id": "strawberry-matchanese",
+      "categoryId": "matcha-lattes",
+      "name": "strawberry matchanese",
+      "description": "Premium hand-whisked Matcha with Milk and Strawberries",
+      "price": 250,
+      "type": "Iced"
+    },
+    {
+      "id": "hojicha-latte",
+      "categoryId": "matcha-lattes",
+      "name": "hōjicha latte",
+      "description": "Premium hand-whisked Hojicha over Milk",
+      "price": 250,
+      "type": "Iced"
+    },
+    {
+      "id": "matchanese-tea",
+      "categoryId": "matcha-lite",
+      "name": "matchanese tea",
+      "description": "Premium hand-whisked Clear Matcha Tea",
+      "price": 180,
+      "tags": ["classic"],
+      "type": "Iced"
+    },
+    {
+      "id": "matchanese-coconut",
+      "categoryId": "matcha-lite",
+      "name": "matchanese coconut",
+      "description": "Premium hand-whisked Matcha over Coconut Juice",
+      "price": 190,
+      "type": "Iced"
+    },
+    {
+      "id": "matchanese-sunrise",
+      "categoryId": "matcha-lite",
+      "name": "matchanese sunrise",
+      "description": "Premium hand-whisked Matcha over Coconut Juice",
+      "price": 190,
+      "type": "Iced"
+    },
+    {
+      "id": "matchanese-einspanner",
+      "categoryId": "specials",
+      "name": "matchanese einspanner",
+      "description": "Premium hand-whisked Matcha with Sweet Cream",
+      "price": 290,
+      "tags": ["best-seller"],
+      "type": "Iced"
+    },
+    {
+      "id": "einspanner-latte",
+      "categoryId": "specials",
+      "name": "einspanner latte",
+      "description": "Rich shot of espresso with Sweetened Cream",
+      "price": 290,
+      "type": "Iced"
+    },
+    {
+      "id": "matchanese-cloud",
+      "categoryId": "specials",
+      "name": "matchanese cloud",
+      "description": "Premium hand-whisked Matcha with Matcha Cream",
+      "price": 270,
+      "type": "Iced"
+    },
+    {
+      "id": "matchanese-cloud-espresso",
+      "categoryId": "specials",
+      "name": "matchanese cloud espresso",
+      "description": "Rich shot of espresso with Matcha Cream",
+      "price": 250,
+      "type": "Iced"
+    },
+    {
+      "id": "matchanese-espresso",
+      "categoryId": "coffee",
+      "name": "matchanese espresso",
+      "description": "Premium hand-whisked Matcha with Espresso and Milk",
+      "price": 240,
+      "tags": ["must-try"],
+      "type": "Iced"
+    },
+    {
+      "id": "americano",
+      "categoryId": "coffee",
+      "name": "americano",
+      "description": "Rich shot of espresso over Water",
+      "price": 160,
+      "type": "Iced"
+    },
+    {
+      "id": "kyoto-latte",
+      "categoryId": "coffee",
+      "name": "kyoto latte",
+      "description": "Rich shot of espresso over milk",
+      "price": 190,
+      "type": "Iced"
+    },
+    {
+      "id": "spanish-latte",
+      "categoryId": "coffee",
+      "name": "spanish latte",
+      "description": "Rich shot of espresso over sweetened milk",
+      "price": 220,
+      "type": "Iced"
+    },
+    {
+      "id": "oat-milk",
+      "categoryId": "add-ons",
+      "name": "oat milk",
+      "price": 50
+    },
+    {
+      "id": "coconut-milk",
+      "categoryId": "add-ons",
+      "name": "coconut milk",
+      "price": 50
+    },
+    {
+      "id": "seasalt-cream",
+      "categoryId": "add-ons",
+      "name": "seasalt cream",
+      "price": 50
+    },
+    {
+      "id": "espresso-shot",
+      "categoryId": "add-ons",
+      "name": "espresso shot",
+      "price": 50
+    }
+  ]
+}
