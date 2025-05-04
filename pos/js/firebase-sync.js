@@ -51,9 +51,11 @@ export async function saveOrderToFirebase(order) {
             customerName: order.customerName || ''
         };
 
-        // Save to Firebase with date-based collection
-        const docRef = await addDoc(collection(db, 'matchanese-pos', orderDate, 'orders'), optimizedOrder);
-        return docRef.id;
+        // Save to Firebase using order ID as document ID (removes extra nesting)
+        const docRef = doc(db, 'matchanese-pos', orderDate, 'orders', order.id);
+        await setDoc(docRef, optimizedOrder);
+
+        return order.id; // Return the ID used
     } catch (error) {
         console.error('Error saving to Firebase:', error);
         throw error;
@@ -82,6 +84,13 @@ export function queueSync(action, orderId, data, orderDate) {
     if (!isSyncing) {
         processQueue();
     }
+
+    // Force Firebase sync after a short delay
+    setTimeout(() => {
+        if (window.syncOrdersWithFirebase) {
+            window.syncOrdersWithFirebase();
+        }
+    }, 2000);
 }
 
 async function processQueue() {
@@ -127,13 +136,29 @@ export async function loadOrdersFromFirebase(date) {
 
         querySnapshot.forEach((doc) => {
             const orderData = doc.data();
+
             // Reconstruct full order data by merging with menu items
             const fullItems = orderData.items.map(item => {
-                const menuItem = menuItemsMap.get(item.menuItemId);
-                return {
-                    ...menuItem,
-                    ...item
-                };
+                // Try to get full menu item details
+                const menuItem = item.menuItemId ? menuItemsMap.get(item.menuItemId) : null;
+
+                if (menuItem) {
+                    return {
+                        ...menuItem,
+                        ...item,
+                        name: menuItem.name || item.name || `Item ${item.menuItemId}`,
+                        price: item.price || menuItem.basePrice,
+                        basePrice: item.basePrice || menuItem.basePrice
+                    };
+                } else {
+                    // If menu item not found, ensure item has minimum required properties
+                    return {
+                        ...item,
+                        name: item.name || (item.menuItemId ? item.menuItemId.split('-').slice(1).join(' ') : 'Unknown Item'),
+                        price: item.price || 0,
+                        basePrice: item.basePrice || 0
+                    };
+                }
             });
 
             firebaseOrders.push({

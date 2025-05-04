@@ -29,6 +29,8 @@ let customerName = '';
 let selectedDate = new Date();
 let currentDate = new Date();
 
+window.syncOrdersWithFirebase = syncOrdersWithFirebase;
+
 function initializeMenu(container) {
   // Create menu categories
   menuData.categories.forEach(category => {
@@ -575,7 +577,10 @@ function createOrderCard(order, isCompleted, isVoided = false) {
     quantitySpan.textContent = `${item.quantity}x `;
 
     const nameSpan = document.createElement('span');
-    nameSpan.textContent = item.name.replace(/<[^>]*>/g, '');
+    // Handle case where item.name might be undefined
+    nameSpan.textContent = item.name
+      ? item.name.replace(/<[^>]*>/g, '')
+      : (item.menuItemId ? item.menuItemId.split('-').slice(1).join(' ') : 'Unknown Item');
 
     itemName.appendChild(quantitySpan);
     itemName.appendChild(nameSpan);
@@ -1545,12 +1550,76 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Initialize menu items in Firebase on first run
   await initializeMenuItems();
 
+  // Load orders from Firebase when app starts
+  await loadOrdersFromLocalStorage();
+  await syncOrdersWithFirebase();
+
+  // Set up periodic sync with Firebase (every 30 seconds)
+  setInterval(syncOrdersWithFirebase, 30000);
+
   // Order header event listener
   const orderHeader = document.getElementById('orderHeader');
   if (orderHeader) {
     orderHeader.addEventListener('click', showNameInputModal);
   }
 });
+
+async function loadOrdersFromLocalStorage() {
+  orderHistory = JSON.parse(localStorage.getItem('orderHistory') || '[]');
+}
+
+async function syncOrdersWithFirebase() {
+  try {
+    // Load today's orders first
+    let firebaseOrders = await loadOrdersFromFirebase(new Date());
+    
+    // Then load yesterday's orders
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayOrders = await loadOrdersFromFirebase(yesterday);
+    
+    // Combine orders
+    firebaseOrders = [...firebaseOrders, ...yesterdayOrders];
+    
+    if (firebaseOrders.length === 0) return;
+    
+    // Merge with local orders
+    const combinedOrders = mergeOrders(orderHistory, firebaseOrders);
+    
+    // Update local storage
+    orderHistory = combinedOrders;
+    localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+    
+    // Update display if on orders page
+    if (document.getElementById('orders-container').style.display !== 'none') {
+      displayOrderHistory();
+    }
+  } catch (error) {
+    console.error('Error syncing with Firebase:', error);
+  }
+}
+
+function mergeOrders(localOrders, firebaseOrders) {
+  // Create a map of local orders by ID
+  const orderMap = new Map();
+  localOrders.forEach(order => {
+    orderMap.set(order.id, order);
+  });
+
+  // Merge in Firebase orders
+  firebaseOrders.forEach(fbOrder => {
+    // If order doesn't exist locally or Firebase has a newer version, use Firebase version
+    if (!orderMap.has(fbOrder.id) ||
+      new Date(fbOrder.timestamp) > new Date(orderMap.get(fbOrder.id).timestamp)) {
+      // Store Firebase ID for future updates
+      fbOrder.firebaseId = fbOrder.firebaseId || fbOrder.id;
+      orderMap.set(fbOrder.id, fbOrder);
+    }
+  });
+
+  // Convert map back to array
+  return Array.from(orderMap.values());
+}
 
 // Replace the existing showNameInputModal function:
 function showNameInputModal() {
