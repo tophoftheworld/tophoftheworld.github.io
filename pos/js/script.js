@@ -1550,11 +1550,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Initialize menu items in Firebase on first run
   await initializeMenuItems();
 
-  // Load orders from Firebase when app starts
-  await loadOrdersFromLocalStorage();
+  // Make syncOrdersWithFirebase available globally
+  window.syncOrdersWithFirebase = syncOrdersWithFirebase;
+
+  // Load existing orders and sync with Firebase
   await syncOrdersWithFirebase();
 
-  // Set up periodic sync with Firebase (every 30 seconds)
+  // Schedule periodic sync
   setInterval(syncOrdersWithFirebase, 30000);
 
   // Order header event listener
@@ -1570,29 +1572,92 @@ async function loadOrdersFromLocalStorage() {
 
 async function syncOrdersWithFirebase() {
   try {
-    // Load today's orders first
-    let firebaseOrders = await loadOrdersFromFirebase(new Date());
-    
-    // Then load yesterday's orders
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayOrders = await loadOrdersFromFirebase(yesterday);
-    
-    // Combine orders
-    firebaseOrders = [...firebaseOrders, ...yesterdayOrders];
-    
-    if (firebaseOrders.length === 0) return;
-    
-    // Merge with local orders
-    const combinedOrders = mergeOrders(orderHistory, firebaseOrders);
-    
-    // Update local storage
-    orderHistory = combinedOrders;
-    localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
-    
-    // Update display if on orders page
+    console.log("Starting sync with Firebase...");
+
+    // Load orders from the current date
+    const today = new Date();
+    const todayString = today.toISOString().split('T')[0];
+    let firebaseOrders = [];
+
+    // Get local orders and track which have already been synced
+    const localOrders = JSON.parse(localStorage.getItem('orderHistory') || '[]');
+
+    // Mark orders that need syncing
+    if (localOrders.length > 0) {
+      // Try to get orders from Firebase first to see if any already exist
+      try {
+        const fbOrders = await loadOrdersFromFirebase(today);
+        if (fbOrders.length > 0) {
+          console.log(`Found ${fbOrders.length} orders in Firebase.`);
+          firebaseOrders = [...firebaseOrders, ...fbOrders];
+        }
+      } catch (error) {
+        console.log("No orders found in Firebase for today, will create new ones.");
+      }
+
+      // Create a set of existing Firebase order IDs
+      const firebaseOrderIds = new Set(firebaseOrders.map(order => order.id));
+
+      // Only sync orders that don't have syncedWithFirebase flag
+      let syncCount = 0;
+
+      for (const localOrder of localOrders) {
+        // Skip already synced orders or orders that exist in Firebase
+        if (localOrder.syncedWithFirebase || firebaseOrderIds.has(localOrder.id)) {
+          continue;
+        }
+
+        syncCount++;
+        console.log(`Uploading local order ${localOrder.id} to Firebase...`);
+        const orderDate = new Date(localOrder.timestamp).toISOString().split('T')[0];
+        queueSync('create', localOrder.id, localOrder, orderDate);
+
+        // Mark as synced locally to prevent future attempts
+        localOrder.syncedWithFirebase = true;
+      }
+
+      if (syncCount > 0) {
+        // Save updated sync flags back to localStorage
+        localStorage.setItem('orderHistory', JSON.stringify(localOrders));
+        console.log(`Queued ${syncCount} orders for sync with Firebase.`);
+      } else if (firebaseOrders.length === 0) {
+        console.log("No new orders to sync.");
+      }
+    } else {
+      console.log("No local orders to sync.");
+    }
+
+    // Get orders from the past 7 days only when on the orders page
+    // or when explicitly changing dates
     if (document.getElementById('orders-container').style.display !== 'none') {
-      displayOrderHistory();
+      for (let i = 1; i <= 7; i++) {
+        const pastDate = new Date();
+        pastDate.setDate(pastDate.getDate() - i);
+        try {
+          const fbOrders = await loadOrdersFromFirebase(pastDate);
+          if (fbOrders.length > 0) {
+            firebaseOrders = [...firebaseOrders, ...fbOrders];
+          }
+        } catch (error) {
+          // Ignore errors for past dates
+        }
+      }
+    }
+
+    if (firebaseOrders.length > 0) {
+      // Merge orders with proper conflict resolution
+      const mergedOrders = mergeOrders(localOrders, firebaseOrders);
+
+      // Update local storage
+      orderHistory = mergedOrders;
+      localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+
+      console.log(`Successfully synced with Firebase. Total orders: ${orderHistory.length}`);
+
+      // Update display if on orders page
+      if (document.getElementById('orders-container').style.display !== 'none') {
+        displayOrderHistory();
+      }
     }
   } catch (error) {
     console.error('Error syncing with Firebase:', error);
@@ -1603,17 +1668,55 @@ function mergeOrders(localOrders, firebaseOrders) {
   // Create a map of local orders by ID
   const orderMap = new Map();
   localOrders.forEach(order => {
-    orderMap.set(order.id, order);
+    // Preserve sync flag if it exists
+    const syncedWithFirebase = order.syncedWithFirebase || false;
+    orderMap.set(order.id, { ...order, syncedWithFirebase });
   });
 
   // Merge in Firebase orders
   firebaseOrders.forEach(fbOrder => {
-    // If order doesn't exist locally or Firebase has a newer version, use Firebase version
-    if (!orderMap.has(fbOrder.id) ||
-      new Date(fbOrder.timestamp) > new Date(orderMap.get(fbOrder.id).timestamp)) {
-      // Store Firebase ID for future updates
+    const existingLocalOrder = orderMap.get(fbOrder.id);
+
+    // If local order doesn't exist or Firebase version is newer, use Firebase version
+    if (!existingLocalOrder) {
+      // Firebase order doesn't exist locally - add it
       fbOrder.firebaseId = fbOrder.firebaseId || fbOrder.id;
+      fbOrder.syncedWithFirebase = true;
       orderMap.set(fbOrder.id, fbOrder);
+    } else if (new Date(fbOrder.timestamp) > new Date(existingLocalOrder.timestamp)) {
+      // Firebase has newer data - use it
+      fbOrder.firebaseId = fbOrder.firebaseId || fbOrder.id;
+      // Preserve the sync flag
+      fbOrder.syncedWithFirebase = true;
+      orderMap.set(fbOrder.id, fbOrder);
+    } else if (existingLocalOrder.status !== fbOrder.status) {
+      // Status mismatch - decide which is more "final"
+      // Priority: voided > completed > pending
+      const statusPriority = {
+        'voided': 3,
+        'completed': 2,
+        'pending': 1,
+        'deleted': 0
+      };
+
+      if ((statusPriority[existingLocalOrder.status] || 0) >
+        (statusPriority[fbOrder.status] || 0)) {
+        // Local status has higher priority, make sure it's marked as synced
+        // but we'll need to update Firebase
+        existingLocalOrder.syncedWithFirebase = true;
+        existingLocalOrder.firebaseId = existingLocalOrder.firebaseId || fbOrder.id;
+        orderMap.set(existingLocalOrder.id, existingLocalOrder);
+      } else {
+        // Firebase status has higher priority
+        fbOrder.syncedWithFirebase = true;
+        fbOrder.firebaseId = fbOrder.firebaseId || fbOrder.id;
+        orderMap.set(fbOrder.id, fbOrder);
+      }
+    } else {
+      // Orders match, ensure Firebase ID and sync status are set
+      existingLocalOrder.firebaseId = existingLocalOrder.firebaseId || fbOrder.id;
+      existingLocalOrder.syncedWithFirebase = true;
+      orderMap.set(existingLocalOrder.id, existingLocalOrder);
     }
   });
 
