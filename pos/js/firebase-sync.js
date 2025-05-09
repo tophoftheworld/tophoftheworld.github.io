@@ -77,9 +77,17 @@ export async function updateOrderInFirebase(orderId, orderDate, updates) {
     }
 }
 
+function getLocalDateString(date = new Date()) {
+    // Get local date components 
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
 export async function loadOrdersFromFirebase(date) {
     try {
-        const orderDate = date.toISOString().split('T')[0];
+        const orderDate = getLocalDateString(date);
 
         // Use the new structure to get orders for a specific date
         const q = query(
@@ -145,6 +153,10 @@ function getMenuItemId(item) {
 }
 
 export function queueSync(action, orderId, data, orderDate) {
+    if (!orderDate && data.timestamp) {
+        orderDate = getLocalDateString(new Date(data.timestamp));
+    }
+    
     syncQueue.push({ action, orderId, data, orderDate });
     if (!isSyncing) {
         processQueue();
@@ -165,66 +177,77 @@ async function processQueue() {
     }
 
     isSyncing = true;
-    const { action, orderId, data, orderDate } = syncQueue.shift();
+
+    // Process up to 5 items in one batch
+    const batchSize = 5;
+    const batch = syncQueue.length > batchSize ? syncQueue.splice(0, batchSize) : syncQueue.splice(0);
+
+    console.log(`Processing batch of ${batch.length} operations...`);
 
     try {
-        if (action === 'create') {
-            // Check if this order is already in Firebase
-            try {
-                const orderRef = doc(db, 'pos-orders/pop-up', orderDate, orderId);
-                const orderDoc = await getDoc(orderRef);
+        for (const { action, orderId, data, orderDate } of batch) {
+            if (action === 'create') {
+                // Check if this order is already in Firebase
+                try {
+                    const orderRef = doc(db, 'pos-orders/pop-up', orderDate, orderId);
+                    const orderDoc = await getDoc(orderRef);
 
-                if (orderDoc.exists()) {
-                    console.log(`Order ${orderId} already exists in Firebase, skipping.`);
+                    if (orderDoc.exists()) {
+                        console.log(`Order ${orderId} already exists in Firebase, skipping.`);
 
-                    // Still mark as synced locally
-                    const orderHistory = JSON.parse(localStorage.getItem('orderHistory') || '[]');
-                    const index = orderHistory.findIndex(o => o.id === orderId);
-                    if (index > -1) {
-                        orderHistory[index].syncedWithFirebase = true;
-                        orderHistory[index].firebaseId = orderId;
-                        localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+                        // Still mark as synced locally
+                        const orderHistory = JSON.parse(localStorage.getItem('orderHistory') || '[]');
+                        const index = orderHistory.findIndex(o => o.id === orderId);
+                        if (index > -1) {
+                            orderHistory[index].syncedWithFirebase = true;
+                            orderHistory[index].firebaseId = orderId;
+                            localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+                        }
+                    } else {
+                        // Save new order
+                        const firebaseId = await saveOrderToFirebase(data);
+
+                        // Update local storage with Firebase ID and sync status
+                        const orderHistory = JSON.parse(localStorage.getItem('orderHistory') || '[]');
+                        const index = orderHistory.findIndex(o => o.id === orderId);
+                        if (index > -1) {
+                            orderHistory[index].firebaseId = firebaseId;
+                            orderHistory[index].syncedWithFirebase = true;
+                            localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+                        }
                     }
-                } else {
-                    // Save new order
-                    const firebaseId = await saveOrderToFirebase(data);
-
-                    // Update local storage with Firebase ID and sync status
-                    const orderHistory = JSON.parse(localStorage.getItem('orderHistory') || '[]');
-                    const index = orderHistory.findIndex(o => o.id === orderId);
-                    if (index > -1) {
-                        orderHistory[index].firebaseId = firebaseId;
-                        orderHistory[index].syncedWithFirebase = true;
-                        localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
-                    }
-                }
-            } catch (error) {
-                console.error(`Error checking if order ${orderId} exists:`, error);
-                await saveOrderToFirebase(data);
-            }
-        } else if (action === 'update') {
-            // For updates, try to detect if the document exists first
-            try {
-                const orderRef = doc(db, 'pos-orders/pop-up', orderDate, orderId);
-                const orderDoc = await getDoc(orderRef);
-
-                if (orderDoc.exists()) {
-                    await updateOrderInFirebase(orderId, orderDate, data);
-                } else {
-                    // Document doesn't exist, create it instead
-                    console.log(`Document ${orderId} doesn't exist in Firebase, creating instead of updating`);
+                } catch (error) {
+                    console.error(`Error checking if order ${orderId} exists:`, error);
                     await saveOrderToFirebase(data);
                 }
-            } catch (error) {
-                console.error('Error checking document before update:', error);
-                // Don't attempt further operations
+            } else if (action === 'update') {
+                // For updates, try to detect if the document exists first
+                try {
+                    const orderRef = doc(db, 'pos-orders/pop-up', orderDate, orderId);
+                    const orderDoc = await getDoc(orderRef);
+
+                    if (orderDoc.exists()) {
+                        await updateOrderInFirebase(orderId, orderDate, data);
+                    } else {
+                        // Document doesn't exist, create it instead
+                        console.log(`Document ${orderId} doesn't exist in Firebase, creating instead of updating`);
+                        await saveOrderToFirebase(data);
+                    }
+                } catch (error) {
+                    console.error('Error checking document before update:', error);
+                    // Don't attempt further operations
+                }
             }
         }
     } catch (error) {
-        console.error('Sync error:', error);
-        // Don't push back to queue as it will create an infinite retry loop
+        console.error('Batch sync error:', error);
     }
 
-    // Continue processing the queue after a short delay
-    setTimeout(processQueue, 100);
+    // Continue processing the queue after a longer delay (1 second) if items remain
+    if (syncQueue.length > 0) {
+        setTimeout(processQueue, 1000); // 1 second delay between batches
+    } else {
+        isSyncing = false;
+        console.log('Queue processing completed.');
+    }
 }

@@ -14,18 +14,25 @@
 </head>
 
 <body class="body">
-    <div class="menu-wrapper">
+<div class="menu-wrapper">
+    <div class="header-container">
         <h1 class="menu-header">MATCHA BAR <span class="light">MENU</span></h1>
-        <div class="kiosk-container">
+        <img src="images/matchanese-logo.png" alt="Matchanese Logo" class="header-logo header-logo-desktop">
+        <img src="images/matchanese-icon.png" alt="Matchanese Logo" class="header-logo header-logo-mobile">
+    </div>
+    <div class="kiosk-container">
             <div id="menu-container" class="content menu">
                 <div class="left-menu" id="menuContent">
                     <!-- Menu content will be loaded dynamically here -->
                 </div>
             </div>
             <div id="order-panel" class="right-panel">
-                <h2 class="order-header" id="orderHeader">
-                    <span class="order-header-text">YOUR <span class="light">ORDER</span></span>
-                </h2>
+                <div class="order-header-container">
+                    <h2 class="order-header" id="orderHeader">
+                        <span class="order-header-text">YOUR <span class="light">ORDER</span></span>
+                    </h2>
+                    <button class="add-more-btn" id="mobileBackButton">+</button>
+                </div>
                 <div class="order-items">
                     <!-- Order items will be displayed here -->
                     <div class="empty-order-message">Your order is empty</div>
@@ -50,6 +57,9 @@
                             <button class="date-display" id="dateDisplay">TODAY</button>
                             <button class="date-nav-btn" id="nextDay">›</button>
                         </div>
+                        <div class="date-actions">
+                            <button class="delete-date-btn" id="deleteDay">DELETE THIS DAY'S DATA</button>
+                        </div>
                         <div class="total-sales">
                             <div class="sales-amount">₱0.00</div>
                             <div class="sales-label">TOTAL SALES</div>
@@ -60,6 +70,10 @@
             </div>
         </div>
     </div>
+        <div class="mobile-order-button" id="mobileOrderButton">
+            <span>VIEW ORDER</span>
+            <span class="mobile-order-total">₱ 0.00</span>
+        </div>
 
     <script type="module" src="js/firebase-setup.js"></script>
     <script type="module" src="js/firebase-sync.js"></script>

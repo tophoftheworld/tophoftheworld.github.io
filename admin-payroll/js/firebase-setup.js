@@ -1,19 +1,7 @@
-// firebase-config.js
+// firebase-setup.js
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
-import {
-    getFirestore,
-    collection,
-    addDoc,
-    updateDoc,
-    doc,
-    getDocs,
-    query,
-    orderBy,
-    limit,
-    setDoc,
-    getDoc,
-    deleteDoc  // Add this import
-} from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+import { getFirestore } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-storage.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyA6ikBMsQACcUpn4Jff7PQFeWLN8wv18EE",
@@ -27,5 +15,6 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const storage = getStorage(app);
 
-export { db, collection, addDoc, updateDoc, doc, getDocs, query, orderBy, limit, setDoc, getDoc, deleteDoc };
+export { db, storage, ref, uploadBytes, getDownloadURL };

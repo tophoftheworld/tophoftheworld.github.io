@@ -2633,20 +2633,24 @@ function updatePayrollUI(payrollData) {
         const dateCell = document.createElement('td');
         dateCell.className = 'date-cell';
 
-        const dateParts = new Date(day.date).toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            weekday: 'short'
-        }).split(', ');
+        // Format date in a cleaner way
+        const dateObj = new Date(day.date);
+        const month = dateObj.toLocaleDateString('en-US', { month: 'short' });
+        const dayNum = dateObj.getDate();
+        const dayOfWeek = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
 
-        // Create two spans for date and day of week
+        // Create date display with cleaner spacing
         const dateSpan = document.createElement('span');
         dateSpan.className = 'date-day';
-        dateSpan.textContent = dateParts[1]; // Apr 12
+        dateSpan.textContent = `${month} ${dayNum}`;
 
         const dowSpan = document.createElement('span');
         dowSpan.className = 'date-dow';
-        dowSpan.textContent = dateParts[0]; // Mon
+        dowSpan.innerHTML = `<br>${dayOfWeek}`;
+        // dowSpan.style.fontSize = '14px';
+        // dowSpan.style.fontWeight = '700';
+        // dateSpan.style.fontSize = '10px';
+        // dateSpan.style.fontWeight = '700';
 
         dateCell.appendChild(dateSpan);
         dateCell.appendChild(dowSpan);
@@ -2712,6 +2716,7 @@ function updatePayrollUI(payrollData) {
     });
 }
 
+// Replace this entire function:
 async function populatePayrollPeriods() {
     const periodSelect = document.getElementById('payrollPeriod');
     if (!periodSelect) return;
@@ -2719,62 +2724,19 @@ async function populatePayrollPeriods() {
     // Clear existing options
     periodSelect.innerHTML = '';
 
-    if (!navigator.onLine || !currentUser) {
-        // Fallback periods if offline
-        addPeriodOption(periodSelect, "May 29 - Jun 12, 2025");
-        addPeriodOption(periodSelect, "May 13 - May 28, 2025");
-        addPeriodOption(periodSelect, "Apr 29 - May 12, 2025");
-        addPeriodOption(periodSelect, "Apr 13 - Apr 27, 2025");
-        return;
-    }
-
     // Define the current date and a range of 6 months back
     const now = new Date();
     const sixMonthsAgo = new Date(now);
     sixMonthsAgo.setMonth(now.getMonth() - 6);
 
-    // Generate base periods
+    // Generate base periods - this should include future periods
     const periods = generatePayrollPeriods(sixMonthsAgo, now);
 
-    try {
-        // Get all dates with attendance data
-        const attendanceDates = await getAttendanceDatesFromFirestore();
-
-        if (attendanceDates && attendanceDates.length > 0) {
-            // Filter periods that have attendance data
-            const sortedDates = attendanceDates.sort((a, b) => new Date(b) - new Date(a));
-
-            const periodsWithData = periods.filter(period => {
-                return sortedDates.some(dateStr => {
-                    const date = new Date(dateStr);
-                    return date >= period.start && date <= period.end;
-                });
-            });
-
-            // Add periods to select
-            if (periodsWithData.length > 0) {
-                periodsWithData.forEach(period => {
-                    addPeriodOption(periodSelect, period.label);
-                });
-            } else {
-                // No periods with data, add default periods
-                periods.slice(0, 4).forEach(period => {
-                    addPeriodOption(periodSelect, period.label);
-                });
-            }
-        } else {
-            // No attendance data, add default periods
-            periods.slice(0, 4).forEach(period => {
-                addPeriodOption(periodSelect, period.label);
-            });
-        }
-    } catch (error) {
-        console.error("Error fetching attendance dates:", error);
-        // Fallback to default periods on error
-        periods.slice(0, 4).forEach(period => {
-            addPeriodOption(periodSelect, period.label);
-        });
-    }
+    // Always show ALL periods regardless of attendance data
+    // Sort by newest first
+    periods.sort((a, b) => b.end - a.end).forEach(period => {
+        addPeriodOption(periodSelect, period.label);
+    });
 }
 
 function generatePayrollPeriods(startDate, endDate) {

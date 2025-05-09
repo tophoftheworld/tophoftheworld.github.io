@@ -1,5 +1,6 @@
 import { menuData } from './menu-data.js';
 import { queueSync, initializeMenuItems, loadOrdersFromFirebase } from './firebase-sync.js';
+import { db, collection, doc, getDocs, deleteDoc } from './firebase-setup.js';
 
 // Customization options
 const customizationOptions = {
@@ -232,7 +233,8 @@ function updateOrderDisplay() {
 
       // Only add customizations that exist
       const customDisplay = [];
-
+      
+      if (item.customizations.variant) customDisplay.push(item.customizations.variant);
       if (item.customizations.size) customDisplay.push(item.customizations.size);
       if (item.customizations.serving) customDisplay.push(item.customizations.serving);
       if (item.customizations.sweetness) {
@@ -254,6 +256,7 @@ function updateOrderDisplay() {
 
       orderItemName.appendChild(customText);
     }
+
 
     orderItemHeader.appendChild(orderItemName);
 
@@ -343,12 +346,11 @@ function displayOrderHistory() {
   orderGrid.innerHTML = '';  // Clear only the grid
 
   const today = new Date();
-  const isToday = selectedDate.toDateString() === today.toDateString();
+  const isToday = getLocalDateString(selectedDate) === getLocalDateString(today);
 
   // Filter orders by selected date
   const selectedDateOrders = orderHistory.filter(order => {
-    const orderDate = new Date(order.timestamp);
-    return orderDate.toDateString() === selectedDate.toDateString();
+    return getLocalDateString(new Date(order.timestamp)) === getLocalDateString(selectedDate);
   });
 
   if (isToday) {
@@ -498,9 +500,8 @@ function displayOrderHistory() {
 
 function calculateTotalSales(date) {
     const selectedDateOrders = orderHistory.filter(order => {
-        const orderDate = new Date(order.timestamp);
-        return orderDate.toDateString() === date.toDateString() && 
-               (order.status === 'pending' || order.status === 'completed'); // Exclude voided
+      return getLocalDateString(new Date(order.timestamp)) === getLocalDateString(date) &&
+        (order.status === 'pending' || order.status === 'completed');
     });
     
     return selectedDateOrders.reduce((total, order) => total + order.total, 0);
@@ -600,6 +601,7 @@ function createOrderCard(order, isCompleted, isVoided = false) {
 
       const customDisplay = [];
 
+      if (item.customizations.variant) customDisplay.push(item.customizations.variant);
       if (item.customizations.size) customDisplay.push(item.customizations.size);
       if (item.customizations.serving) customDisplay.push(item.customizations.serving);
       if (item.customizations.sweetness) {
@@ -685,25 +687,35 @@ function createOrderCard(order, isCompleted, isVoided = false) {
   return orderCard;
 }
 
-// Find and replace the editOrder function:
 function editOrder(orderId) {
   const order = orderHistory.find(o => o.id === orderId);
   if (!order) return;
 
+  // Store the original order ID and Firebase ID for later use
+  const originalOrderId = order.id;
+  const firebaseId = order.firebaseId;
+
+  // Load items into current order
   currentOrder = order.items.map(item => ({ ...item }));
   customerName = order.customerName || '';
 
+  // Remove from order history temporarily (we'll add it back when completing)
   const orderIndex = orderHistory.findIndex(o => o.id === orderId);
   if (orderIndex > -1) {
     orderHistory.splice(orderIndex, 1);
     localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
-    
-    // Mark as deleted in Firebase if it has a firebaseId
-    if (order.firebaseId) {
-      queueSync('update', orderId, { ...order, status: 'deleted' });
-    }
   }
 
+  // Store original order info in a temporary variable for later use
+  window.editingOrderData = {
+    originalId: originalOrderId,
+    firebaseId: firebaseId,
+    timestamp: order.timestamp,
+    status: order.status,
+    paymentMethod: order.paymentMethod
+  };
+
+  // Switch to menu view
   const menuContainer = document.getElementById('menu-container');
   const orderPanel = document.getElementById('order-panel');
   const ordersContainer = document.getElementById('orders-container');
@@ -723,6 +735,11 @@ function returnToPending(orderId) {
   if (orderIndex > -1) {
     orderHistory[orderIndex].status = 'pending';
     localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+
+    // Add this part to sync with Firebase
+    const orderDate = getLocalDateString(new Date(orderHistory[orderIndex].timestamp));
+    queueSync('update', orderId, orderHistory[orderIndex], orderDate);
+
     displayOrderHistory();
   }
 }
@@ -764,13 +781,21 @@ function voidOrderConfirmed(orderId) {
     orderHistory[orderIndex].status = 'voided';
     localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
 
-    // Queue for Firebase sync
-    queueSync('update', orderId, orderHistory[orderIndex]);
+    // Pass order date to sync queue
+    const orderDate = getLocalDateString(new Date(orderHistory[orderIndex].timestamp));
+    queueSync('update', orderId, orderHistory[orderIndex], orderDate);
 
     displayOrderHistory();
   }
 }
 
+function getLocalDateString(date = new Date()) {
+  // Get local date components
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
 function completeOrder(orderId) {
   const orderIndex = orderHistory.findIndex(order => order.id === orderId);
@@ -779,7 +804,7 @@ function completeOrder(orderId) {
     localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
 
     // Pass order date to sync queue
-    const orderDate = new Date(orderHistory[orderIndex].timestamp).toISOString().split('T')[0];
+    const orderDate = getLocalDateString(new Date(orderHistory[orderIndex].timestamp));
     queueSync('update', orderId, orderHistory[orderIndex], orderDate);
 
     displayOrderHistory();
@@ -924,6 +949,17 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
   if (!allowedCustomizations || allowedCustomizations.milk) {
     const milkSection = createOptionSection('Milk', ['dairy', 'oat'], currentCustomizations.milk || 'dairy');
     modal.appendChild(milkSection);
+  }
+
+  if (item.variants && item.variants.length > 0) {
+    const variantNames = item.variants.map(variant => variant.name);
+    const defaultVariant = currentCustomizations.variant || variantNames[0];
+
+    const variantSection = createOptionSection('Flavor', variantNames, defaultVariant);
+    modal.appendChild(variantSection);
+
+    // Optional: Store price adjustments for variants to use later
+    variantSection.dataset.priceData = JSON.stringify(item.variants);
   }
 
   // Quantity section
@@ -1092,6 +1128,9 @@ function getSelectedOptions() {
   const quantity = document.querySelector('.modal-quantity .quantity-display');
   if (quantity) options.quantity = parseInt(quantity.textContent);
 
+  const variantButton = document.querySelector('.option-button.active[data-group="flavor"]');
+  if (variantButton) options.variant = variantButton.dataset.option;
+
   return options;
 }
 
@@ -1106,6 +1145,13 @@ function addCustomizedItemToOrder(baseItem, overlay) {
   if (options.milk && customizationOptions.milk[options.milk]) {
     additionalPrice += customizationOptions.milk[options.milk];
   }
+  
+  if (options.variant && baseItem.variants) {
+    const selectedVariant = baseItem.variants.find(v => v.name === options.variant);
+    if (selectedVariant && selectedVariant.price) {
+      additionalPrice += selectedVariant.price;
+    }
+  }
 
   // Check if this exact customization already exists in the order
   const existingItemIndex = currentOrder.findIndex(orderItem =>
@@ -1114,7 +1160,8 @@ function addCustomizedItemToOrder(baseItem, overlay) {
     orderItem.customizations.size === options.size &&
     orderItem.customizations.serving === options.serving &&
     orderItem.customizations.sweetness === options.sweetness &&
-    orderItem.customizations.milk === options.milk
+    orderItem.customizations.milk === options.milk &&
+    orderItem.customizations.variant === options.variant
   );
 
   if (existingItemIndex > -1) {
@@ -1418,44 +1465,82 @@ function selectCashAmount(amount, modal) {
 
 function completeCashPayment() {
   const now = new Date();
+
+  // Determine if we're editing or creating a new order
+  const isEditing = window.editingOrderData !== undefined;
+
+  // Create the order object with shared properties
   const order = {
-    id: now.getTime().toString().slice(-5),
+    id: isEditing ? window.editingOrderData.originalId : now.getTime().toString().slice(-5),
     items: [...currentOrder],
     total: calculateOrderTotal(),
     paymentMethod: 'Cash',
-    timestamp: now.toISOString(),
+    timestamp: isEditing ? window.editingOrderData.timestamp : now.toISOString(),
     status: 'pending',
     customerName: customerName
   };
+
+  // Add Firebase ID if we're editing
+  if (isEditing && window.editingOrderData.firebaseId) {
+    order.firebaseId = window.editingOrderData.firebaseId;
+  }
 
   // Save to order history
   orderHistory.push(order);
   localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
 
-  const orderDate = now.toISOString().split('T')[0];
-  queueSync('create', order.id, order, orderDate);
+  // Determine order date and sync action
+  const orderDate = getLocalDateString(new Date(order.timestamp));
+  console.log(`Creating/updating order with date: ${orderDate}`);
+
+  const syncAction = isEditing ? 'update' : 'create';
+  queueSync(syncAction, order.id, order, orderDate);
+
+  // Clear editing state if needed
+  if (isEditing) {
+    window.editingOrderData = undefined;
+  }
 
   showOrderConfirmation();
 }
 
 function completeDigitalPayment(method) {
   const now = new Date();
+
+  // Determine if we're editing or creating a new order
+  const isEditing = window.editingOrderData !== undefined;
+
+  // Create the order object with shared properties
   const order = {
-    id: now.getTime().toString().slice(-5),
+    id: isEditing ? window.editingOrderData.originalId : now.getTime().toString().slice(-5),
     items: [...currentOrder],
     total: calculateOrderTotal(),
     paymentMethod: method,
-    timestamp: now.toISOString(),
+    timestamp: isEditing ? window.editingOrderData.timestamp : now.toISOString(),
     status: 'pending',
     customerName: customerName
   };
+
+  // Add Firebase ID if we're editing
+  if (isEditing && window.editingOrderData.firebaseId) {
+    order.firebaseId = window.editingOrderData.firebaseId;
+  }
 
   // Save to order history
   orderHistory.push(order);
   localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
 
-  const orderDate = now.toISOString().split('T')[0];
-  queueSync('create', order.id, order, orderDate);
+  // Determine order date and sync action
+  const orderDate = getLocalDateString(new Date(order.timestamp));
+  console.log(`Creating/updating order with date: ${orderDate}`);
+
+  const syncAction = isEditing ? 'update' : 'create';
+  queueSync(syncAction, order.id, order, orderDate);
+
+  // Clear editing state if needed
+  if (isEditing) {
+    window.editingOrderData = undefined;
+  }
 
   showOrderConfirmation();
 }
@@ -1564,12 +1649,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   await syncOrdersWithFirebase();
 
   // Schedule periodic sync
-  setInterval(syncOrdersWithFirebase, 30000);
+  setInterval(syncOrdersWithFirebase, 60000);
 
   // Order header event listener
   const orderHeader = document.getElementById('orderHeader');
   if (orderHeader) {
     orderHeader.addEventListener('click', showNameInputModal);
+  }
+
+  const deleteDayBtn = document.getElementById('deleteDay');
+  if (deleteDayBtn) {
+    deleteDayBtn.addEventListener('click', clearDateData);
   }
 });
 
@@ -1581,35 +1671,22 @@ async function syncOrdersWithFirebase() {
   try {
     console.log("Starting sync with Firebase...");
 
-    // Load orders from all relevant dates (today and past 7 days)
-    const dates = [];
-    const today = new Date();
+    // Only sync the currently selected date
+    const syncDate = selectedDate;
+    const dateStr = getLocalDateString(syncDate);
 
-    // Always include today
-    dates.push(today);
+    console.log(`Syncing orders for ${dateStr}...`);
 
-    // Add past 7 days
-    for (let i = 1; i <= 7; i++) {
-      const pastDate = new Date();
-      pastDate.setDate(pastDate.getDate() - i);
-      dates.push(pastDate);
-    }
-
-    // Collect all Firebase orders
+    // Only fetch orders for the selected date
     let firebaseOrders = [];
-
-    // Get orders from Firebase for all dates
-    for (const date of dates) {
-      try {
-        const fbOrders = await loadOrdersFromFirebase(date);
-        if (fbOrders && fbOrders.length > 0) {
-          console.log(`Found ${fbOrders.length} orders in Firebase for ${date.toISOString().split('T')[0]}.`);
-          firebaseOrders = [...firebaseOrders, ...fbOrders];
-        }
-      } catch (error) {
-        // Ignore errors for specific dates
-        console.log(`No orders found in Firebase for ${date.toISOString().split('T')[0]}.`);
+    try {
+      const fbOrders = await loadOrdersFromFirebase(syncDate);
+      if (fbOrders && fbOrders.length > 0) {
+        console.log(`Found ${fbOrders.length} orders in Firebase for ${dateStr}.`);
+        firebaseOrders = fbOrders;
       }
+    } catch (error) {
+      console.log(`No orders found in Firebase for ${dateStr}: ${error.message}`);
     }
 
     // Create a map of firebase orders by ID for efficient lookup
@@ -1621,8 +1698,16 @@ async function syncOrdersWithFirebase() {
     // Get local orders
     const localOrders = JSON.parse(localStorage.getItem('orderHistory') || '[]');
 
+    // Filter local orders to only include those from the selected date
+    const selectedDateLocalOrders = localOrders.filter(order => {
+      const orderDate = new Date(order.timestamp);
+      return orderDate.toDateString() === syncDate.toDateString();
+    });
+
+    console.log(`Found ${selectedDateLocalOrders.length} local orders for ${dateStr}`);
+
     // Process each local order for sync
-    for (const localOrder of localOrders) {
+    for (const localOrder of selectedDateLocalOrders) {
       const orderDate = new Date(localOrder.timestamp).toISOString().split('T')[0];
       const fbOrder = firebaseOrderMap.get(localOrder.id);
 
@@ -1645,20 +1730,19 @@ async function syncOrdersWithFirebase() {
     localStorage.setItem('orderHistory', JSON.stringify(localOrders));
 
     // Merge Firebase orders into local storage
-    if (firebaseOrders.length > 0) {
-      const mergedOrders = mergeOrders(localOrders, firebaseOrders);
+    const mergedOrders = mergeOrders(localOrders, firebaseOrders);
 
-      // Update local storage
-      orderHistory = mergedOrders;
-      localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+    // Update local storage
+    orderHistory = mergedOrders;
+    localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
 
-      console.log(`Successfully synced with Firebase. Total orders: ${orderHistory.length}`);
+    console.log(`Successfully synced with Firebase. Total orders: ${orderHistory.length}`);
 
-      // Update display if on orders page
-      if (document.getElementById('orders-container').style.display !== 'none') {
-        displayOrderHistory();
-      }
+    // Update display if on orders page
+    if (document.getElementById('orders-container').style.display !== 'none') {
+      displayOrderHistory();
     }
+
   } catch (error) {
     console.error('Error syncing with Firebase:', error);
   }
@@ -1673,8 +1757,12 @@ function mergeOrders(localOrders, firebaseOrders) {
     orderMap.set(order.id, { ...order, syncedWithFirebase });
   });
 
+  // Track which Firebase orders have been processed
+  const processedFirebaseOrderIds = new Set();
+
   // Merge in Firebase orders
   firebaseOrders.forEach(fbOrder => {
+    processedFirebaseOrderIds.add(fbOrder.id);
     const existingLocalOrder = orderMap.get(fbOrder.id);
 
     // If Firebase order doesn't exist locally, add it
@@ -1687,6 +1775,7 @@ function mergeOrders(localOrders, firebaseOrders) {
     else {
       // Update Firebase ID reference
       existingLocalOrder.firebaseId = fbOrder.firebaseId || fbOrder.id;
+      existingLocalOrder.syncedWithFirebase = true; // Always mark as synced
 
       // Compare timestamps to determine which is newer
       const localTimestamp = new Date(existingLocalOrder.timestamp).getTime();
@@ -1714,10 +1803,6 @@ function mergeOrders(localOrders, firebaseOrders) {
         };
 
         orderMap.set(fbOrder.id, mergedOrder);
-      } else {
-        // Keep local data but mark as synced
-        existingLocalOrder.syncedWithFirebase = true;
-        orderMap.set(existingLocalOrder.id, existingLocalOrder);
       }
     }
   });
@@ -1812,6 +1897,9 @@ function initializeDatePicker() {
       selectedDate = selectedDates[0];
       updateDateDisplay();
       displayOrderHistory();
+
+      // Sync the newly selected date with Firebase
+      syncOrdersWithFirebase();
     },
     maxDate: "today",
     disableMobile: true
@@ -1822,6 +1910,9 @@ function initializeDatePicker() {
     selectedDate.setDate(selectedDate.getDate() - 1);
     updateDateDisplay();
     displayOrderHistory();
+
+    // Sync the newly selected date with Firebase
+    syncOrdersWithFirebase();
   });
 
   // Next day button
@@ -1829,6 +1920,9 @@ function initializeDatePicker() {
     selectedDate.setDate(selectedDate.getDate() + 1);
     updateDateDisplay();
     displayOrderHistory();
+
+    // Sync the newly selected date with Firebase
+    syncOrdersWithFirebase();
   });
 
   updateDateDisplay();
@@ -1863,3 +1957,169 @@ function updateDateDisplay() {
 
   updateTotalSalesDisplay();
 }
+
+// Add this to your script.js file
+function initializeMobileLayout() {
+  const mobileOrderButton = document.getElementById('mobileOrderButton');
+  const mobileBackButton = document.getElementById('mobileBackButton');
+  const orderPanel = document.getElementById('order-panel');
+  const menuContainer = document.getElementById('menu-container');
+
+  if (mobileOrderButton && mobileBackButton) {
+    mobileOrderButton.addEventListener('click', () => {
+      orderPanel.style.display = 'flex';
+      mobileOrderButton.style.display = 'none';
+    });
+
+    mobileBackButton.addEventListener('click', () => {
+      orderPanel.style.display = 'none';
+      mobileOrderButton.style.display = 'flex';
+    });
+  }
+
+  // Update the mobile order button total when the order changes
+  function updateMobileOrderButton() {
+    const mobileTotal = document.querySelector('.mobile-order-total');
+    if (mobileTotal) {
+      const total = calculateOrderTotal();
+      mobileTotal.textContent = '₱ ' + total.toFixed(2);
+
+      // Update items count
+      const itemsCount = currentOrder.reduce((sum, item) => sum + item.quantity, 0);
+      const viewOrderText = document.querySelector('#mobileOrderButton > span:first-child');
+      if (viewOrderText) {
+        viewOrderText.textContent = itemsCount > 0 ?
+          `VIEW ORDER (${itemsCount} ${itemsCount === 1 ? 'item' : 'items'})` :
+          'VIEW ORDER';
+      }
+    }
+  }
+
+  // Extend the existing updateOrderDisplay function
+  const originalUpdateOrderDisplay = updateOrderDisplay;
+  window.updateOrderDisplay = function () {
+    originalUpdateOrderDisplay();
+    updateMobileOrderButton();
+  };
+}
+
+// Call this in your DOMContentLoaded event
+document.addEventListener('DOMContentLoaded', async () => {
+  // ... existing code ...
+  initializeMobileLayout();
+});
+
+function clearDateData() {
+  const dateString = getLocalDateString(selectedDate);
+  
+  // Show confirmation dialog
+  const confirmMsg = `Are you sure you want to delete ALL orders for ${selectedDate.toLocaleDateString()}?`;
+  if (!confirm(confirmMsg)) {
+    return; // User cancelled
+  }
+
+  try {
+    // 1. Filter out orders for the specified date from local storage
+    const orders = JSON.parse(localStorage.getItem('orderHistory') || '[]');
+    console.log(`Before filtering: ${orders.length} total orders`);
+    
+    const filteredOrders = orders.filter(order => {
+      const orderDateStr = getLocalDateString(new Date(order.timestamp));
+      const shouldKeep = orderDateStr !== dateString;
+      if (!shouldKeep) {
+        console.log(`Filtering out order ${order.id} with date ${orderDateStr}`);
+      }
+      return shouldKeep;
+    });
+    
+    console.log(`After filtering: ${filteredOrders.length} orders remain`);
+
+    // 2. Save filtered orders back to local storage
+    localStorage.setItem('orderHistory', JSON.stringify(filteredOrders));
+    orderHistory = filteredOrders;
+
+    // 3. Clear current order if we're clearing today's data
+    const today = getLocalDateString(new Date());
+    if (dateString === today) {
+      currentOrder = [];
+      customerName = '';
+      updateOrderDisplay();
+      updateOrderHeader();
+    }
+
+    // 4. Refresh the order history display
+    displayOrderHistory();
+
+    // 5. Delete the same day's data from Firebase
+    console.log(`Clearing Firebase data for date: ${dateString}`);
+
+    // Create a reference to the date collection in Firebase
+    const dayRef = doc(db, 'pos-orders/pop-up');
+    const ordersRef = collection(dayRef, dateString);
+
+    // Get all orders for that date and delete them
+    getDocs(ordersRef).then(snapshot => {
+      console.log(`Found ${snapshot.size} documents to delete from Firebase`);
+      
+      if (snapshot.empty) {
+        console.log(`No orders found for ${dateString} in Firebase`);
+        alert(`Successfully deleted local data for ${selectedDate.toLocaleDateString()}. No Firebase data found.`);
+        return;
+      }
+
+      let deleteCount = 0;
+      const totalDocs = snapshot.size;
+
+      snapshot.forEach(document => {
+        console.log(`Deleting document ID: ${document.id}`);
+        deleteDoc(doc(dayRef, dateString, document.id))
+          .then(() => {
+            console.log(`Deleted order ${document.id}`);
+            deleteCount++;
+            if (deleteCount === totalDocs) {
+              alert(`Successfully deleted ${deleteCount} orders for ${selectedDate.toLocaleDateString()}`);
+            }
+          })
+          .catch(error => console.error(`Error deleting order ${document.id}:`, error));
+      });
+    }).catch(error => {
+      console.error(`Error getting orders for ${dateString}:`, error);
+      alert(`Error deleting Firebase data: ${error.message}`);
+    });
+
+  } catch (error) {
+    console.error(`Error in clearDateData:`, error);
+    alert(`Error clearing data: ${error.message}`);
+  }
+}
+
+// Add this function to help debug date-related issues
+function debugDates() {
+  const now = new Date();
+  console.log("===== DATE DEBUG INFO =====");
+  console.log(`Current time: ${now.toString()}`);
+  console.log(`Local date string: ${getLocalDateString(now)}`);
+  console.log(`ISO date: ${now.toISOString()}`);
+  console.log(`ISO date split: ${now.toISOString().split('T')[0]}`);
+  console.log(`Date string: ${now.toDateString()}`);
+
+  const orders = JSON.parse(localStorage.getItem('orderHistory') || '[]');
+  console.log(`Total orders in local storage: ${orders.length}`);
+
+  // Count orders by date
+  const ordersByDate = {};
+  orders.forEach(order => {
+    const dateStr = getLocalDateString(new Date(order.timestamp));
+    ordersByDate[dateStr] = (ordersByDate[dateStr] || 0) + 1;
+  });
+
+  console.log("Orders by date:");
+  Object.keys(ordersByDate).sort().forEach(date => {
+    console.log(`${date}: ${ordersByDate[date]} orders`);
+  });
+
+  console.log("===========================");
+}
+
+// Call this from your browser console when needed
+window.debugDates = debugDates;

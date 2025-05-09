@@ -11,6 +11,10 @@ export const menuData = {
         {
             id: "specials",
             name: "Specials"
+        },
+        {
+            id: "desserts",
+            name: "Desserts"
         }
     ],
     items: [
@@ -91,6 +95,72 @@ export const menuData = {
             description: "Our Signature Matchanese Latte topped with Matcha Cream and Matcha Powder",
             price: 270,
             type: "Iced"
+        },
+        {
+            categoryId: "desserts",
+            name: "<span class=\"text-span-2\">warabi mochi</span> (box)",
+            description: "",
+            price: 270,
+            type: "",
+            variants: [
+                { name: "Matcha", price: 0 },
+                { name: "Kinako", price: 0 },
+            ],
+            customizations: {
+                size: false,      // Can customize size
+                serving: false,   // Can customize serving
+                sweetness: false, // Can customize sweetness
+                milk: false      // Cannot customize milk
+            }
+        },
+        {
+            categoryId: "desserts",
+            name: "<span class=\"text-span-2\">warabi mochi</span> (cup)",
+            description: "",
+            price: 105,
+            type: "",
+            variants: [
+                { name: "Matcha", price: 0 },
+                { name: "Kinako", price: 0 },
+            ],
+            customizations: {
+                size: false,      // Can customize size
+                serving: false,   // Can customize serving
+                sweetness: false, // Can customize sweetness
+                milk: false      // Cannot customize milk
+            }
+        },
+        {
+            categoryId: "desserts",
+            name: "matcha <span class=\"text-span-2\">cookie</span>",
+            description: "",
+            price: 165,
+            type: "",
+            variants: [
+                { name: "Matcha Bomb", price: 0 },
+                { name: "Matcha White Chocolate", price: 0 },
+                { name: "Matcha Dark Chocolate", price: 0 },
+                { name: "Matcha Oreo", price: 0 }
+            ],
+            customizations: {
+                size: false,      // Can customize size
+                serving: false,   // Can customize serving
+                sweetness: false, // Can customize sweetness
+                milk: false      // Cannot customize milk
+            }
+        },
+        {
+            categoryId: "desserts",
+            name: "<span class=\"text-span-2\">mochi donut</span>",
+            description: "",
+            price: 95,
+            type: "",
+            customizations: {
+                size: false,      // Can customize size
+                serving: false,   // Can customize serving
+                sweetness: false, // Can customize sweetness
+                milk: false      // Cannot customize milk
+            }
         }
     ]
 };
