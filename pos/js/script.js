@@ -1889,6 +1889,27 @@ function initializeDatePicker() {
   const dateDisplay = document.getElementById('dateDisplay');
   const prevDayBtn = document.getElementById('prevDay');
   const nextDayBtn = document.getElementById('nextDay');
+  
+  const refreshBtn = document.getElementById('refreshBtn');
+
+  refreshBtn.addEventListener('click', async () => {
+    const refreshIcon = refreshBtn.querySelector('.refresh-icon');
+    refreshIcon.classList.add('rotating');
+    refreshBtn.disabled = true;
+
+    try {
+      await syncOrdersWithFirebase();
+      displayOrderHistory();
+    } catch (error) {
+      console.error('Error during refresh:', error);
+    } finally {
+      // Remove rotation animation after 1 second
+      setTimeout(() => {
+        refreshIcon.classList.remove('rotating');
+        refreshBtn.disabled = false;
+      }, 1000);
+    }
+  });
 
   // Initialize Flatpickr
   flatpickr(dateDisplay, {

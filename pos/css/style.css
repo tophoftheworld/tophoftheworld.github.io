@@ -1420,6 +1420,7 @@ body {
   font-weight: 600;
   cursor: pointer;
   transition: background-color 0.3s;
+  display: none;
 }
 
 .delete-date-btn:hover {
@@ -1477,6 +1478,39 @@ body {
 
   .content.menu {
     padding-right: 15px;
+  }
+}
+
+.date-nav-btn.refresh-btn {
+  margin-left: 8px;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px !important;
+  /* Use !important to override the last-child rule */
+}
+
+.refresh-btn:hover:not(:disabled) {
+  background-color: #1d8a00;
+  color: white;
+}
+
+.refresh-icon {
+  display: inline-block;
+}
+
+.refresh-icon.rotating {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
   }
 }
 
