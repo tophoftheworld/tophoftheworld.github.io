@@ -13,6 +13,10 @@ export const menuData = {
             name: "Specials"
         },
         {
+            id: "beyond-matcha",
+            name: "Beyond Matcha"
+        },
+        {
             id: "desserts",
             name: "Desserts"
         }
@@ -31,7 +35,7 @@ export const menuData = {
             name: "<span class=\"text-span-2\">matchanese</span> sea salt latte",
             description: "Our Signature Matchanese Latte topped with Salted Cream",
             price: 240,
-            tags: ["best seller"],
+            tags: ["Best Seller"],
             type: "Iced"
         },
         {
@@ -39,6 +43,7 @@ export const menuData = {
             name: "strawberry <span class=\"text-span-2\">matchanese</span> latte",
             description: "Our Signature Matchanese Latte topped with Strawberry Puree",
             price: 250,
+            tags: ["Must-Try!"],
             type: "Iced"
         },
         {
@@ -69,11 +74,24 @@ export const menuData = {
             }
         },
         {
+            categoryId: "matcha-lite",
+            name: "<span class=\"text-span-2\">matchanese</span> dalandan",
+            description: "Hand-whisked Ceremonial Matcha over Dalandan Juice",
+            price: 190,
+            type: "Iced",
+            customizations: {
+                size: true,      // Can customize size
+                serving: true,   // Can customize serving
+                sweetness: false, // Can customize sweetness
+                milk: false      // Cannot customize milk
+            }
+        },
+        {
             categoryId: "specials",
             name: "<span class=\"text-span-2\">matchanese</span> coconut cloud",
             description: "Coconut Juice Topped with matcha Cream and Matcha Powder",
-            price: 270,
-            // tags: ["best-seller"],
+            price: 250,
+            tags: ["Limited Time"],
             type: "Iced",
             customizations: {
                 size: true,      // Can customize size
@@ -86,7 +104,8 @@ export const menuData = {
             categoryId: "specials",
             name: "peach mango <span class=\"text-span-2\">matchanese</span> latte",
             description: "Our Signature Matchanese Latte with Peach Syrup and Mango Puree",
-            price: 270,
+            tags: ["Limited Time"],
+            price: 250,
             type: "Iced"
         },
         {
@@ -94,6 +113,14 @@ export const menuData = {
             name: "triple <span class=\"text-span-2\">matchanese</span> cloud",
             description: "Our Signature Matchanese Latte topped with Matcha Cream and Matcha Powder",
             price: 270,
+            type: "Iced"
+        },
+        {
+            categoryId: "beyond-matcha",
+            name: "<span class=\"text-span-2\">hojicha</span> latte",
+            description: "Freshly Whisked Roasted Green Tea over Milk",
+            price: 180,
+            // tags: ["best-seller"],
             type: "Iced"
         },
         {
