@@ -60,13 +60,22 @@
                 <div id="ordersContent">
                     <div class="orders-header">
                         <div class="date-picker-container">
+                            <div class="event-selector-container">
+                                <select class="event-selector" id="eventSelector">
+                                    <option value="pop-up">Pop-up (Main)</option>
+                                </select>
+                                <button class="edit-event-btn" id="editEventBtn">✎</button>
+                                <button class="add-event-btn" id="addEventBtn">+</button>
+                            </div>
                             <button class="date-nav-btn" id="prevDay">‹</button>
                             <button class="date-display" id="dateDisplay">TODAY</button>
                             <button class="date-nav-btn" id="nextDay">›
-                            <button class="date-nav-btn refresh-btn" id="refreshBtn"><span class="refresh-icon">↻</span></button>
+                                <button class="date-nav-btn refresh-btn" id="refreshBtn"><span class="refresh-icon">↻</span></button>
                         </div>
                         <div class="date-actions">
                             <button class="delete-date-btn" id="deleteDay">DELETE THIS DAY'S DATA</button>
+                            <button class="z-reading-btn" id="endOfDayBtn">Sales Summary</button>
+                            <button class="force-sync-btn" id="forceSyncBtn">Force Sync</button>
                         </div>
                         <div class="total-sales">
                             <div class="sales-amount">₱0.00</div>

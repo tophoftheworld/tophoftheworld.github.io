@@ -449,6 +449,7 @@
             "2025-01-29": { name: "Chinese New Year", type: "special" },
             "2025-02-25": { name: "EDSA People Power Revolution Anniversary", type: "special" },
             "2025-04-19": { name: "Black Saturday", type: "special" },
+            "2025-05-12": { name: "Election Day", type: "special" },
             "2025-08-21": { name: "Ninoy Aquino Day", type: "special" },
             "2025-10-31": { name: "All Saints’ Day Eve", type: "special" },
             "2025-11-01": { name: "All Saints’ Day", type: "special" },
@@ -947,6 +948,12 @@
 <input type="number" step="0.01" class="per-date-ot" value="${data.ot}" />
 <label>Late Deduction (Hours Late)</label>
 <input type="number" step="0.01" class="per-date-late" value="${data.late}" />
+<label>Cash Advance (₱)</label>
+<input type="number" step="0.01" class="per-date-cash-advance" value="${data.cashAdvance || 0}" />
+<div class="per-date-event-container" style="display: none;">
+    <label>Event Name</label>
+    <input type="text" class="per-date-event-name" placeholder="Enter event name" value="${data.eventName || ''}" />
+</div>
 <button onclick="removeDateAssignment('${isoDate}')" style="margin-top: 1rem; background-color: #f8d7da; color: #721c24;">Remove</button>
 </div>
 `;
@@ -993,6 +1000,36 @@
                 saveApplicationState();
                 updatePayslip();
             });
+
+            details.querySelector(".per-date-cash-advance").addEventListener("input", e => {
+                perDateAssignments[isoDate].cashAdvance = parseFloat(e.target.value) || 0;
+                saveApplicationState();
+                updatePayslip();
+            });
+
+            details.querySelector(".per-date-event-name").addEventListener("input", e => {
+                perDateAssignments[isoDate].eventName = e.target.value.trim();
+                saveApplicationState();
+                updatePayslip();
+            });
+
+            // Show/hide event name field based on branch selection
+            const perDateBranchSelect = details.querySelector(".per-date-branch");
+            const perDateEventContainer = details.querySelector(".per-date-event-container");
+
+            function togglePerDateEventName() {
+                const branch = perDateBranchSelect.value;
+                if (branch === "Workshop" || branch === "Pop-up" || branch === "Other Events") {
+                    perDateEventContainer.style.display = "block";
+                } else {
+                    perDateEventContainer.style.display = "none";
+                    details.querySelector(".per-date-event-name").value = "";
+                    perDateAssignments[isoDate].eventName = "";
+                }
+            }
+
+            perDateBranchSelect.addEventListener("change", togglePerDateEventName);
+            togglePerDateEventName(); // Initialize on load
 
             container.appendChild(details);
         }
@@ -1184,7 +1221,7 @@
             const consolidatedData = {};
 
             // Helper function to add a date to a branch's data
-            const addDateToBranch = (branch, date, rate, meal, transport, otHours, lateHours) => {
+            const addDateToBranch = (branch, date, rate, meal, transport, otHours, lateHours, cashAdvance = 0) => {
                 if (!consolidatedData[branch]) {
                     consolidatedData[branch] = {
                         days: [],
@@ -1193,17 +1230,18 @@
                         transport: transport,
                         otHours: otHours,
                         lateHours: lateHours,
+                        cashAdvance: cashAdvance,
                         dateMap: {} // Use an object as a Set to track unique dates
-                        };
-                    }
+                    };
+                }
 
-                    // Only add the date if it's not already in this branch
-                    const dateKey = formatDateForComparison(date);
-                    if (!consolidatedData[branch].dateMap[dateKey]) {
-                        consolidatedData[branch].days.push(date);
-                        consolidatedData[branch].dateMap[dateKey] = true;
-                    }
-                };
+                // Only add the date if it's not already in this branch
+                const dateKey = formatDateForComparison(date);
+                if (!consolidatedData[branch].dateMap[dateKey]) {
+                    consolidatedData[branch].days.push(date);
+                    consolidatedData[branch].dateMap[dateKey] = true;
+                }
+            };
 
                 // Process branch view duty blocks
                 const blocks = document.querySelectorAll(".duty-block:not([data-date])");
@@ -1223,29 +1261,44 @@
                     const otHours = parseFloat(block.querySelector(".ot-hours").value || 0);
                     const lateHours = parseFloat(block.querySelector(".late-hours").value || 0);
 
-                    // Add all days from this branch block
+                    const cashAdvance = parseFloat(block.querySelector(".cash-advance")?.value || 0);
+
+                    // Create unique branch identifier for events
+                    let branchKey = branch;
+                    const eventName = block.querySelector(".event-name")?.value?.trim();
+                    if ((branch === "Workshop" || branch === "Pop-up" || branch === "Other Events") && eventName) {
+                        branchKey = `${branch}: ${eventName}`;
+                    }
+
                     days.forEach(day => {
-                        addDateToBranch(branch, day, rate, meal, transport, otHours, lateHours);
+                        addDateToBranch(branchKey, day, rate, meal, transport, otHours, lateHours, cashAdvance);
                     });
                 });
 
                 // Process per-date assignments
-                for (const isoDate in perDateAssignments) {
-                    const data = perDateAssignments[isoDate];
-                    const branch = data.branch;
-                    const day = new Date(isoDate);
+            for (const isoDate in perDateAssignments) {
+                const data = perDateAssignments[isoDate];
+                let branch = data.branch;
 
-                    // Add the date to its branch
-                    addDateToBranch(
-                        branch,
-                        day,
-                        data.rate,
-                        data.meal,
-                        data.transport,
-                        data.ot,
-                        data.late
-                    );
+                // Create unique branch identifier for events
+                if ((branch === "Workshop" || branch === "Pop-up" || branch === "Other Events") && data.eventName) {
+                    branch = `${branch}: ${data.eventName}`;
                 }
+
+                const day = new Date(isoDate);
+
+                // Add the date to its branch
+                addDateToBranch(
+                    branch,
+                    day,
+                    data.rate,
+                    data.meal,
+                    data.transport,
+                    data.ot,
+                    data.late,
+                    data.cashAdvance || 0
+                );
+            }
 
                 // Now render consolidated blocks in the payslip
                 let totalPay = 0;
@@ -1273,6 +1326,7 @@
                     const hourlyRate = rate / 8;
                     const otPay = otHours * hourlyRate * 1.25;
                     const lateDeduction = lateHours * hourlyRate;
+                    const cashAdvance = parseFloat(data.cashAdvance || 0);
 
                     // Calculate bonus
                     let blockBonus = 0;
@@ -1287,7 +1341,7 @@
                         totalBonus += blockBonus;
                     }
 
-                    const subtotal = basic + holidayBonus + meals + transports + otPay - lateDeduction + blockBonus;
+                    const subtotal = basic + holidayBonus + meals + transports + otPay - lateDeduction + blockBonus - cashAdvance;
                     totalPay += subtotal;
 
                     // Get unique dates and sort them chronologically
@@ -1331,10 +1385,28 @@
                     // Holiday bonus HTML
                     const holidayHTML = holidayBonus > 0 ? `<p style="color: #2b9348;"><strong>Holiday Pay</strong> <span style="float:right">₱${holidayBonus.toFixed(2)}</span></p>` : '';
 
-                    // Add the consolidated block to the breakdown
+                    // Get event name if it exists
+                    let branchDisplayName = branch;
+                    // Check if this branch has an event name from any of the consolidated data
+                    for (const iso in perDateAssignments) {
+                        if (perDateAssignments[iso].branch === branch && perDateAssignments[iso].eventName) {
+                            branchDisplayName = `${branch}: ${perDateAssignments[iso].eventName}`;
+                            break;
+                        }
+                    }
+
+                    // Also check branch blocks for event names
+                    document.querySelectorAll(".duty-block:not([data-date])").forEach(block => {
+                        const blockBranch = block.querySelector("select").value;
+                        const eventName = block.querySelector(".event-name")?.value?.trim();
+                        if (blockBranch === branch && eventName) {
+                            branchDisplayName = `${branch}: ${eventName}`;
+                        }
+                    });
+
                     breakdown.innerHTML += `
 <div class="duty-summary">
-<h4>${branch}</h4>
+<h4>${branchDisplayName}</h4>
 <strong style="display: flex; justify-content: space-between;">
 <span>DAYS WORKED</span>
 <span>${days.length} day${days.length !== 1 ? "s" : ""}</span>
@@ -1345,6 +1417,7 @@
 ${transports > 0 ? `<p>Transport Allowance <span style="float:right">₱${transports.toFixed(2)}</span></p>` : ''}
 ${otPay > 0 ? `<p>Overtime Hours <span style="float:right">₱${otPay.toFixed(2)}</span></p>` : ''}
 ${lateDeduction > 0 ? `<p>Late Deduction <span style="float:right">–₱${lateDeduction.toFixed(2)}</span></p>` : ''}
+${cashAdvance > 0 ? `<p>Cash Advance <span style="float:right">–₱${cashAdvance.toFixed(2)}</span></p>` : ''}
 ${bonusHTML}
 ${holidayHTML}
 <hr>
@@ -1928,6 +2001,10 @@ ${holidayHTML}
                 <option>Pop-up</option>
                 <option>Other Events</option>
             </select>
+            <div class="event-name-container" style="display: none;">
+                <label>Event Name</label>
+                <input type="text" class="event-name" placeholder="Enter event name" />
+            </div>
             <label>Days Worked</label>
             <input type="text" class="days-worked" placeholder="Select days" />
             <label>Daily Rate (₱)</label>
@@ -2081,6 +2158,10 @@ ${holidayHTML}
     <option>Pop-up</option>
     <option>Other Events</option>
 </select>
+<div class="event-name-container" style="display: none;">
+    <label>Event Name</label>
+    <input type="text" class="event-name" placeholder="Enter event name" />
+</div>
 <label>Days Worked</label>
 <input type="text" class="days-worked" placeholder="Select days" />
 <label>Daily Rate (₱)</label>
@@ -2100,11 +2181,43 @@ ${holidayHTML}
 
         const selectBranch = details.querySelector("select");
         const summary = details.querySelector("summary");
+        const eventNameContainer = details.querySelector(".event-name-container");
+        const eventNameInput = details.querySelector(".event-name");
+
         selectBranch.addEventListener("change", () => {
-            summary.textContent = selectBranch.value;
+            const selectedBranch = selectBranch.value;
+
+            // Show/hide event name input for special branches
+            if (selectedBranch === "Workshop" || selectedBranch === "Pop-up" || selectedBranch === "Other Events") {
+                eventNameContainer.style.display = "block";
+                eventNameInput.required = true;
+            } else {
+                eventNameContainer.style.display = "none";
+                eventNameInput.required = false;
+                eventNameInput.value = "";
+            }
+
+            updateSummaryText();
             saveApplicationState();
-            updatePayslip(); // Add this line to update the payslip when branch changes
+            updatePayslip();
         });
+
+        eventNameInput.addEventListener("input", () => {
+            updateSummaryText();
+            saveApplicationState();
+            updatePayslip();
+        });
+
+        function updateSummaryText() {
+            const selectedBranch = selectBranch.value;
+            const eventName = eventNameInput.value.trim();
+
+            if ((selectedBranch === "Workshop" || selectedBranch === "Pop-up" || selectedBranch === "Other Events") && eventName) {
+                summary.textContent = `${selectedBranch}: ${eventName}`;
+            } else {
+                summary.textContent = selectedBranch;
+            }
+        }
 
         const removeBtn = document.createElement("button");
         removeBtn.textContent = "Remove Duty Block";

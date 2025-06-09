@@ -6,6 +6,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Matchanese Admin Panel</title>
     <link rel="icon" href="data:,">
+    
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://matchanese.site/attendance/">
+    <meta property="og:title" content="Matchanese Attendance">
+    <meta property="og:description" content="Matchanese Employee Attendance System">
+    <meta property="og:image" content="https://matchanese.site/attendance/img/banner.jpg">
+
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <link rel="stylesheet" href="css/admin-style.css">
@@ -14,7 +21,7 @@
 <body>
     <!-- Photo modal -->
     <div class="photo-modal" id="photoModal">
-        <div class="modal-content">
+        <div class="photo-modal-content">
             <span class="close-modal" id="closeModal">&times;</span>
             <img class="modal-image" id="modalImage" src="" alt="Employee photo">
         </div>
@@ -34,6 +41,10 @@
                     <label for="editBaseRate">Base Rate</label>
                     <input type="number" id="editBaseRate" min="0" step="10" required>
                 </div>
+                <div class="form-group">
+                    <label for="editNickname">Nickname</label>
+                    <input type="text" id="editNickname" placeholder="Auto-generated if empty">
+                </div>
                 <input type="hidden" id="editEmployeeId">
                 <div class="form-actions">
                     <button type="submit" class="submit-btn">Save Changes</button>
@@ -43,6 +54,161 @@
         </div>
     </div>
 
+    <!-- Shift Edit Modal -->
+    <div class="modal" id="shiftEditModal">
+        <div class="modal-content">
+            <span class="close-modal" id="closeShiftEditModal">&times;</span>
+            <h2>Edit Shift Details</h2>
+            <form id="shiftEditForm">
+                <div class="form-group">
+                    <label for="editShiftBranch">Branch</label>
+                    <select id="editShiftBranch" required>
+                        <option value="Podium">Podium</option>
+                        <option value="SM North">SM North</option>
+                        <option value="Pop-up">Pop-up</option>
+                        <option value="Workshop">Workshop</option>
+                        <option value="Other Events">Other Events</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="editShiftSchedule">Shift</label>
+                    <select id="editShiftSchedule" required>
+                        <option value="Opening">Opening (9:30 AM - 6:30 PM)</option>
+                        <option value="Midshift">Midshift (11:00 AM - 8:00 PM)</option>
+                        <option value="Closing">Closing (1:00 PM - 10:00 PM)</option>
+                        <option value="Closing Half-Day">Closing Half-Day (6:00 PM - 10:00 PM)</option>
+                        <option value="Custom">Custom</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="editShiftTimeIn">Time In</label>
+                    <input type="time" id="editShiftTimeIn">
+                </div>
+                <div class="form-group">
+                    <label for="editShiftTimeOut">Time Out</label>
+                    <input type="time" id="editShiftTimeOut">
+                </div>
+                <input type="hidden" id="editShiftEmployeeId">
+                <input type="hidden" id="editShiftDate">
+                <div class="form-actions">
+                    <button type="submit" class="submit-btn">Save Changes</button>
+                    <button type="button" class="cancel-btn" id="cancelShiftEditBtn">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Batch Edit Modal -->
+    <div class="modal" id="batchEditModal">
+        <div class="modal-content">
+            <span class="close-modal" id="closeBatchEditModal">&times;</span>
+            <h2>Batch Edit Period</h2>
+            <form id="batchEditForm">
+                <div class="form-group">
+                    <label for="batchEditBranch">Change All Branches To</label>
+                    <select id="batchEditBranch">
+                        <option value="">Keep Current</option>
+                        <option value="Podium">Podium</option>
+                        <option value="SM North">SM North</option>
+                        <option value="Pop-up">Pop-up</option>
+                        <option value="Workshop">Workshop</option>
+                        <option value="Other Events">Other Events</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="batchEditShift">Change All Shifts To</label>
+                    <select id="batchEditShift">
+                        <option value="">Keep Current</option>
+                        <option value="Opening">Opening (9:30 AM - 6:30 PM)</option>
+                        <option value="Midshift">Midshift (11:00 AM - 8:00 PM)</option>
+                        <option value="Closing">Closing (1:00 PM - 10:00 PM)</option>
+                        <option value="Closing Half-Day">Closing Half-Day (6:00 PM - 10:00 PM)</option>
+                        <option value="Custom">Custom</option>
+                    </select>
+                </div>
+                <input type="hidden" id="batchEditEmployeeId">
+                <div class="form-actions">
+                    <button type="submit" class="submit-btn">Apply Changes</button>
+                    <button type="button" class="cancel-btn" id="cancelBatchEditBtn">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add Employee Modal -->
+    <div class="modal" id="addEmployeeModal">
+        <div class="modal-content">
+            <span class="close-modal" id="closeAddEmployeeModal">&times;</span>
+            <h2>Add New Employee</h2>
+            <form id="addEmployeeForm">
+                <div class="form-group">
+                    <label for="addEmployeeId">Employee ID</label>
+                    <input type="text" id="addEmployeeId" required placeholder="e.g., 131929">
+                </div>
+                <div class="form-group">
+                    <label for="addEmployeeName">Full Name</label>
+                    <input type="text" id="addEmployeeName" required placeholder="e.g., John Doe">
+                </div>
+                <div class="form-group">
+                    <label for="addBaseRate">Base Rate</label>
+                    <input type="number" id="addBaseRate" min="0" step="10" required placeholder="e.g., 700">
+                </div>
+                <div class="form-group">
+                    <label for="addNickname">Nickname (Optional)</label>
+                    <input type="text" id="addNickname" placeholder="Auto-generated if empty">
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="submit-btn">Add Employee</button>
+                    <button type="button" class="cancel-btn" id="cancelAddEmployeeBtn">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Holidays Modal -->
+    <div class="modal" id="holidaysModal">
+        <div class="modal-content holidays-modal-content">
+            <span class="close-modal" id="closeHolidaysModal">&times;</span>
+            <h2>Manage Holidays 2025</h2>
+    
+            <!-- Add Holiday Form -->
+            <div class="add-holiday-section">
+                <h3>Add New Holiday</h3>
+                <form id="addHolidayForm" class="inline-form">
+                    <div class="form-row">
+                        <input type="date" id="holidayDate" required>
+                        <input type="text" id="holidayName" required placeholder="Holiday name">
+                        <select id="holidayType" required>
+                            <option value="regular">Regular</option>
+                            <option value="special">Special</option>
+                        </select>
+                        <button type="submit" class="submit-btn">Add</button>
+                    </div>
+                </form>
+            </div>
+    
+            <!-- Holidays List -->
+            <div class="holidays-list-container">
+                <table class="holidays-table" id="holidaysTable">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Holiday Name</th>
+                            <th>Type</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="holidaysTableBody">
+                        <!-- Holiday rows will be populated by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+    
+            <div class="form-actions">
+                <button type="button" class="cancel-btn" id="closeHolidaysBtn">Close</button>
+            </div>
+        </div>
+    </div>
 
     <div class="container">
         <div class="admin-header">
@@ -83,6 +249,16 @@
                 <!-- <div class="control-item">
                     <button class="danger-btn" id="clearLogsBtn">🧹 Clear Logs</button>
                 </div> -->
+                <button class="employee-btn" id="addEmployeeBtn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="9" cy="7" r="4"></circle>
+                        <line x1="19" x2="19" y1="8" y2="14"></line>
+                        <line x1="22" x2="16" y1="11" y2="11"></line>
+                    </svg>
+                    Add Employee
+                </button>
                 <button class="export-btn" id="exportBtn">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
                         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -102,6 +278,7 @@
                     </svg>
                     Refresh Data
                 </button>
+                <button onclick="pushHolidaysToFirebase()">Push Holidays to Firebase</button>
                 <!-- <button class="danger-btn" id="cleanupPhotosBtn">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -150,7 +327,7 @@
                     <tr>
                         <th>Employee</th>
                         <th>Days Worked</th>
-                        <th>Late Hours</th>
+                        <th>Avg. Lateness</th>
                         <th>Base Rate</th>
                         <th>Total Pay</th>
                         <th>Last Clock-in</th>

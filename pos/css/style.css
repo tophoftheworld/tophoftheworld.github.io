@@ -725,6 +725,32 @@ body {
   color: white;
 }
 
+/* Custom amount input for payment modal */
+.custom-input-wrapper {
+  grid-column: 1 / span 2;
+  margin-top: 10px;
+}
+
+.custom-amount-input {
+  width: 100%;
+  height: 56px;
+  border: 2px solid #1d8a00;
+  border-radius: 10px;
+  font-family: Montserrat, sans-serif;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1d8a00;
+  background-color: white;
+  -moz-appearance: textfield;
+}
+
+.custom-amount-input::-webkit-outer-spin-button,
+.custom-amount-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 .qr-code {
   width: 200px;
   height: 200px;
@@ -1423,12 +1449,329 @@ body {
   display: none;
 }
 
+.order-delete-btn {
+  background-color: transparent;
+  border: 2px solid #ff4444;
+  color: #ff4444;
+}
+
+.order-delete-btn:hover {
+  background-color: #ff4444;
+  color: white;
+}
+
 .delete-date-btn:hover {
   background-color: #ff0000;
 }
 
 .add-more-btn {
   display: none;
+}
+
+.force-sync-btn {
+  display: block;
+  background-color: #ff8800;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 16px;
+  font-family: 'Cocogoose pro trial', sans-serif;
+  font-size: 12px;
+  font-weight: 300;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  margin-left: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.force-sync-btn:hover {
+  background-color: #cc6600;
+}
+
+.force-sync-btn:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+/* End of Day button and report modal */
+.z-reading-btn {
+  background-color: #1d8a00;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 16px;
+  font-family: 'Cocogoose pro trial', sans-serif;
+  font-size: 12px;
+  font-weight: 300;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  margin-left: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.z-reading-btn:hover {
+  background-color: #166d00;
+}
+
+.eod-report-modal {
+  width: 400px;
+  max-width: 90%;
+}
+
+.eod-report-header {
+  text-align: center;
+  margin-bottom: 25px;
+  font-family: 'Cocogoose pro trial', sans-serif;
+  font-size: 18px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.report-section {
+  margin-bottom: 25px;
+}
+
+.report-section-title {
+  font-family: 'Cocogoose pro trial', sans-serif;
+  font-size: 14px;
+  font-weight: 300;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 15px;
+  border-bottom: 1px solid #ccc;
+  padding-bottom: 5px;
+}
+
+.report-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  align-items: center;
+}
+
+.report-label {
+  font-family: 'Cocogoose pro trial', sans-serif;
+  font-size: 14px;
+  font-weight: 300;
+}
+
+.report-value {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.report-value.editable {
+  display: flex;
+  align-items: center;
+}
+
+.report-value.editable input {
+  width: 120px;
+  padding: 5px 10px;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  margin-right: 5px;
+  text-align: right;
+}
+
+.edit-icon {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  margin-left: 5px;
+}
+
+.cash-flow-section {
+  margin-top: 20px;
+  background-color: #f7f7f7;
+  padding: 15px;
+  border-radius: 8px;
+}
+
+.cash-flow-total {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  text-align: right;
+  margin-top: 15px;
+  padding-top: 10px;
+  border-top: 1px solid #ccc;
+}
+
+.print-btn {
+  background-color: #1d8a00;
+  color: white;
+  border: none;
+  padding: 12px 20px;
+  font-family: 'Cocogoose pro trial', sans-serif;
+  font-weight: 300;
+  font-size: 14px;
+  letter-spacing: 2px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  margin-top: 20px;
+  width: 100%;
+}
+
+.print-btn:hover {
+  background-color: #166d00;
+}
+
+.z-reading-btn {
+  background-color: #1d8a00;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 16px;
+  font-family: 'Cocogoose pro trial', sans-serif;
+  font-size: 12px;
+  font-weight: 300;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  margin-left: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.z-reading-btn:hover {
+  background-color: #166d00;
+}
+
+.eod-label {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.eod-value {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  text-align: right;
+}
+
+/* Make TOTAL SALES stand out */
+.eod-summary-row:first-child .eod-label {
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.eod-summary-row:first-child .eod-value {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.eod-section {
+  margin-bottom: 20px;
+  padding: 10px 0;
+}
+
+.eod-section-title {
+  font-family: 'Cocogoose pro trial', sans-serif;
+  font-size: 16px;
+  font-weight: 300;
+  text-transform: capitalize;
+  letter-spacing: 1px;
+}
+
+.eod-input {
+  width: 120px;
+  padding: 8px;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  text-align: right;
+  border: none;
+  background-color: #f5f5f5;
+  border-radius: 4px;
+  -webkit-appearance: none;
+  -moz-appearance: textfield;
+}
+
+.eod-input::-webkit-outer-spin-button,
+.eod-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.eod-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  padding: 5px 0;
+}
+
+.event-selector-container {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: 15px;
+}
+
+.event-selector {
+  background-color: #fff;
+  border: 2px solid #1d8a00;
+  color: #1d8a00;
+  padding: 10px 15px;
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 600;
+  font-size: 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  min-width: 150px;
+  height: 42px;
+}
+
+.event-selector:hover {
+  background-color: #1d8a00;
+  color: white;
+}
+
+.add-event-btn {
+  background-color: #1d8a00;
+  color: white;
+  border: none;
+  padding: 10px 12px;
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 600;
+  font-size: 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  height: 42px;
+  width: 42px;
+}
+
+.edit-event-btn {
+  background-color: #ff8800;
+  color: white;
+  border: none;
+  padding: 10px 12px;
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 600;
+  font-size: 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  height: 42px;
+  width: 42px;
+  margin-right: 5px;
+}
+
+.edit-event-btn:hover {
+  background-color: #cc6600;
+}
+
+.add-event-btn:hover {
+  background-color: #166d00;
 }
 
 @media (max-width: 768px) {

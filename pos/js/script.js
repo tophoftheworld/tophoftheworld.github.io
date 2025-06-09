@@ -22,6 +22,11 @@ const customizationOptions = {
   milk: {
     'dairy': 0,
     'oat': 50  // Additional charge for oat milk
+  },
+  discount: {
+    'none': 0,
+    'senior': -0.2,  // 20% discount
+    'pwd': -0.2      // 20% discount
   }
 };
 
@@ -30,7 +35,243 @@ let customerName = '';
 let selectedDate = new Date();
 let currentDate = new Date();
 
+let currentEvent = localStorage.getItem('currentEvent') || 'pop-up';
+let availableEvents = JSON.parse(localStorage.getItem('availableEvents') || '["pop-up"]');
+
+window.currentEvent = currentEvent;
 window.syncOrdersWithFirebase = syncOrdersWithFirebase;
+
+function initializeEventSelector() {
+  const eventSelector = document.getElementById('eventSelector');
+  const addEventBtn = document.getElementById('addEventBtn');
+
+  // Populate event selector
+  updateEventSelector();
+
+  // Set current event
+  eventSelector.value = currentEvent;
+
+  // Event selector change handler
+  eventSelector.addEventListener('change', (e) => {
+    currentEvent = e.target.value;
+    window.currentEvent = currentEvent;  // Add this line
+    localStorage.setItem('currentEvent', currentEvent);
+
+    // Reload orders for the new event
+    syncOrdersWithFirebase();
+    displayOrderHistory();
+  });
+
+  // Add event button handler
+  addEventBtn.addEventListener('click', showAddEventModal);
+
+  // Edit event button handler
+  const editEventBtn = document.getElementById('editEventBtn');
+  editEventBtn.addEventListener('click', showEditEventModal);
+}
+
+function showEditEventModal() {
+  if (currentEvent === 'pop-up') {
+    alert('Cannot edit the main Pop-up event name');
+    return;
+  }
+
+  const existingModal = document.querySelector('.edit-event-modal');
+  if (existingModal) {
+    existingModal.remove();
+  }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay edit-event-modal';
+
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+
+  const header = document.createElement('h2');
+  header.className = 'modal-header';
+  header.textContent = 'Edit Event Name';
+  modal.appendChild(header);
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = 'Enter new event name';
+  input.value = currentEvent;
+  input.maxLength = 30;
+  
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      updateEventName(input.value, overlay);
+    }
+  });
+  
+  modal.appendChild(input);
+
+  const footer = document.createElement('div');
+  footer.className = 'modal-footer';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'checkout-button modal-cancel';
+  cancelBtn.textContent = 'CANCEL';
+  cancelBtn.addEventListener('click', () => overlay.remove());
+
+  const updateBtn = document.createElement('button');
+  updateBtn.className = 'checkout-button modal-add';
+  updateBtn.textContent = 'UPDATE';
+  updateBtn.addEventListener('click', () => updateEventName(input.value, overlay));
+
+  footer.appendChild(cancelBtn);
+  footer.appendChild(updateBtn);
+  modal.appendChild(footer);
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  setTimeout(() => input.focus(), 100);
+}
+
+function updateEventName(newName, overlay) {
+  const trimmedName = newName.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
+  
+  if (!trimmedName || trimmedName.length < 2) {
+    alert('Please enter a valid event name (at least 2 characters)');
+    return;
+  }
+
+  if (trimmedName === currentEvent) {
+    overlay.remove();
+    return;
+  }
+
+  if (availableEvents.includes(trimmedName)) {
+    alert('Event name already exists');
+    return;
+  }
+
+  // Update the event in availableEvents array
+  const oldEventIndex = availableEvents.indexOf(currentEvent);
+  if (oldEventIndex > -1) {
+    availableEvents[oldEventIndex] = trimmedName;
+    localStorage.setItem('availableEvents', JSON.stringify(availableEvents));
+  }
+
+  // Update all orders with the old event name to use the new name
+  const orders = JSON.parse(localStorage.getItem('orderHistory') || '[]');
+  orders.forEach(order => {
+    if (order.event === currentEvent) {
+      order.event = trimmedName;
+    }
+  });
+  localStorage.setItem('orderHistory', JSON.stringify(orders));
+  orderHistory = orders;
+
+  // Switch to the new event name
+  currentEvent = trimmedName;
+  window.currentEvent = currentEvent;
+  localStorage.setItem('currentEvent', currentEvent);
+  
+  updateEventSelector();
+  document.getElementById('eventSelector').value = currentEvent;
+  
+  overlay.remove();
+}
+
+function updateEventSelector() {
+  const eventSelector = document.getElementById('eventSelector');
+  eventSelector.innerHTML = '';
+
+  availableEvents.forEach(event => {
+    const option = document.createElement('option');
+    option.value = event;
+    option.textContent = event === 'pop-up' ? 'Pop-up (Main)' : event;
+    eventSelector.appendChild(option);
+  });
+}
+
+function showAddEventModal() {
+  const existingModal = document.querySelector('.add-event-modal');
+  if (existingModal) {
+    existingModal.remove();
+  }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay add-event-modal';
+
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+
+  const header = document.createElement('h2');
+  header.className = 'modal-header';
+  header.textContent = 'Add New Event';
+  modal.appendChild(header);
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = 'Enter event name';
+  input.maxLength = 30;
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addNewEvent(input.value, overlay);
+    }
+  });
+
+  modal.appendChild(input);
+
+  const footer = document.createElement('div');
+  footer.className = 'modal-footer';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'checkout-button modal-cancel';
+  cancelBtn.textContent = 'CANCEL';
+  cancelBtn.addEventListener('click', () => overlay.remove());
+
+  const addBtn = document.createElement('button');
+  addBtn.className = 'checkout-button modal-add';
+  addBtn.textContent = 'ADD EVENT';
+  addBtn.addEventListener('click', () => addNewEvent(input.value, overlay));
+
+  footer.appendChild(cancelBtn);
+  footer.appendChild(addBtn);
+  modal.appendChild(footer);
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  setTimeout(() => input.focus(), 100);
+}
+
+function addNewEvent(eventName, overlay) {
+  const trimmedName = eventName.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
+
+  if (!trimmedName || trimmedName.length < 2) {
+    alert('Please enter a valid event name (at least 2 characters)');
+    return;
+  }
+
+  if (availableEvents.includes(trimmedName)) {
+    alert('Event already exists');
+    return;
+  }
+
+  availableEvents.push(trimmedName);
+  localStorage.setItem('availableEvents', JSON.stringify(availableEvents));
+
+  updateEventSelector();
+
+  // Switch to the new event
+  currentEvent = trimmedName;
+  localStorage.setItem('currentEvent', currentEvent);
+  document.getElementById('eventSelector').value = currentEvent;
+
+  // Clear current order and reload
+  clearOrder();
+  syncOrdersWithFirebase();
+  displayOrderHistory();
+
+  overlay.remove();
+}
 
 function initializeMenu(container) {
   // Create menu categories
@@ -246,6 +487,18 @@ function updateOrderDisplay() {
       }
       if (item.customizations.milk) customDisplay.push(item.customizations.milk);
 
+      if(item.customizations.discount && item.customizations.discount !== 'none') {
+        const discountBadge = document.createElement('span');
+        discountBadge.style.backgroundColor = '#1d8a00';
+        discountBadge.style.color = 'white';
+        discountBadge.style.fontSize = '10px';
+        discountBadge.style.padding = '2px 5px';
+        discountBadge.style.borderRadius = '4px';
+        discountBadge.style.marginLeft = '5px';
+        discountBadge.textContent = item.customizations.discount.toUpperCase();
+        orderItemName.appendChild(discountBadge);
+      }
+
       customText.innerHTML = customDisplay.join(' | ');
 
       // Add click handler for editing customization
@@ -349,8 +602,11 @@ function displayOrderHistory() {
   const isToday = getLocalDateString(selectedDate) === getLocalDateString(today);
 
   // Filter orders by selected date
+  // Filter orders by selected date AND current event
   const selectedDateOrders = orderHistory.filter(order => {
-    return getLocalDateString(new Date(order.timestamp)) === getLocalDateString(selectedDate);
+    const orderEvent = order.event || 'pop-up'; // Default to 'pop-up' for existing orders
+    return getLocalDateString(new Date(order.timestamp)) === getLocalDateString(selectedDate) &&
+      orderEvent === currentEvent;
   });
 
   if (isToday) {
@@ -440,7 +696,7 @@ function displayOrderHistory() {
       orderGrid.appendChild(voidedSection);
     }
   } else {
-    const completedOrders = selectedDateOrders.filter(order => order.status === 'completed').reverse();
+    const completedOrders = selectedDateOrders.filter(order => order.status === 'completed' || order.status === 'pending').reverse();
     const voidedOrders = selectedDateOrders.filter(order => order.status === 'voided').reverse();
 
     if (selectedDateOrders.length === 0) {
@@ -499,14 +755,15 @@ function displayOrderHistory() {
 }
 
 function calculateTotalSales(date) {
-    const selectedDateOrders = orderHistory.filter(order => {
-      return getLocalDateString(new Date(order.timestamp)) === getLocalDateString(date) &&
-        (order.status === 'pending' || order.status === 'completed');
-    });
-    
-    return selectedDateOrders.reduce((total, order) => total + order.total, 0);
-}
+  const selectedDateOrders = orderHistory.filter(order => {
+    const orderEvent = order.event || 'pop-up'; // Default to 'pop-up' for existing orders
+    return getLocalDateString(new Date(order.timestamp)) === getLocalDateString(date) &&
+      (order.status === 'pending' || order.status === 'completed') &&
+      orderEvent === currentEvent;
+  });
 
+  return selectedDateOrders.reduce((total, order) => total + order.total, 0);
+}
 
 function updateTotalSalesDisplay() {
   const totalSales = calculateTotalSales(selectedDate);
@@ -682,9 +939,50 @@ function createOrderCard(order, isCompleted, isVoided = false) {
     voidedText.className = 'voided-text';
     voidedText.textContent = 'VOIDED';
     orderCard.appendChild(voidedText);
+
+    // Add delete button for voided orders
+    const orderButtons = document.createElement('div');
+    orderButtons.className = 'order-buttons';
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'order-action-btn order-delete-btn';
+    deleteBtn.innerHTML = '<img src="images/delete-icon.png" class="btn-icon" alt="Delete">DELETE';
+    deleteBtn.addEventListener('click', () => deleteOrder(order.id));
+
+    orderButtons.appendChild(deleteBtn);
+    orderCard.appendChild(orderButtons);
   }
 
   return orderCard;
+}
+
+// Add this new function to delete an order
+function deleteOrder(orderId) {
+  showConfirmationModal(
+    'delete',
+    orderId,
+    'DELETE ORDER',
+    'Are you sure you want to permanently delete this order? This cannot be undone.'
+  );
+}
+
+function deleteOrderConfirmed(orderId) {
+  const orderIndex = orderHistory.findIndex(order => order.id === orderId);
+  if (orderIndex > -1) {
+    // Mark as deleted but DON'T remove from local storage
+    orderHistory[orderIndex].status = 'deleted';
+    orderHistory[orderIndex].lastModified = new Date().toISOString();
+    
+    // Update local storage with the 'deleted' status
+    localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+    
+    // Update Firebase with deleted status
+    const orderDate = getLocalDateString(new Date(orderHistory[orderIndex].timestamp));
+    queueSync('update', orderId, orderHistory[orderIndex], orderDate);
+    
+    // Update display (which will filter out deleted items)
+    displayOrderHistory();
+  }
 }
 
 function editOrder(orderId) {
@@ -734,9 +1032,10 @@ function returnToPending(orderId) {
   const orderIndex = orderHistory.findIndex(order => order.id === orderId);
   if (orderIndex > -1) {
     orderHistory[orderIndex].status = 'pending';
+    orderHistory[orderIndex].lastModified = new Date().toISOString(); // Add timestamp
     localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
 
-    // Add this part to sync with Firebase
+    // Pass order date to sync queue
     const orderDate = getLocalDateString(new Date(orderHistory[orderIndex].timestamp));
     queueSync('update', orderId, orderHistory[orderIndex], orderDate);
 
@@ -754,12 +1053,21 @@ function cancelOrder(orderId) {
   );
 }
 
-// Add new confirmed cancel function:
 function cancelOrderConfirmed(orderId) {
   const orderIndex = orderHistory.findIndex(order => order.id === orderId);
   if (orderIndex > -1) {
-    orderHistory.splice(orderIndex, 1);
+    // Mark as deleted but DON'T remove from local storage
+    orderHistory[orderIndex].status = 'deleted';
+    orderHistory[orderIndex].lastModified = new Date().toISOString();
+
+    // Update local storage with the 'deleted' status
     localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+
+    // Update Firebase with 'deleted' status
+    const orderDate = getLocalDateString(new Date(orderHistory[orderIndex].timestamp));
+    queueSync('update', orderId, orderHistory[orderIndex], orderDate);
+
+    // Update display (which will filter out deleted items)
     displayOrderHistory();
   }
 }
@@ -774,11 +1082,11 @@ function voidOrder(orderId) {
   );
 }
 
-// Add new confirmed void function:
 function voidOrderConfirmed(orderId) {
   const orderIndex = orderHistory.findIndex(order => order.id === orderId);
   if (orderIndex > -1) {
     orderHistory[orderIndex].status = 'voided';
+    orderHistory[orderIndex].lastModified = new Date().toISOString();
     localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
 
     // Pass order date to sync queue
@@ -797,10 +1105,12 @@ function getLocalDateString(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
+
 function completeOrder(orderId) {
   const orderIndex = orderHistory.findIndex(order => order.id === orderId);
   if (orderIndex > -1) {
     orderHistory[orderIndex].status = 'completed';
+    orderHistory[orderIndex].lastModified = new Date().toISOString();
     localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
 
     // Pass order date to sync queue
@@ -869,6 +1179,8 @@ function showConfirmationModal(action, orderId, title, message) {
       cancelOrderConfirmed(orderId);
     } else if (action === 'void') {
       voidOrderConfirmed(orderId);
+    } else if (action === 'delete') {
+      deleteOrderConfirmed(orderId);
     }
     overlay.remove();
   });
@@ -893,9 +1205,6 @@ function showConfirmationModal(action, orderId, title, message) {
 // });
 
 // Add these functions to your JavaScript file
-
-
-// Replace the existing showCustomizationModal function:
 function showCustomizationModal(item, editMode = false, editIndex = -1) {
   const existingModal = document.querySelector('.modal-overlay');
   if (existingModal) {
@@ -909,6 +1218,9 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
   // Create modal
   const modal = document.createElement('div');
   modal.className = 'modal';
+  // Make modal wider
+  modal.style.maxWidth = '400px';
+  modal.style.width = '90%';
 
   // Modal header
   const header = document.createElement('h2');
@@ -922,9 +1234,9 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
 
   // Get current customizations if editing
   const currentCustomizations = editMode && item.customizations ? item.customizations : {};
-  
+
   const allowedCustomizations = item.customizations || null;
-  const showAll = !allowedCustomizations; 
+  const showAll = !allowedCustomizations;
 
   if (!allowedCustomizations || allowedCustomizations.size) {
     const sizeSection = createOptionSection('Size', ['regular', 'large'], currentCustomizations.size || 'large');
@@ -946,10 +1258,101 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
     modal.appendChild(sweetnessSection);
   }
 
-  if (!allowedCustomizations || allowedCustomizations.milk) {
-    const milkSection = createOptionSection('Milk', ['dairy', 'oat'], currentCustomizations.milk || 'dairy');
-    modal.appendChild(milkSection);
+  // Create a row that will contain milk and discount side by side
+  const milkDiscountRow = document.createElement('div');
+  milkDiscountRow.style.display = 'flex';
+  milkDiscountRow.style.justifyContent = 'space-between';
+  milkDiscountRow.style.gap = '20px';
+  milkDiscountRow.style.marginBottom = '30px';
+
+  // Determine if milk options are available for this item
+  const hasMilkOptions = !allowedCustomizations || allowedCustomizations.milk;
+
+  if (hasMilkOptions) {
+    // Create milk section
+    const milkSection = document.createElement('div');
+    milkSection.style.flex = '1';
+
+    const milkLabel = document.createElement('div');
+    milkLabel.className = 'modal-option-label';
+    milkLabel.textContent = 'Milk';
+    milkSection.appendChild(milkLabel);
+
+    const milkButtons = document.createElement('div');
+    milkButtons.className = 'modal-buttons';
+
+    const dairyBtn = document.createElement('button');
+    dairyBtn.className = 'option-button';
+    dairyBtn.dataset.option = 'dairy';
+    dairyBtn.dataset.group = 'milk';
+    if (!currentCustomizations.milk || currentCustomizations.milk === 'dairy') {
+      dairyBtn.classList.add('active');
+    }
+    dairyBtn.innerHTML = '<span class="option-text">dairy</span>';
+    dairyBtn.addEventListener('click', () => selectOption(dairyBtn));
+
+    const oatBtn = document.createElement('button');
+    oatBtn.className = 'option-button';
+    oatBtn.dataset.option = 'oat';
+    oatBtn.dataset.group = 'milk';
+    if (currentCustomizations.milk === 'oat') {
+      oatBtn.classList.add('active');
+    }
+    oatBtn.innerHTML = '<span class="option-text">oat</span>';
+    oatBtn.addEventListener('click', () => selectOption(oatBtn));
+
+    milkButtons.appendChild(dairyBtn);
+    milkButtons.appendChild(oatBtn);
+    milkSection.appendChild(milkButtons);
+
+    milkDiscountRow.appendChild(milkSection);
   }
+
+  // Create discount section
+  const discountSection = document.createElement('div');
+  discountSection.style.flex = '1';
+
+  const discountLabel = document.createElement('div');
+  discountLabel.className = 'modal-option-label';
+  discountLabel.textContent = 'Discount';
+  discountSection.appendChild(discountLabel);
+
+  const discountButtons = document.createElement('div');
+  discountButtons.className = 'modal-buttons';
+
+  // Create toggle buttons for Senior and PWD discounts
+  const seniorBtn = document.createElement('button');
+  seniorBtn.className = 'option-button discount-toggle';
+  seniorBtn.dataset.discount = 'senior';
+
+  // Check if senior discount is active
+  if (currentCustomizations.discount === 'senior') {
+    seniorBtn.classList.add('active');
+  }
+
+  seniorBtn.innerHTML = '<span class="option-text">SENIOR</span>';
+  seniorBtn.addEventListener('click', () => toggleDiscount(seniorBtn));
+
+  const pwdBtn = document.createElement('button');
+  pwdBtn.className = 'option-button discount-toggle';
+  pwdBtn.dataset.discount = 'pwd';
+
+  // Check if PWD discount is active
+  if (currentCustomizations.discount === 'pwd') {
+    pwdBtn.classList.add('active');
+  }
+
+  pwdBtn.innerHTML = '<span class="option-text">PWD</span>';
+  pwdBtn.addEventListener('click', () => toggleDiscount(pwdBtn));
+
+  discountButtons.appendChild(seniorBtn);
+  discountButtons.appendChild(pwdBtn);
+  discountSection.appendChild(discountButtons);
+
+  milkDiscountRow.appendChild(discountSection);
+
+  // Add the combined row to the modal
+  modal.appendChild(milkDiscountRow);
 
   if (item.variants && item.variants.length > 0) {
     const variantNames = item.variants.map(variant => variant.name);
@@ -965,6 +1368,7 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
   // Quantity section
   const quantitySection = document.createElement('div');
   quantitySection.className = 'modal-option';
+  quantitySection.style.marginTop = '10px';
   const quantityLabel = document.createElement('div');
   quantityLabel.className = 'modal-option-label';
   quantityLabel.textContent = 'Quantity';
@@ -972,6 +1376,8 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
 
   const quantityControl = document.createElement('div');
   quantityControl.className = 'modal-quantity';
+  quantityControl.style.marginTop = '10px';
+  quantityControl.style.marginBottom = '10px';
 
   const minusBtn = document.createElement('button');
   minusBtn.className = 'quantity-btn';
@@ -981,6 +1387,7 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
   const quantityDisplay = document.createElement('span');
   quantityDisplay.className = 'quantity-display';
   quantityDisplay.textContent = editMode ? item.quantity : '1';
+  quantityDisplay.style.margin = '0 20px';
 
   const plusBtn = document.createElement('button');
   plusBtn.className = 'quantity-btn';
@@ -993,6 +1400,25 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
   quantitySection.appendChild(quantityControl);
   modal.appendChild(quantitySection);
 
+  // Hidden total price element (for calculations, not displayed)
+  const hiddenTotal = document.createElement('div');
+  hiddenTotal.className = 'item-total-display';
+  hiddenTotal.style.display = 'none';
+
+  // Calculate initial price
+  let basePrice = item.price;
+  if (currentCustomizations.size && customizationOptions.size[currentCustomizations.size]) {
+    basePrice += customizationOptions.size[currentCustomizations.size];
+  }
+  if (currentCustomizations.milk && customizationOptions.milk[currentCustomizations.milk]) {
+    basePrice += customizationOptions.milk[currentCustomizations.milk];
+  }
+  if (currentCustomizations.discount && customizationOptions.discount[currentCustomizations.discount]) {
+    basePrice = basePrice * (1 + customizationOptions.discount[currentCustomizations.discount]);
+  }
+  hiddenTotal.dataset.basePrice = basePrice;
+  modal.appendChild(hiddenTotal);
+
   // Modal footer
   const footer = document.createElement('div');
   footer.className = 'modal-footer';
@@ -1004,6 +1430,8 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
 
   const addBtn = document.createElement('button');
   addBtn.className = 'checkout-button modal-add';
+  addBtn.id = 'add-to-order-btn';
+  // We'll update this text in updateItemTotal()
   addBtn.textContent = editMode ? 'UPDATE ORDER' : 'ADD TO ORDER';
   addBtn.addEventListener('click', () => {
     if (editMode) {
@@ -1019,6 +1447,28 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
 
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
+
+  // Initialize the item total when the modal is first shown
+  updateItemTotal();
+}
+
+// Updated function to handle discount toggling
+function toggleDiscount(button) {
+  // Get all discount toggle buttons
+  const discountButtons = document.querySelectorAll('.discount-toggle');
+
+  // If this button is already active, deactivate it
+  if (button.classList.contains('active')) {
+    button.classList.remove('active');
+  } else {
+    // Deactivate all buttons first
+    discountButtons.forEach(btn => btn.classList.remove('active'));
+    // Then activate the clicked button
+    button.classList.add('active');
+  }
+
+  // Update item total to reflect discount change
+  updateItemTotal();
 }
 
 function editOrderItem(index) {
@@ -1029,21 +1479,34 @@ function editOrderItem(index) {
 function updateCustomizedItemInOrder(baseItem, editIndex, overlay) {
   const options = getSelectedOptions();
 
-  // Calculate additional price - only add if options exist
+  // Calculate additional price and adjustments
   let additionalPrice = 0;
+  let discountMultiplier = 1;
+
+  // Size adjustment
   if (options.size && customizationOptions.size[options.size]) {
     additionalPrice += customizationOptions.size[options.size];
   }
+
+  // Milk adjustment
   if (options.milk && customizationOptions.milk[options.milk]) {
     additionalPrice += customizationOptions.milk[options.milk];
   }
+
+  // Apply discount if any
+  if (options.discount && options.discount !== 'none' && customizationOptions.discount[options.discount]) {
+    discountMultiplier = 1 + customizationOptions.discount[options.discount];
+  }
+
+  // Calculate final price
+  const finalPrice = (baseItem.basePrice || baseItem.price + additionalPrice) * discountMultiplier;
 
   // Update item with new customizations
   currentOrder[editIndex] = {
     ...baseItem,
     customizations: options,
     basePrice: baseItem.basePrice || baseItem.price,
-    price: (baseItem.basePrice || baseItem.price) + additionalPrice,
+    price: finalPrice,
     quantity: options.quantity,
     id: baseItem.id || Date.now()
   };
@@ -1092,21 +1555,80 @@ function createOptionSection(title, options, defaultOption) {
 function selectOption(selectedButton) {
   const group = selectedButton.dataset.group;
   const buttons = document.querySelectorAll(`[data-group="${group}"]`);
-  
+
   buttons.forEach(button => button.classList.remove('active'));
   selectedButton.classList.add('active');
+
+  // Update the price if the total display exists
+  updateItemTotal();
 }
+
+function updateItemTotal() {
+  const itemTotalDisplay = document.querySelector('.item-total-display');
+  if (!itemTotalDisplay) return;
+
+  const addButton = document.getElementById('add-to-order-btn');
+  if (!addButton) return;
+
+  // Get base price from the menu item
+  let basePrice = parseFloat(itemTotalDisplay.dataset.basePrice);
+
+  // Apply size adjustment
+  const sizeOption = document.querySelector('.option-button.active[data-group="size"]');
+  if (sizeOption && customizationOptions.size[sizeOption.dataset.option]) {
+    basePrice += customizationOptions.size[sizeOption.dataset.option];
+  }
+
+  // Apply milk adjustment
+  const milkOption = document.querySelector('.option-button.active[data-group="milk"]');
+  if (milkOption && customizationOptions.milk[milkOption.dataset.option]) {
+    basePrice += customizationOptions.milk[milkOption.dataset.option];
+  }
+
+  // Apply discount if selected
+  const discountOption = document.querySelector('.discount-toggle.active');
+  if (discountOption && customizationOptions.discount[discountOption.dataset.discount]) {
+    basePrice = basePrice * (1 + customizationOptions.discount[discountOption.dataset.discount]);
+  }
+
+  // Get quantity
+  const quantityDisplay = document.querySelector('.modal-quantity .quantity-display');
+  const quantity = quantityDisplay ? parseInt(quantityDisplay.textContent) : 1;
+
+  // Calculate final price
+  const finalPrice = basePrice * quantity;
+
+  // Clear button and add properly formatted elements
+  addButton.innerHTML = '';
+
+  // Add button text with Cocogoose font
+  const buttonTextSpan = document.createElement('span');
+  buttonTextSpan.style.fontFamily = "'Cocogoose pro trial', sans-serif";
+  buttonTextSpan.textContent = addButton.textContent.includes('UPDATE') ? 'UPDATE ORDER ' : 'ADD TO ORDER ';
+  addButton.appendChild(buttonTextSpan);
+
+  // Add price with Montserrat font for numbers
+  const priceSpan = document.createElement('span');
+  priceSpan.style.fontFamily = 'Montserrat, sans-serif';
+  priceSpan.style.fontWeight = '600';
+  priceSpan.textContent = `(₱${finalPrice.toFixed(2)})`;
+  addButton.appendChild(priceSpan);
+}
+
 
 function updateModalQuantity(change) {
   const quantityDisplay = document.querySelector('.modal-quantity .quantity-display');
   let currentQuantity = parseInt(quantityDisplay.textContent);
   currentQuantity += change;
-  
+
   if (currentQuantity < 1) {
     currentQuantity = 1;
   }
-  
+
   quantityDisplay.textContent = currentQuantity;
+
+  // Update the total price
+  updateItemTotal();
 }
 
 function getSelectedOptions() {
@@ -1125,6 +1647,10 @@ function getSelectedOptions() {
   const milkButton = document.querySelector('.option-button.active[data-group="milk"]');
   if (milkButton) options.milk = milkButton.dataset.option;
 
+  // Get discount from toggle buttons
+  const discountButton = document.querySelector('.discount-toggle.active');
+  options.discount = discountButton ? discountButton.dataset.discount : 'none';
+
   const quantity = document.querySelector('.modal-quantity .quantity-display');
   if (quantity) options.quantity = parseInt(quantity.textContent);
 
@@ -1137,21 +1663,35 @@ function getSelectedOptions() {
 function addCustomizedItemToOrder(baseItem, overlay) {
   const options = getSelectedOptions();
 
-  // Calculate additional price - only add if options exist
+  // Calculate additional price and adjustments
   let additionalPrice = 0;
+  let discountMultiplier = 1;
+
+  // Add size adjustment
   if (options.size && customizationOptions.size[options.size]) {
     additionalPrice += customizationOptions.size[options.size];
   }
+
+  // Add milk adjustment
   if (options.milk && customizationOptions.milk[options.milk]) {
     additionalPrice += customizationOptions.milk[options.milk];
   }
-  
+
+  // Apply variant price adjustment if any
   if (options.variant && baseItem.variants) {
     const selectedVariant = baseItem.variants.find(v => v.name === options.variant);
     if (selectedVariant && selectedVariant.price) {
       additionalPrice += selectedVariant.price;
     }
   }
+
+  // Apply discount if any
+  if (options.discount && options.discount !== 'none' && customizationOptions.discount[options.discount]) {
+    discountMultiplier = 1 + customizationOptions.discount[options.discount];
+  }
+
+  // Calculate final price with all adjustments
+  const finalPrice = (baseItem.price + additionalPrice) * discountMultiplier;
 
   // Check if this exact customization already exists in the order
   const existingItemIndex = currentOrder.findIndex(orderItem =>
@@ -1161,6 +1701,7 @@ function addCustomizedItemToOrder(baseItem, overlay) {
     orderItem.customizations.serving === options.serving &&
     orderItem.customizations.sweetness === options.sweetness &&
     orderItem.customizations.milk === options.milk &&
+    orderItem.customizations.discount === options.discount &&
     orderItem.customizations.variant === options.variant
   );
 
@@ -1173,7 +1714,7 @@ function addCustomizedItemToOrder(baseItem, overlay) {
       ...baseItem,
       customizations: options,
       basePrice: baseItem.price,
-      price: baseItem.price + additionalPrice,
+      price: finalPrice,
       id: Date.now() // Unique identifier for customized items
     };
     customizedItem.quantity = options.quantity;
@@ -1226,6 +1767,170 @@ function clearOrder() {
   updateOrderHeader();  // Add this line
 }
 
+document.addEventListener('DOMContentLoaded', function () {
+  const endOfDayBtn = document.getElementById('endOfDayBtn');
+  if (endOfDayBtn) {
+    endOfDayBtn.addEventListener('click', showEndOfDayModal);
+  }
+});
+
+function showEndOfDayModal() {
+  // Get today's sales data
+  const salesData = calculateSalesByPaymentMethod(selectedDate);
+
+  // Only need expenses data
+  const cashData = JSON.parse(localStorage.getItem('cashFlowData') || '{"expenses": 0}');
+
+  // Calculate expected cash
+  const expectedCash = salesData.cash - cashData.expenses;
+
+  // Create modal HTML
+  const modalContent = `
+    <h2 class="modal-header">End of Day Summary</h2>
+    
+    <div class="eod-summary-row">
+      <div class="eod-label">TOTAL SALES</div>
+      <div class="eod-value">₱${formatWithCommas(salesData.total.toFixed(2))}</div>
+    </div>
+    
+    <div class="eod-summary-row">
+      <div class="eod-label">CASH</div>
+      <div class="eod-value">₱${formatWithCommas(salesData.cash.toFixed(2))}</div>
+    </div>
+    
+    <div class="eod-summary-row">
+      <div class="eod-label">GCASH</div>
+      <div class="eod-value">₱${formatWithCommas(salesData.gcash.toFixed(2))}</div>
+    </div>
+    
+    <div class="eod-summary-row">
+      <div class="eod-label">MAYA</div>
+      <div class="eod-value">₱${formatWithCommas(salesData.maya.toFixed(2))}</div>
+    </div>
+    
+    <div class="eod-summary-row" style="margin-top: 30px;">
+      <div class="eod-label">EXPENSES</div>
+      <div class="eod-value">
+        <input type="number" id="expenses" class="eod-input" value="${cashData.expenses}">
+      </div>
+    </div>
+    
+    <div class="eod-summary-row">
+      <div class="eod-label">CASH LEFT</div>
+      <div class="eod-value" id="expectedCash">₱${formatWithCommas(expectedCash.toFixed(2))}</div>
+    </div>
+  `;
+
+  // Show the modal
+  showModal(modalContent, function () {
+    // Save only the expenses data when the modal is closed
+    const expenses = parseFloat(document.getElementById('expenses').value) || 0;
+    localStorage.setItem('cashFlowData', JSON.stringify({
+      expenses
+    }));
+  });
+
+  // Add event listener to update expected cash in real-time
+  const expensesInput = document.getElementById('expenses');
+
+  function updateExpectedCash() {
+    const expenses = parseFloat(expensesInput.value) || 0;
+    const expectedCash = salesData.cash - expenses;
+    document.getElementById('expectedCash').textContent = `₱${formatWithCommas(expectedCash.toFixed(2))}`;
+  }
+
+  expensesInput.addEventListener('input', updateExpectedCash);
+}
+
+// Helper function to show a modal with the given content
+function showModal(content, onClose) {
+  const existingModal = document.querySelector('.modal-overlay');
+  if (existingModal) {
+    existingModal.remove();
+  }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.style.width = '400px';
+  modal.style.maxWidth = '90%';
+
+  modal.innerHTML = content;
+
+  const footer = document.createElement('div');
+  footer.className = 'modal-footer';
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'checkout-button';
+  closeBtn.textContent = 'CLOSE';
+  closeBtn.addEventListener('click', () => {
+    if (onClose) onClose();
+    overlay.remove();
+  });
+
+  footer.appendChild(closeBtn);
+  modal.appendChild(footer);
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+}
+
+function updateEventDisplay() {
+  const eventSelector = document.getElementById('eventSelector');
+  if (eventSelector) {
+    eventSelector.value = currentEvent;
+  }
+}
+
+// Function to calculate sales by payment method
+function calculateSalesByPaymentMethod(date) {
+  const dateString = getLocalDateString(date);
+
+  // Filter orders by date and status (only completed and pending orders)
+  const relevantOrders = orderHistory.filter(order => {
+    const orderEvent = order.event || 'pop-up'; // Default to 'pop-up' for existing orders
+    return getLocalDateString(new Date(order.timestamp)) === dateString &&
+      (order.status === 'completed' || order.status === 'pending') &&
+      orderEvent === currentEvent;
+  });
+
+  // Initialize sales counters
+  let totalSales = 0;
+  let cashSales = 0;
+  let gcashSales = 0;
+  let mayaSales = 0;
+
+  // Calculate sales by payment method
+  relevantOrders.forEach(order => {
+    const orderTotal = order.total || 0;
+    totalSales += orderTotal;
+
+    switch (order.paymentMethod?.toLowerCase()) {
+      case 'cash':
+        cashSales += orderTotal;
+        break;
+      case 'gcash':
+        gcashSales += orderTotal;
+        break;
+      case 'maya':
+        mayaSales += orderTotal;
+        break;
+      default:
+        // If payment method not specified, assume cash
+        cashSales += orderTotal;
+    }
+  });
+
+  return {
+    total: totalSales,
+    cash: cashSales,
+    gcash: gcashSales,
+    maya: mayaSales
+  };
+}
+
 function showCashPaymentModal() {
   const existingModal = document.querySelector('.payment-modal-overlay');
   if (existingModal) {
@@ -1247,20 +1952,22 @@ function showCashPaymentModal() {
 
   const header = document.createElement('h2');
   header.className = 'payment-modal-header';
-  header.textContent = 'Cash Payment';
+  header.textContent = 'CASH PAYMENT';
   modal.appendChild(header);
 
   const tenderGrid = document.createElement('div');
   tenderGrid.className = 'tender-grid';
 
   const total = calculateOrderTotal();
-  const amounts = generateLogicalTenderAmounts(total);
+  // Limit to 4 suggestions as requested
+  const amounts = generateLogicalTenderAmounts(total).slice(0, 4);
 
+  // Create the tender amount buttons
   amounts.forEach(amount => {
     const button = document.createElement('button');
     button.className = 'tender-button-modal';
     button.dataset.amount = amount;
-    button.innerHTML = '₱' + amount;
+    button.innerHTML = '₱' + formatWithCommas(amount);
 
     // Disable buttons less than total
     if (amount < total) {
@@ -1270,11 +1977,33 @@ function showCashPaymentModal() {
     button.addEventListener('click', () => selectCashAmount(amount, modal));
     tenderGrid.appendChild(button);
   });
+
+  // Create a custom input to match the existing buttons
+  const customInputWrapper = document.createElement('div');
+  customInputWrapper.className = 'custom-input-wrapper';
+
+  const customInput = document.createElement('input');
+  customInput.type = 'number';
+  customInput.min = total;
+  customInput.className = 'custom-amount-input';
+  customInput.placeholder = 'CUSTOM AMOUNT';
+
+  // Apply entered amount when input changes
+  customInput.addEventListener('input', () => {
+    const customAmount = parseFloat(customInput.value);
+    if (!isNaN(customAmount) && customAmount >= total) {
+      selectCashAmount(customAmount, modal);
+    }
+  });
+
+  customInputWrapper.appendChild(customInput);
+  tenderGrid.appendChild(customInputWrapper);
+
   modal.appendChild(tenderGrid);
 
   const totalDisplay = document.createElement('div');
   totalDisplay.className = 'payment-total';
-  totalDisplay.textContent = 'Total: ₱' + total.toFixed(2);
+  totalDisplay.textContent = 'Total: ₱' + formatWithCommas(total.toFixed(2));
   modal.appendChild(totalDisplay);
 
   const changeText = document.createElement('div');
@@ -1287,12 +2016,14 @@ function showCashPaymentModal() {
   chargeButton.textContent = 'CHARGE';
   chargeButton.addEventListener('click', () => {
     completeCashPayment();
-    // overlay.remove();  // Close modal after charge
   });
   modal.appendChild(chargeButton);
 
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
+
+  // Focus on the custom input after rendering
+  setTimeout(() => customInput.focus(), 100);
 }
 
 function generateLogicalTenderAmounts(total) {
@@ -1351,6 +2082,11 @@ function generateLogicalTenderAmounts(total) {
   // Return up to 6 most logical amounts
   return filteredAmounts.slice(0, 6);
 }
+
+function formatWithCommas(number) {
+  return number.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
 
 function showGCashPaymentModal() {
   const existingModal = document.querySelector('.payment-modal-overlay');
@@ -1477,7 +2213,8 @@ function completeCashPayment() {
     paymentMethod: 'Cash',
     timestamp: isEditing ? window.editingOrderData.timestamp : now.toISOString(),
     status: 'pending',
-    customerName: customerName
+    customerName: customerName,
+    event: currentEvent 
   };
 
   // Add Firebase ID if we're editing
@@ -1518,9 +2255,10 @@ function completeDigitalPayment(method) {
     paymentMethod: method,
     timestamp: isEditing ? window.editingOrderData.timestamp : now.toISOString(),
     status: 'pending',
-    customerName: customerName
+    customerName: customerName,
+    event: currentEvent 
   };
-
+  
   // Add Firebase ID if we're editing
   if (isEditing && window.editingOrderData.firebaseId) {
     order.firebaseId = window.editingOrderData.firebaseId;
@@ -1638,6 +2376,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateOrderDisplay();
   initializePaymentHandlers();
   initializeDatePicker();
+  initializeEventSelector();
+  updateEventDisplay();
 
   // Initialize menu items in Firebase on first run
   await initializeMenuItems();
@@ -1661,7 +2401,60 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (deleteDayBtn) {
     deleteDayBtn.addEventListener('click', clearDateData);
   }
+
+  const forceSyncBtn = document.getElementById('forceSyncBtn');
+  if (forceSyncBtn) {
+    forceSyncBtn.addEventListener('click', forceFullSync);
+  }
 });
+
+async function forceFullSync() {
+  const forceSyncBtn = document.getElementById('forceSyncBtn');
+  forceSyncBtn.disabled = true;
+  forceSyncBtn.textContent = 'SYNCING...';
+
+  try {
+    console.log("Starting force sync of all local data...");
+
+    // Get all local orders
+    const localOrders = JSON.parse(localStorage.getItem('orderHistory') || '[]');
+    console.log(`Found ${localOrders.length} total orders to sync`);
+
+    // Group orders by date
+    const ordersByDate = {};
+    localOrders.forEach(order => {
+      const dateStr = getLocalDateString(new Date(order.timestamp));
+      if (!ordersByDate[dateStr]) {
+        ordersByDate[dateStr] = [];
+      }
+      ordersByDate[dateStr].push(order);
+    });
+
+    // Sync each date's orders
+    for (const [dateStr, orders] of Object.entries(ordersByDate)) {
+      console.log(`Syncing ${orders.length} orders for ${dateStr}`);
+
+      for (const order of orders) {
+        // Skip deleted orders
+        if (order.status === 'deleted') continue;
+
+        // Force sync to Firebase
+        queueSync('create', order.id, order, dateStr);
+      }
+    }
+
+    // Wait for queue to process
+    await new Promise(resolve => setTimeout(resolve, 5000));
+
+    alert(`Force sync completed. Synced orders from ${Object.keys(ordersByDate).length} days.`);
+  } catch (error) {
+    console.error('Force sync failed:', error);
+    alert('Force sync failed. Check console for details.');
+  } finally {
+    forceSyncBtn.disabled = false;
+    forceSyncBtn.textContent = 'FORCE SYNC';
+  }
+}
 
 async function loadOrdersFromLocalStorage() {
   orderHistory = JSON.parse(localStorage.getItem('orderHistory') || '[]');
@@ -1698,31 +2491,30 @@ async function syncOrdersWithFirebase() {
     // Get local orders
     const localOrders = JSON.parse(localStorage.getItem('orderHistory') || '[]');
 
-    // Filter local orders to only include those from the selected date
+    // Filter local orders to only include those from the selected date AND current event
     const selectedDateLocalOrders = localOrders.filter(order => {
       const orderDate = new Date(order.timestamp);
-      return orderDate.toDateString() === syncDate.toDateString();
+      const orderEvent = order.event || 'pop-up'; // Default to 'pop-up' for existing orders
+      return orderDate.toDateString() === syncDate.toDateString() && orderEvent === currentEvent;
     });
 
     console.log(`Found ${selectedDateLocalOrders.length} local orders for ${dateStr}`);
 
     // Process each local order for sync
     for (const localOrder of selectedDateLocalOrders) {
-      const orderDate = new Date(localOrder.timestamp).toISOString().split('T')[0];
+      const orderDate = getLocalDateString(new Date(localOrder.timestamp));
       const fbOrder = firebaseOrderMap.get(localOrder.id);
 
-      // If order doesn't exist in Firebase yet, queue it for creation
-      if (!fbOrder && !localOrder.syncedWithFirebase) {
-        console.log(`Uploading local order ${localOrder.id} to Firebase...`);
+      // Always try to sync orders that aren't marked as synced
+      if (!localOrder.syncedWithFirebase || !fbOrder) {
+        console.log(`Queuing order ${localOrder.id} for sync...`);
         queueSync('create', localOrder.id, localOrder, orderDate);
-        localOrder.syncedWithFirebase = true;
       }
-      // If order exists in Firebase but has a different status, sync the change
-      else if (fbOrder && localOrder.status !== fbOrder.status) {
-        console.log(`Updating order ${localOrder.id} status in Firebase...`);
+      // If order exists in Firebase but has been modified locally
+      else if (fbOrder && localOrder.lastModified &&
+        new Date(localOrder.lastModified) > new Date(fbOrder.lastModified || 0)) {
+        console.log(`Queuing updated order ${localOrder.id} for sync...`);
         queueSync('update', localOrder.id, localOrder, orderDate);
-        localOrder.syncedWithFirebase = true;
-        localOrder.firebaseId = fbOrder.id;
       }
     }
 
@@ -1752,17 +2544,13 @@ function mergeOrders(localOrders, firebaseOrders) {
   // Create a map of local orders by ID
   const orderMap = new Map();
   localOrders.forEach(order => {
-    // Preserve sync flag if it exists
+    // Keep all orders in the map, including deleted ones
     const syncedWithFirebase = order.syncedWithFirebase || false;
     orderMap.set(order.id, { ...order, syncedWithFirebase });
   });
 
-  // Track which Firebase orders have been processed
-  const processedFirebaseOrderIds = new Set();
-
-  // Merge in Firebase orders
+  // Process Firebase orders
   firebaseOrders.forEach(fbOrder => {
-    processedFirebaseOrderIds.add(fbOrder.id);
     const existingLocalOrder = orderMap.get(fbOrder.id);
 
     // If Firebase order doesn't exist locally, add it
@@ -1777,32 +2565,41 @@ function mergeOrders(localOrders, firebaseOrders) {
       existingLocalOrder.firebaseId = fbOrder.firebaseId || fbOrder.id;
       existingLocalOrder.syncedWithFirebase = true; // Always mark as synced
 
-      // Compare timestamps to determine which is newer
-      const localTimestamp = new Date(existingLocalOrder.timestamp).getTime();
-      const fbTimestamp = new Date(fbOrder.timestamp).getTime();
+      // First, check for lastModified timestamps
+      const localLastModified = existingLocalOrder.lastModified ? new Date(existingLocalOrder.lastModified).getTime() : 0;
+      const fbLastModified = fbOrder.lastModified ? new Date(fbOrder.lastModified).getTime() : 0;
 
-      // Status priority (higher number = higher priority)
-      const statusPriority = {
-        'voided': 3,
-        'completed': 2,
-        'pending': 1,
-        'deleted': 0
-      };
-
-      // Use Firebase data if:
-      // 1. Firebase data is newer, OR
-      // 2. Firebase status has higher priority
-      if (fbTimestamp > localTimestamp ||
-        (statusPriority[fbOrder.status] || 0) > (statusPriority[existingLocalOrder.status] || 0)) {
-
-        // Keep important local data
-        const mergedOrder = {
+      // Always choose newer data based on lastModified timestamp
+      if (fbLastModified > localLastModified) {
+        // Firebase has newer changes
+        orderMap.set(fbOrder.id, {
           ...fbOrder,
           syncedWithFirebase: true,
           firebaseId: fbOrder.firebaseId || fbOrder.id
+        });
+      }
+      // Otherwise keep local changes if local is newer
+      else if (localLastModified > fbLastModified) {
+        // Local is newer, keep it (already in map)
+      }
+      // If timestamps equal or not available, use status priority
+      else {
+        // Status priority (higher number = higher priority)
+        const statusPriority = {
+          'deleted': 4,  // Make deleted highest priority
+          'voided': 3,
+          'completed': 2,
+          'pending': 1
         };
 
-        orderMap.set(fbOrder.id, mergedOrder);
+        if ((statusPriority[fbOrder.status] || 0) > (statusPriority[existingLocalOrder.status] || 0)) {
+          // Firebase status has higher priority
+          orderMap.set(fbOrder.id, {
+            ...fbOrder,
+            syncedWithFirebase: true,
+            firebaseId: fbOrder.firebaseId || fbOrder.id
+          });
+        }
       }
     }
   });
@@ -2075,7 +2872,8 @@ function clearDateData() {
     console.log(`Clearing Firebase data for date: ${dateString}`);
 
     // Create a reference to the date collection in Firebase
-    const dayRef = doc(db, 'pos-orders/pop-up');
+    // Create a reference to the date collection in Firebase
+    const dayRef = doc(db, `pos-orders/${window.currentEvent || 'pop-up'}`);
     const ordersRef = collection(dayRef, dateString);
 
     // Get all orders for that date and delete them
@@ -2093,7 +2891,7 @@ function clearDateData() {
 
       snapshot.forEach(document => {
         console.log(`Deleting document ID: ${document.id}`);
-        deleteDoc(doc(dayRef, dateString, document.id))
+        deleteDoc(doc(db, `pos-orders/${window.currentEvent || 'pop-up'}`, dateString, document.id))
           .then(() => {
             console.log(`Deleted order ${document.id}`);
             deleteCount++;
@@ -2144,3 +2942,15 @@ function debugDates() {
 
 // Call this from your browser console when needed
 window.debugDates = debugDates;
+
+// Add online/offline detection
+window.addEventListener('online', () => {
+  console.log('Connection restored, triggering sync...');
+  setTimeout(() => {
+    syncOrdersWithFirebase();
+  }, 2000);
+});
+
+window.addEventListener('offline', () => {
+  console.log('Connection lost - orders will be queued for sync');
+});

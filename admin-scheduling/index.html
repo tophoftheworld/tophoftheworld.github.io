@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Matchanese Scheduling</title>
+    <link rel="icon" href="data:,">
+    
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://matchanese.site/scheduling/">
+    <meta property="og:title" content="Matchanese Scheduling">
+    <meta property="og:description" content="Matchanese Employee Scheduling System">
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+</head>
+
+<body>
+    <!-- Shift Modal -->
+    <div class="modal" id="shiftModal">
+        <div class="modal-content">
+            <span class="close-modal" id="closeShiftModal">&times;</span>
+            <h2 id="modalTitle">Add Shift</h2>
+            <form id="shiftForm">
+                <div class="form-group">
+                    <label for="shiftDate">Date</label>
+                    <input type="date" id="shiftDate" required>
+                </div>
+                <div class="form-group">
+                    <label for="shiftBranch">Branch</label>
+                    <select id="shiftBranch" required>
+                        <option value="">Select branch</option>
+                        <option value="podium">Podium</option>
+                        <option value="smnorth">SM North</option>
+                        <option value="popup">Pop-up</option>
+                        <option value="workshop">Workshop</option>
+                        <option value="other">Other Events</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="shiftType">Shift Type</label>
+                    <select id="shiftType" required>
+                        <option value="">Select shift type</option>
+                        <option value="opening">Opening (9:30 AM - 6:30 PM)</option>
+                        <option value="midshift">Midshift (11:00 AM - 8:00 PM)</option>
+                        <option value="closing">Closing (1:00 PM - 10:00 PM)</option>
+                        <option value="closingHalf">Closing Half Day (6:00 PM - 10:00 PM)</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                </div>
+                <div class="form-group" id="customTimeGroup" style="display: none;">
+                    <label for="customStartTime">Start Time</label>
+                    <input type="time" id="customStartTime">
+                    <label for="customEndTime">End Time</label>
+                    <input type="time" id="customEndTime">
+                </div>
+                <div class="form-group">
+                    <label for="shiftEmployee">Employee</label>
+                    <select id="shiftEmployee">
+                        <option value="">Select employee</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <div class="toggle-container">
+                        <input type="checkbox" id="recurringWeekly">
+                        <label for="recurringWeekly">Repeat weekly</label>
+                    </div>
+                </div>
+                <input type="hidden" id="shiftId">
+                <input type="hidden" id="originalDate">
+                <input type="hidden" id="originalBranch">
+                <div class="form-actions">
+                    <button type="submit" class="submit-btn">Save Shift</button>
+                    <button type="button" class="cancel-btn" id="cancelShiftBtn">Cancel</button>
+                    <button type="button" class="danger-btn" id="deleteShiftBtn" style="display: none;">Delete Shift</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Recurring Choice Modal -->
+    <div class="modal" id="recurringChoiceModal">
+        <div class="modal-content">
+            <h3 id="recurringChoiceTitle">Save Changes</h3>
+            <p id="recurringChoiceMessage">This is part of a recurring series. How would you like to apply the changes?</p>
+            <div class="form-actions">
+                <button type="button" class="submit-btn" id="thisDateOnlyBtn">This Date Only</button>
+                <button type="button" class="submit-btn" id="thisAndFutureBtn">This & Future Dates</button>
+                <button type="button" class="cancel-btn" id="cancelRecurringBtn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="admin-header">
+            <div class="logo-section">
+                <img src="img/matchanese-logo.png" class="logo" alt="Matchanese Logo">
+                <h1 class="app-title">Scheduling Dashboard</h1>
+            </div>
+            <div class="controls">
+                <div class="control-item">
+                    <label class="control-label">Branch Filter</label>
+                    <select id="branchFilter">
+                        <option value="all">All Branches</option>
+                        <option value="podium">Podium</option>
+                        <option value="smnorth">SM North</option>
+                        <option value="popup">Pop-up</option>
+                        <option value="workshop">Workshop</option>
+                        <option value="other">Other Events</option>
+                    </select>
+                </div>
+                <div class="control-item">
+                    <label class="control-label">Display</label>
+                    <div class="toggle-container">
+                        <input type="radio" name="viewMode" value="shift" id="shiftView" checked>
+                        <label for="shiftView">Shift</label>
+                        <input type="radio" name="viewMode" value="calendar" id="calendarView">
+                        <label for="calendarView">Calendar</label>
+                        <input type="radio" name="viewMode" value="employee" id="employeeView">
+                        <label for="employeeView">Employee</label>
+                    </div>
+                </div>
+                <button class="refresh-btn" id="syncBtn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 2v6h-6"></path>
+                        <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+                        <path d="M3 22v-6h6"></path>
+                        <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+                    </svg>
+                    Sync Now
+                </button>
+            </div>
+        </div>
+
+        <!-- Week Navigation -->
+        <div class="week-navigation">
+            <button class="nav-btn" id="prevWeekBtn">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M15 18l-6-6 6-6"/>
+                </svg>
+                Previous Week
+            </button>
+            <h2 class="week-title" id="weekTitle">Week of January 15 - 21, 2025</h2>
+            <button class="nav-btn" id="nextWeekBtn">
+                Next Week
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M9 18l6-6-6-6"/>
+                </svg>
+            </button>
+        </div>
+
+        <!-- Sync Status -->
+        <div class="sync-status" id="syncStatus">
+            <span class="sync-indicator">💾 Saved locally</span>
+        </div>
+
+        <!-- Calendar View -->
+        <div id="calendarViewContainer" class="view-container" style="display: none;">
+            <div class="schedule-grid" id="scheduleGrid">
+                <!-- Grid will be populated by JavaScript -->
+            </div>
+        </div>
+
+        <!-- Shift View -->
+        <div id="shiftViewContainer" class="view-container">
+            <div class="shift-schedule-grid" id="shiftScheduleGrid">
+                <!-- Grid will be populated by JavaScript -->
+            </div>
+        </div>
+
+        <!-- Employee View -->
+        <div id="employeeViewContainer" class="view-container" style="display: none;">
+            <div class="employee-schedule" id="employeeSchedule">
+                <!-- Employee schedule will be populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="js/script.js"></script>
+</body>
+
+</html>

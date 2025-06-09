@@ -50,40 +50,43 @@ export const menuData = {
             categoryId: "matcha-lite",
             name: "<span class=\"text-span-2\">matchanese</span> tea",
             description: "Hand-Whisked Ceremonial Matcha",
-            price: 180,
+            price: 190,
             // tags: ["classic"],
             type: "Iced",
             customizations: {
                 size: true,      // Can customize size
                 serving: true,   // Can customize serving
                 sweetness: false, // Can customize sweetness
-                milk: false      // Cannot customize milk
+                milk: false,     // Cannot customize milk
+                discount: true
             }
         },
         {
             categoryId: "matcha-lite",
             name: "<span class=\"text-span-2\">matchanese</span> coconut",
             description: "Hand-whisked Ceremonial Matcha over Coconut Juice",
-            price: 190,
+            price: 200,
             type: "Iced",
             customizations: {
                 size: true,      // Can customize size
                 serving: true,   // Can customize serving
                 sweetness: false, // Can customize sweetness
-                milk: false      // Cannot customize milk
+                milk: false,
+                discount: true
             }
         },
         {
             categoryId: "matcha-lite",
             name: "<span class=\"text-span-2\">matchanese</span> dalandan",
             description: "Hand-whisked Ceremonial Matcha over Dalandan Juice",
-            price: 190,
+            price: 200,
             type: "Iced",
             customizations: {
                 size: true,      // Can customize size
                 serving: true,   // Can customize serving
                 sweetness: false, // Can customize sweetness
-                milk: false      // Cannot customize milk
+                milk: false,
+                discount: true
             }
         },
         {
@@ -97,7 +100,8 @@ export const menuData = {
                 size: true,      // Can customize size
                 serving: true,   // Can customize serving
                 sweetness: false, // Can customize sweetness
-                milk: false      // Cannot customize milk
+                milk: false,
+                discount: true
             }
         },
         {

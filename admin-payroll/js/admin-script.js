@@ -20,27 +20,8 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// Employee data
-const employees = {
-    "130129": "Beatrice Grace Boldo",
-    "130229": "Cristopher David",
-    "130329": "Gabrielle Hannah Catalan",
-    "130429": "Acerr Franco",
-    "130529": "Raschel Joy Cruz",
-    "130629": "Raniel Buenaventura",
-    "130729": "Denzel Genesis Fernandez",
-    "130829": "Sheila Mae Salvajan",
-    "130929": "Paul John Garin",
-    "131029": "John Lester Cal",
-    "131129": "Liezel Acebedo",
-    "131229": "Laville Laborte",
-    "131329": "Jasmine Ferrer",
-    "131429": "Gerilou Gonzales",
-    "131529": "Sarah Perpinan",
-    "131629": "Rhobbie Ryza Saligumba",
-    "131729": "Charles Francis Tan",
-    "131829": "Japhet Dizon"
-};
+// Employee data - loaded from Firebase
+let employees = {};
 
 const importedNameMap = {
     "Acerr": "Acerr Franco",
@@ -63,30 +44,50 @@ const importedNameMap = {
 };
 
 // Add this after the SHIFT_SCHEDULES constant
-const HOLIDAYS_2025 = {
-    // Regular Holidays
-    "2025-01-01": { name: "New Year's Day", type: "regular" },
-    "2025-04-01": { name: "Eid'l Fitr (Feast of Ramadhan)", type: "regular" },
-    "2025-04-09": { name: "Araw ng Kagitingan", type: "regular" },
-    "2025-04-17": { name: "Maundy Thursday", type: "regular" },
-    "2025-04-18": { name: "Good Friday", type: "regular" },
-    "2025-05-01": { name: "Labor Day", type: "regular" },
-    "2025-06-12": { name: "Independence Day", type: "regular" },
-    "2025-08-25": { name: "National Heroes Day", type: "regular" },
-    "2025-11-30": { name: "Bonifacio Day", type: "regular" },
-    "2025-12-25": { name: "Christmas Day", type: "regular" },
-    "2025-12-30": { name: "Rizal Day", type: "regular" },
-    // Special (Non-Working) Holidays
-    "2025-01-29": { name: "Chinese New Year", type: "special" },
-    "2025-02-25": { name: "EDSA People Power Revolution Anniversary", type: "special" },
-    "2025-04-19": { name: "Black Saturday", type: "special" },
-    "2025-08-21": { name: "Ninoy Aquino Day", type: "special" },
-    "2025-10-31": { name: "All Saints' Day Eve", type: "special" },
-    "2025-11-01": { name: "All Saints' Day", type: "special" },
-    "2025-12-08": { name: "Feast of the Immaculate Conception", type: "special" },
-    "2025-12-24": { name: "Christmas Eve", type: "special" },
-    "2025-12-31": { name: "New Year's Eve", type: "special" }
-};
+// const HOLIDAYS_2025 = {
+//     // Regular Holidays
+//     "2025-01-01": { name: "New Year's Day", type: "regular" },
+//     "2025-04-01": { name: "Eid'l Fitr (Feast of Ramadhan)", type: "regular" },
+//     "2025-04-09": { name: "Araw ng Kagitingan", type: "regular" },
+//     "2025-04-17": { name: "Maundy Thursday", type: "regular" },
+//     "2025-04-18": { name: "Good Friday", type: "regular" },
+//     "2025-05-01": { name: "Labor Day", type: "regular" },
+//     "2025-06-12": { name: "Independence Day", type: "regular" },
+//     "2025-08-25": { name: "National Heroes Day", type: "regular" },
+//     "2025-11-30": { name: "Bonifacio Day", type: "regular" },
+//     "2025-12-25": { name: "Christmas Day", type: "regular" },
+//     "2025-12-30": { name: "Rizal Day", type: "regular" },
+//     // Special (Non-Working) Holidays
+//     "2025-01-29": { name: "Chinese New Year", type: "special" },
+//     "2025-02-25": { name: "EDSA People Power Revolution Anniversary", type: "special" },
+//     "2025-04-19": { name: "Black Saturday", type: "special" },
+//     "2025-08-21": { name: "Ninoy Aquino Day", type: "special" },
+//     "2025-10-31": { name: "All Saints' Day Eve", type: "special" },
+//     "2025-11-01": { name: "All Saints' Day", type: "special" },
+//     "2025-12-08": { name: "Feast of the Immaculate Conception", type: "special" },
+//     "2025-12-24": { name: "Christmas Eve", type: "special" },
+//     "2025-12-31": { name: "New Year's Eve", type: "special" }
+// };
+
+let HOLIDAYS_2025 = {};
+let holidaysLoaded = false;
+
+async function loadHolidays() {
+    if (holidaysLoaded) return HOLIDAYS_2025;
+
+    try {
+        const holidayDoc = await getDoc(doc(db, "config", "holidays_2025"));
+        if (holidayDoc.exists()) {
+            HOLIDAYS_2025 = holidayDoc.data();
+            holidaysLoaded = true;
+            console.log("✅ Holidays loaded from Firebase");
+        }
+        return HOLIDAYS_2025;
+    } catch (error) {
+        console.error("Failed to load holidays:", error);
+        return {};
+    }
+}
 
 function getEmployeeIdFromImportedName(name) {
     const cleanName = name.replace(/^"|"$/g, '').trim().toLowerCase();
@@ -223,10 +224,11 @@ function convertTo12Hour(timeStr) {
 
 // Shift schedules
 const SHIFT_SCHEDULES = {
-    Opening: { timeIn: "9:30 AM", timeOut: "6:30 PM" },
-    Midshift: { timeIn: "11:00 AM", timeOut: "8:00 PM" },
-    Closing: { timeIn: "1:00 PM", timeOut: "10:00 PM" },
-    Custom: { timeIn: null, timeOut: null }
+    "Opening": { timeIn: "9:30 AM", timeOut: "6:30 PM" },
+    "Midshift": { timeIn: "11:00 AM", timeOut: "8:00 PM" },
+    "Closing": { timeIn: "1:00 PM", timeOut: "10:00 PM" },
+    "Closing Half-Day": { timeIn: "6:00 PM", timeOut: "10:00 PM" },
+    "Custom": { timeIn: null, timeOut: null }
 };
 
 // DOM elements
@@ -246,6 +248,43 @@ const employeeEditForm = document.getElementById('employeeEditForm');
 const editEmployeeName = document.getElementById('editEmployeeName');
 const editBaseRate = document.getElementById('editBaseRate');
 const editEmployeeId = document.getElementById('editEmployeeId');
+const editNickname = document.getElementById('editNickname');
+
+const shiftEditModal = document.getElementById('shiftEditModal');
+const closeShiftEditModalBtn = document.getElementById('closeShiftEditModal');
+const cancelShiftEditBtn = document.getElementById('cancelShiftEditBtn');
+const shiftEditForm = document.getElementById('shiftEditForm');
+const editShiftBranch = document.getElementById('editShiftBranch');
+const editShiftSchedule = document.getElementById('editShiftSchedule');
+const editShiftEmployeeId = document.getElementById('editShiftEmployeeId');
+const editShiftDate = document.getElementById('editShiftDate');
+
+const batchEditModal = document.getElementById('batchEditModal');
+const closeBatchEditModalBtn = document.getElementById('closeBatchEditModal');
+const cancelBatchEditBtn = document.getElementById('cancelBatchEditBtn');
+const batchEditForm = document.getElementById('batchEditForm');
+const batchEditBranch = document.getElementById('batchEditBranch');
+const batchEditShift = document.getElementById('batchEditShift');
+const batchEditEmployeeId = document.getElementById('batchEditEmployeeId');
+
+const addEmployeeBtn = document.getElementById('addEmployeeBtn');
+const addEmployeeModal = document.getElementById('addEmployeeModal');
+const closeAddEmployeeModal = document.getElementById('closeAddEmployeeModal');
+const cancelAddEmployeeBtn = document.getElementById('cancelAddEmployeeBtn');
+const addEmployeeForm = document.getElementById('addEmployeeForm');
+const addEmployeeId = document.getElementById('addEmployeeId');
+const addEmployeeName = document.getElementById('addEmployeeName');
+const addBaseRate = document.getElementById('addBaseRate');
+const addNickname = document.getElementById('addNickname');
+
+const holidaysModal = document.getElementById('holidaysModal');
+const closeHolidaysModal = document.getElementById('closeHolidaysModal');
+const closeHolidaysBtn = document.getElementById('closeHolidaysBtn');
+const addHolidayForm = document.getElementById('addHolidayForm');
+const holidaysTableBody = document.getElementById('holidaysTableBody');
+
+const editShiftTimeIn = document.getElementById('editShiftTimeIn');
+const editShiftTimeOut = document.getElementById('editShiftTimeOut');
 
 const refreshIndicator = document.createElement('div');
 refreshIndicator.className = 'refresh-indicator';
@@ -259,6 +298,20 @@ document.body.appendChild(refreshIndicator);
 closeEditModal.addEventListener('click', closeEditEmployeeModal);
 cancelEditBtn.addEventListener('click', closeEditEmployeeModal);
 employeeEditForm.addEventListener('submit', saveEmployeeChanges);
+
+closeShiftEditModalBtn.addEventListener('click', closeShiftEditModal);
+cancelShiftEditBtn.addEventListener('click', closeShiftEditModal);
+shiftEditForm.addEventListener('submit', saveShiftChanges);
+
+closeBatchEditModalBtn.addEventListener('click', closeBatchEditModal);
+cancelBatchEditBtn.addEventListener('click', closeBatchEditModal);
+batchEditForm.addEventListener('submit', saveBatchChanges);
+
+addEmployeeBtn.addEventListener('click', openAddEmployeeModal);
+closeAddEmployeeModal.addEventListener('click', closeAddEmployeeModalFunc);
+cancelAddEmployeeBtn.addEventListener('click', closeAddEmployeeModalFunc);
+addEmployeeForm.addEventListener('submit', saveNewEmployee);
+
 
 // Global data store
 let attendanceData = {};
@@ -566,6 +619,25 @@ async function findOldestRecordAcrossEmployees() {
     }
 }
 
+async function loadAllEmployees() {
+    try {
+        const employeesRef = collection(db, "employees");
+        const snapshot = await getDocs(employeesRef);
+
+        employees = {};
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            employees[doc.id] = data.name;
+        });
+
+        console.log("Loaded employees from Firebase:", employees);
+        return employees;
+    } catch (error) {
+        console.error("Error loading employees:", error);
+        return {};
+    }
+}
+
 function updatePeriodDropdown() {
     // Store current selection before changing anything
     const currentSelection = periodSelect.value;
@@ -608,6 +680,8 @@ async function loadData(selectedPeriodId = null) {
 
     const branchId = branchSelect.value;
     const cacheKey = getCacheKey(forcedPeriodId, branchId);
+
+    await loadHolidays();
 
     console.log(`Loading data for: ${forcedPeriodId} ${branchId}`);
 
@@ -652,7 +726,10 @@ async function loadData(selectedPeriodId = null) {
     refreshBtn.dataset.forceRefresh = 'false';
 
     try {
-        // First, get all employee IDs
+        // First, load all employees from Firebase
+        await loadAllEmployees();
+
+        // Get all employee IDs
         const employeeIds = Object.keys(employees);
 
         // We'll use this to track any changes
@@ -719,9 +796,16 @@ async function loadData(selectedPeriodId = null) {
                     const employeeData = employeeDoc.data();
                     const oldBaseRate = attendanceData[employeeId].baseRate || 0;
                     const newBaseRate = employeeData.baseRate || 0;
+                    const oldNickname = attendanceData[employeeId].nickname || '';
+                    const newNickname = employeeData.nickname || '';
 
                     if (oldBaseRate !== newBaseRate) {
                         attendanceData[employeeId].baseRate = newBaseRate;
+                        hasChanges = true;
+                    }
+
+                    if (oldNickname !== newNickname) {
+                        attendanceData[employeeId].nickname = newNickname;
                         hasChanges = true;
                     }
                 }
@@ -761,12 +845,15 @@ async function loadData(selectedPeriodId = null) {
                     const dateData = doc.data();
 
                     // Create the new entry
+                    const shiftType = dateData.clockIn?.shift || "Custom";
+                    const shiftSchedule = SHIFT_SCHEDULES[shiftType] || SHIFT_SCHEDULES["Custom"];
+
                     const newEntry = {
                         date: dateStr,
                         branch: dateData.clockIn?.branch || "N/A",
-                        shift: dateData.clockIn?.shift || "N/A",
-                        scheduledIn: SHIFT_SCHEDULES[dateData.clockIn?.shift || "Opening"].timeIn,
-                        scheduledOut: SHIFT_SCHEDULES[dateData.clockIn?.shift || "Opening"].timeOut,
+                        shift: shiftType,
+                        scheduledIn: shiftSchedule.timeIn,
+                        scheduledOut: shiftSchedule.timeOut,
                         timeIn: dateData.clockIn?.time || null,
                         timeOut: dateData.clockOut?.time || null,
                         timeInPhoto: dateData.clockIn?.selfie || null,
@@ -1039,6 +1126,14 @@ function updateSummaryCards() {
     } else {
         holidayDisplay.textContent = "No holidays";
     }
+
+    const holidaysCard = holidayDisplay.closest('.summary-card');
+
+    // Make the holidays card clickable
+    if (!holidaysCard.classList.contains('holidays-summary-card')) {
+        holidaysCard.classList.add('holidays-summary-card');
+        holidaysCard.addEventListener('click', openHolidaysModal);
+    }
 }
 
 function createEmployeeSpecificSummaryCards(employeeId) {
@@ -1054,14 +1149,19 @@ function createEmployeeSpecificSummaryCards(employeeId) {
                 <div class="card-subtitle">Staff ID</div>
             </div>
             <div class="summary-card">
+                <div class="card-title">Base Rate</div>
+                <div class="card-value">₱${(employee.baseRate || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div class="card-subtitle">Per day</div>
+            </div>
+            <div class="summary-card">
                 <div class="card-title">Days Worked</div>
                 <div class="card-value">${employee.daysWorked}</div>
                 <div class="card-subtitle">This period</div>
             </div>
             <div class="summary-card">
-                <div class="card-title">Late Hours</div>
-                <div class="card-value">${employee.lateHours.toFixed(1)}</div>
-                <div class="card-subtitle">Total hours</div>
+                <div class="card-title">Average Lateness</div>
+                <div class="card-value">${employee.daysWorked > 0 ? (employee.lateHours / employee.daysWorked * 60).toFixed(1) : '0.0'}</div>
+                <div class="card-subtitle">Minutes per day</div>
             </div>
             <div class="summary-card">
                 <div class="card-title">Total Pay</div>
@@ -1138,10 +1238,10 @@ function renderEmployeeTable() {
 
         row.innerHTML = `
             <td>
-                <span class="employee-name">${employees[employeeId]}</span>
+                <span class="employee-name">${employee.name || employees[employeeId] || 'Unknown Employee'}</span>
             </td>
             <td>${daysWorked}</td>
-            <td class="${lateHours > 0 ? 'late' : ''}">${lateHours.toFixed(1)}</td>
+            <td class="${getLatnessColorClass(daysWorked > 0 ? (lateHours / daysWorked * 60) : 0)}">${daysWorked > 0 ? (lateHours / daysWorked * 60).toFixed(1) : '0.0'}</td>
             <td class="base-rate">₱${(employee.baseRate || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
             <td>₱${calculateTotalPay(daysWorked, employee.baseRate || 0, employee.dates).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
             <td class="time-cell">
@@ -1150,10 +1250,22 @@ function renderEmployeeTable() {
                         ``}
                 <span class="date-readable">${lastClockIn}</span>
             </td>
-            <td>
-                <button class="action-btn view-details-btn">View</button>
-                <button class="action-btn open-btn">Open</button>
-                <button class="action-btn edit-employee-btn">Edit</button>
+            <td class="action-cell">
+                <div class="action-buttons-container">
+                    <button class="action-btn open-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M9 18l6-6-6-6"></path>
+                        </svg>
+                        Open
+                    </button>
+                    <button class="action-btn edit-employee-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                        </svg>
+                        Edit
+                    </button>
+                </div>
             </td>
         `;
 
@@ -1175,14 +1287,16 @@ function renderEmployeeTable() {
         employeeTableBody.appendChild(detailRow);
     });
 
-    
 
-    // Add event listeners for view details buttons
-    document.querySelectorAll('.view-details-btn').forEach(btn => {
-        btn.addEventListener('click', function (e) {
-            e.stopPropagation();
-            const row = this.closest('.expandable-row');
-            const employeeId = row.dataset.employeeId;
+    // Add event listeners for row clicks to expand details
+    document.querySelectorAll('.expandable-row').forEach(row => {
+        row.addEventListener('click', function (e) {
+            // Don't expand if clicking on a button
+            if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
+                return;
+            }
+
+            const employeeId = this.dataset.employeeId;
             const detailRow = document.querySelector(`.detail-row[data-employee-id="${employeeId}"]`);
 
             // Load details on demand
@@ -1190,7 +1304,7 @@ function renderEmployeeTable() {
                 loadEmployeeDetails(employeeId, detailRow);
             }
 
-            row.classList.toggle('expanded');
+            this.classList.toggle('expanded');
             detailRow.classList.toggle('expanded');
         });
     });
@@ -1250,6 +1364,22 @@ function renderEmployeeTable() {
             row.classList.add('expanded');
             detailRow.classList.add('expanded');
         }
+    }
+}
+
+function getLatnessColorClass(avgLateness) {
+    if (avgLateness >= 30) return 'late-high';
+    if (avgLateness >= 15) return 'late-medium';
+    if (avgLateness > 0) return 'late-low';
+    return '';
+}
+
+async function uploadHolidaysToFirebase() {
+    try {
+        await setDoc(doc(db, "settings", "holidays_2025"), HOLIDAYS_2025);
+        console.log("Holidays uploaded to Firebase");
+    } catch (error) {
+        console.error("Error uploading holidays:", error);
     }
 }
 
@@ -1341,7 +1471,11 @@ function calculateTotalPay(daysWorked, baseRate, datesWorked = []) {
         if (dateObj.timeIn && dateObj.timeOut) {
             const dateStr = dateObj.date;
             const multiplier = getHolidayPayMultiplier(dateStr);
-            const dailyRate = baseRate;
+
+            // Determine if it's a half day based on shift
+            const isHalfDay = dateObj.shift === "Closing Half-Day";
+            const dailyRate = isHalfDay ? baseRate / 2 : baseRate;
+            const mealAllowance = isHalfDay ? dailyMealAllowance / 2 : dailyMealAllowance;
 
             // Calculate deductions for late/undertime
             const deductionHours = calculateDeductions(
@@ -1351,8 +1485,9 @@ function calculateTotalPay(daysWorked, baseRate, datesWorked = []) {
                 dateObj.scheduledOut
             );
 
-            // Calculate hourly rate (daily rate / 8 hours)
-            const hourlyRate = dailyRate / 8;
+            // Calculate hourly rate (daily rate / 8 hours for full day, / 4 hours for half day)
+            const standardHours = isHalfDay ? 4 : 8;
+            const hourlyRate = dailyRate / standardHours;
 
             // Calculate deduction amount
             const deductionAmount = deductionHours * hourlyRate;
@@ -1362,7 +1497,7 @@ function calculateTotalPay(daysWorked, baseRate, datesWorked = []) {
             totalPay += dailyRate * multiplier;
 
             // Add meal allowance (not affected by multiplier)
-            totalPay += dailyMealAllowance;
+            totalPay += mealAllowance;
 
             // If it's a holiday, add the holiday name to the date object for display
             if (HOLIDAYS_2025[dateStr]) {
@@ -1426,17 +1561,19 @@ async function loadEmployeeDetails(employeeId, detailRow) {
                 const branchMatches = branch === 'all' || branchName === getBranchName(branch);
 
                 if (branchMatches) {
-                    // Now we load the full data including photos
+                    const shiftType = dateData.clockIn?.shift || "Custom";
+                    const shiftSchedule = SHIFT_SCHEDULES[shiftType] || SHIFT_SCHEDULES["Custom"];
+
                     dates.push({
-                    date: dateStr,
-                    branch: branchName,
-                    shift: dateData.clockIn?.shift || "N/A",
-                    scheduledIn: SHIFT_SCHEDULES[dateData.clockIn?.shift || "Opening"].timeIn,
-                    scheduledOut: SHIFT_SCHEDULES[dateData.clockIn?.shift || "Opening"].timeOut,
-                    timeIn: dateData.clockIn?.time || null,
-                    timeOut: dateData.clockOut?.time || null,
-                    timeInPhoto: dateData.clockIn?.selfie || null,
-                    timeOutPhoto: dateData.clockOut?.selfie || null
+                        date: dateStr,
+                        branch: branchName,
+                        shift: shiftType,
+                        scheduledIn: shiftSchedule.timeIn,
+                        scheduledOut: shiftSchedule.timeOut,
+                        timeIn: dateData.clockIn?.time || null,
+                        timeOut: dateData.clockOut?.time || null,
+                        timeInPhoto: dateData.clockIn?.selfie || null,
+                        timeOutPhoto: dateData.clockOut?.selfie || null
                     });
 
                     // Add this after the push to update the main data store
@@ -1555,8 +1692,26 @@ async function loadEmployeeDetails(employeeId, detailRow) {
             <td>₱${date.timeIn && date.timeOut ?
                     calculateTotalPay(1, filteredData[employeeId].baseRate || 0, [date]).toFixed(2) :
                     '0.00'}</td>
-            <td>
-                <button class="action-btn delete-entry-btn" data-date="${date.date}" data-employee="${employeeId}">Delete</button>
+            <td class="action-cell">
+                <div class="action-buttons-container">
+                    <button class="action-btn edit-shift-btn" data-date="${date.date}" data-employee="${employeeId}">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                        </svg>
+                        Edit
+                    </button>
+                    <button class="action-btn delete-entry-btn" data-date="${date.date}" data-employee="${employeeId}">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 6h18"></path>
+                            <path d="m19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                            <path d="m8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                            <line x1="10" x2="10" y1="11" y2="17"></line>
+                            <line x1="14" x2="14" y1="11" y2="17"></line>
+                        </svg>
+                        Delete
+                    </button>
+                </div>
             </td>
             `;
 
@@ -1588,13 +1743,21 @@ async function loadEmployeeDetails(employeeId, detailRow) {
             });
         });
 
+        detailRow.querySelectorAll('.edit-shift-btn').forEach(btn => {
+            btn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                const dateStr = this.dataset.date;
+                const employeeId = this.dataset.employee;
+                openEditShiftModal(employeeId, dateStr);
+            });
+        });
+
     } catch (error) {
         console.error("Error loading employee details:", error);
         detailRow.querySelector('.detail-content').innerHTML = '<div class="error-message">Failed to load details. Please try again.</div>';
     }
 }
 
-// Add this function after the getRandomShift function
 function guessShift(timeIn, timeOut) {
     if (!timeIn || !timeOut) return "Custom";
 
@@ -1603,28 +1766,28 @@ function guessShift(timeIn, timeOut) {
     const [inHours, inMinutes] = inTime.split(':').map(Number);
     const inTotalMinutes = (inMeridian === 'PM' && inHours !== 12 ? inHours + 12 : inHours % 12) * 60 + inMinutes;
 
-    const [outTime, outMeridian] = timeOut.split(' ');
-    const [outHours, outMinutes] = outTime.split(':').map(Number);
-    const outTotalMinutes = (outMeridian === 'PM' && outHours !== 12 ? outHours + 12 : outHours % 12) * 60 + outMinutes;
-
     // Define shift start times in minutes
-    const openingStart = 9 * 60 + 30;  // 9:30 AM
-    const midshiftStart = 11 * 60;     // 11:00 AM
-    const closingStart = 13 * 60;      // 1:00 PM
+    const shifts = [
+        { name: "Opening", start: 9 * 60 + 30 },      // 9:30 AM
+        { name: "Midshift", start: 11 * 60 },         // 11:00 AM  
+        { name: "Closing", start: 13 * 60 },          // 1:00 PM
+        { name: "Closing Half-Day", start: 18 * 60 }  // 6:00 PM
+    ];
 
-    // Calculate differences
-    const diffFromOpening = Math.abs(inTotalMinutes - openingStart);
-    const diffFromMidshift = Math.abs(inTotalMinutes - midshiftStart);
-    const diffFromClosing = Math.abs(inTotalMinutes - closingStart);
+    // Find the closest shift
+    let closestShift = "Custom";
+    let smallestDiff = Infinity;
 
-    // Determine closest shift
-    const closestDiff = Math.min(diffFromOpening, diffFromMidshift, diffFromClosing);
+    shifts.forEach(shift => {
+        const diff = Math.abs(inTotalMinutes - shift.start);
+        if (diff < smallestDiff) {
+            smallestDiff = diff;
+            closestShift = shift.name;
+        }
+    });
 
-    if (closestDiff === diffFromOpening) return "Opening";
-    if (closestDiff === diffFromMidshift) return "Midshift";
-    if (closestDiff === diffFromClosing) return "Closing";
-
-    return "Custom";
+    // Only return the shift if it's within 60 minutes (reasonable tolerance)
+    return smallestDiff <= 60 ? closestShift : "Custom";
 }
 
 // Add this new function to format time without seconds
@@ -1713,7 +1876,7 @@ function getRandomBranch() {
 
 // Helper function to get random shift
 function getRandomShift() {
-    const shifts = ["Opening", "Midshift", "Closing"];
+    const shifts = ["Opening", "Midshift", "Closing", "Closing Half-Day"];
     return shifts[Math.floor(Math.random() * shifts.length)];
 }
 
@@ -2201,6 +2364,12 @@ function updateViewMode() {
         const employeeName = employees[currentEmployeeView] || 'Employee';
         const employee = filteredData[currentEmployeeView];
 
+        // Remove any existing employee heading first
+        const existingHeading = document.getElementById('employee-view-heading');
+        if (existingHeading) {
+            existingHeading.remove();
+        }
+
         const employeeNameHeading = document.createElement('h2');
         employeeNameHeading.id = 'employee-view-heading';
         employeeNameHeading.className = 'employee-view-heading';
@@ -2236,8 +2405,44 @@ function updateViewMode() {
             filterData();
         });
 
-        // Add the back button before the table
-        container.insertBefore(backBtn, tableContainer);
+        // Create edit button for single employee view
+        const editBtn = document.createElement('button');
+        editBtn.className = 'edit-btn';
+        editBtn.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" 
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+                Edit Employee
+            `;
+            editBtn.addEventListener('click', function () {
+            openEditEmployeeModal(currentEmployeeView);
+        });
+
+        // Create batch edit button for single employee view
+        const batchEditBtn = document.createElement('button');
+        batchEditBtn.className = 'edit-btn';
+        batchEditBtn.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" 
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 20h9"></path>
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+            </svg>
+            Batch Edit Period
+        `;
+        batchEditBtn.addEventListener('click', function () {
+            openBatchEditModal(currentEmployeeView);
+        });
+
+        // Add the back button after the admin header but before summary cards
+        const summaryCards = document.querySelector('.summary-cards');
+        container.insertBefore(backBtn, summaryCards);
+        container.insertBefore(editBtn, summaryCards);
+        container.insertBefore(batchEditBtn, summaryCards);
+
+        // Add the employee name heading right after the back button
+        backBtn.insertAdjacentElement('afterend', employeeNameHeading);
 
         // 3. Update summary cards with employee-specific info
         if (employee) {
@@ -2252,8 +2457,8 @@ function updateViewMode() {
                 if (existingCards) {
                     existingCards.outerHTML = employeeCards;
                 } else {
-                    // Insert after the back button
-                    backBtn.insertAdjacentHTML('afterend', employeeCards);
+                    // Insert after the employee name heading
+                    employeeNameHeading.insertAdjacentHTML('afterend', employeeCards);
                 }
             }
 
@@ -2261,8 +2466,6 @@ function updateViewMode() {
             const totalPayCard = document.getElementById('totalPayroll');
             totalPayCard.textContent = `₱${calculateTotalPay(0, employee.baseRate || 0, employee.dates).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         }
-
-        container.insertBefore(employeeNameHeading, backBtn.nextSibling);
 
         // 4. Hide the main employee table
         employeeTable.style.display = 'none';
@@ -2283,7 +2486,6 @@ function updateViewMode() {
             loadEmployeeDetailsAsMainTable(currentEmployeeView, detailsContainer);
         }
     } else {
-        
         // All employees view - restore original view
         // document.querySelector('.app-title').textContent = 'Admin Dashboard';
         // Remove employee heading
@@ -2291,6 +2493,10 @@ function updateViewMode() {
         if (employeeHeading) {
             employeeHeading.remove();
         }
+
+        // Remove all edit and batch edit buttons
+        const editBtns = document.querySelectorAll('.edit-btn');
+        editBtns.forEach(btn => btn.remove());
 
         // Show the original table
         employeeTable.style.display = 'table';
@@ -2369,17 +2575,20 @@ async function loadEmployeeDetailsAsMainTable(employeeId, container) {
 
                 if (branchMatches) {
                 // Now we load the full data including photos
+                const shiftType = dateData.clockIn?.shift || "Custom";
+                const shiftSchedule = SHIFT_SCHEDULES[shiftType] || SHIFT_SCHEDULES["Custom"];
+
                 dates.push({
                     date: dateStr,
                     branch: branchName,
-                    shift: dateData.clockIn?.shift || "N/A",
-                    scheduledIn: SHIFT_SCHEDULES[dateData.clockIn?.shift || "Opening"].timeIn,
-                    scheduledOut: SHIFT_SCHEDULES[dateData.clockIn?.shift || "Opening"].timeOut,
+                    shift: shiftType,
+                    scheduledIn: shiftSchedule.timeIn,
+                    scheduledOut: shiftSchedule.timeOut,
                     timeIn: dateData.clockIn?.time || null,
                     timeOut: dateData.clockOut?.time || null,
                     timeInPhoto: dateData.clockIn?.selfie || null,
                     timeOutPhoto: dateData.clockOut?.selfie || null
-                    });
+                });
                 }
             }
         });
@@ -2450,8 +2659,26 @@ async function loadEmployeeDetailsAsMainTable(employeeId, container) {
                 <td>₱${date.timeIn && date.timeOut ?
                     calculateTotalPay(1, filteredData[employeeId].baseRate || 0, [date]).toFixed(2) :
                     '0.00'}</td>
-                <td>
-                    <button class="action-btn delete-entry-btn" data-date="${date.date}" data-employee="${employeeId}">Delete</button>
+                <td class="action-cell">
+                    <div class="action-buttons-container">
+                        <button class="action-btn edit-shift-btn" data-date="${date.date}" data-employee="${employeeId}">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                            </svg>
+                            Edit
+                        </button>
+                        <button class="action-btn delete-entry-btn" data-date="${date.date}" data-employee="${employeeId}">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M3 6h18"></path>
+                                <path d="m19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                                <path d="m8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                                <line x1="10" x2="10" y1="11" y2="17"></line>
+                                <line x1="14" x2="14" y1="11" y2="17"></line>
+                            </svg>
+                            Delete
+                        </button>
+                    </div>
                 </td>
             `;
 
@@ -2478,6 +2705,16 @@ async function loadEmployeeDetailsAsMainTable(employeeId, container) {
                 const dateStr = this.dataset.date;
                 const employeeId = this.dataset.employee;
                 deleteAttendanceEntry(employeeId, dateStr);
+            });
+        });
+
+        // Add event listeners for edit shift buttons
+        container.querySelectorAll('.edit-shift-btn').forEach(btn => {
+            btn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                const dateStr = this.dataset.date;
+                const employeeId = this.dataset.employee;
+                openEditShiftModal(employeeId, dateStr);
             });
         });
 
@@ -2743,10 +2980,23 @@ function openEditEmployeeModal(employeeId) {
     // Fill form with current data
     editEmployeeName.value = employees[employeeId] || '';
     editBaseRate.value = employee.baseRate || 0;
+
+    // Set nickname - use stored nickname or generate default
+    const storedNickname = employee.nickname;
+    const defaultNickname = generateDefaultNickname(employees[employeeId] || '');
+    editNickname.value = storedNickname || defaultNickname;
+    editNickname.placeholder = `Default: ${defaultNickname}`;
+
     editEmployeeId.value = employeeId;
 
     // Show modal
     employeeEditModal.style.display = 'flex';
+}
+
+function generateDefaultNickname(fullName) {
+    if (!fullName) return '';
+    const nameParts = fullName.trim().split(' ');
+    return nameParts.length > 1 ? nameParts.slice(0, -1).join(' ') : fullName;
 }
 
 // Close employee edit modal
@@ -2754,37 +3004,50 @@ function closeEditEmployeeModal() {
     employeeEditModal.style.display = 'none';
 }
 
-// Save employee changes
 async function saveEmployeeChanges(e) {
     e.preventDefault();
 
     const employeeId = editEmployeeId.value;
     const newName = editEmployeeName.value.trim();
     const newBaseRate = parseFloat(editBaseRate.value) || 0;
+    const newNickname = editNickname.value.trim();
 
     try {
         // Update in memory
         employees[employeeId] = newName;
         attendanceData[employeeId].baseRate = newBaseRate;
+        attendanceData[employeeId].nickname = newNickname;
 
         // Update Firebase - using setDoc instead of updateDoc
         const employeeDocRef = doc(db, "employees", employeeId);
         await setDoc(employeeDocRef, {
             name: newName,
-            baseRate: newBaseRate
-        }, { merge: true }); // This ensures we only update these fields if the doc exists
+            baseRate: newBaseRate,
+            nickname: newNickname
+        }, { merge: true });
 
         // Update UI
         const row = document.querySelector(`.expandable-row[data-employee-id="${employeeId}"]`);
-        row.querySelector('.employee-name').textContent = newName;
-        row.querySelector('.base-rate').textContent = `₱${newBaseRate}`;
+        if (row) {
+            row.querySelector('.employee-name').textContent = newName;
+            row.querySelector('.base-rate').textContent = `₱${newBaseRate}`;
 
-        // Update total pay
-        const daysWorked = attendanceData[employeeId].daysWorked;
-        const totalPay = calculateTotalPay(daysWorked, newBaseRate);
-        row.querySelector('td:nth-child(5)').textContent = `₱${totalPay.toFixed(2)}`;
+            // Update total pay
+            const daysWorked = attendanceData[employeeId].daysWorked;
+            const totalPay = calculateTotalPay(daysWorked, newBaseRate);
+            row.querySelector('td:nth-child(5)').textContent = `₱${totalPay.toFixed(2)}`;
+        }
 
-        console.log(`Employee ${employeeId} updated: name=${newName}, baseRate=${newBaseRate}`);
+        // Update single employee view heading if we're in that view
+        if (currentEmployeeView === employeeId) {
+            const heading = document.getElementById('employee-view-heading');
+            if (heading) {
+                const displayName = newNickname || generateDefaultNickname(newName);
+                heading.textContent = displayName;
+            }
+        }
+
+        console.log(`Employee ${employeeId} updated: name=${newName}, baseRate=${newBaseRate}, nickname=${newNickname}`);
 
         // Close modal
         closeEditEmployeeModal();
@@ -2880,6 +3143,281 @@ function setupBackgroundRefresh() {
     });
 }
 
+function openEditShiftModal(employeeId, dateStr) {
+    // Find the date entry in the data
+    const employee = filteredData[employeeId];
+    const dateEntry = employee.dates.find(d => d.date === dateStr);
+
+    if (dateEntry) {
+        editShiftBranch.value = dateEntry.branch || 'Podium';
+        editShiftSchedule.value = dateEntry.shift || 'Opening';
+
+        // Convert time format from "9:30 AM" to "09:30" for HTML time input
+        editShiftTimeIn.value = convertTo24HourFormat(dateEntry.timeIn) || '';
+        editShiftTimeOut.value = convertTo24HourFormat(dateEntry.timeOut) || '';
+    }
+
+    editShiftEmployeeId.value = employeeId;
+    editShiftDate.value = dateStr;
+
+    shiftEditModal.style.display = 'flex';
+}
+
+function convertTo24HourFormat(timeStr) {
+    if (!timeStr) return '';
+
+    const [time, meridian] = timeStr.split(' ');
+    let [hours, minutes] = time.split(':').map(Number);
+
+    if (meridian === 'PM' && hours !== 12) hours += 12;
+    if (meridian === 'AM' && hours === 12) hours = 0;
+
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+}
+
+function convertTo12HourFormat(timeStr) {
+    if (!timeStr) return null;
+
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    const meridian = hours >= 12 ? 'PM' : 'AM';
+    const displayHours = hours % 12 || 12;
+
+    return `${displayHours}:${minutes.toString().padStart(2, '0')} ${meridian}`;
+}
+
+// Close shift edit modal
+function closeShiftEditModal() {
+    shiftEditModal.style.display = 'none';
+}
+
+// Open add employee modal
+function openAddEmployeeModal() {
+    // Clear form
+    addEmployeeForm.reset();
+
+    // Show modal
+    addEmployeeModal.style.display = 'flex';
+}
+
+// Close add employee modal
+function closeAddEmployeeModalFunc() {
+    addEmployeeModal.style.display = 'none';
+}
+
+// Save new employee
+async function saveNewEmployee(e) {
+    e.preventDefault();
+
+    const employeeId = addEmployeeId.value.trim();
+    const employeeName = addEmployeeName.value.trim();
+    const baseRate = parseFloat(addBaseRate.value) || 0;
+    const nickname = addNickname.value.trim() || generateDefaultNickname(employeeName);
+
+    // Validate employee ID doesn't already exist
+    if (employees[employeeId]) {
+        alert('Employee ID already exists. Please use a different ID.');
+        return;
+    }
+
+    try {
+        // Save to Firebase first
+        const employeeDocRef = doc(db, "employees", employeeId);
+        await setDoc(employeeDocRef, {
+            name: employeeName,
+            baseRate: baseRate,
+            nickname: nickname
+        });
+
+        // Add to local employees object
+        employees[employeeId] = employeeName;
+
+        // Add to attendance data
+        attendanceData[employeeId] = {
+            id: employeeId,
+            name: employeeName,
+            dates: [],
+            lastClockIn: null,
+            lastClockInPhoto: null,
+            daysWorked: 0,
+            lateHours: 0,
+            baseRate: baseRate,
+            nickname: nickname
+        };
+
+        console.log(`New employee added: ${employeeId} - ${employeeName}`);
+
+        // Update cache
+        const periodId = periodSelect.value;
+        const branchId = branchSelect.value;
+        const cacheKey = getCacheKey(periodId, branchId);
+        saveToCache(cacheKey, attendanceData);
+
+        // Refresh the view
+        filterData();
+
+        // Close modal
+        closeAddEmployeeModalFunc();
+
+        alert('Employee added successfully!');
+    } catch (error) {
+        console.error("Error adding employee:", error);
+        alert("Failed to add employee. Please try again.");
+    }
+}
+
+async function saveShiftChanges(e) {
+    e.preventDefault();
+
+    const employeeId = editShiftEmployeeId.value;
+    const dateStr = editShiftDate.value;
+    const newBranch = editShiftBranch.value;
+    const newShift = editShiftSchedule.value;
+    const newTimeIn = editShiftTimeIn.value ? convertTo12HourFormat(editShiftTimeIn.value) : null;
+    const newTimeOut = editShiftTimeOut.value ? convertTo12HourFormat(editShiftTimeOut.value) : null;
+
+    try {
+        // Build update object
+        const updateData = {
+            'clockIn.branch': newBranch,
+            'clockIn.shift': newShift
+        };
+
+        // Only update times if they were provided
+        if (newTimeIn) {
+            updateData['clockIn.time'] = newTimeIn;
+        }
+        if (newTimeOut) {
+            updateData['clockOut.time'] = newTimeOut;
+        }
+
+        // Update in Firebase
+        const docRef = doc(db, "attendance", employeeId, "dates", dateStr);
+        await updateDoc(docRef, updateData);
+
+        // Update local data
+        const employee = attendanceData[employeeId];
+        const dateEntry = employee.dates.find(d => d.date === dateStr);
+        if (dateEntry) {
+            dateEntry.branch = newBranch;
+            dateEntry.shift = newShift;
+
+            if (newTimeIn) dateEntry.timeIn = newTimeIn;
+            if (newTimeOut) dateEntry.timeOut = newTimeOut;
+
+            const shiftSchedule = SHIFT_SCHEDULES[newShift] || SHIFT_SCHEDULES["Custom"];
+            dateEntry.scheduledIn = shiftSchedule.timeIn;
+            dateEntry.scheduledOut = shiftSchedule.timeOut;
+        }
+
+        // Update cache and refresh view
+        const periodId = periodSelect.value;
+        const branchId = branchSelect.value;
+        const cacheKey = getCacheKey(periodId, branchId);
+        saveToCache(cacheKey, attendanceData);
+
+        filterData();
+
+        if (currentEmployeeView === employeeId) {
+            const container = document.getElementById('employee-details-table');
+            if (container) {
+                loadEmployeeDetailsAsMainTable(employeeId, container);
+            }
+        }
+
+        closeShiftEditModal();
+        alert('Shift details updated successfully');
+    } catch (error) {
+        console.error('Error updating shift:', error);
+        alert('Failed to update shift details. Please try again.');
+    }
+}
+
+// Open batch edit modal
+function openBatchEditModal(employeeId) {
+    batchEditEmployeeId.value = employeeId;
+    batchEditBranch.value = '';
+    batchEditShift.value = '';
+    batchEditModal.style.display = 'flex';
+}
+
+// Close batch edit modal
+function closeBatchEditModal() {
+    batchEditModal.style.display = 'none';
+}
+
+// Save batch changes
+async function saveBatchChanges(e) {
+    e.preventDefault();
+
+    const employeeId = batchEditEmployeeId.value;
+    const newBranch = batchEditBranch.value;
+    const newShift = batchEditShift.value;
+
+    if (!newBranch && !newShift) {
+        alert('Please select at least one field to update.');
+        return;
+    }
+
+    if (!confirm('This will update all attendance records for this employee in the current period. Continue?')) {
+        return;
+    }
+
+    showLoading('Updating attendance records...');
+
+    try {
+        const employee = filteredData[employeeId];
+        const updates = [];
+
+        // Process each date entry
+        for (const dateEntry of employee.dates) {
+            const docRef = doc(db, "attendance", employeeId, "dates", dateEntry.date);
+            const updateData = {};
+
+            if (newBranch) {
+                updateData['clockIn.branch'] = newBranch;
+                dateEntry.branch = newBranch;
+            }
+
+            if (newShift) {
+                updateData['clockIn.shift'] = newShift;
+                dateEntry.shift = newShift;
+                dateEntry.scheduledIn = SHIFT_SCHEDULES[newShift].timeIn;
+                dateEntry.scheduledOut = SHIFT_SCHEDULES[newShift].timeOut;
+            }
+
+            updates.push(updateDoc(docRef, updateData));
+        }
+
+        // Execute all updates
+        await Promise.all(updates);
+
+        // Update cache
+        const periodId = periodSelect.value;
+        const branchId = branchSelect.value;
+        const cacheKey = getCacheKey(periodId, branchId);
+        saveToCache(cacheKey, attendanceData);
+
+        // Refresh the view
+        filterData();
+
+        // Reload single employee view if active
+        if (currentEmployeeView === employeeId) {
+            const container = document.getElementById('employee-details-table');
+            if (container) {
+                loadEmployeeDetailsAsMainTable(employeeId, container);
+            }
+        }
+
+        closeBatchEditModal();
+        alert(`Successfully updated ${updates.length} records`);
+    } catch (error) {
+        console.error('Error in batch update:', error);
+        alert('Failed to update records. Please try again.');
+    } finally {
+        hideLoading();
+    }
+}
+
 // Add this to your DOMContentLoaded event listener
 document.addEventListener('DOMContentLoaded', async function () {
     // Existing setup code...
@@ -2895,6 +3433,8 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     // Setup event listeners
     closeModal.addEventListener('click', closePhotoModal);
+    photoModal.addEventListener('click', closePhotoModal);
+    document.querySelector('.photo-modal-content').addEventListener('click', function (e) { e.stopPropagation(); });
 
     window.payrollPeriods = generatePayrollPeriods(); 
     updatePeriodDropdown();
@@ -2915,6 +3455,20 @@ document.addEventListener('DOMContentLoaded', async function () {
 
             // Pass the explicitly selected period to loadData
             await loadData(selectedPeriod);
+
+            // IMPORTANT: Only update view mode and reload employee details AFTER loadData completes
+            // If we're in single employee view, reload that specific view
+            if (currentEmployeeView) {
+                // First update the view mode to ensure proper structure
+                updateViewMode();
+
+                // Then reload the employee details
+                const container = document.getElementById('employee-details-table');
+                if (container) {
+                    container.innerHTML = '<div class="spinner"></div>';
+                    await loadEmployeeDetailsAsMainTable(currentEmployeeView, container);
+                }
+            }
         } catch (error) {
             console.error("Error loading period:", error);
         } finally {
@@ -2941,6 +3495,11 @@ document.addEventListener('DOMContentLoaded', async function () {
     });
     
     exportBtn.addEventListener('click', exportToCSV);
+
+    // Holiday modal event listeners
+    closeHolidaysModal.addEventListener('click', closeHolidaysModalFunc);
+    closeHolidaysBtn.addEventListener('click', closeHolidaysModalFunc);
+    addHolidayForm.addEventListener('submit', saveNewHoliday);
 
     // Check for any previously selected period or branch
     const lastSelectedPeriod = localStorage.getItem('last_selected_period');
@@ -2969,4 +3528,132 @@ document.addEventListener('DOMContentLoaded', async function () {
     isInitialLoad = false;
     console.timeEnd('app-init');
 });
+
+// Holiday management functions
+function openHolidaysModal() {
+    renderHolidaysTable();
+    holidaysModal.style.display = 'flex';
+}
+
+function closeHolidaysModalFunc() {
+    holidaysModal.style.display = 'none';
+}
+
+function renderHolidaysTable() {
+    holidaysTableBody.innerHTML = '';
+
+    // Convert HOLIDAYS_2025 object to array and sort by date
+    const holidayArray = Object.entries(HOLIDAYS_2025)
+        .map(([date, holiday]) => ({ date, ...holiday }))
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    holidayArray.forEach(holiday => {
+        const row = document.createElement('tr');
+        const formattedDate = new Date(holiday.date).toLocaleDateString('en-US', {
+            weekday: 'short',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+
+        row.innerHTML = `
+            <td>${formattedDate}</td>
+            <td>${holiday.name}</td>
+            <td>
+                <span class="holiday-type-badge ${holiday.type}">
+                    ${holiday.type === 'regular' ? 'Regular' : 'Special'}
+                </span>
+            </td>
+            <td>
+                <button class="action-btn delete-holiday-btn" data-date="${holiday.date}">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 6h18"></path>
+                        <path d="m19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                        <path d="m8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                    </svg>
+                    Delete
+                </button>
+            </td>
+        `;
+
+        holidaysTableBody.appendChild(row);
+    });
+
+    // Add event listeners for delete buttons
+    holidaysTableBody.querySelectorAll('.delete-holiday-btn').forEach(btn => {
+        btn.addEventListener('click', function () {
+            const dateStr = this.dataset.date;
+            deleteHoliday(dateStr);
+        });
+    });
+}
+
+async function saveNewHoliday(e) {
+    e.preventDefault();
+
+    const date = document.getElementById('holidayDate').value;
+    const name = document.getElementById('holidayName').value.trim();
+    const type = document.getElementById('holidayType').value;
+
+    if (!date || !name) {
+        alert('Please fill in all required fields.');
+        return;
+    }
+
+    // Check if holiday already exists
+    if (HOLIDAYS_2025[date]) {
+        alert('A holiday already exists on this date.');
+        return;
+    }
+
+    try {
+        // Add to local HOLIDAYS_2025 object
+        HOLIDAYS_2025[date] = { name, type };
+
+        // Save to Firebase
+        await setDoc(doc(db, "config", "holidays_2025"), HOLIDAYS_2025);
+
+        // Clear form
+        addHolidayForm.reset();
+
+        // Refresh the table
+        renderHolidaysTable();
+
+        // Update summary cards if needed
+        updateSummaryCards();
+
+        console.log(`Holiday added: ${date} - ${name} (${type})`);
+    } catch (error) {
+        console.error('Error adding holiday:', error);
+        alert('Failed to add holiday. Please try again.');
+    }
+}
+
+async function deleteHoliday(dateStr) {
+    const holiday = HOLIDAYS_2025[dateStr];
+    if (!holiday) return;
+
+    if (!confirm(`Are you sure you want to delete "${holiday.name}"?`)) {
+        return;
+    }
+
+    try {
+        // Remove from local object
+        delete HOLIDAYS_2025[dateStr];
+
+        // Save to Firebase
+        await setDoc(doc(db, "config", "holidays_2025"), HOLIDAYS_2025);
+
+        // Refresh the table
+        renderHolidaysTable();
+
+        // Update summary cards
+        updateSummaryCards();
+
+        console.log(`Holiday deleted: ${dateStr}`);
+    } catch (error) {
+        console.error('Error deleting holiday:', error);
+        alert('Failed to delete holiday. Please try again.');
+    }
+}
 
