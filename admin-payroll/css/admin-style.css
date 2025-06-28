@@ -137,7 +137,7 @@ button:hover {
 
 .summary-cards {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
     gap: 1rem;
     margin-bottom: 2rem;
 }
@@ -261,6 +261,20 @@ button:hover {
     padding: 20px;
     background-color: white;
     border-radius: 12px;
+}
+
+#photoModal,
+#imageModal {
+    z-index: 10000 !important;
+}
+
+#paymentModal {
+    z-index: 9000;
+}
+
+.photo-modal-content,
+.modal-content {
+    z-index: 10001 !important;
 }
 
 .close-modal {
@@ -909,19 +923,12 @@ button:hover {
 
 .delete-entry-btn {
     background-color: #e74c3c;
-    min-width: 60px;
-    text-align: center;
-    justify-content: center;
 }
 
 .delete-entry-btn:hover {
     background-color: #c0392b;
 }
 
-.delete-entry-btn svg {
-    width: 16px;
-    height: 16px;
-}
 
 /* Holiday Modal Styles */
 .holidays-modal-content {
@@ -1081,4 +1088,61 @@ button:hover {
 .late-high {
     color: #e63946;
     font-weight: 500;
+}
+
+.pay-breakdown {
+    padding: 1rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+    margin: 0.5rem 0;
+}
+
+.breakdown-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 0.5rem;
+}
+
+.breakdown-table td {
+    padding: 0.25rem 0.5rem;
+    border-bottom: 1px solid #eee;
+}
+
+.breakdown-table .total-row td {
+    border-top: 1px solid #2b9348;
+    font-weight: bold;
+    padding-top: 0.5rem;
+}
+
+.push-holidays-btn {
+    display: none;
+}
+
+#existingPaymentSection {
+    text-align: center;
+    padding: 1rem 0;
+}
+
+#existingPaymentPhoto {
+    display: block;
+    margin: 0 auto 1rem auto;
+    border-radius: 8px;
+    cursor: pointer;
+    max-width: 200px;
+    height: auto;
+}
+
+#existingPaymentInfo {
+    margin: 1rem 0;
+    padding: 0.75rem;
+    background: #f5f5f5;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    color: #666;
+    text-align: center;
+}
+
+#updateScreenshotBtn {
+    margin: 1.5rem auto 0 auto;
+    display: block;
 }

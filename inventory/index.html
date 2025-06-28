@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Inventory Management</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="header-container">
+        <div class="date-picker-container">
+            <div class="date-picker">
+                <button class="date-nav-btn" id="prevDate">‹</button>
+                <div class="date-display" id="dateDisplay">Today, June 24</div>
+                <button class="date-nav-btn" id="nextDate">›</button>
+            </div>
+        </div>
+        <div class="toggle-container">
+            <div class="toggle-buttons">
+                <button class="toggle-btn active" data-mode="opening">Opening</button>
+                <button class="toggle-btn" data-mode="closing">Closing</button>
+            </div>
+        </div>
+        <div class="admin-container">
+            <button class="admin-btn" id="addItemBtn">Add Item</button>
+            <button class="admin-btn" id="addCategoryBtn">Add Category</button>
+            <button class="admin-btn" id="reorderBtn">Edit</button>
+        </div>
+    </div>
+
+    <div class="scrollable-content">
+        <div class="inventory-list">
+            <!-- Items will be dynamically loaded here -->
+        </div>
+    </div>
+
+    <!-- Add Item Modal -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Add New Item</h3>
+                <button class="modal-close" id="modalClose">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="addItemForm">
+                    <div class="form-group">
+                        <label for="itemName">Item Name</label>
+                        <input type="text" id="itemName" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="itemSubtitle">Subtitle/Brand</label>
+                        <input type="text" id="itemSubtitle">
+                    </div>
+                    <div class="form-group">
+                        <label for="itemCategory">Category</label>
+                        <select id="itemCategory" required>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="itemUnit">Unit</label>
+                        <select id="itemUnit" required>
+                            <option value="pcs">pcs</option>
+                            <option value="g">g</option>
+                            <option value="kg">kg</option>
+                            <option value="L">L</option>
+                            <option value="ml">ml</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="initialQuantity">Initial Quantity</label>
+                        <input type="number" id="initialQuantity" min="0" value="0" required>
+                    </div>
+                    <div class="form-buttons">
+                        <button type="button" class="btn-cancel" id="cancelBtn">Cancel</button>
+                        <button type="submit" class="btn-add">Add Item</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Date Picker Modal -->
+    <div class="modal-overlay" id="dateModalOverlay">
+        <div class="date-modal">
+            <div class="date-modal-header">
+                <button class="date-nav-btn" id="modalPrevMonth">‹</button>
+                <div class="date-modal-title" id="modalMonthYear">June 2024</div>
+                <button class="date-nav-btn" id="modalNextMonth">›</button>
+            </div>
+            <div class="date-modal-body">
+                <div class="date-weekdays">
+                    <div class="date-weekday">Sun</div>
+                    <div class="date-weekday">Mon</div>
+                    <div class="date-weekday">Tue</div>
+                    <div class="date-weekday">Wed</div>
+                    <div class="date-weekday">Thu</div>
+                    <div class="date-weekday">Fri</div>
+                    <div class="date-weekday">Sat</div>
+                </div>
+                <div class="date-grid" id="dateGrid">
+                    <!-- Days will be generated here -->
+                </div>
+            </div>
+            <div class="date-modal-footer">
+                <button class="btn-cancel" id="dateCancelBtn">Cancel</button>
+                <button class="btn-today" id="todayBtn">Today</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Category Modal -->
+    <div class="modal-overlay" id="addCategoryModalOverlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Add New Category</h3>
+                <button class="modal-close" id="addCategoryModalClose">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="newCategoryName">Category Name</label>
+                    <input type="text" id="newCategoryName" placeholder="Enter category name" required>
+                </div>
+                <div class="form-buttons">
+                    <button type="button" class="btn-cancel" id="addCategoryCancelBtn">Cancel</button>
+                    <button type="button" class="btn-add" id="addCategoryConfirmBtn">Add Category</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mode Switch Confirmation Modal -->
+    <div class="modal-overlay" id="modeSwitchModalOverlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="modeSwitchTitle">Confirm Mode Switch</h3>
+                <button class="modal-close" id="modeSwitchModalClose">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="modeSwitchMessage">Are you sure you want to switch modes?</p>
+                <div class="form-buttons">
+                    <button type="button" class="btn-cancel" id="modeSwitchCancelBtn">Cancel</button>
+                    <button type="button" class="btn-add" id="modeSwitchConfirmBtn">Continue</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script type="module" src="js/script.js"></script>
+</body>
+</html>

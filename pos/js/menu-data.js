@@ -106,8 +106,8 @@ export const menuData = {
         },
         {
             categoryId: "specials",
-            name: "peach mango <span class=\"text-span-2\">matchanese</span> latte",
-            description: "Our Signature Matchanese Latte with Peach Syrup and Mango Puree",
+            name: "earl grey <span class=\"text-span-2\">matchanese</span> latte",
+            description: "Our Signature Matchanese Latte with Earl Grey Syrup",
             tags: ["Limited Time"],
             price: 250,
             type: "Iced"
@@ -127,40 +127,40 @@ export const menuData = {
             // tags: ["best-seller"],
             type: "Iced"
         },
-        {
-            categoryId: "desserts",
-            name: "<span class=\"text-span-2\">warabi mochi</span> (box)",
-            description: "",
-            price: 270,
-            type: "",
-            variants: [
-                { name: "Matcha", price: 0 },
-                { name: "Kinako", price: 0 },
-            ],
-            customizations: {
-                size: false,      // Can customize size
-                serving: false,   // Can customize serving
-                sweetness: false, // Can customize sweetness
-                milk: false      // Cannot customize milk
-            }
-        },
-        {
-            categoryId: "desserts",
-            name: "<span class=\"text-span-2\">warabi mochi</span> (cup)",
-            description: "",
-            price: 105,
-            type: "",
-            variants: [
-                { name: "Matcha", price: 0 },
-                { name: "Kinako", price: 0 },
-            ],
-            customizations: {
-                size: false,      // Can customize size
-                serving: false,   // Can customize serving
-                sweetness: false, // Can customize sweetness
-                milk: false      // Cannot customize milk
-            }
-        },
+        // {
+        //     categoryId: "desserts",
+        //     name: "<span class=\"text-span-2\">warabi mochi</span> (box)",
+        //     description: "",
+        //     price: 270,
+        //     type: "",
+        //     variants: [
+        //         { name: "Matcha", price: 0 },
+        //         { name: "Kinako", price: 0 },
+        //     ],
+        //     customizations: {
+        //         size: false,      // Can customize size
+        //         serving: false,   // Can customize serving
+        //         sweetness: false, // Can customize sweetness
+        //         milk: false      // Cannot customize milk
+        //     }
+        // },
+        // {
+        //     categoryId: "desserts",
+        //     name: "<span class=\"text-span-2\">warabi mochi</span> (cup)",
+        //     description: "",
+        //     price: 105,
+        //     type: "",
+        //     variants: [
+        //         { name: "Matcha", price: 0 },
+        //         { name: "Kinako", price: 0 },
+        //     ],
+        //     customizations: {
+        //         size: false,      // Can customize size
+        //         serving: false,   // Can customize serving
+        //         sweetness: false, // Can customize sweetness
+        //         milk: false      // Cannot customize milk
+        //     }
+        // },
         {
             categoryId: "desserts",
             name: "matcha <span class=\"text-span-2\">cookie</span>",
@@ -182,9 +182,9 @@ export const menuData = {
         },
         {
             categoryId: "desserts",
-            name: "<span class=\"text-span-2\">mochi donut</span>",
+            name: "<span class=\"text-span-2\">obanyaki</span>",
             description: "",
-            price: 95,
+            price: 80,
             type: "",
             customizations: {
                 size: false,      // Can customize size

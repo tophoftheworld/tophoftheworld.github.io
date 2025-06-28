@@ -768,10 +768,15 @@ button:hover {
     transition: all 0.2s;
     text-align: left;
     width: calc(100% - 8px);
-    /* Take full width minus small margin */
     margin: 4px;
     border: 1px solid rgba(255, 255, 255, 0.2);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    position: relative;
+    z-index: 5;
+}
+
+.shift-employee-block:hover {
+    z-index: 10;
 }
 
 .shift-employee-block .shift-employee {
@@ -817,6 +822,10 @@ button:hover {
     border: 1px solid #c0392b;
 }
 
+#copySelectedBtn {
+    white-space: nowrap;
+}
+
 .add-shift-btn-small {
     background: none;
     border: none;
@@ -834,8 +843,7 @@ button:hover {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    pointer-events: none;
-    /* Disable separate hover, let cell handle clicks */
+    z-index: 1;
 }
 
 .shift-cell:hover .add-shift-btn-small {
@@ -937,6 +945,12 @@ button:hover {
     border: 1px solid #2b9348 !important;
 }
 
+.shift-employee-block.completed.shift-conflict {
+    background-color: #ff6b6b !important;
+    color: white !important;
+    border: 2px solid #e74c3c !important;
+}
+
 .shift-employee-block.completed:hover {
     background-color: #e8f5ea !important;
     color: #1f7a38 !important;
@@ -971,6 +985,77 @@ button:hover {
     background-color: #fff3e6 !important;
     color: #ff9500 !important;
     border: 1px solid #ff9500 !important;
+}
+
+/* Multi-select functionality */
+.multi-select-controls {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    padding: 0.5rem 1rem;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    margin-bottom: 1rem;
+    font-size: 0.85rem;
+}
+
+.multi-select-controls.hidden {
+    display: none;
+}
+
+.selection-counter {
+    color: #6c757d;
+    font-weight: 500;
+}
+
+.delete-selected-btn {
+    background-color: #dc3545;
+    color: white;
+    padding: 0.4rem 0.8rem;
+    border: none;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.delete-selected-btn:disabled {
+    background-color: #6c757d;
+    cursor: not-allowed;
+}
+
+.exit-selection-btn {
+    background-color: #6c757d;
+    color: white;
+    padding: 0.4rem 0.8rem;
+    border: none;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.shift-block.selecting,
+.shift-employee-block.selecting {
+    border: 2px solid #ff9500 !important;
+    box-shadow: 0 0 0 1px rgba(255, 149, 0, 0.25);
+}
+
+.shift-block.selected,
+.shift-employee-block.selected {
+    border: 3px solid #ff9500 !important;
+    box-shadow: 0 0 0 2px rgba(255, 149, 0, 0.4);
+}
+
+.selecting-hint {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    z-index: 1000;
 }
 
 /* Responsive design for shift view */

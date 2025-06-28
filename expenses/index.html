@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Expense Tracker</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script type="module" src="js/script.js"></script>
+</head>
+
+<body>
+    <!-- Dashboard Page -->
+    <div id="dashboardPage">
+        <div class="header-container">
+            <h1 class="header-title">Expense Tracker</h1>
+        </div>
+
+        <div class="scrollable-content">
+            <div class="expense-list" id="expenseList">
+                <!-- Expenses will be loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Suppliers Page -->
+    <div id="suppliersPage" style="display: none;">
+        <div class="header-container">
+            <h1 class="header-title">Suppliers</h1>
+        </div>
+
+        <div class="scrollable-content">
+            <div class="expense-list" id="supplierList">
+                <!-- Suppliers will be loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Bottom Navigation (shared by both pages) -->
+    <div class="bottom-nav">
+        <div class="nav-content">
+            <div class="nav-tabs">
+                <div class="nav-tabs-left">
+                    <button class="nav-tab active" onclick="switchTab('expenses')">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1Z"></path>
+                            <path d="M8 7h8M8 11h8M8 15h5"></path>
+                        </svg>
+                        <span>Expenses</span>
+                    </button>
+                </div>
+                <div class="nav-tabs-right">
+                    <button class="nav-tab" onclick="switchTab('suppliers')">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+                            <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+                        </svg>
+                        <span>Suppliers</span>
+                    </button>
+                </div>
+            </div>
+            <button class="add-expense-fab" onclick="showAddExpenseModal()">+</button>
+        </div>
+    </div>
+
+    <!-- Add Expense Modal -->
+    <div class="expense-modal-overlay" id="expenseModalOverlay">
+        <div class="expense-modal">
+            <div class="modal-header">
+                <h1 class="modal-title">Add Expense</h1>
+                <div class="modal-header-actions">
+                    <button class="modal-import-btn" onclick="document.getElementById('csvImportInput').click()"
+                        title="Import multiple expenses from CSV">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <rect x="3" y="3" width="7" height="7"></rect>
+                            <rect x="14" y="3" width="7" height="7"></rect>
+                            <rect x="14" y="14" width="7" height="7"></rect>
+                            <rect x="3" y="14" width="7" height="7"></rect>
+                        </svg>
+                    </button>
+                    <button class="modal-close-btn" onclick="closeExpenseModal()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
+                <input type="file" id="csvImportInput" accept=".csv" style="display: none;"
+                    onchange="handleCSVImport(this)">
+            </div>
+
+            <div class="modal-content">
+                <form id="expenseForm">
+                    <!-- Basic Info -->
+                    <div class="form-section minimal">
+                        <div class="form-group">
+                            <label for="supplierName">Supplier Name</label>
+                            <input type="text" id="supplierName" required placeholder="Enter supplier name">
+                            <div class="autocomplete-dropdown hidden" id="supplierDropdown"></div>
+                        </div>
+                    </div>
+
+                    <!-- Items Section -->
+                    <div class="form-section minimal">
+                        <h3 class="section-title">Items Purchased</h3>
+                        <div id="itemsContainer">
+                            <!-- Items will be added here -->
+                        </div>
+                        <div class="add-item-placeholder" onclick="addItemRow()">
+                            <span style="color: #8ba3b5; font-size: 14px;">+ Add another item</span>
+                        </div>
+                        <div class="total-amount">
+                            <div class="label">Total Amount</div>
+                            <input type="number" id="totalAmountInput" inputmode="decimal" min="0" step="0.01"
+                                placeholder="0.00" onchange="handleTotalChange(); formatTotal()" onblur="formatTotal()"
+                                style="font-size: 24px; font-weight: 600; color: #333; background: none; border: none; text-align: center; width: 100%; padding: 4px;">
+                        </div>
+                    </div>
+
+                    <!-- Receipt Photo Section -->
+                    <div class="form-section minimal">
+                        <div class="form-group">
+                            <h3 class="section-title">Receipt Photo <span class="optional">(optional)</span></h3>
+                            <div class="receipt-upload" onclick="document.getElementById('receiptInput').click()">
+                                <input type="file" id="receiptInput" accept="image/*" capture="environment"
+                                    style="display: none;" onchange="handleReceiptUpload(this)">
+                                <div class="receipt-upload-content">
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2">
+                                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                        <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                                        <polyline points="21,15 16,10 5,21"></polyline>
+                                    </svg>
+                                    <div id="receiptUploadText">Tap to add receipt photo</div>
+                                </div>
+                                <img id="receiptPreview" class="receipt-preview" style="display: none;"
+                                    alt="Receipt preview">
+                                <button type="button" class="remove-receipt-btn" id="removeReceiptBtn"
+                                    style="display: none;" onclick="removeReceipt(event)">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2">
+                                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="invoiceNumber">Invoice Number <span class="optional">(optional)</span></label>
+                            <input type="text" id="invoiceNumber" placeholder="Enter invoice/reference number">
+                        </div>
+                    </div>
+
+                    <!-- VAT Information Section (initially hidden) -->
+                    <div class="form-section minimal" id="vatSection" style="display: none;">
+                        <h3 class="section-title">
+                            VAT
+                            <div class="toggle-switch" onclick="toggleVatComputation()">
+                                <input type="checkbox" id="vatComputationEnabled" style="display: none;" checked>
+                                <div class="toggle-track" id="vatToggleTrack">
+                                    <div class="toggle-thumb">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"
+                                            class="toggle-icon">
+                                            <polyline points="20,6 9,17 4,12"></polyline>
+                                        </svg>
+                                    </div>
+                                </div>
+                            </div>
+                        </h3>
+                        <div id="vatDetailsSection">
+                            <div class="form-group">
+                                <label for="vatExemptAmount">VAT Exempt Amount <span class="optional">(if any)</span></label>
+                                <input type="number" id="vatExemptAmount" inputmode="decimal" min="0" step="0.01" placeholder="0.00"
+                                    onchange="updateVatCalculation()" oninput="updateVatCalculation()">
+                            </div>
+                            <div id="vatBreakdown" class="vat-breakdown" style="display: none;">
+                                <div class="vat-row">
+                                    <span>Total Amount:</span>
+                                    <span id="totalAmountVat">₱0.00</span>
+                                </div>
+                                <div class="vat-row">
+                                    <span>Less: VAT Exempt:</span>
+                                    <span id="vatExemptAmountDisplay">₱0.00</span>
+                                </div>
+                                <div class="vat-row">
+                                    <span>Taxable Amount:</span>
+                                    <span id="taxableAmountDisplay">₱0.00</span>
+                                </div>
+                                <div class="vat-row">
+                                    <span>Vatable Sale:</span>
+                                    <span id="vatableSaleAmount">₱0.00</span>
+                                </div>
+                                <div class="vat-row total">
+                                    <span>VAT (12%):</span>
+                                    <span id="vatAmountDisplay">₱0.00</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Payment Section -->
+                    <div class="form-section minimal">
+                        <div class="form-group">
+                            <label for="paymentMethod">Payment Method</label>
+                            <select id="paymentMethod" required>
+                                <option value="Cash">Cash</option>
+                                <option value="GCash">GCash</option>
+                                <option value="Credit Card">Credit Card</option>
+                                <option value="Debit Card">Debit Card</option>
+                                <option value="Bank Transfer">Bank Transfer</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="paidBy">Logged By <span class="optional">(optional)</span></label>
+                            <input type="text" id="paidBy" placeholder="Person who paid">
+                        </div>
+                        <div class="form-group">
+                            <label for="notes">Notes <span class="optional">(optional)</span></label>
+                            <textarea id="notes" rows="2" placeholder="Additional notes..."></textarea>
+                        </div>
+                    </div>
+
+                    <!-- Hidden fields with defaults -->
+                    <input type="hidden" id="expenseDate" value="">
+                    <input type="hidden" id="branch" value="SM North">
+
+                    <div style="padding: 20px;">
+                        <button type="submit" class="save-btn">Save Expense</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Expense Detail Modal -->
+    <div class="expense-detail-modal-overlay" id="expenseDetailModalOverlay">
+        <div class="expense-detail-modal">
+            <div class="modal-header">
+                <h1 class="modal-title">Expense Details</h1>
+                <div class="modal-header-actions">
+                    <button class="modal-close-btn" onclick="closeExpenseDetailModal()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+    
+            <div class="modal-content" id="expenseDetailContent">
+                <!-- Content will be populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Supplier Detail Modal -->
+    <div class="supplier-detail-modal-overlay" id="supplierDetailModalOverlay">
+        <div class="supplier-detail-modal">
+            <div class="modal-header">
+                <h1 class="modal-title">Supplier Details</h1>
+                <div class="modal-header-actions">
+                    <button class="modal-close-btn" onclick="closeSupplierDetailModal()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+    
+            <div class="modal-content" id="supplierDetailContent">
+                <!-- Content will be populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div class="confirmation-modal-overlay" id="confirmationModalOverlay">
+        <div class="confirmation-modal">
+            <h3 id="confirmationTitle">Confirm Action</h3>
+            <p id="confirmationMessage">Are you sure you want to proceed?</p>
+            <div class="confirmation-modal-actions">
+                <button class="confirmation-btn cancel" onclick="closeConfirmationModal()">Cancel</button>
+                <button class="confirmation-btn delete" id="confirmationActionBtn" onclick="confirmAction()">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Supplier Modal -->
+    <div class="supplier-modal-overlay" id="supplierModalOverlay">
+        <div class="supplier-modal">
+            <div class="modal-header">
+                <h1 class="modal-title">Add Supplier</h1>
+                <div class="modal-header-actions">
+                    <button class="modal-close-btn" onclick="closeSupplierModal()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+    
+            <div class="modal-content">
+                <form id="supplierForm" onsubmit="handleSupplierFormSubmission(event)">
+                    <div class="form-section minimal">
+                        <div class="form-group">
+                            <label for="supplierModalName">Supplier Name</label>
+                            <input type="text" id="supplierModalName" required placeholder="Enter supplier name">
+                        </div>
+                        <div class="form-group">
+                            <label for="supplierModalBusinessName">Business Name <span class="optional">(optional)</span></label>
+                            <input type="text" id="supplierModalBusinessName" placeholder="Enter business name">
+                        </div>
+                        <div class="form-group">
+                            <label for="supplierModalTin">TIN <span class="optional">(optional)</span></label>
+                            <input type="text" id="supplierModalTin" placeholder="Enter TIN">
+                        </div>
+                        <div class="form-group">
+                            <div class="toggle-container">
+                                <label class="toggle-label">VAT Registered Supplier</label>
+                                <div class="toggle-switch" onclick="toggleVatRegistered()">
+                                    <input type="checkbox" id="supplierModalIsVatRegistered" style="display: none;">
+                                    <div class="toggle-track">
+                                        <div class="toggle-thumb">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"
+                                                class="toggle-icon">
+                                                <polyline points="20,6 9,17 4,12"></polyline>
+                                            </svg>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="supplierModalAddress">Address <span class="optional">(optional)</span></label>
+                            <textarea id="supplierModalAddress" rows="3" placeholder="Enter address"></textarea>
+                        </div>
+                    </div>
+    
+                    <div style="padding: 20px; display: flex; gap: 12px; align-items: stretch;">
+                        <button type="button" class="skip-btn" id="skipSupplierBtn" onclick="skipSupplierDetails()"
+                            style="display: none;">Skip</button>
+                        <button type="submit" class="save-btn">Save Supplier</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Merge Supplier Modal -->
+    <div class="merge-supplier-modal-overlay" id="mergeSupplierModalOverlay">
+        <div class="merge-supplier-modal">
+            <div class="modal-header">
+                <h1 class="modal-title">Merge Suppliers</h1>
+                <div class="modal-header-actions">
+                    <button class="modal-close-btn" onclick="closeMergeSupplierModal()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+    
+            <div class="modal-content" id="mergeSupplierContent">
+                <!-- Content will be populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast"></div>
+</body>
+
+</html>

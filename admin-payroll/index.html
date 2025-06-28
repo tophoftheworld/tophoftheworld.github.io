@@ -27,6 +27,54 @@
         </div>
     </div>
 
+    <!-- Add Shift Modal -->
+    <div class="modal" id="addShiftModal">
+        <div class="modal-content">
+            <span class="close-modal" id="closeAddShiftModal">&times;</span>
+            <h2>Add New Shift</h2>
+            <form id="addShiftForm">
+                <div class="form-group">
+                    <label for="addShiftDate">Date</label>
+                    <input type="date" id="addShiftDate" required>
+                </div>
+                <div class="form-group">
+                    <label for="addShiftBranch">Branch</label>
+                    <select id="addShiftBranch" required>
+                        <option value="Podium">Podium</option>
+                        <option value="SM North">SM North</option>
+                        <option value="Pop-up">Pop-up</option>
+                        <option value="Workshop">Workshop</option>
+                        <option value="Other Events">Other Events</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="addShiftSchedule">Shift</label>
+                    <select id="addShiftSchedule" required>
+                        <option value="Opening">Opening (9:30 AM - 6:30 PM)</option>
+                        <option value="Opening Half-Day">Opening Half-Day (9:30 AM - 1:30 PM)</option>
+                        <option value="Midshift">Midshift (11:00 AM - 8:00 PM)</option>
+                        <option value="Closing">Closing (1:00 PM - 10:00 PM)</option>
+                        <option value="Closing Half-Day">Closing Half-Day (6:00 PM - 10:00 PM)</option>
+                        <option value="Custom">Custom</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="addShiftTimeIn">Time In</label>
+                    <input type="time" id="addShiftTimeIn" required>
+                </div>
+                <div class="form-group">
+                    <label for="addShiftTimeOut">Time Out</label>
+                    <input type="time" id="addShiftTimeOut" required>
+                </div>
+                <input type="hidden" id="addShiftEmployeeId">
+                <div class="form-actions">
+                    <button type="submit" class="submit-btn">Add Shift</button>
+                    <button type="button" class="cancel-btn" id="cancelAddShiftBtn">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Employee Edit Modal -->
     <div class="modal" id="employeeEditModal">
         <div class="modal-content">
@@ -38,12 +86,19 @@
                     <input type="text" id="editEmployeeName" required>
                 </div>
                 <div class="form-group">
+                    <label for="editNickname">Nickname</label>
+                    <input type="text" id="editNickname" placeholder="Auto-generated if empty">
+                </div>
+                <div class="form-group">
                     <label for="editBaseRate">Base Rate</label>
                     <input type="number" id="editBaseRate" min="0" step="10" required>
                 </div>
                 <div class="form-group">
-                    <label for="editNickname">Nickname</label>
-                    <input type="text" id="editNickname" placeholder="Auto-generated if empty">
+                    <label for="editSalesBonus">Sales Bonus Eligible</label>
+                    <div class="toggle-container">
+                        <input type="checkbox" id="editSalesBonus">
+                        <label for="editSalesBonus">Eligible for sales bonus</label>
+                    </div>
                 </div>
                 <input type="hidden" id="editEmployeeId">
                 <div class="form-actions">
@@ -74,6 +129,7 @@
                     <label for="editShiftSchedule">Shift</label>
                     <select id="editShiftSchedule" required>
                         <option value="Opening">Opening (9:30 AM - 6:30 PM)</option>
+                        <option value="Opening Half-Day">Opening Half-Day (9:30 AM - 1:30 PM)</option> <!-- Add this -->
                         <option value="Midshift">Midshift (11:00 AM - 8:00 PM)</option>
                         <option value="Closing">Closing (1:00 PM - 10:00 PM)</option>
                         <option value="Closing Half-Day">Closing Half-Day (6:00 PM - 10:00 PM)</option>
@@ -87,6 +143,22 @@
                 <div class="form-group">
                     <label for="editShiftTimeOut">Time Out</label>
                     <input type="time" id="editShiftTimeOut">
+                </div>
+                <div class="form-group">
+                    <label for="editTranspoAllowance">Transportation Allowance (₱)</label>
+                    <div style="position: relative;">
+                        <span
+                            style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #666;">₱</span>
+                        <input type="number" id="editTranspoAllowance" min="0" step="10" placeholder="0"
+                            style="padding-left: 25px;">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="editOTPay">Overtime Pay</label>
+                    <div class="toggle-container">
+                        <input type="checkbox" id="editOTPay">
+                        <label for="editOTPay">Apply overtime pay for this shift</label>
+                    </div>
                 </div>
                 <input type="hidden" id="editShiftEmployeeId">
                 <input type="hidden" id="editShiftDate">
@@ -120,6 +192,7 @@
                     <select id="batchEditShift">
                         <option value="">Keep Current</option>
                         <option value="Opening">Opening (9:30 AM - 6:30 PM)</option>
+                        <option value="Opening Half-Day">Opening Half-Day (9:30 AM - 1:30 PM)</option> <!-- Add this -->
                         <option value="Midshift">Midshift (11:00 AM - 8:00 PM)</option>
                         <option value="Closing">Closing (1:00 PM - 10:00 PM)</option>
                         <option value="Closing Half-Day">Closing Half-Day (6:00 PM - 10:00 PM)</option>
@@ -150,12 +223,19 @@
                     <input type="text" id="addEmployeeName" required placeholder="e.g., John Doe">
                 </div>
                 <div class="form-group">
+                    <label for="addNickname">Nickname (Optional)</label>
+                    <input type="text" id="addNickname" placeholder="Auto-generated if empty">
+                </div>
+                <div class="form-group">
                     <label for="addBaseRate">Base Rate</label>
                     <input type="number" id="addBaseRate" min="0" step="10" required placeholder="e.g., 700">
                 </div>
                 <div class="form-group">
-                    <label for="addNickname">Nickname (Optional)</label>
-                    <input type="text" id="addNickname" placeholder="Auto-generated if empty">
+                    <label for="addSalesBonus">Sales Bonus Eligible</label>
+                    <div class="toggle-container">
+                        <input type="checkbox" id="addSalesBonus">
+                        <label for="addSalesBonus">Eligible for sales bonus</label>
+                    </div>
                 </div>
                 <div class="form-actions">
                     <button type="submit" class="submit-btn">Add Employee</button>
@@ -207,6 +287,71 @@
             <div class="form-actions">
                 <button type="button" class="cancel-btn" id="closeHolidaysBtn">Close</button>
             </div>
+        </div>
+    </div>
+
+    <!-- Payment Modal -->
+    <div class="modal" id="paymentModal">
+        <div class="modal-content">
+            <span class="close-modal" id="closePaymentModal">&times;</span>
+            <h2>Upload Payment Confirmation</h2>
+            <!-- Add this right after the modal title and before the form -->
+            <div id="existingPaymentSection" style="margin-bottom: 1rem;">
+                <img id="existingPaymentPhoto" class="thumb"
+                    style="display: none; width: 200px; height: auto; border-radius: 8px; cursor: pointer; margin-bottom: 0.5rem;"
+                    alt="Existing payment screenshot">
+                <div id="existingPaymentInfo"
+                    style="display: none; padding: 0.5rem; background: #f5f5f5; border-radius: 4px; font-size: 0.9rem; color: #666;">
+                </div>
+            </div>
+
+            <!-- Add this right after the existingPaymentSection div -->
+            <button type="button" id="updateScreenshotBtn" class="action-btn" style="display: none; margin-bottom: 1rem;"
+                onclick="showUpdateForm()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+                Update Screenshot
+            </button>
+            <form id="paymentForm">
+                <div class="form-group">
+                    <label for="paymentEmployeeName">Employee</label>
+                    <input type="text" id="paymentEmployeeName" readonly>
+                </div>
+                <div class="form-group">
+                    <label for="paymentPeriod">Payroll Period</label>
+                    <input type="text" id="paymentPeriod" readonly>
+                </div>
+                <div class="form-group">
+                    <label for="paymentMethod">Transfer Method</label>
+                    <select id="paymentMethod" required>
+                        <option value="">Select transfer method</option>
+                        <option value="gotyme">GoTyme</option>
+                        <option value="bdo">BDO</option>
+                        <option value="gcash">GCash</option>
+                        <option value="cash">Cash</option>
+                        <option value="others">Others</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <div id="existingPaymentInfo" style="display: none; color: #2b9348; font-weight: 500; margin-bottom: 0.5rem;"></div>
+                </div>
+                <div class="form-group">
+                    <label for="paymentScreenshot">Payment Screenshot</label>
+                    <input type="file" id="paymentScreenshot" accept="image/*">
+                </div>
+                <div class="form-group">
+                    <label for="paymentNote">Payment Note</label>
+                    <textarea id="paymentNote" placeholder="Add any notes about this payment..." rows="3"></textarea>
+                </div>
+                <input type="hidden" id="paymentEmployeeId">
+                <div class="form-actions">
+                    <button type="submit" class="submit-btn">Upload Payment</button>
+                    <button type="button" class="cancel-btn" id="cancelPaymentBtn">Cancel</button>
+                </div>
+            </form>
         </div>
     </div>
 
@@ -278,7 +423,7 @@
                     </svg>
                     Refresh Data
                 </button>
-                <button onclick="pushHolidaysToFirebase()">Push Holidays to Firebase</button>
+                <button class="push-holidays-btn" onclick="pushHolidaysToFirebase()">Push Holidays to Firebase</button>
                 <!-- <button class="danger-btn" id="cleanupPhotosBtn">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

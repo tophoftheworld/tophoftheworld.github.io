@@ -1,5 +1,5 @@
 // Matchanese Attendance App - Service Worker
-const APP_VERSION = "0.79"; // IMPORTANT: Keep this in sync with script.js
+const APP_VERSION = "0.81"; // IMPORTANT: Keep this in sync with script.js
 const CACHE_NAME = `matchanese-v${APP_VERSION}`;
 const DYNAMIC_CACHE = `matchanese-dynamic-v${APP_VERSION}`;
 
@@ -10,7 +10,9 @@ const STATIC_RESOURCES = [
     '/js/script.js',
     '/js/firebase-setup.js',
     '/css/style.css',
-    '/manifest.webmanifest',
+    '/manifest.webmanifest', // ✅ Already there
+    '/icons/icon-192.png',    // Add this
+    '/icons/icon-512.png', 
     'https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap',
     'https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css',
     'https://cdn.jsdelivr.net/npm/flatpickr',

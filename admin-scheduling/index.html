@@ -132,7 +132,15 @@
                     </svg>
                     Sync Now
                 </button>
+                <button class="danger-btn" id="deleteFutureBtn" style="background-color: #dc3545;">
+                    💀 Delete All
+                </button>
             </div>
+        </div>
+
+        <!-- Sync Status -->
+        <div class="sync-status" id="syncStatus">
+            <span class="sync-indicator">💾 Saved locally</span>
         </div>
 
         <!-- Week Navigation -->
@@ -154,10 +162,16 @@
             </button>
         </div>
 
-        <!-- Sync Status -->
-        <div class="sync-status" id="syncStatus">
-            <span class="sync-indicator">💾 Saved locally</span>
+        <!-- Multi-select Controls -->
+        <div class="multi-select-controls hidden" id="multiSelectControls">
+            <span class="selection-counter" id="selectionCounter">0 selected</span>
+            <button class="delete-selected-btn" id="deleteSelectedBtn" disabled>Delete</button>
+            <button id="copySelectedBtn" disabled>Copy to Next Day</button>
+            <button class="exit-selection-btn" id="exitSelectionBtn">Cancel</button>
         </div>
+        
+        <!-- Selection hint -->
+        <div class="selecting-hint hidden" id="selectingHint">Hold and drag to select multiple shifts</div>
 
         <!-- Calendar View -->
         <div id="calendarViewContainer" class="view-container" style="display: none;">

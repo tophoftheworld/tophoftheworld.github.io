@@ -1734,16 +1734,19 @@ select option {
         /* Less margin on top for mobile */
     }
 }
+
 .bottom-tabs {
     position: fixed;
     bottom: 0;
     left: 0;
     right: 0;
-    height: 60px;
+    height: calc(60px + env(safe-area-inset-bottom));
     background-color: white;
     display: flex;
     justify-content: space-around;
-    align-items: center;
+    align-items: flex-start;
+    padding-top: 8px;
+    padding-bottom: env(safe-area-inset-bottom);
     box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
     z-index: 1000;
 }
@@ -1752,17 +1755,16 @@ select option {
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     width: 50%;
     height: 100%;
     background: transparent;
     border: none;
     color: #777;
     font-size: 0.85rem;
-    padding: 8px 0;
+    padding: 12px 0 0 0;
     transition: all 0.2s ease;
     cursor: pointer;
-    margin-top: 1rem;
 }
 
 .tab-button.active {
@@ -1776,7 +1778,9 @@ select option {
 }
 
 .tab-button svg {
-    margin-bottom: 4px;
+    margin-bottom: 2px;
+    width: 30px;
+    height: 30px;
 }
 
 .tab-button:active {
@@ -1785,7 +1789,7 @@ select option {
 
 /* Add padding to the bottom of the container to account for tabs */
 .container {
-    padding-bottom: 70px;
+    padding-bottom: calc(50px + env(safe-area-inset-bottom));
 }
 
 #payrollView {
@@ -2039,6 +2043,92 @@ select option {
     font-size: 1.2rem;
 }
 
+.payroll-holiday-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    flex: 1;
+}
+
+.payroll-holiday {
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: #2b9348;
+    background: rgba(43, 147, 72, 0.1);
+    padding: 4px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(43, 147, 72, 0.2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 120px;
+}
+
+.payroll-card.today .payroll-holiday {
+    color: white;
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.sales-bonus-amount {
+    color: #f39c12 !important;
+    /* Gold/orange color */
+    font-weight: 600;
+}
+
+/* Payment Confirmation Indicator */
+.payment-confirmation-indicator {
+    display: flex;
+    justify-content: center;
+    margin: 1rem 0;
+    padding: 0 1rem;
+}
+
+.payment-sent-badge {
+    background: linear-gradient(135deg, #2b9348, #1d7236);
+    color: white;
+    padding: 0.75rem 1.5rem;
+    border-radius: 99px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 12px rgba(43, 147, 72, 0.3);
+    animation: paymentPulse 2s infinite;
+}
+
+.payment-sent-badge:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(43, 147, 72, 0.4);
+}
+
+@keyframes paymentPulse {
+
+    0%,
+    100% {
+        box-shadow: 0 4px 12px rgba(43, 147, 72, 0.3);
+    }
+
+    50% {
+        box-shadow: 0 4px 16px rgba(43, 147, 72, 0.5);
+    }
+}
+
+/* Payment Modal */
+#paymentConfirmationModal {
+    display: none;
+    position: fixed;
+    z-index: 3000;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.6);
+    justify-content: center;
+    align-items: center;
+}
+
 @media (max-width: 600px) {
     .photo-row {
         flex-direction: column;
@@ -2232,3 +2322,97 @@ select option {
     border: 1px solid #e9ecef;
     clear: both;
 }
+
+.payroll-ot-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0;
+}
+
+.payroll-ot-label {
+    font-size: 0.9rem;
+    color: #666;
+}
+
+.payroll-ot-value {
+    font-weight: 600;
+    color: #2b9348;
+}
+
+/* Add these styles to make it feel more app-like */
+@media (display-mode: standalone) {
+
+    /* Styles when running as installed PWA */
+    body {
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
+        overscroll-behavior: none;
+    }
+
+    /* Hide address bar completely */
+    .container {
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+}
+
+/* Prevent text selection on interactive elements */
+button,
+.tab-button,
+.panel-card {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+}
+
+/* Better touch targets */
+button,
+.panel-card,
+.tab-button {
+    min-height: 44px;
+    min-width: 44px;
+}
+
+/* Smooth scrolling */
+html {
+    scroll-behavior: smooth;
+}
+
+/* Prevent pull-to-refresh on iOS */
+body {
+    overscroll-behavior-y: contain;
+}
+
+/* iOS Safe Area Support */
+@supports (padding: max(0px)) {
+    .bottom-tabs {
+        height: calc(60px + max(env(safe-area-inset-bottom), 8px));
+        padding-bottom: max(env(safe-area-inset-bottom), 8px);
+    }
+
+    .container {
+        padding-bottom: calc(50px + max(env(safe-area-inset-bottom), 8px));
+    }
+
+    /* Ensure content doesn't get cut off at the top either */
+    body {
+        padding-top: env(safe-area-inset-top);
+    }
+}
+
+/* Fix for older iOS versions that don't support env() */
+@media screen and (max-height: 896px) and (-webkit-min-device-pixel-ratio: 2) {
+    .bottom-tabs {
+        height: 94px;
+        /* 60px + 34px for home indicator */
+        padding-bottom: 34px;
+    }
+
+    .container {
+        padding-bottom: 104px;
+        /* 70px + 34px */
+    }
+}x

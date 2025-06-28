@@ -2,15 +2,15 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
 import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, setDoc, query, where } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 // Add this to your imports at the top of admin-script.js
-import { deleteObject } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-storage.js"; 
-import { deleteDoc} from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+import { deleteObject, getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-storage.js";
+import { deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 
 // Firebase configuration - you'll need to replace this with your actual Firebase config
 const firebaseConfig = {
     apiKey: "AIzaSyA6ikBMsQACcUpn4Jff7PQFeWLN8wv18EE",
     authDomain: "matchanese-attendance.firebaseapp.com",
     projectId: "matchanese-attendance",
-    storageBucket: "matchanese-attendance.appspot.com",
+    storageBucket: "matchanese-attendance.firebasestorage.app",
     messagingSenderId: "339591618451",
     appId: "1:339591618451:web:23f9d95833ee5010bbd266",
     measurementId: "G-YEK4GML6SJ"
@@ -19,6 +19,7 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const storage = getStorage(app);  // Add this line
 
 // Employee data - loaded from Firebase
 let employees = {};
@@ -42,32 +43,6 @@ const importedNameMap = {
     "Toph": "Cristopher David", // assumed alias
     "rhobbie": "Rhobbie Ryza Saligumba"
 };
-
-// Add this after the SHIFT_SCHEDULES constant
-// const HOLIDAYS_2025 = {
-//     // Regular Holidays
-//     "2025-01-01": { name: "New Year's Day", type: "regular" },
-//     "2025-04-01": { name: "Eid'l Fitr (Feast of Ramadhan)", type: "regular" },
-//     "2025-04-09": { name: "Araw ng Kagitingan", type: "regular" },
-//     "2025-04-17": { name: "Maundy Thursday", type: "regular" },
-//     "2025-04-18": { name: "Good Friday", type: "regular" },
-//     "2025-05-01": { name: "Labor Day", type: "regular" },
-//     "2025-06-12": { name: "Independence Day", type: "regular" },
-//     "2025-08-25": { name: "National Heroes Day", type: "regular" },
-//     "2025-11-30": { name: "Bonifacio Day", type: "regular" },
-//     "2025-12-25": { name: "Christmas Day", type: "regular" },
-//     "2025-12-30": { name: "Rizal Day", type: "regular" },
-//     // Special (Non-Working) Holidays
-//     "2025-01-29": { name: "Chinese New Year", type: "special" },
-//     "2025-02-25": { name: "EDSA People Power Revolution Anniversary", type: "special" },
-//     "2025-04-19": { name: "Black Saturday", type: "special" },
-//     "2025-08-21": { name: "Ninoy Aquino Day", type: "special" },
-//     "2025-10-31": { name: "All Saints' Day Eve", type: "special" },
-//     "2025-11-01": { name: "All Saints' Day", type: "special" },
-//     "2025-12-08": { name: "Feast of the Immaculate Conception", type: "special" },
-//     "2025-12-24": { name: "Christmas Eve", type: "special" },
-//     "2025-12-31": { name: "New Year's Eve", type: "special" }
-// };
 
 let HOLIDAYS_2025 = {};
 let holidaysLoaded = false;
@@ -225,11 +200,76 @@ function convertTo12Hour(timeStr) {
 // Shift schedules
 const SHIFT_SCHEDULES = {
     "Opening": { timeIn: "9:30 AM", timeOut: "6:30 PM" },
+    "Opening Half-Day": { timeIn: "9:30 AM", timeOut: "1:30 PM" },
     "Midshift": { timeIn: "11:00 AM", timeOut: "8:00 PM" },
     "Closing": { timeIn: "1:00 PM", timeOut: "10:00 PM" },
     "Closing Half-Day": { timeIn: "6:00 PM", timeOut: "10:00 PM" },
     "Custom": { timeIn: null, timeOut: null }
 };
+
+// Sales bonus configuration
+const SALES_BONUS_CONFIG = {
+    baseQuotaPerStaff: 5000, // ₱5,000 per staff member
+    bonusPerTier: 25,
+    tierAmount: 2500,
+    defaultStaffing: {
+        weekday: 2.5,
+        weekend: 3.0
+    }
+};
+
+// Sales bonus calculation functions
+function getStaffingLevel(date) {
+    const dateStr = formatDate(date);
+
+    // Count actual SM North staff for this date
+    let staffCount = 0;
+
+    Object.values(attendanceData).forEach(employee => {
+        const dateEntry = employee.dates.find(d => d.date === dateStr);
+        if (dateEntry && dateEntry.timeIn && dateEntry.timeOut && dateEntry.branch === 'SM North') {
+            // Count shift values based on hours worked
+            if (dateEntry.shift === 'Closing Half-Day' || dateEntry.shift === 'Opening Half-Day') {
+                staffCount += 0.5;
+            } else if (dateEntry.shift === 'Custom') {
+                const actualHours = calculateHours(dateEntry.timeIn, dateEntry.timeOut);
+                if (actualHours) {
+                    const workHours = actualHours > 4 ? actualHours - 1 : actualHours;
+                    const staffEquivalent = Math.min(workHours / 8, 1.5);
+                    staffCount += Math.round(staffEquivalent * 2) / 2; // Round to nearest 0.5
+                }
+            } else if (['Opening', 'Midshift', 'Closing'].includes(dateEntry.shift)) {
+                staffCount += 1.0;
+            }
+        }
+    });
+
+    // Fall back to defaults if no attendance data
+    if (staffCount === 0) {
+        const dayOfWeek = date.getDay();
+        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+        return isWeekend ? SALES_BONUS_CONFIG.defaultStaffing.weekend : SALES_BONUS_CONFIG.defaultStaffing.weekday;
+    }
+
+    return staffCount;
+}
+
+function getQuotaForStaffing(staffingLevel) {
+    if (staffingLevel < 2.0) {
+        // For 1.0 and 1.5 staff: ₱5,000 per staff
+        return staffingLevel * 5000;
+    } else {
+        // For 2.0+ staff: ₱10k base + ₱10k per additional staff above 2.0
+        return 10000 + (staffingLevel - 2.0) * 10000;
+    }
+}
+
+function calculateSalesBonus(salesAmount, quota) {
+    if (salesAmount <= quota) return 0;
+    const excessAmount = salesAmount - quota;
+    const bonusTiers = Math.floor(excessAmount / SALES_BONUS_CONFIG.tierAmount);
+    return bonusTiers * SALES_BONUS_CONFIG.bonusPerTier;
+}
 
 // DOM elements
 const loadingOverlay = document.getElementById('loadingOverlay');
@@ -276,6 +316,8 @@ const addEmployeeId = document.getElementById('addEmployeeId');
 const addEmployeeName = document.getElementById('addEmployeeName');
 const addBaseRate = document.getElementById('addBaseRate');
 const addNickname = document.getElementById('addNickname');
+const editSalesBonus = document.getElementById('editSalesBonus');
+const addSalesBonus = document.getElementById('addSalesBonus');
 
 const holidaysModal = document.getElementById('holidaysModal');
 const closeHolidaysModal = document.getElementById('closeHolidaysModal');
@@ -283,8 +325,17 @@ const closeHolidaysBtn = document.getElementById('closeHolidaysBtn');
 const addHolidayForm = document.getElementById('addHolidayForm');
 const holidaysTableBody = document.getElementById('holidaysTableBody');
 
-const editShiftTimeIn = document.getElementById('editShiftTimeIn');
-const editShiftTimeOut = document.getElementById('editShiftTimeOut');
+const addShiftModal = document.getElementById('addShiftModal');
+const closeAddShiftModal = document.getElementById('closeAddShiftModal');
+const cancelAddShiftBtn = document.getElementById('cancelAddShiftBtn');
+const addShiftForm = document.getElementById('addShiftForm');
+const addShiftDate = document.getElementById('addShiftDate');
+const addShiftBranch = document.getElementById('addShiftBranch');
+const addShiftSchedule = document.getElementById('addShiftSchedule');
+const addShiftTimeIn = document.getElementById('addShiftTimeIn');
+const addShiftTimeOut = document.getElementById('addShiftTimeOut');
+const addShiftEmployeeId = document.getElementById('addShiftEmployeeId');
+
 
 const refreshIndicator = document.createElement('div');
 refreshIndicator.className = 'refresh-indicator';
@@ -312,6 +363,9 @@ closeAddEmployeeModal.addEventListener('click', closeAddEmployeeModalFunc);
 cancelAddEmployeeBtn.addEventListener('click', closeAddEmployeeModalFunc);
 addEmployeeForm.addEventListener('submit', saveNewEmployee);
 
+closeAddShiftModal.addEventListener('click', closeAddShiftModalFunc);
+cancelAddShiftBtn.addEventListener('click', closeAddShiftModalFunc);
+addShiftForm.addEventListener('submit', saveNewShift);
 
 // Global data store
 let attendanceData = {};
@@ -638,6 +692,28 @@ async function loadAllEmployees() {
     }
 }
 
+async function loadSalesData() {
+    try {
+        const salesRef = collection(db, "sales");
+        const snapshot = await getDocs(salesRef);
+
+        const salesData = {};
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            // Only include sales data if it has total sales amount
+            if (data.totalSales || (data.cash || 0) + (data.gcash || 0) + (data.maya || 0) + (data.card || 0) + (data.grab || 0) > 0) {
+                salesData[doc.id] = data;
+            }
+        });
+
+        console.log("Loaded sales data from Firebase:", Object.keys(salesData).length, "records");
+        return salesData;
+    } catch (error) {
+        console.error("Error loading sales data:", error);
+        return {};
+    }
+}
+
 function updatePeriodDropdown() {
     // Store current selection before changing anything
     const currentSelection = periodSelect.value;
@@ -703,8 +779,8 @@ async function loadData(selectedPeriodId = null) {
 
     // Always show instant data from cache first if available
     const cachedData = getFromCache(periodId, branchId);
-    if (cachedData) {
-        console.log('Using cached data initially');
+    if (cachedData && validateCacheData(cacheKey, cachedData)) {
+        console.log('Using valid cached data initially');
         attendanceData = cachedData;
         filterData();
         hideLoading();
@@ -717,6 +793,10 @@ async function loadData(selectedPeriodId = null) {
 
         // Otherwise, we'll continue to fetch updates in the background
         console.log('Continuing with background data refresh');
+    } else if (cachedData) {
+        console.log('Cache data invalid, invalidating cache');
+        localStorage.removeItem(cacheKey);
+        showLoading();
     } else {
         // No cache available, show loading indicator
         showLoading();
@@ -728,6 +808,21 @@ async function loadData(selectedPeriodId = null) {
     try {
         // First, load all employees from Firebase
         await loadAllEmployees();
+
+        // Load sales data for bonus calculations
+        const salesData = await loadSalesData();
+        window.salesDataCache = salesData;
+        
+        // Invalidate cache if sales bonus feature wasn't included in cached data
+        if (cachedData) {
+            const sampleEmployee = Object.values(cachedData)[0];
+            if (sampleEmployee && typeof sampleEmployee.salesBonusEligible === 'undefined') {
+                console.log("Cache doesn't include sales bonus data, invalidating...");
+                localStorage.removeItem(cacheKey);
+                // Force a complete reload without cache
+                attendanceData = {};
+            }
+        }
 
         // Get all employee IDs
         const employeeIds = Object.keys(employees);
@@ -747,7 +842,8 @@ async function loadData(selectedPeriodId = null) {
                     lastClockInPhoto: null,
                     daysWorked: 0,
                     lateHours: 0,
-                    baseRate: 0
+                    baseRate: 0,
+                    salesBonusEligible: false
                 };
             });
         }
@@ -808,6 +904,14 @@ async function loadData(selectedPeriodId = null) {
                         attendanceData[employeeId].nickname = newNickname;
                         hasChanges = true;
                     }
+
+                    const oldSalesBonus = attendanceData[employeeId].salesBonusEligible || false;
+                    const newSalesBonus = employeeData.salesBonusEligible || false;
+
+                    if (oldSalesBonus !== newSalesBonus) {
+                        attendanceData[employeeId].salesBonusEligible = newSalesBonus;
+                        hasChanges = true;
+                    }
                 }
 
                 // Get attendance data
@@ -857,7 +961,9 @@ async function loadData(selectedPeriodId = null) {
                         timeIn: dateData.clockIn?.time || null,
                         timeOut: dateData.clockOut?.time || null,
                         timeInPhoto: dateData.clockIn?.selfie || null,
-                        timeOutPhoto: dateData.clockOut?.selfie || null
+                        timeOutPhoto: dateData.clockOut?.selfie || null,
+                        hasOTPay: dateData.hasOTPay || false,
+                        transpoAllowance: dateData.transpoAllowance || 0
                     };
 
                     // Check if this is a new or updated entry
@@ -937,15 +1043,31 @@ async function loadData(selectedPeriodId = null) {
         // Wait for all employee data to load
         await Promise.all(employeePromises);
 
-        // If we've made changes, save to cache and update the UI
-        if (hasChanges) {
-            console.log("Data changed, updating cache and UI");
-            saveToCache(cacheKey, attendanceData);
-            filterData();
-        } else if (!cachedData) {
-            // Initial load with no data, still need to update UI
-            filterData();
-        }
+        // ALWAYS recalculate totals to include sales bonuses
+        console.log("Recalculating all employee totals with sales bonuses");
+        Object.keys(attendanceData).forEach(employeeId => {
+            const employee = attendanceData[employeeId];
+            if (employee.dates && employee.dates.length > 0) {
+                // Recalculate total pay including sales bonuses
+                const totalPayWithBonus = calculateTotalPay(employee.daysWorked, employee.baseRate || 0, employee.dates, employee);
+                employee.totalPayWithBonus = totalPayWithBonus; // Store it
+
+                // Also ensure sales bonuses are calculated for each date
+                employee.dates.forEach(dateObj => {
+                    if (dateObj.timeIn && dateObj.timeOut && dateObj.branch === 'SM North' && employee.salesBonusEligible) {
+                        const salesBonus = calculateDailySalesBonus(dateObj.date);
+                        if (dateObj.salesBonus !== salesBonus) {
+                            dateObj.salesBonus = salesBonus;
+                            hasChanges = true;
+                        }
+                    }
+                });
+            }
+        });
+
+        // Save updated data with bonuses
+        saveToCache(cacheKey, attendanceData);
+        filterData();
     } catch (error) {
         console.error("❌ Error loading data:", error);
         if (!cachedData) {
@@ -959,6 +1081,17 @@ async function loadData(selectedPeriodId = null) {
         console.log(`Fixing period selection back to: ${selectedPeriodId}`);
         periodSelect.value = selectedPeriodId;
     }
+}
+
+function invalidateAllCaches() {
+    // Clear all attendance caches when sales data might have changed
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('attendance_')) {
+            localStorage.removeItem(key);
+        }
+    }
+    console.log("All caches invalidated due to potential sales data changes");
 }
 
 // Filter data based on selected period and branch
@@ -1035,11 +1168,11 @@ function filterData() {
         }
     });
 
-    // Update summary cards
-    updateSummaryCards();
-
-    // Render the filtered data
+    // Render the filtered data first
     renderEmployeeTable();
+
+    // Update summary cards after rendering (ensures sales bonuses are calculated)
+    updateSummaryCards();
 }
 
 // Replace the updateSummaryCards function
@@ -1059,13 +1192,13 @@ function updateSummaryCards() {
     const holidays = countHolidaysInPeriod(startDate, endDate);
 
     Object.values(filteredData).forEach(employee => {
-        // Check if employee has at least one clock-in
         const hasAttendance = employee.dates.some(date => date.timeIn);
         if (hasAttendance) {
             activeEmployees++;
-            // Calculate pay for this employee and add to total
-            const baseRate = employee.baseRate || 0;
-            totalPayrollAmount += calculateTotalPay(0, baseRate, employee.dates);
+            // Use the pre-calculated total or calculate with proper parameters
+            const branchSpecificPay = employee.totalPayWithBonus ||
+                calculateTotalPay(employee.daysWorked, employee.baseRate || 0, employee.dates, employee);
+            totalPayrollAmount += branchSpecificPay;
         }
     });
 
@@ -1073,7 +1206,55 @@ function updateSummaryCards() {
     document.getElementById('totalEmployees').textContent = totalEmployees;
     document.getElementById('activeEmployees').textContent = activeEmployees;
     document.getElementById('totalLateHours').textContent = `${holidays.regular} regular, ${holidays.special} special`; // Replace late hours with holidays
-    document.getElementById('totalPayroll').textContent = `₱${totalPayrollAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    
+    const totalPayrollElement = document.getElementById('totalPayroll');
+    totalPayrollElement.textContent = `₱${totalPayrollAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    // Check if payroll period is over and calculate unpaid amount
+    const today = new Date();
+
+    if (today > endDate) {
+        // Calculate unpaid amount
+        let unpaidAmount = 0;
+        const periodId = period;
+
+        // Get payment statuses (we'll need to make this synchronous for the calculation)
+        loadAllPaymentConfirmations(periodId).then(paymentStatuses => {
+            Object.entries(filteredData).forEach(([employeeId, employee]) => {
+                const hasAttendance = employee.dates.some(date => date.timeIn);
+                if (hasAttendance && !paymentStatuses[employeeId]) {
+                    const branchSpecificPay = calculateTotalPay(0, employee.baseRate || 0, employee.dates, employee);
+                    unpaidAmount += branchSpecificPay;
+                }
+            });
+
+            // Add unpaid amount display if there's any unpaid
+            if (unpaidAmount > 0) {
+                const existingUnpaid = totalPayrollElement.parentNode.querySelector('.unpaid-amount');
+                if (existingUnpaid) {
+                    existingUnpaid.remove();
+                }
+
+                const unpaidDiv = document.createElement('div');
+                unpaidDiv.className = 'unpaid-amount';
+                unpaidDiv.style.cssText = `
+                color: #e63946;
+                font-size: 0.9rem;
+                font-weight: 500;
+                margin-top: 0.25rem;
+            `;
+                unpaidDiv.textContent = `₱${unpaidAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} unpaid`;
+
+                totalPayrollElement.parentNode.insertBefore(unpaidDiv, totalPayrollElement.nextSibling);
+            }
+        });
+    } else {
+        // Remove any existing unpaid amount display if period is not over
+        const existingUnpaid = totalPayrollElement.parentNode.querySelector('.unpaid-amount');
+        if (existingUnpaid) {
+            existingUnpaid.remove();
+        }
+    }
 
     // Update the late hours label to say "Holidays"
     // const lateHoursLabel = document.querySelector('label[for="totalLateHours"]');
@@ -1084,8 +1265,11 @@ function updateSummaryCards() {
     const holidaysList = [];
     for (const dateStr in HOLIDAYS_2025) {
         const holiday = HOLIDAYS_2025[dateStr];
-        const holidayDate = new Date(dateStr);
-        if (holidayDate >= startDate && holidayDate <= endDate) {
+        const holidayDate = new Date(dateStr + 'T00:00:00');
+        const startDateOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+        const endDateOnly = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+
+        if (holidayDate >= startDateOnly && holidayDate <= endDateOnly) {
             holidaysList.push({
                 date: dateStr,
                 name: holiday.name,
@@ -1140,6 +1324,9 @@ function createEmployeeSpecificSummaryCards(employeeId) {
     const employee = filteredData[employeeId];
     if (!employee) return;
 
+    // Check if employee is sales bonus eligible
+    const showSalesBonus = employee.salesBonusEligible;
+
     // Create new summary card HTML
     const summaryCardsHTML = `
         <div class="summary-cards employee-view-cards">
@@ -1165,13 +1352,37 @@ function createEmployeeSpecificSummaryCards(employeeId) {
             </div>
             <div class="summary-card">
                 <div class="card-title">Total Pay</div>
-                <div class="card-value">₱${calculateTotalPay(0, employee.baseRate || 0, employee.dates).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div class="card-value">₱${(employee.totalPayWithBonus || calculateTotalPay(0, employee.baseRate || 0, employee.dates, employee)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                 <div class="card-subtitle">For this period</div>
             </div>
+            ${showSalesBonus ? `
+            <div class="summary-card">
+                <div class="card-title">Sales Bonus</div>
+                <div class="card-value">₱${calculateEmployeeSalesBonus(employee).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div class="card-subtitle">Total earned</div>
+            </div>
+            ` : ''}
         </div>
     `;
 
     return summaryCardsHTML;
+}
+
+function validateCacheData(cacheKey, data) {
+    // Check if cache includes sales bonus calculations
+    const sampleEmployee = Object.values(data)[0];
+    if (!sampleEmployee) return false;
+
+    // Check if sales bonus data is properly included
+    if (sampleEmployee.salesBonusEligible !== undefined) {
+        // Check if sales bonuses are calculated for dates
+        const hasValidSalesData = sampleEmployee.dates.some(date =>
+            date.salesBonus !== undefined || !sampleEmployee.salesBonusEligible
+        );
+        return hasValidSalesData;
+    }
+
+    return false;
 }
 
 function renderEmployeeTable() {
@@ -1203,7 +1414,8 @@ function renderEmployeeTable() {
                     dates: [],
                     daysWorked: 0,
                     lateHours: 0,
-                    baseRate: 0
+                    baseRate: 0,
+                    salesBonusEligible: false
                 };
             }
         });
@@ -1236,21 +1448,37 @@ function renderEmployeeTable() {
             lastClockIn = dateObj.toLocaleDateString('en-US', options);
         }
 
+        // Check if we're after payroll period end
+        const period = periodSelect.value;
+        const { endDate } = getPeriodDates(period);
+        const today = new Date();
+        const showPaymentButton = today > endDate;
+
+        const paymentButtonHtml = showPaymentButton ? `
+        <button class="action-btn payment-btn" data-employee-id="${employeeId}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect>
+                <line x1="1" y1="10" x2="23" y2="10"></line>
+            </svg>
+            Pay
+        </button>
+        ` : '';
+
         row.innerHTML = `
-            <td>
-                <span class="employee-name">${employee.name || employees[employeeId] || 'Unknown Employee'}</span>
-            </td>
-            <td>${daysWorked}</td>
-            <td class="${getLatnessColorClass(daysWorked > 0 ? (lateHours / daysWorked * 60) : 0)}">${daysWorked > 0 ? (lateHours / daysWorked * 60).toFixed(1) : '0.0'}</td>
-            <td class="base-rate">₱${(employee.baseRate || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-            <td>₱${calculateTotalPay(daysWorked, employee.baseRate || 0, employee.dates).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-            <td class="time-cell">
-                ${employee.lastClockInPhoto ?
+        <td>
+            <span class="employee-name">${employee.name || employees[employeeId] || 'Unknown Employee'}</span>
+        </td>
+        <td>${daysWorked}</td>
+        <td class="${getLatnessColorClass(daysWorked > 0 ? (lateHours / daysWorked * 60) : 0)}">${daysWorked > 0 ? (lateHours / daysWorked * 60).toFixed(1) : '0.0'}</td>
+        <td class="base-rate">₱${(employee.baseRate || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        <td>₱${calculateTotalPay(employee.daysWorked, employee.baseRate || 0, employee.dates, employee).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        <td class="time-cell">
+            ${employee.lastClockInPhoto ?
                         `<img src="${employee.lastClockInPhoto}" class="thumb" data-photo="${employee.lastClockInPhoto}" alt="Last clock-in photo">` :
                         ``}
-                <span class="date-readable">${lastClockIn}</span>
-            </td>
-            <td class="action-cell">
+            <span class="date-readable">${lastClockIn}</span>
+        </td>
+        <td class="action-cell">
                 <div class="action-buttons-container">
                     <button class="action-btn open-btn">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1265,6 +1493,7 @@ function renderEmployeeTable() {
                         </svg>
                         Edit
                     </button>
+                    ${paymentButtonHtml}
                 </div>
             </td>
         `;
@@ -1346,6 +1575,15 @@ function renderEmployeeTable() {
         });
     });
 
+    // Add event listeners for payment buttons
+    document.querySelectorAll('.payment-btn').forEach(btn => {
+        btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            const employeeId = this.dataset.employeeId;
+            openPaymentModal(employeeId);
+        });
+    });
+
     // Add this at the end of the renderEmployeeTable function, just before the closing brace
     // After setting up all the event listeners
 
@@ -1365,6 +1603,121 @@ function renderEmployeeTable() {
             detailRow.classList.add('expanded');
         }
     }
+
+    setTimeout(updateEmployeePaymentStatus, 500);
+}
+
+async function loadAllPaymentConfirmations(periodId) {
+    const cacheKey = `payment_confirmations_${periodId}`;
+
+    // Try cache first
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+        const parsedCache = JSON.parse(cached);
+        const cacheAge = Date.now() - (parsedCache.timestamp || 0);
+        if (cacheAge < 5 * 60 * 1000) { // 5 minute cache
+            return parsedCache.data;
+        }
+    }
+
+    if (!navigator.onLine) {
+        return cached ? JSON.parse(cached).data : {};
+    }
+
+    try {
+        // Get all payment confirmations for this period in one query
+        const paymentsRef = collection(db, "payment_confirmations");
+        const snapshot = await getDocs(paymentsRef);
+
+        const paymentStatus = {};
+        snapshot.forEach(doc => {
+            const docId = doc.id;
+            // Check if this payment is for the current period
+            if (docId.endsWith(`_${periodId}`)) {
+                const employeeId = docId.replace(`_${periodId}`, '');
+                paymentStatus[employeeId] = true;
+            }
+        });
+
+        // Cache the results
+        localStorage.setItem(cacheKey, JSON.stringify({
+            data: paymentStatus,
+            timestamp: Date.now()
+        }));
+
+        return paymentStatus;
+    } catch (error) {
+        console.error("Error loading payment confirmations:", error);
+        return cached ? JSON.parse(cached).data : {};
+    }
+}
+
+// Replace the updateEmployeePaymentStatus function with this:
+async function updateEmployeePaymentStatus() {
+    const periodId = periodSelect.value;
+
+    // Check if we're after the payroll period end
+    const { endDate } = getPeriodDates(periodId);
+    const today = new Date();
+
+    // Only show payment status if we're past the period end date
+    if (today <= endDate) {
+        // Remove any existing indicators since we're still in the period
+        const existingIndicators = document.querySelectorAll('.payment-status-indicator');
+        existingIndicators.forEach(indicator => indicator.remove());
+        return;
+    }
+
+    const employeeRows = document.querySelectorAll('.expandable-row');
+
+    // Get all payment statuses at once
+    const paymentStatuses = await loadAllPaymentConfirmations(periodId);
+
+    // Update all rows instantly
+    employeeRows.forEach(row => {
+        const employeeId = row.dataset.employeeId;
+        if (!employeeId) return;
+
+        // Remove existing payment indicators
+        const existingIndicator = row.querySelector('.payment-status-indicator');
+        if (existingIndicator) {
+            existingIndicator.remove();
+        }
+
+        const indicator = document.createElement('span');
+        indicator.className = 'payment-status-indicator';
+
+        if (paymentStatuses[employeeId]) {
+            // Add payment indicator
+            indicator.innerHTML = '💸 Paid';
+            indicator.style.cssText = `
+                color: #2b9348;
+                font-size: 0.8rem;
+                font-weight: 600;
+                margin-left: 0.5rem;
+                background: rgba(43, 147, 72, 0.1);
+                padding: 2px 6px;
+                border-radius: 12px;
+            `;
+        } else {
+            // Add not paid indicator
+            indicator.innerHTML = '⏳ Not yet paid';
+            indicator.style.cssText = `
+                color: #e63946;
+                font-size: 0.8rem;
+                font-weight: 600;
+                margin-left: 0.5rem;
+                background: rgba(230, 57, 70, 0.1);
+                padding: 2px 6px;
+                border-radius: 12px;
+            `;
+        }
+
+        const employeeName = row.querySelector('.employee-name');
+        if (employeeName) {
+            employeeName.appendChild(indicator);
+        }
+    });
 }
 
 function getLatnessColorClass(avgLateness) {
@@ -1454,65 +1807,179 @@ function calculateDeductions(timeIn, timeOut, scheduledIn, scheduledOut) {
     return deductions;
 }
 
-// Replace the existing calculateTotalPay function with this one
-// Replace the existing calculateTotalPay function with this one
-function calculateTotalPay(daysWorked, baseRate, datesWorked = []) {
+function calculateTotalPay(daysWorked, baseRate, datesWorked = [], employee = null) {
     const dailyMealAllowance = 150;
     let totalPay = 0;
-    let totalDeductions = 0;
 
-    if (datesWorked.length === 0) {
-        // If no dates provided, use the old calculation method
+    if (!datesWorked || datesWorked.length === 0) {
+        // Fallback calculation if no dates provided
         return (baseRate * daysWorked) + (dailyMealAllowance * daysWorked);
     }
 
-    // Calculate pay for each day based on holiday status
+    // Calculate using actual date entries for accurate results
     datesWorked.forEach(dateObj => {
         if (dateObj.timeIn && dateObj.timeOut) {
-            const dateStr = dateObj.date;
-            const multiplier = getHolidayPayMultiplier(dateStr);
-
-            // Determine if it's a half day based on shift
-            const isHalfDay = dateObj.shift === "Closing Half-Day";
-            const dailyRate = isHalfDay ? baseRate / 2 : baseRate;
-            const mealAllowance = isHalfDay ? dailyMealAllowance / 2 : dailyMealAllowance;
-
-            // Calculate deductions for late/undertime
-            const deductionHours = calculateDeductions(
-                dateObj.timeIn,
-                dateObj.timeOut,
-                dateObj.scheduledIn,
-                dateObj.scheduledOut
-            );
-
-            // Calculate hourly rate (daily rate / 8 hours for full day, / 4 hours for half day)
-            const standardHours = isHalfDay ? 4 : 8;
-            const hourlyRate = dailyRate / standardHours;
-
-            // Calculate deduction amount
-            const deductionAmount = deductionHours * hourlyRate;
-            totalDeductions += deductionAmount;
-
-            // Add base pay with holiday multiplier
-            totalPay += dailyRate * multiplier;
-
-            // Add meal allowance (not affected by multiplier)
-            totalPay += mealAllowance;
-
-            // If it's a holiday, add the holiday name to the date object for display
-            if (HOLIDAYS_2025[dateStr]) {
-                dateObj.holiday = HOLIDAYS_2025[dateStr].name;
-                dateObj.holidayType = HOLIDAYS_2025[dateStr].type;
-            }
-
-            // Add deduction info to date object
-            dateObj.deductionHours = deductionHours;
-            dateObj.deductionAmount = deductionAmount;
+            totalPay += calculateDailyPay(dateObj, baseRate, employee);
         }
     });
 
-    // Return the final pay amount after deductions
-    return totalPay - totalDeductions;
+    return totalPay;
+}
+
+function calculateDailyPay(dateObj, baseRate, employee = null) {
+    const dailyMealAllowance = 150;
+
+    if (!dateObj.timeIn || !dateObj.timeOut) {
+        return 0;
+    }
+
+    const dateStr = dateObj.date;
+    const multiplier = getHolidayPayMultiplier(dateStr);
+    let dailyTotalPay = 0;
+
+    if (dateObj.shift === "Custom") {
+        const actualHours = calculateHours(dateObj.timeIn, dateObj.timeOut);
+        if (!actualHours) return 0;
+
+        const hourlyRate = baseRate / 8;
+        const workHours = actualHours > 4 ? actualHours - 1 : actualHours;
+        const mealAllowance = actualHours <= 4 ? dailyMealAllowance / 2 : dailyMealAllowance;
+
+        // Calculate base pay (up to 8 hours)
+        const regularHours = Math.min(workHours, 8);
+        const basePay = hourlyRate * regularHours * multiplier;
+
+        dailyTotalPay = basePay + mealAllowance;
+
+        // Add OT pay for Custom shifts if hasOTPay is true
+        if (dateObj.hasOTPay) {
+            const otCalculation = calculateOTPay(dateObj, baseRate);
+            dailyTotalPay += otCalculation.otPay;
+        }
+    } else {
+        // Regular shifts: fixed daily rate with deductions and potential OT
+        const isHalfDay = dateObj.shift === "Closing Half-Day" || dateObj.shift === "Opening Half-Day";
+        const dailyRate = isHalfDay ? baseRate / 2 : baseRate;
+        const mealAllowance = isHalfDay ? dailyMealAllowance / 2 : dailyMealAllowance;
+
+        // Calculate deductions for being late/leaving early
+        const deductionHours = calculateDeductions(dateObj.timeIn, dateObj.timeOut, dateObj.scheduledIn, dateObj.scheduledOut);
+        const standardHours = isHalfDay ? 4 : 8;
+        const hourlyRate = dailyRate / standardHours;
+        const deductionAmount = deductionHours * hourlyRate;
+
+        dailyTotalPay = (dailyRate * multiplier) + mealAllowance - deductionAmount;
+
+        // Add OT pay only for regular shifts (if they have hasOTPay flag)
+        const otCalculation = calculateOTPay(dateObj, baseRate);
+        if (otCalculation.otPay > 0) {
+            dailyTotalPay += otCalculation.otPay;
+            dateObj.calculatedOTPay = otCalculation.otPay;
+            dateObj.calculatedOTHours = otCalculation.otHours;
+        }
+    }
+
+    // Add transportation allowance (applies to all shifts)
+    if (dateObj.transpoAllowance) {
+        dailyTotalPay += dateObj.transpoAllowance;
+    }
+
+    // Add sales bonus (applies to all shifts at SM North)
+    if (dateObj.branch === 'SM North' && employee && employee.salesBonusEligible) {
+        const salesBonus = calculateDailySalesBonus(dateObj.date);
+        dailyTotalPay += salesBonus;
+
+        if (dateObj.salesBonus !== salesBonus) {
+            dateObj.salesBonus = salesBonus;
+            const docRef = doc(db, "attendance", employee.id, "dates", dateObj.date);
+            setDoc(docRef, { salesBonus }, { merge: true }).catch(error => {
+                console.error(`Failed to save sales bonus for ${employee.id} on ${dateObj.date}:`, error);
+            });
+        }
+    }
+
+    return dailyTotalPay;
+}
+
+function calculateDailySalesBonus(dateStr, salesDataMap = null) {
+    if (!salesDataMap && !window.salesDataCache) return 0;
+
+    const salesData = salesDataMap || window.salesDataCache;
+    const dayData = salesData[dateStr];
+
+    if (!dayData) return 0;
+
+    const date = new Date(dateStr);
+    const staffingLevel = getStaffingLevel(date);
+    const quota = getQuotaForStaffing(staffingLevel);
+
+    // Calculate total sales for the day
+    const totalSales = dayData.totalSales ||
+        ((dayData.cash || 0) + (dayData.gcash || 0) + (dayData.maya || 0) +
+            (dayData.card || 0) + (dayData.grab || 0));
+
+    return calculateSalesBonus(totalSales, quota);
+}
+
+function calculateOTPay(dateEntry, baseRate) {
+    if (!dateEntry.hasOTPay || !dateEntry.timeIn || !dateEntry.timeOut) {
+        return { otPay: 0, otHours: 0 };
+    }
+
+    const actualHours = calculateHours(dateEntry.timeIn, dateEntry.timeOut);
+    if (!actualHours || actualHours <= 0) return { otPay: 0, otHours: 0 };
+
+    // Calculate work hours (subtract break time if > 4 hours)
+    let workHours = actualHours;
+    if (actualHours > 4) {
+        workHours = actualHours - 1; // Subtract 1 hour for break
+    }
+
+    // Ensure we don't have negative work hours
+    workHours = Math.max(0, workHours);
+
+    // OT hours are any hours beyond 8
+    const otHours = Math.max(0, workHours - 8);
+
+    if (otHours === 0) {
+        return { otPay: 0, otHours: 0 };
+    }
+
+    // Calculate OT pay based on holiday status
+    const dateStr = dateEntry.date;
+    const hourlyRate = baseRate / 8; // Base rate is for 8 hours
+    let otRate;
+
+    if (HOLIDAYS_2025[dateStr]) {
+        const holiday = HOLIDAYS_2025[dateStr];
+        if (holiday.type === 'regular') {
+            // Regular holiday OT: 260% of hourly rate (160% premium)
+            otRate = hourlyRate * 2.60;
+        } else if (holiday.type === 'special') {
+            // Special holiday OT: 169% of hourly rate (69% premium)
+            otRate = hourlyRate * 1.69;
+        }
+    } else {
+        // Regular day OT: 125% of hourly rate (25% premium)
+        otRate = hourlyRate * 1.25;
+    }
+
+    const otPay = otHours * otRate;
+    return { otPay, otHours };
+}
+
+function calculateEmployeeSalesBonus(employee) {
+    if (!employee.salesBonusEligible) return 0;
+
+    let totalBonus = 0;
+
+    employee.dates.forEach(dateObj => {
+        if (dateObj.timeIn && dateObj.timeOut && dateObj.branch === 'SM North') {
+            totalBonus += calculateDailySalesBonus(dateObj.date);
+        }
+    });
+
+    return totalBonus;
 }
 
 // Function to load employee details only when needed
@@ -1573,7 +2040,9 @@ async function loadEmployeeDetails(employeeId, detailRow) {
                         timeIn: dateData.clockIn?.time || null,
                         timeOut: dateData.clockOut?.time || null,
                         timeInPhoto: dateData.clockIn?.selfie || null,
-                        timeOutPhoto: dateData.clockOut?.selfie || null
+                        timeOutPhoto: dateData.clockOut?.selfie || null,
+                        hasOTPay: dateData.hasOTPay || false,
+                        transpoAllowance: dateData.transpoAllowance || 0
                     });
 
                     // Add this after the push to update the main data store
@@ -1610,8 +2079,9 @@ async function loadEmployeeDetails(employeeId, detailRow) {
         const detailTable = document.createElement('table');
         detailTable.className = 'detail-table';
 
-        // Add table header
-        // In the loadEmployeeDetails function, update the header:
+        const employeeData = filteredData[employeeId];
+        const showSalesBonus = employeeData && employeeData.salesBonusEligible;
+
         detailTable.innerHTML = `
             <thead>
                 <tr>
@@ -1621,6 +2091,7 @@ async function loadEmployeeDetails(employeeId, detailRow) {
                     <th>Time In</th>
                     <th>Time Out</th>
                     <th>Late Hours</th>
+                    ${showSalesBonus ? '<th>Sales Bonus</th>' : ''}
                     <th>Total Pay</th>
                     <th>Action</th>
                 </tr>
@@ -1661,55 +2132,56 @@ async function loadEmployeeDetails(employeeId, detailRow) {
             // In loadEmployeeDetails function, update the row HTML to place photo above time and remove seconds
             // Update the detailRowItem HTML in loadEmployeeDetails function
             // In the detailRowItem.innerHTML = section, add a holiday column after the status column
+            const employeeData = filteredData[employeeId];
+            const dailySalesBonus = (date.timeIn && date.timeOut && date.branch === 'SM North' && employeeData.salesBonusEligible) ?
+                calculateDailySalesBonus(date.date) : 0;
+
             detailRowItem.innerHTML = `
             <td class="date-cell">
                 <span class="date-day">${formatReadableDate(date.date)}</span>
                 <span class="date-dow">${dayOfWeek}</span>
                 ${HOLIDAYS_2025[date.date] ?
-                            `<span class="holiday-badge ${HOLIDAYS_2025[date.date].type}">${HOLIDAYS_2025[date.date].name}</span>` :
-                            ''}
+                                `<span class="holiday-badge ${HOLIDAYS_2025[date.date].type}">${HOLIDAYS_2025[date.date].name}</span>` :
+                                ''}
             </td>
             <td>${date.branch || 'N/A'}</td>
             <td>${date.shift || 'N/A'}</td>
             <td class="time-cell">
                 ${date.timeInPhoto ?
-                            `<img src="${date.timeInPhoto}" class="thumb" data-photo="${date.timeInPhoto}" alt="Clock-in photo">` :
-                            `<div style="height: 8px;"></div>`}
+                                `<img src="${date.timeInPhoto}" class="thumb" data-photo="${date.timeInPhoto}" alt="Clock-in photo">` :
+                                `<div style="height: 8px;"></div>`}
                 ${date.timeIn ? formatTimeWithoutSeconds(date.timeIn) : 'N/A'}
             </td>
             <td class="time-cell">
                 ${date.timeOutPhoto ?
-                            `<img src="${date.timeOutPhoto}" class="thumb" data-photo="${date.timeOutPhoto}" alt="Clock-out photo">` :
-                            `<div style="height: 8px;"></div>`}
+                                `<img src="${date.timeOutPhoto}" class="thumb" data-photo="${date.timeOutPhoto}" alt="Clock-out photo">` :
+                                `<div style="height: 8px;"></div>`}
                 ${date.timeOut ? formatTimeWithoutSeconds(date.timeOut) : 'N/A'}
             </td>
             <td>${date.scheduledIn && date.timeIn ?
-                    (compareTimes(date.timeIn, date.scheduledIn) > 0 ?
-                        (compareTimes(date.timeIn, date.scheduledIn) / 60).toFixed(1) :
-                        '0.0') :
-                    'N/A'}
+                                (compareTimes(date.timeIn, date.scheduledIn) > 0 ?
+                                    (compareTimes(date.timeIn, date.scheduledIn) / 60).toFixed(1) :
+                                    '0.0') :
+                                'N/A'}
             </td>
+            ${showSalesBonus ? `<td>₱${dailySalesBonus.toFixed(2)}</td>` : ''}
             <td>₱${date.timeIn && date.timeOut ?
-                    calculateTotalPay(1, filteredData[employeeId].baseRate || 0, [date]).toFixed(2) :
-                    '0.00'}</td>
+                                calculateDailyPay(date, employeeData.baseRate || 0, employeeData).toFixed(2) :
+                                '0.00'}</td>
             <td class="action-cell">
                 <div class="action-buttons-container">
-                    <button class="action-btn edit-shift-btn" data-date="${date.date}" data-employee="${employeeId}">
+                    <button class="action-btn open-btn">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                            <path d="M9 18l6-6-6-6"></path>
+                        </svg>
+                        Open
+                    </button>
+                    <button class="action-btn edit-employee-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2-2v-7"></path>
                             <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
                         </svg>
                         Edit
-                    </button>
-                    <button class="action-btn delete-entry-btn" data-date="${date.date}" data-employee="${employeeId}">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M3 6h18"></path>
-                            <path d="m19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
-                            <path d="m8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
-                            <line x1="10" x2="10" y1="11" y2="17"></line>
-                            <line x1="14" x2="14" y1="11" y2="17"></line>
-                        </svg>
-                        Delete
                     </button>
                 </div>
             </td>
@@ -1749,6 +2221,15 @@ async function loadEmployeeDetails(employeeId, detailRow) {
                 const dateStr = this.dataset.date;
                 const employeeId = this.dataset.employee;
                 openEditShiftModal(employeeId, dateStr);
+            });
+        });
+
+        document.querySelectorAll('.payment-btn').forEach(btn => {
+            btn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                const row = this.closest('.expandable-row');
+                const employeeId = row.dataset.employeeId;
+                openPaymentModal(employeeId);
             });
         });
 
@@ -2004,7 +2485,6 @@ function getDatesInRange(startDate, endDate) {
     return dates;
 }
 
-// Helper function to calculate hours between two time strings
 function calculateHours(timeInStr, timeOutStr) {
     try {
         // Parse time strings
@@ -2023,15 +2503,27 @@ function calculateHours(timeInStr, timeOutStr) {
         if (meridianOut === 'PM' && hoursOut !== 12) hours24Out += 12;
         if (meridianOut === 'AM' && hoursOut === 12) hours24Out = 0;
 
-        // Calculate difference in hours
+        // Calculate difference in minutes
         const totalMinutesIn = hours24In * 60 + minutesIn;
         const totalMinutesOut = hours24Out * 60 + minutesOut;
 
-        // If clock out is earlier than clock in, assume next day
         let minutesDiff = totalMinutesOut - totalMinutesIn;
-        if (minutesDiff < 0) minutesDiff += 24 * 60;
 
-        return minutesDiff / 60;
+        // Handle midnight crossover
+        if (minutesDiff < 0) {
+            // For your specific case: 12:38 PM to 2:00 AM
+            // This is clearly a next-day scenario
+            minutesDiff += 24 * 60;
+        }
+
+        // Prevent unreasonably long shifts (over 20 hours)
+        const calculatedHours = minutesDiff / 60;
+        if (calculatedHours > 20) {
+            console.warn("Shift duration exceeds 20 hours - possible data error");
+            return null;
+        }
+
+        return calculatedHours;
     } catch (error) {
         console.error("Error calculating hours:", error);
         return null;
@@ -2349,12 +2841,6 @@ function generatePayrollPeriods(startDate, endDate, limitCount = false) {
 function updateViewMode() {
     const container = document.querySelector('.container');
 
-    // Clear any existing back button
-    const existingBackBtn = document.getElementById('backToAllBtn');
-    if (existingBackBtn) {
-        existingBackBtn.remove();
-    }
-
     // Get the table container and employee table elements
     const tableContainer = document.querySelector('.data-table-container');
     const employeeTable = document.getElementById('employeeTable');
@@ -2378,52 +2864,33 @@ function updateViewMode() {
         // 1. Update page title
         // document.querySelector('.app-title').textContent = `${employeeName} - Attendance`;
 
-        // 2. Create back button
-        const backBtn = document.createElement('button');
-        backBtn.id = 'backToAllBtn';
-        backBtn.className = 'back-btn';
-        backBtn.innerHTML = `
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" 
-                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M19 12H5M12 19l-7-7 7-7"/>
-            </svg>
-            Back to All Employees
-        `;
-
-        // Add event listener to back button
-        backBtn.addEventListener('click', function () {
-            // Remove the single employee view
-            if (document.getElementById('employee-details-table')) {
-                document.getElementById('employee-details-table').remove();
-            }
-
-            // Show the original table again
-            employeeTable.style.display = 'table';
-
-            currentEmployeeView = null;
-            updateViewMode();
-            filterData();
+        // Make logo/title clickable in employee view
+        const logoSection = document.querySelector('.logo-section');
+        logoSection.style.cursor = 'pointer';
+        logoSection.addEventListener('click', function () {
+            // Just reload the page - that's the simplest fix
+            window.location.reload();
         });
 
         // Create edit button for single employee view
         const editBtn = document.createElement('button');
         editBtn.className = 'edit-btn';
         editBtn.innerHTML = `
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" 
-                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                </svg>
-                Edit Employee
-            `;
-            editBtn.addEventListener('click', function () {
-            openEditEmployeeModal(currentEmployeeView);
-        });
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" 
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+            </svg>
+            Edit Employee
+        `;
+                editBtn.addEventListener('click', function () {
+                    openEditEmployeeModal(currentEmployeeView);
+                });
 
-        // Create batch edit button for single employee view
-        const batchEditBtn = document.createElement('button');
-        batchEditBtn.className = 'edit-btn';
-        batchEditBtn.innerHTML = `
+                // Create batch edit button for single employee view
+                const batchEditBtn = document.createElement('button');
+                batchEditBtn.className = 'edit-btn';
+                batchEditBtn.innerHTML = `
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" 
                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 20h9"></path>
@@ -2435,14 +2902,48 @@ function updateViewMode() {
             openBatchEditModal(currentEmployeeView);
         });
 
-        // Add the back button after the admin header but before summary cards
-        const summaryCards = document.querySelector('.summary-cards');
-        container.insertBefore(backBtn, summaryCards);
-        container.insertBefore(editBtn, summaryCards);
-        container.insertBefore(batchEditBtn, summaryCards);
+        // Create add shift button for single employee view
+        const addShiftBtn = document.createElement('button');
+        addShiftBtn.className = 'edit-btn';
+        addShiftBtn.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" 
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 5v14"></path>
+                <path d="M5 12h14"></path>
+            </svg>
+            Add Shift
+        `;
+        addShiftBtn.addEventListener('click', function () {
+            openAddShiftModal(currentEmployeeView);
+        });
 
-        // Add the employee name heading right after the back button
-        backBtn.insertAdjacentElement('afterend', employeeNameHeading);
+        // Hide the main view buttons in employee view
+        document.getElementById('addEmployeeBtn').style.display = 'none';
+        document.querySelector('.push-holidays-btn').style.display = 'none';
+
+        const paymentBtn = document.createElement('button');
+        paymentBtn.className = 'edit-btn payment-period-btn';
+        paymentBtn.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" 
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect>
+                <line x1="1" y1="10" x2="23" y2="10"></line>
+            </svg>
+            Upload Payment Confirmation
+        `;
+        paymentBtn.addEventListener('click', function () {
+            openPaymentModal(currentEmployeeView);
+        });
+
+        // Add the employee name heading first
+        const summaryCards = document.querySelector('.summary-cards');
+        container.insertBefore(employeeNameHeading, summaryCards);
+
+        // Add buttons after the heading
+        employeeNameHeading.insertAdjacentElement('afterend', editBtn);
+        employeeNameHeading.insertAdjacentElement('afterend', batchEditBtn);
+        employeeNameHeading.insertAdjacentElement('afterend', addShiftBtn);
+        employeeNameHeading.insertAdjacentElement('afterend', paymentBtn);
 
         // 3. Update summary cards with employee-specific info
         if (employee) {
@@ -2507,14 +3008,26 @@ function updateViewMode() {
             detailsTable.remove();
         }
         
-        // Show the original summary cards
-        document.querySelector('.summary-cards').style.display = 'grid';
-
-        // Remove any employee-specific cards
+        // Remove any employee-specific cards first
         const employeeCards = document.querySelector('.employee-view-cards');
         if (employeeCards) {
             employeeCards.remove();
         }
+
+        // Show the original summary cards
+        const originalCards = document.querySelector('.summary-cards');
+        if (originalCards) {
+            originalCards.style.display = 'grid';
+        }
+
+        // Show the main view buttons
+        document.getElementById('addEmployeeBtn').style.display = 'flex';
+        document.querySelector('.push-holidays-btn').style.display = 'none'; // Keep hidden
+
+        // Remove click handler from logo in main view
+        const logoSection = document.querySelector('.logo-section');
+        logoSection.style.cursor = 'default';
+        logoSection.removeEventListener('click', arguments.callee);
 
         // // Reset the card titles and subtitles to original values
         // const totalEmpCard = document.getElementById('totalEmployees');
@@ -2587,7 +3100,9 @@ async function loadEmployeeDetailsAsMainTable(employeeId, container) {
                     timeIn: dateData.clockIn?.time || null,
                     timeOut: dateData.clockOut?.time || null,
                     timeInPhoto: dateData.clockIn?.selfie || null,
-                    timeOutPhoto: dateData.clockOut?.selfie || null
+                    timeOutPhoto: dateData.clockOut?.selfie || null,
+                    hasOTPay: dateData.hasOTPay || false,
+                    transpoAllowance: dateData.transpoAllowance || 0
                 });
                 }
             }
@@ -2598,7 +3113,10 @@ async function loadEmployeeDetailsAsMainTable(employeeId, container) {
         detailTable.className = 'data-table';
         detailTable.id = 'employeeDetailTable';
 
-        // Add table header with delete column
+        // Get employee data to check sales bonus eligibility
+        const employeeData = filteredData[employeeId];
+        const showSalesBonus = employeeData && employeeData.salesBonusEligible;
+
         detailTable.innerHTML = `
             <thead>
                 <tr>
@@ -2608,6 +3126,7 @@ async function loadEmployeeDetailsAsMainTable(employeeId, container) {
                     <th>Time In</th>
                     <th>Time Out</th>
                     <th>Late Hours</th>
+                    ${showSalesBonus ? '<th>Sales Bonus</th>' : ''}
                     <th>Total Pay</th>
                     <th>Actions</th>
                 </tr>
@@ -2628,61 +3147,108 @@ async function loadEmployeeDetailsAsMainTable(employeeId, container) {
 
             const detailRowItem = document.createElement('tr');
             detailRowItem.dataset.date = date.date;
+            const employeeData = filteredData[employeeId];
+            const dailySalesBonus = (date.timeIn && date.timeOut && date.branch === 'SM North' && employeeData.salesBonusEligible) ?
+                calculateDailySalesBonus(date.date) : 0;
+
+            detailRowItem.className = 'expandable-row';
+            detailRowItem.dataset.employeeId = employeeId;
+            detailRowItem.dataset.date = date.date;
+
+            // Replace the detailRowItem.innerHTML section with:
             detailRowItem.innerHTML = `
-                <td class="date-cell">
-                    <span class="date-day">${formatReadableDate(date.date)}</span>
-                    <span class="date-dow">${dayOfWeek}</span>
-                    ${HOLIDAYS_2025[date.date] ?
-                    `<span class="holiday-badge ${HOLIDAYS_2025[date.date].type}">${HOLIDAYS_2025[date.date].name}</span>` :
-                    ''}
-                </td>
-                <td>${date.branch || 'N/A'}</td>
-                <td>${date.shift || 'N/A'}</td>
-                <td class="time-cell">
-                    ${date.timeInPhoto ?
-                    `<img src="${date.timeInPhoto}" class="thumb" data-photo="${date.timeInPhoto}" alt="Clock-in photo">` :
-                    `<div style="height: 8px;"></div>`}
-                    ${date.timeIn ? formatTimeWithoutSeconds(date.timeIn) : 'N/A'}
-                </td>
-                <td class="time-cell">
-                    ${date.timeOutPhoto ?
-                    `<img src="${date.timeOutPhoto}" class="thumb" data-photo="${date.timeOutPhoto}" alt="Clock-out photo">` :
-                    `<div style="height: 8px;"></div>`}
-                    ${date.timeOut ? formatTimeWithoutSeconds(date.timeOut) : 'N/A'}
-                </td>
-                <td>${date.scheduledIn && date.timeIn ?
-                    (compareTimes(date.timeIn, date.scheduledIn) > 0 ?
-                        (compareTimes(date.timeIn, date.scheduledIn) / 60).toFixed(1) :
-                        '0.0') :
-                    'N/A'}
-                </td>
-                <td>₱${date.timeIn && date.timeOut ?
-                    calculateTotalPay(1, filteredData[employeeId].baseRate || 0, [date]).toFixed(2) :
+            <td class="date-cell">
+                <span class="date-day">${formatReadableDate(date.date)}</span>
+                <span class="date-dow">${dayOfWeek}</span>
+                ${HOLIDAYS_2025[date.date] ?
+                                `<span class="holiday-badge ${HOLIDAYS_2025[date.date].type}">${HOLIDAYS_2025[date.date].name}</span>` :
+                                ''}
+            </td>
+            <td>${date.branch || 'N/A'}</td>
+            <td>${date.shift || 'N/A'}</td>
+            <td class="time-cell">
+                ${date.timeInPhoto ?
+                                `<img src="${date.timeInPhoto}" class="thumb" data-photo="${date.timeInPhoto}" alt="Clock-in photo">` :
+                                `<div style="height: 8px;"></div>`}
+                ${date.timeIn ? formatTimeWithoutSeconds(date.timeIn) : 'N/A'}
+            </td>
+            <td class="time-cell">
+                ${date.timeOutPhoto ?
+                                `<img src="${date.timeOutPhoto}" class="thumb" data-photo="${date.timeOutPhoto}" alt="Clock-out photo">` :
+                                `<div style="height: 8px;"></div>`}
+                ${date.timeOut ? formatTimeWithoutSeconds(date.timeOut) : 'N/A'}
+            </td>
+            <td>${date.scheduledIn && date.timeIn ?
+                                (compareTimes(date.timeIn, date.scheduledIn) > 0 ?
+                                    (compareTimes(date.timeIn, date.scheduledIn) / 60).toFixed(1) :
+                                    '0.0') :
+                                'N/A'}
+            </td>
+            ${showSalesBonus ? `<td>₱${dailySalesBonus.toFixed(2)}</td>` : ''}
+            <td>₱${date.timeIn && date.timeOut ?
+                    calculateDailyPay(date, employeeData.baseRate || 0, employeeData).toFixed(2) :
                     '0.00'}</td>
-                <td class="action-cell">
+            <td class="action-cell">
                     <div class="action-buttons-container">
                         <button class="action-btn edit-shift-btn" data-date="${date.date}" data-employee="${employeeId}">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                            </svg>
-                            Edit
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                        </svg>
+                        Edit
                         </button>
                         <button class="action-btn delete-entry-btn" data-date="${date.date}" data-employee="${employeeId}">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M3 6h18"></path>
-                                <path d="m19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
-                                <path d="m8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
-                                <line x1="10" x2="10" y1="11" y2="17"></line>
-                                <line x1="14" x2="14" y1="11" y2="17"></line>
-                            </svg>
-                            Delete
-                        </button>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" preserveAspectRatio="none">
+                        <path d="M3 6h18"></path>
+                        <path d="m19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                        <path d="m8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                        <line x1="10" x2="10" y1="11" y2="17"></line>
+                        <line x1="14" x2="14" y1="11" y2="17"></line>
+                    </svg>
+                    Delete
+                </button>
                     </div>
                 </td>
             `;
 
             detailTableBody.appendChild(detailRowItem);
+
+            // Create detail row for breakdown
+            const breakdownRow = document.createElement('tr');
+            breakdownRow.className = 'detail-row';
+            breakdownRow.dataset.employeeId = employeeId;
+            breakdownRow.dataset.date = date.date;
+            breakdownRow.dataset.loaded = 'false';
+
+            const breakdownContent = document.createElement('td');
+            breakdownContent.colSpan = showSalesBonus ? 9 : 8;
+            breakdownContent.className = 'detail-content';
+            breakdownContent.innerHTML = '<div class="loading-placeholder">Click row to load pay breakdown</div>';
+
+            breakdownRow.appendChild(breakdownContent);
+            detailTableBody.appendChild(breakdownRow);
+        });
+
+        // Add event listeners for expandable rows
+        detailTable.querySelectorAll('.expandable-row').forEach(row => {
+            row.addEventListener('click', function (e) {
+                // Don't expand if clicking on a button
+                if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
+                    return;
+                }
+
+                const employeeId = this.dataset.employeeId;
+                const dateStr = this.dataset.date;
+                const detailRow = detailTable.querySelector(`.detail-row[data-employee-id="${employeeId}"][data-date="${dateStr}"]`);
+
+                // Load breakdown on demand
+                if (detailRow.dataset.loaded === 'false') {
+                    loadPayBreakdown(employeeId, dateStr, detailRow);
+                }
+
+                this.classList.toggle('expanded');
+                detailRow.classList.toggle('expanded');
+            });
         });
 
         // Replace loading indicator with the table
@@ -2722,6 +3288,149 @@ async function loadEmployeeDetailsAsMainTable(employeeId, container) {
         console.error("Error loading employee details:", error);
         container.innerHTML = '<div class="error-message">Failed to load details. Please try again.</div>';
     }
+}
+
+function loadPayBreakdown(employeeId, dateStr, detailRow) {
+    const employee = filteredData[employeeId];
+    const dateEntry = employee.dates.find(d => d.date === dateStr);
+
+    if (!dateEntry || !dateEntry.timeIn || !dateEntry.timeOut) {
+        detailRow.querySelector('.detail-content').innerHTML = '<div class="no-data">No attendance data for breakdown</div>';
+        detailRow.dataset.loaded = 'true';
+        return;
+    }
+
+    // Use the SAME calculateDailyPay function - single source of truth
+    const totalPay = calculateDailyPay(dateEntry, employee.baseRate || 0, employee);
+
+    // Get all the components for display purposes only
+    const date = new Date(dateStr);
+    const isHalfDay = dateEntry.shift === "Closing Half-Day" || dateEntry.shift === "Opening Half-Day";
+    const baseRate = employee.baseRate || 0;
+    const dailyRate = isHalfDay ? baseRate / 2 : baseRate;
+    const dailyMealAllowance = 150;
+    const mealAllowance = isHalfDay ? dailyMealAllowance / 2 : dailyMealAllowance;
+    const holidayMultiplier = getHolidayPayMultiplier(dateStr);
+    const holidayPay = dailyRate * (holidayMultiplier - 1);
+    const salesBonus = (dateEntry.branch === 'SM North' && employee.salesBonusEligible) ? calculateDailySalesBonus(dateStr) : 0;
+    const otCalculation = calculateOTPay(dateEntry, baseRate);
+    const transpoAllowance = dateEntry.transpoAllowance || 0;
+
+    // Deductions
+    const standardHours = isHalfDay ? 4 : 8;
+    const hourlyRate = dailyRate / standardHours;
+    const deductionHours = calculateDeductions(dateEntry.timeIn, dateEntry.timeOut, dateEntry.scheduledIn, dateEntry.scheduledOut);
+    const deductionAmount = deductionHours * hourlyRate;
+
+    // Create breakdown table
+    const breakdownHTML = `
+        <div class="pay-breakdown">
+            <h4>Pay Breakdown for ${formatReadableDate(dateStr)}</h4>
+            <table class="breakdown-table">
+                <tr>
+                    <td><strong>Base Pay:</strong></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>Base Rate (${isHalfDay ? 'Half Day' : 'Full Day'})</td>
+                    <td>₱${dailyRate.toFixed(2)}</td>
+                </tr>
+                ${holidayMultiplier > 1 ? `
+                <tr>
+                    <td>Holiday Pay Bonus (${holidayMultiplier}x)</td>
+                    <td>₱${holidayPay.toFixed(2)}</td>
+                </tr>
+                ` : ''}
+                <tr>
+                    <td>Meal Allowance</td>
+                    <td>₱${mealAllowance.toFixed(2)}</td>
+                </tr>
+                <tr>
+                    <td>Sales Bonus</td>
+                    <td>₱${salesBonus.toFixed(2)}</td>
+                </tr>
+                ${transpoAllowance > 0 ? `
+                <tr>
+                    <td>Transportation Allowance</td>
+                    <td>₱${transpoAllowance.toFixed(2)}</td>
+                </tr>
+                ` : ''}
+                ${otCalculation.otPay > 0 ? `
+                <tr>
+                    <td>Overtime Pay (${otCalculation.otHours.toFixed(1)} hrs)</td>
+                    <td>₱${otCalculation.otPay.toFixed(2)}</td>
+                </tr>
+                ` : ''}
+                <tr>
+                    <td><strong>Deductions:</strong></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>Late/Undertime (${deductionHours.toFixed(1)} hrs)</td>
+                    <td>-₱${deductionAmount.toFixed(2)}</td>
+                </tr>
+                <tr class="total-row">
+                    <td><strong>Total Pay</strong></td>
+                    <td><strong>₱${totalPay.toFixed(2)}</strong></td>
+                </tr>
+            </table>
+            
+            ${employee.salesBonusEligible ? `
+            <div style="margin-top: 1.5rem;">
+                <h4>Sales Bonus Details</h4>
+                <table class="breakdown-table">
+                    <tr>
+                        <td>Daily Sales</td>
+                        <td>₱${(window.salesDataCache[dateStr]?.totalSales || 0).toLocaleString()}</td>
+                    </tr>
+                    <tr>
+                        <td>Staff Count</td>
+                        <td>${getStaffingLevel(date)}</td>
+                    </tr>
+                    <tr>
+                        <td>Sales Quota</td>
+                        <td>₱${getQuotaForStaffing(getStaffingLevel(date)).toLocaleString()}</td>
+                    </tr>
+                    <tr>
+                        <td>Bonus Earned</td>
+                        <td>₱${salesBonus.toFixed(2)}</td>
+                    </tr>
+                </table>
+            </div>
+            ` : ''}
+            
+            ${otCalculation.otPay > 0 ? `
+            <div style="margin-top: 1.5rem;">
+                <h4>Overtime Details</h4>
+                <table class="breakdown-table">
+                    <tr>
+                        <td>Total Hours Worked</td>
+                        <td>${calculateHours(dateEntry.timeIn, dateEntry.timeOut).toFixed(1)} hrs</td>
+                    </tr>
+                    <tr>
+                        <td>Regular Hours (max 8)</td>
+                        <td>8.0 hrs</td>
+                    </tr>
+                    <tr>
+                        <td>Overtime Hours</td>
+                        <td>${otCalculation.otHours.toFixed(1)} hrs</td>
+                    </tr>
+                    <tr>
+                        <td>OT Rate</td>
+                        <td>₱${(otCalculation.otPay / otCalculation.otHours).toFixed(2)}/hr</td>
+                    </tr>
+                    <tr>
+                        <td>Total OT Pay</td>
+                        <td>₱${otCalculation.otPay.toFixed(2)}</td>
+                    </tr>
+                </table>
+            </div>
+            ` : ''}
+        </div>
+    `;
+
+    detailRow.querySelector('.detail-content').innerHTML = breakdownHTML;
+    detailRow.dataset.loaded = 'true';
 }
 
 async function cleanupOrphanedPhotos() {
@@ -2986,6 +3695,7 @@ function openEditEmployeeModal(employeeId) {
     const defaultNickname = generateDefaultNickname(employees[employeeId] || '');
     editNickname.value = storedNickname || defaultNickname;
     editNickname.placeholder = `Default: ${defaultNickname}`;
+    editSalesBonus.checked = employee.salesBonusEligible || false;
 
     editEmployeeId.value = employeeId;
 
@@ -3011,19 +3721,22 @@ async function saveEmployeeChanges(e) {
     const newName = editEmployeeName.value.trim();
     const newBaseRate = parseFloat(editBaseRate.value) || 0;
     const newNickname = editNickname.value.trim();
+    const newSalesBonusEligible = editSalesBonus.checked;
 
     try {
         // Update in memory
         employees[employeeId] = newName;
         attendanceData[employeeId].baseRate = newBaseRate;
         attendanceData[employeeId].nickname = newNickname;
+        attendanceData[employeeId].salesBonusEligible = newSalesBonusEligible;
 
         // Update Firebase - using setDoc instead of updateDoc
         const employeeDocRef = doc(db, "employees", employeeId);
         await setDoc(employeeDocRef, {
             name: newName,
             baseRate: newBaseRate,
-            nickname: newNickname
+            nickname: newNickname,
+            salesBonusEligible: newSalesBonusEligible
         }, { merge: true });
 
         // Update UI
@@ -3144,6 +3857,30 @@ function setupBackgroundRefresh() {
 }
 
 function openEditShiftModal(employeeId, dateStr) {
+    // Get DOM elements with safety checks
+    const editShiftBranch = document.getElementById('editShiftBranch');
+    const editShiftSchedule = document.getElementById('editShiftSchedule');
+    const editShiftTimeIn = document.getElementById('editShiftTimeIn');
+    const editShiftTimeOut = document.getElementById('editShiftTimeOut');
+    const editTranspoAllowance = document.getElementById('editTranspoAllowance');
+    const editOTPay = document.getElementById('editOTPay');
+    const editShiftEmployeeId = document.getElementById('editShiftEmployeeId');
+    const editShiftDate = document.getElementById('editShiftDate');
+
+    // Check if all elements exist
+    if (!editShiftTimeOut) {
+        console.error('editShiftTimeOut element not found');
+        console.log('Available elements:', {
+            editShiftBranch: !!editShiftBranch,
+            editShiftSchedule: !!editShiftSchedule,
+            editShiftTimeIn: !!editShiftTimeIn,
+            editShiftTimeOut: !!editShiftTimeOut,
+            editTranspoAllowance: !!editTranspoAllowance,
+            editOTPay: !!editOTPay
+        });
+        return;
+    }
+
     // Find the date entry in the data
     const employee = filteredData[employeeId];
     const dateEntry = employee.dates.find(d => d.date === dateStr);
@@ -3155,12 +3892,16 @@ function openEditShiftModal(employeeId, dateStr) {
         // Convert time format from "9:30 AM" to "09:30" for HTML time input
         editShiftTimeIn.value = convertTo24HourFormat(dateEntry.timeIn) || '';
         editShiftTimeOut.value = convertTo24HourFormat(dateEntry.timeOut) || '';
+
+        // Set transportation allowance and OT pay
+        editTranspoAllowance.value = dateEntry.transpoAllowance || 0;
+        editOTPay.checked = dateEntry.hasOTPay || false;
     }
 
     editShiftEmployeeId.value = employeeId;
     editShiftDate.value = dateStr;
 
-    shiftEditModal.style.display = 'flex';
+    document.getElementById('shiftEditModal').style.display = 'flex';
 }
 
 function convertTo24HourFormat(timeStr) {
@@ -3212,6 +3953,7 @@ async function saveNewEmployee(e) {
     const employeeName = addEmployeeName.value.trim();
     const baseRate = parseFloat(addBaseRate.value) || 0;
     const nickname = addNickname.value.trim() || generateDefaultNickname(employeeName);
+    const salesBonusEligible = addSalesBonus.checked;
 
     // Validate employee ID doesn't already exist
     if (employees[employeeId]) {
@@ -3225,7 +3967,8 @@ async function saveNewEmployee(e) {
         await setDoc(employeeDocRef, {
             name: employeeName,
             baseRate: baseRate,
-            nickname: nickname
+            nickname: nickname,
+            salesBonusEligible: salesBonusEligible
         });
 
         // Add to local employees object
@@ -3241,7 +3984,8 @@ async function saveNewEmployee(e) {
             daysWorked: 0,
             lateHours: 0,
             baseRate: baseRate,
-            nickname: nickname
+            nickname: nickname,
+            salesBonusEligible: salesBonusEligible
         };
 
         console.log(`New employee added: ${employeeId} - ${employeeName}`);
@@ -3268,18 +4012,32 @@ async function saveNewEmployee(e) {
 async function saveShiftChanges(e) {
     e.preventDefault();
 
+    // Get DOM elements
+    const editShiftBranch = document.getElementById('editShiftBranch');
+    const editShiftSchedule = document.getElementById('editShiftSchedule');
+    const editShiftTimeIn = document.getElementById('editShiftTimeIn');
+    const editShiftTimeOut = document.getElementById('editShiftTimeOut');
+    const editTranspoAllowance = document.getElementById('editTranspoAllowance');
+    const editOTPay = document.getElementById('editOTPay');
+    const editShiftEmployeeId = document.getElementById('editShiftEmployeeId');
+    const editShiftDate = document.getElementById('editShiftDate');
+
     const employeeId = editShiftEmployeeId.value;
     const dateStr = editShiftDate.value;
     const newBranch = editShiftBranch.value;
     const newShift = editShiftSchedule.value;
     const newTimeIn = editShiftTimeIn.value ? convertTo12HourFormat(editShiftTimeIn.value) : null;
     const newTimeOut = editShiftTimeOut.value ? convertTo12HourFormat(editShiftTimeOut.value) : null;
+    const newTranspoAllowance = parseFloat(editTranspoAllowance.value) || 0;
+    const newHasOTPay = editOTPay.checked;
 
     try {
         // Build update object
         const updateData = {
             'clockIn.branch': newBranch,
-            'clockIn.shift': newShift
+            'clockIn.shift': newShift,
+            'transpoAllowance': newTranspoAllowance,
+            'hasOTPay': newHasOTPay
         };
 
         // Only update times if they were provided
@@ -3300,6 +4058,8 @@ async function saveShiftChanges(e) {
         if (dateEntry) {
             dateEntry.branch = newBranch;
             dateEntry.shift = newShift;
+            dateEntry.transpoAllowance = newTranspoAllowance;
+            dateEntry.hasOTPay = newHasOTPay;
 
             if (newTimeIn) dateEntry.timeIn = newTimeIn;
             if (newTimeOut) dateEntry.timeOut = newTimeOut;
@@ -3657,3 +4417,329 @@ async function deleteHoliday(dateStr) {
     }
 }
 
+// Open add shift modal
+function openAddShiftModal(employeeId) {
+    addShiftEmployeeId.value = employeeId;
+
+    // Set default values
+    addShiftDate.value = '';
+    addShiftBranch.value = 'Podium';
+    addShiftSchedule.value = 'Opening';
+    addShiftTimeIn.value = '09:30';
+    addShiftTimeOut.value = '18:30';
+
+    addShiftModal.style.display = 'flex';
+}
+
+// Close add shift modal
+function closeAddShiftModalFunc() {
+    addShiftModal.style.display = 'none';
+}
+
+// Save new shift
+async function saveNewShift(e) {
+    e.preventDefault();
+
+    const employeeId = addShiftEmployeeId.value;
+    const dateStr = addShiftDate.value;
+    const branch = addShiftBranch.value;
+    const shift = addShiftSchedule.value;
+    const timeIn = convertTo12HourFormat(addShiftTimeIn.value);
+    const timeOut = convertTo12HourFormat(addShiftTimeOut.value);
+
+    if (!dateStr || !timeIn || !timeOut) {
+        alert('Please fill in all required fields.');
+        return;
+    }
+
+    try {
+        // Check if shift already exists for this date
+        const docRef = doc(db, "attendance", employeeId, "dates", dateStr);
+        const docSnap = await getDoc(docRef);
+
+        if (docSnap.exists()) {
+            if (!confirm('A shift already exists for this date. Do you want to overwrite it?')) {
+                return;
+            }
+        }
+
+        // Create the shift data
+        const shiftData = {
+            clockIn: {
+                time: timeIn,
+                branch: branch,
+                shift: shift
+            },
+            clockOut: {
+                time: timeOut
+            }
+        };
+
+        // Save to Firebase
+        await setDoc(docRef, shiftData);
+
+        // Update local data
+        if (!attendanceData[employeeId]) {
+            attendanceData[employeeId] = {
+                id: employeeId,
+                name: employees[employeeId],
+                dates: [],
+                lastClockIn: null,
+                lastClockInPhoto: null,
+                daysWorked: 0,
+                lateHours: 0,
+                baseRate: 0
+            };
+        }
+
+        const shiftSchedule = SHIFT_SCHEDULES[shift] || SHIFT_SCHEDULES["Custom"];
+        const newEntry = {
+            date: dateStr,
+            branch: branch,
+            shift: shift,
+            scheduledIn: shiftSchedule.timeIn,
+            scheduledOut: shiftSchedule.timeOut,
+            timeIn: timeIn,
+            timeOut: timeOut,
+            timeInPhoto: null,
+            timeOutPhoto: null
+        };
+
+        // Remove existing entry if it exists
+        attendanceData[employeeId].dates = attendanceData[employeeId].dates.filter(d => d.date !== dateStr);
+
+        // Add new entry
+        attendanceData[employeeId].dates.push(newEntry);
+
+        // Update cache
+        const periodId = periodSelect.value;
+        const branchId = branchSelect.value;
+        const cacheKey = getCacheKey(periodId, branchId);
+        saveToCache(cacheKey, attendanceData);
+
+        // Refresh the view
+        filterData();
+
+        // Reload employee details if in single view
+        if (currentEmployeeView === employeeId) {
+            const container = document.getElementById('employee-details-table');
+            if (container) {
+                loadEmployeeDetailsAsMainTable(employeeId, container);
+            }
+        }
+
+        closeAddShiftModalFunc();
+        alert('Shift added successfully!');
+
+    } catch (error) {
+        console.error('Error adding shift:', error);
+        alert('Failed to add shift. Please try again.');
+    }
+}
+
+// Add these functions
+async function openPaymentModal(employeeId) {
+    const employee = employees[employeeId];
+    const currentPeriod = periodSelect.options[periodSelect.selectedIndex].text;
+    const periodId = periodSelect.value;
+
+    document.getElementById('paymentEmployeeName').value = employee || 'Unknown Employee';
+    document.getElementById('paymentPeriod').value = currentPeriod;
+    document.getElementById('paymentEmployeeId').value = employeeId;
+    document.getElementById('paymentScreenshot').value = '';
+    document.getElementById('paymentNote').value = '';
+    document.getElementById('paymentMethod').value = ''; // Reset transfer method
+
+    // Check if payment already exists
+    try {
+        const paymentRef = doc(db, "payment_confirmations", `${employeeId}_${periodId}`);
+        const paymentSnap = await getDoc(paymentRef);
+
+        if (paymentSnap.exists()) {
+            const paymentData = paymentSnap.data();
+            document.getElementById('paymentNote').value = paymentData.note || '';
+            document.getElementById('paymentMethod').value = paymentData.transferMethod || '';
+
+            // Only show existing photo view if we actually have a screenshot
+            if (paymentData.screenshotUrl) {
+                // Show existing payment photo and info
+                const existingInfo = document.getElementById('existingPaymentInfo');
+                const existingPhoto = document.getElementById('existingPaymentPhoto');
+                const paymentForm = document.getElementById('paymentForm');
+                const updateScreenshotBtn = document.getElementById('updateScreenshotBtn');
+
+                if (existingInfo && existingPhoto) {
+                    existingPhoto.src = paymentData.screenshotUrl;
+                    existingPhoto.style.display = 'block';
+                    existingPhoto.onclick = () => openPhotoModal(paymentData.screenshotUrl);
+
+                    existingInfo.textContent = paymentData.note || 'No note added';
+                    existingInfo.style.display = 'block';
+
+                    // Hide form and show update button
+                    paymentForm.style.display = 'none';
+                    updateScreenshotBtn.style.display = 'block';
+                }
+
+                document.querySelector('#paymentForm .submit-btn').textContent = 'Update Payment';
+            } else {
+                // No screenshot exists, show form directly
+                const existingInfo = document.getElementById('existingPaymentInfo');
+                const existingPhoto = document.getElementById('existingPaymentPhoto');
+                const paymentForm = document.getElementById('paymentForm');
+                const updateScreenshotBtn = document.getElementById('updateScreenshotBtn');
+
+                if (existingInfo) existingInfo.style.display = 'none';
+                if (existingPhoto) {
+                    existingPhoto.style.display = 'none';
+                    existingPhoto.onclick = null;
+                }
+
+                paymentForm.style.display = 'block';
+                updateScreenshotBtn.style.display = 'none';
+                document.querySelector('#paymentForm .submit-btn').textContent = 'Upload Payment';
+            }
+        } else {
+            // No payment record exists, show form directly
+            const existingInfo = document.getElementById('existingPaymentInfo');
+            const existingPhoto = document.getElementById('existingPaymentPhoto');
+            const paymentForm = document.getElementById('paymentForm');
+            const updateScreenshotBtn = document.getElementById('updateScreenshotBtn');
+
+            if (existingInfo) existingInfo.style.display = 'none';
+            if (existingPhoto) {
+                existingPhoto.style.display = 'none';
+                existingPhoto.onclick = null;
+            }
+
+            paymentForm.style.display = 'block';
+            updateScreenshotBtn.style.display = 'none';
+            document.querySelector('#paymentForm .submit-btn').textContent = 'Upload Payment';
+        }
+    } catch (error) {
+        console.error('Error checking existing payment:', error);
+    }
+
+    document.getElementById('paymentModal').style.display = 'flex';
+}
+
+function showUpdateForm() {
+    const paymentForm = document.getElementById('paymentForm');
+    const updateScreenshotBtn = document.getElementById('updateScreenshotBtn');
+
+    paymentForm.style.display = 'block';
+    updateScreenshotBtn.style.display = 'none';
+}
+
+// Helper function to get readable transfer method text
+function getTransferMethodText(method) {
+    const methods = {
+        'gotyme': 'GoTyme',
+        'bdo': 'BDO',
+        'gcash': 'GCash',
+        'cash': 'Cash',
+        'others': 'Others'
+    };
+    return methods[method] || method;
+}
+
+function closePaymentModal() {
+    document.getElementById('paymentModal').style.display = 'none';
+}
+
+async function savePaymentConfirmation(e) {
+    e.preventDefault();
+
+    const employeeId = document.getElementById('paymentEmployeeId').value;
+    const periodId = periodSelect.value;
+    const file = document.getElementById('paymentScreenshot').files[0];
+    const note = document.getElementById('paymentNote').value.trim();
+    const transferMethod = document.getElementById('paymentMethod').value;
+
+    if (!transferMethod) {
+        alert('Please select a transfer method');
+        return;
+    }
+
+    if (!file && !note) {
+        alert('Please either upload a screenshot or add a note');
+        return;
+    }
+
+    showLoading('Uploading payment confirmation...');
+
+    try {
+        let downloadURL = null;
+
+        // Only upload file if one was selected
+        if (file) {
+            // Upload to Firebase Storage
+            const filename = `payment_${employeeId}_${periodId}_${Date.now()}.jpg`;
+            const fileRef = storageRef(storage, `payment_confirmations/${filename}`);
+
+            // Upload the file directly
+            const snapshot = await uploadBytes(fileRef, file);
+
+            // Get the download URL
+            downloadURL = await getDownloadURL(snapshot.ref);
+        }
+
+        // Save payment data to Firestore
+        const paymentData = {
+            employeeId: employeeId,
+            periodId: periodId,
+            screenshotUrl: downloadURL, // Will be null if no file uploaded
+            transferMethod: transferMethod,
+            note: note,
+            uploadedAt: new Date().toISOString(),
+            uploadedBy: 'admin'
+        };
+
+        const paymentDocRef = doc(db, "payment_confirmations", `${employeeId}_${periodId}`);
+        await setDoc(paymentDocRef, paymentData);
+
+        const cacheKey = `payment_confirmations_${periodId}`;
+        localStorage.removeItem(cacheKey);
+
+        console.log('Payment confirmation saved successfully');
+        hideLoading(); // Add this line
+        alert('Payment confirmation uploaded successfully!');
+        closePaymentModal();
+
+        // Refresh payment status indicators
+        updateEmployeePaymentStatus();
+
+    } catch (error) {
+        console.error('Error uploading payment confirmation:', error);
+        hideLoading();
+        alert('Failed to upload payment confirmation. Please try again.');
+    }
+}
+
+async function uploadPaymentScreenshot(imageDataUrl, employeeId, periodId) {
+    try {
+        // Convert base64 data to blob
+        const response = await fetch(imageDataUrl);
+        const blob = await response.blob();
+
+        // Create a unique filename
+        const filename = `payment_${employeeId}_${periodId}_${Date.now()}.jpg`;
+        const fileRef = storageRef(storage, `payment_confirmations/${filename}`);
+
+        // Upload to Firebase Storage
+        await uploadBytes(fileRef, blob);
+
+        // Get the download URL
+        const downloadURL = await getDownloadURL(fileRef);
+        return downloadURL;
+    } catch (error) {
+        console.error("Error uploading payment screenshot:", error);
+        throw error;
+    }
+}
+
+// Add event listeners
+document.getElementById('closePaymentModal').addEventListener('click', closePaymentModal);
+document.getElementById('cancelPaymentBtn').addEventListener('click', closePaymentModal);
+document.getElementById('paymentForm').addEventListener('submit', savePaymentConfirmation);
+window.showUpdateForm = showUpdateForm;

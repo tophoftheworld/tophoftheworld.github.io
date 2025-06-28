@@ -319,12 +319,92 @@
             cursor: not-allowed;
             color: #999;
         }
+
+        .header-section {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        .branch-selector {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .branch-label {
+            font-size: 0.9rem;
+            color: #666;
+            font-weight: 500;
+        }
+
+        .branch-dropdown {
+            padding: 0.6rem 1rem;
+            background: white;
+            border: 1px solid #e5e5e5;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: #333;
+            transition: all 0.2s;
+            font-family: 'Inter', sans-serif;
+            min-width: 120px;
+        }
+
+        .branch-dropdown:hover {
+            border-color: #2b9348;
+        }
+
+        .branch-dropdown:focus {
+            outline: none;
+            border-color: #2b9348;
+            box-shadow: 0 0 0 2px rgba(43, 147, 72, 0.1);
+        }
+
+        .logo-section {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .logo {
+            height: 40px;
+        }
+
+        .app-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #2b9348;
+        }
+
+        .admin-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
     </style>
 </head>
 
 <body>
     <div class="container">
-        <h1>Sales Data Dashboard</h1>
+        <div class="admin-header">
+            <div class="logo-section">
+                <img src="img/matchanese-logo.png" class="logo" alt="Matchanese Logo">
+                <h1 class="app-title">Sales Dashboard</h1>
+            </div>
+            <div class="branch-selector">
+                <span class="branch-label">Branch:</span>
+                <select class="branch-dropdown" id="branchSelector">
+                    <option value="sm-north">SM North</option>
+                    <option value="podium">Podium</option>
+                </select>
+            </div>
+        </div>
         
         <div class="controls">
             <!-- Remove the old controls div content -->
@@ -386,6 +466,7 @@
         const summaryEl = document.getElementById("summaryCards");
         const dateRangeInput = document.getElementById("dateRange");
         let salesData = [];
+        let currentBranch = 'sm-north';
         let myChart = null;
 
         function formatDateRange(startDate, endDate) {
@@ -578,7 +659,8 @@
         }
 
         async function loadSalesData() {
-            const snapshot = await getDocs(collection(db, "sales"));
+            const collectionName = currentBranch === 'sm-north' ? 'sales' : 'sales-podium';
+            const snapshot = await getDocs(collection(db, collectionName));
             salesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             filterAndRender();
         }
@@ -678,6 +760,12 @@
 
             // Initialize with daily view and proper highlighting
             createDateShortcuts('daily');
+
+            // Branch selector handler
+            document.getElementById('branchSelector').addEventListener('change', function (e) {
+                currentBranch = e.target.value;
+                loadSalesData(); // Reload data for new branch
+            });
 
             // Set default after a small delay to ensure flatpickr is ready
             setTimeout(() => {
@@ -1732,6 +1820,12 @@
                 ));
                 return adjustedDate.toISOString().split('T')[0];
             }
+
+    // Branch selector handler
+        document.getElementById('branchSelector').addEventListener('change', function (e) {
+            currentBranch = e.target.value;
+            loadSalesData(); // Reload data for new branch
+        });
 
         loadSalesData();
 

@@ -1,4 +1,4 @@
-const APP_VERSION = "0.79"; 
+const APP_VERSION = "0.81"; 
 
 function isDebugMode() {
     return currentUser === "130229";
@@ -7,19 +7,6 @@ function isDebugMode() {
 function ALLOW_PAST_CLOCKING() {
     return isDebugMode();
 }
-
-// const podiumPOSAccess = [
-//     "130729", // Denzel
-//     "130829", // Sheila
-//     "130929", // Paul John
-//     "131029", // John Lester
-//     "131129",
-//     "131229",
-//     "131529",
-//     "131629",
-//     "131729"
-// ];
-
 
 let dutyStatus = "in";
 let selfieData = "";
@@ -54,6 +41,7 @@ const lateGraceLimitMinutes = 30;
 
 const SHIFT_SCHEDULES = {
     "Opening": { timeIn: "9:30 AM", timeOut: "6:30 PM" },
+    "Opening Half-Day": { timeIn: "9:30 AM", timeOut: "1:30 PM" },
     "Midshift": { timeIn: "11:00 AM", timeOut: "8:00 PM" },
     "Closing": { timeIn: "1:00 PM", timeOut: "10:00 PM" },
     "Closing Half-Day": { timeIn: "6:00 PM", timeOut: "10:00 PM" },
@@ -340,6 +328,11 @@ async function showMainInterface(code) {
     mainInterface.style.display = "block";
     viewDate = new Date();
 
+
+    if (!holidaysLoaded) {
+        await loadHolidays();
+    }
+    
     const dateKey = formatDate(viewDate);
     const localData = localStorage.getItem(`attendance_${code}_${dateKey}`);
 
@@ -805,7 +798,7 @@ async function updateGreetingUI() {
         try {
             const docSnap = await getDoc(doc(db, "employees", currentUser));
             if (docSnap.exists()) {
-                name = docSnap.data().name;
+                name = docSnap.data().nick;
                 localStorage.setItem("userName", name); // Save it again
             } else {
                 name = "Employee";
@@ -1477,6 +1470,7 @@ async function updateBranchAndShiftSelectors(data = {}) {
                 // Map schedule shift type to dropdown values
                 const shiftMapping = {
                     'opening': 'Opening',
+                    'openingHalf': 'Opening Half-Day',
                     'midshift': 'Midshift',
                     'closing': 'Closing',
                     'closingHalf': 'Closing Half-Day',
@@ -1872,6 +1866,8 @@ updateNetworkStatusUI();
 
 // document.getElementById("greeting").textContent = getTimeBasedGreeting();
 function openPayrollDetailModal(dayData, clickedCard) {
+    console.log(`MODAL - ${dayData.date}: timeIn="${dayData.timeIn}" timeOut="${dayData.timeOut}" hasOTPay=${dayData.hasOTPay}`);
+
     const modal = document.getElementById('payrollDetailModal');
     const dateObj = new Date(dayData.date);
     const month = dateObj.toLocaleDateString('en-US', { month: 'short' });
@@ -1983,6 +1979,38 @@ function openPayrollDetailModal(dayData, clickedCard) {
         holidayBonusRow.style.display = 'none';
     }
 
+    // DEBUG LOGS - Add these
+    console.log(`🔍 Modal Debug for ${dayData.date}:`);
+    console.log(`hasOTPay: ${dayData.hasOTPay}`);
+    console.log(`timeIn: ${dayData.timeIn}, timeOut: ${dayData.timeOut}`);
+    console.log(`calculated hours: ${calculateHours(dayData.timeIn, dayData.timeOut)}`);
+    console.log(`baseRate: ${dayData.baseRate}`);
+
+    // Add OT calculation and display
+    const otCalculation = calculateOTPay(dayData, dayData.baseRate || 750);
+    console.log(`OT Calculation result:`, otCalculation);
+
+    const otBonusRow = document.getElementById('modalOTBonusRow');
+
+    if (otCalculation.otPay > 0) {
+        document.getElementById('modalOTHours').textContent = `${otCalculation.otHours.toFixed(1)}h`;
+        document.getElementById('modalOTBonus').textContent = `+₱${otCalculation.otPay.toFixed(2)}`;
+        otBonusRow.style.display = 'grid';
+    } else {
+        otBonusRow.style.display = 'none';
+    }
+
+    // Add this after the holiday bonus logic:
+    const salesBonus = dayData.salesBonus || 0;
+    const salesBonusRow = document.getElementById('modalSalesBonusRow');
+
+    if (salesBonus > 0) {
+        document.getElementById('modalSalesBonus').textContent = `+₱${salesBonus.toFixed(2)}`;
+        salesBonusRow.style.display = 'grid';
+    } else {
+        salesBonusRow.style.display = 'none';
+    }
+
     // Set total pay
     const totalPay = calculateDailyPay(dayData, baseRate);
     document.getElementById('modalTotalPay').textContent = `₱${totalPay.toFixed(2)}`;
@@ -2018,23 +2046,6 @@ function closePayrollDetailModal() {
     setTimeout(() => {
         modal.style.display = 'none';
     }, 300);
-}
-
-// Helper function to format time without seconds (reuse existing one)
-function formatTime(timeStr) {
-    if (!timeStr || timeStr === '--') return '--';
-    return timeStr.replace(/:\d{2}\s/, ' '); // Remove seconds
-}
-
-function getScheduledHours(shift) {
-    const schedules = {
-        "Opening": 9,
-        "Midshift": 9,
-        "Closing": 9,
-        "Closing Half-Day": 4,
-        "Custom": null
-    };
-    return schedules[shift];
 }
 
 function calculateLateDeduction(dayData) {
@@ -2873,17 +2884,14 @@ function getDatesInRange(startDate, endDate) {
     return dates;
 }
 
-// Helper function to calculate hours between two time strings
 function calculateHours(timeInStr, timeOutStr) {
     try {
-        // Parse time strings
         const [timeIn, meridianIn] = timeInStr.split(' ');
         const [hoursIn, minutesIn] = timeIn.split(':').map(Number);
 
         const [timeOut, meridianOut] = timeOutStr.split(' ');
         const [hoursOut, minutesOut] = timeOut.split(':').map(Number);
 
-        // Convert to 24-hour format
         let hours24In = hoursIn;
         if (meridianIn === 'PM' && hoursIn !== 12) hours24In += 12;
         if (meridianIn === 'AM' && hoursIn === 12) hours24In = 0;
@@ -2892,22 +2900,31 @@ function calculateHours(timeInStr, timeOutStr) {
         if (meridianOut === 'PM' && hoursOut !== 12) hours24Out += 12;
         if (meridianOut === 'AM' && hoursOut === 12) hours24Out = 0;
 
-        // Calculate difference in hours
         const totalMinutesIn = hours24In * 60 + minutesIn;
         const totalMinutesOut = hours24Out * 60 + minutesOut;
 
-        // If clock out is earlier than clock in, assume next day
         let minutesDiff = totalMinutesOut - totalMinutesIn;
-        if (minutesDiff < 0) minutesDiff += 24 * 60;
 
-        return minutesDiff / 60;
+        if (minutesDiff < 0) {
+            // Always add 24 hours for negative differences (next day scenario)
+            minutesDiff += 24 * 60;
+        }
+
+        const maxShiftHours = 18;
+        const calculatedHours = minutesDiff / 60;
+
+        if (calculatedHours > maxShiftHours) {
+            console.warn("Shift duration exceeds maximum:", calculatedHours, "hours");
+            return maxShiftHours;
+        }
+
+        return calculatedHours;
     } catch (error) {
         console.error("Error calculating hours:", error);
         return null;
     }
 }
 
-// Function to load payroll data
 async function loadPayrollData() {
     const tableBody = document.getElementById('payrollTableBody');
 
@@ -2920,6 +2937,9 @@ async function loadPayrollData() {
 
     const selectedPeriod = periodSelect.value;
 
+    // Clear payment indicator when switching periods
+    clearPaymentIndicator();
+
     // Add caching for payroll data
     const cacheKey = `payroll_cache_${currentUser}_${selectedPeriod}`;
     const cachedData = localStorage.getItem(cacheKey);
@@ -2928,16 +2948,45 @@ async function loadPayrollData() {
         // Use cached data immediately
         updatePayrollUI(JSON.parse(cachedData));
 
+        // Check for payment confirmation after loading cached data
+        await checkAndShowPaymentConfirmation(selectedPeriod);
+
         // Then refresh in background if online
         if (navigator.onLine) {
-            fetchFreshPayrollData(selectedPeriod, cacheKey);
+            await fetchFreshPayrollData(selectedPeriod, cacheKey);
+            // Check again after fresh data (in case payment status changed)
+            await checkAndShowPaymentConfirmation(selectedPeriod);
         }
         return;
     }
 
     // No cache, fetch new data
-    fetchFreshPayrollData(selectedPeriod, cacheKey);
+    await fetchFreshPayrollData(selectedPeriod, cacheKey);
+
+    // Check for payment confirmation after loading fresh data
+    await checkAndShowPaymentConfirmation(selectedPeriod);
 }
+
+// Helper function to check and show payment confirmation
+async function checkAndShowPaymentConfirmation(selectedPeriod) {
+    if (!selectedPeriod) return;
+
+    try {
+        // Convert period text to ID format
+        const [startMonth, startDay, endMonth, endDay, year] = parsePeriod(selectedPeriod);
+        const startDate = new Date(year, getMonthIndex(startMonth), parseInt(startDay));
+        const endDate = new Date(year, getMonthIndex(endMonth), parseInt(endDay));
+        const periodId = `${formatDate(startDate)}_${formatDate(endDate)}`;
+
+        const screenshotUrl = await checkPaymentConfirmation(periodId);
+        if (screenshotUrl) {
+            showPaymentConfirmationIndicator(screenshotUrl);
+        }
+    } catch (error) {
+        console.error("Error checking payment confirmation:", error);
+    }
+}
+
 
 async function fetchFreshPayrollData(selectedPeriod, cacheKey) {
     // Parse period and get data as you currently do
@@ -2996,7 +3045,9 @@ async function fetchPayrollData(dates) {
                 scheduledIn: SHIFT_SCHEDULES[data?.clockIn?.shift || "Opening"].timeIn,
                 scheduledOut: SHIFT_SCHEDULES[data?.clockIn?.shift || "Opening"].timeOut,
                 hours: data?.clockIn && data?.clockOut ? calculateHours(data.clockIn.time, data.clockOut.time) : null,
-                baseRate: baseRate // Add this line
+                baseRate: baseRate,
+                hasOTPay: data?.hasOTPay || false,
+                salesBonus: data?.salesBonus || 0  // Add this line
             });
         });
 
@@ -3126,9 +3177,17 @@ function updatePayrollUI(payrollData) {
 
     cardsContainer.innerHTML = '';
 
-    payrollData.forEach(day => {
+    const sortedPayrollData = payrollData.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    sortedPayrollData.forEach(day => {
         // Skip days with no attendance data
         if (!day.timeIn && !day.timeOut) return;
+
+        console.log(`BEFORE card creation - ${day.date}: timeIn="${day.timeIn}" timeOut="${day.timeOut}" hasOTPay=${day.hasOTPay}`);
+
+        // NEW LOGS - Add these to trace the time values
+        console.log(`RAW timeIn before any processing: "${day.timeIn}"`);
+        console.log(`RAW timeOut before any processing: "${day.timeOut}"`);
 
         const card = document.createElement('div');
         card.className = 'payroll-card';
@@ -3143,12 +3202,6 @@ function updatePayrollUI(payrollData) {
         const month = dateObj.toLocaleDateString('en-US', { month: 'short' });
         const dayNum = dateObj.getDate();
         const dayOfWeek = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
-
-        // Format times without seconds
-        const formatTime = (timeStr) => {
-            if (!timeStr || timeStr === '--') return '--';
-            return timeStr.replace(/:\d{2}\s/, ' '); // Remove seconds
-        };
 
         // Calculate late minutes
         const formatLateTime = (timeIn, scheduledIn) => {
@@ -3180,6 +3233,11 @@ function updatePayrollUI(payrollData) {
                     <div class="payroll-date">${month} ${dayNum}</div>
                     <div class="payroll-day">${dayOfWeek}</div>
                 </div>
+                ${getHolidayPayMultiplier(day.date) > 1.0 ? `
+                <div class="payroll-holiday-section">
+                    <div class="payroll-holiday">${HOLIDAYS_2025[day.date]?.name || 'Holiday'}</div>
+                </div>
+                ` : ''}
                 <div class="payroll-branch-shift">
                     <div class="payroll-branch">${day.branch || '--'}</div>
                     <div class="payroll-shift">${day.shift || '--'}</div>
@@ -3188,11 +3246,23 @@ function updatePayrollUI(payrollData) {
             <div class="payroll-times">
                 <div class="payroll-time-group">
                     <div class="payroll-time-label">Time In</div>
-                    <div class="payroll-time">${formatTime(day.timeIn)}</div>
+                    <div class="payroll-time">${(() => {
+                        console.log(`INSIDE IIFE - day.timeIn value: "${day.timeIn}"`);
+                        console.log(`INSIDE IIFE - typeof day.timeIn: ${typeof day.timeIn}`);
+                        const formatted = formatTime(day.timeIn);
+                        console.log(`Card HTML timeIn: "${day.timeIn}" -> "${formatted}"`);
+                        return formatted;
+                    })()}</div>
                 </div>
                 <div class="payroll-time-group">
                     <div class="payroll-time-label">Time Out</div>
-                    <div class="payroll-time">${formatTime(day.timeOut)}</div>
+                    <div class="payroll-time">${(() => {
+                        console.log(`INSIDE IIFE - day.timeOut value: "${day.timeOut}"`);
+                        console.log(`INSIDE IIFE - typeof day.timeOut: ${typeof day.timeOut}`);
+                        const formatted = formatTime(day.timeOut);
+                        console.log(`Card HTML timeOut: "${day.timeOut}" -> "${formatted}"`);
+                        return formatted;
+                    })()}</div>
                 </div>
             </div>
             ${!isOngoing ? `
@@ -3244,6 +3314,21 @@ function updatePayrollUI(payrollData) {
     });
 }
 
+function formatTime(timeStr) {
+    if (!timeStr || timeStr === '--' || timeStr === 'null') {
+        return '--';
+    }
+
+    // Only remove seconds if they actually exist (3 colon-separated parts)
+    const parts = timeStr.split(':');
+    if (parts.length === 3) {
+        // Has seconds: "1:15:30 PM" -> "1:15 PM"
+        return timeStr.replace(/:\d{2}(\s[AP]M)/, '$1');
+    }
+    // No seconds: "1:15 PM" -> "1:15 PM" (no change)
+    return timeStr;
+}
+
 // Replace this entire function:
 async function populatePayrollPeriods() {
     const periodSelect = document.getElementById('payrollPeriod');
@@ -3262,9 +3347,62 @@ async function populatePayrollPeriods() {
 
     // Always show ALL periods regardless of attendance data
     // Sort by newest first
-    periods.sort((a, b) => b.end - a.end).forEach(period => {
+    periods.sort((a, b) => b.end - a.end);
+
+    // Find the most recent period that has ended but not yet been paid
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Normalize to start of day
+    let defaultPeriodIndex = 0;
+
+    for (let i = 0; i < periods.length; i++) {
+        const period = periods[i];
+        const payDay = getPayDay(period.end);
+
+        // Period has ended but pay day hasn't arrived yet
+        if (today > period.end && today < payDay) {
+            defaultPeriodIndex = i;
+            break;
+        }
+        // If no period meets criteria, default to most recent ended period
+        else if (today > period.end) {
+            defaultPeriodIndex = i;
+        }
+    }
+
+    // Add all periods to the dropdown
+    periods.forEach((period, index) => {
         addPeriodOption(periodSelect, period.label);
     });
+
+    // Set the default selection
+    if (periods.length > 0) {
+        periodSelect.selectedIndex = defaultPeriodIndex;
+    }
+}
+
+function getPayDay(cutoffDate) {
+    const payDay = new Date(cutoffDate);
+
+    // Pay day is always 3 days after cutoff
+    payDay.setDate(cutoffDate.getDate() + 3);
+
+    // Handle month overflow - if adding 3 days goes to next month
+    if (payDay.getMonth() !== cutoffDate.getMonth()) {
+        const cutoffDay = cutoffDate.getDate();
+        const month = cutoffDate.getMonth();
+        const year = cutoffDate.getFullYear();
+
+        // If cutoff was 12th, pay day should be 15th of same month
+        if (cutoffDay === 12) {
+            return new Date(year, month, 15);
+        } else {
+            // If cutoff was near end of month, pay day is last day of month
+            const lastDayOfMonth = new Date(year, month + 1, 0).getDate();
+            return new Date(year, month, lastDayOfMonth);
+        }
+    }
+
+    return payDay;
 }
 
 function generatePayrollPeriods(startDate, endDate) {
@@ -3403,18 +3541,49 @@ document.removeEventListener('DOMContentLoaded', () => {
 });
 
 async function loadHolidays() {
-    if (holidaysLoaded) return HOLIDAYS_2025;
+    // First try to load from localStorage
+    const cachedHolidays = localStorage.getItem('holidays_2025');
+    if (cachedHolidays) {
+        try {
+            HOLIDAYS_2025 = JSON.parse(cachedHolidays);
+            holidaysLoaded = true;
+            console.log("Loaded holidays from cache:", HOLIDAYS_2025);
+
+            // Check cache age (refresh if older than 24 hours)
+            const cacheTime = localStorage.getItem('holidays_2025_cache_time');
+            const now = Date.now();
+            const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+
+            if (!cacheTime || (now - parseInt(cacheTime)) < maxAge) {
+                return HOLIDAYS_2025; // Use cache if fresh
+            }
+        } catch (error) {
+            console.error("Error parsing cached holidays:", error);
+        }
+    }
+
+    // Load fresh data from Firebase
+    if (!navigator.onLine) {
+        console.warn("Offline - using cached holidays only");
+        return HOLIDAYS_2025;
+    }
 
     try {
         const holidayDoc = await getDoc(doc(db, "config", "holidays_2025"));
         if (holidayDoc.exists()) {
             HOLIDAYS_2025 = holidayDoc.data();
             holidaysLoaded = true;
+
+            // Cache the data
+            localStorage.setItem('holidays_2025', JSON.stringify(HOLIDAYS_2025));
+            localStorage.setItem('holidays_2025_cache_time', Date.now().toString());
+
+            console.log("Loaded fresh holidays from Firebase:", HOLIDAYS_2025);
         }
         return HOLIDAYS_2025;
     } catch (error) {
         console.error("Failed to load holidays:", error);
-        return {};
+        return HOLIDAYS_2025; // Return cached version if available
     }
 }
 
@@ -3453,7 +3622,7 @@ function calculateDeductions(timeIn, timeOut, scheduledIn, scheduledOut) {
     return deductions;
 }
 
-function calculateDailyPay(dateObj, baseRate) {
+function calculateDailyPay(dateObj, baseRate, employee = null) {
     const dailyMealAllowance = 150;
 
     if (!dateObj.timeIn || !dateObj.timeOut) {
@@ -3462,49 +3631,102 @@ function calculateDailyPay(dateObj, baseRate) {
 
     const dateStr = dateObj.date;
     const multiplier = getHolidayPayMultiplier(dateStr);
+    let dailyTotalPay = 0;
 
-    // For Custom shifts, calculate based on actual hours worked
     if (dateObj.shift === "Custom") {
         const actualHours = calculateHours(dateObj.timeIn, dateObj.timeOut);
         if (!actualHours) return 0;
 
-        const hourlyRate = baseRate / 8; // Base rate is for 8 hours
-        let workHours, mealAllowance;
+        const hourlyRate = baseRate / 8;
+        const workHours = actualHours > 4 ? actualHours - 1 : actualHours;
+        const mealAllowance = actualHours <= 4 ? dailyMealAllowance / 2 : dailyMealAllowance;
 
-        if (actualHours <= 4) {
-            // 4 hours or less: no break, half meal allowance
-            workHours = actualHours;
-            mealAllowance = dailyMealAllowance / 2; // 75
-        } else {
-            // More than 4 hours: subtract 1 hour for break, full meal allowance
-            workHours = actualHours - 1;
-            mealAllowance = dailyMealAllowance; // 150
+        // Calculate base pay (up to 8 hours)
+        const regularHours = Math.min(workHours, 8);
+        const basePay = hourlyRate * regularHours * multiplier;
+
+        dailyTotalPay = basePay + mealAllowance;
+
+        // Add OT pay for Custom shifts if hasOTPay is true
+        if (dateObj.hasOTPay) {
+            const otCalculation = calculateOTPay(dateObj, baseRate);
+            dailyTotalPay += otCalculation.otPay;
         }
+    } else {
+        const isHalfDay = dateObj.shift === "Closing Half-Day" || dateObj.shift === "Opening Half-Day";
+        const dailyRate = isHalfDay ? baseRate / 2 : baseRate;
+        const mealAllowance = isHalfDay ? dailyMealAllowance / 2 : dailyMealAllowance;
 
-        const basePay = hourlyRate * workHours * multiplier;
-        return basePay + mealAllowance;
+        const deductionHours = calculateDeductions(dateObj.timeIn, dateObj.timeOut, dateObj.scheduledIn, dateObj.scheduledOut);
+        const standardHours = isHalfDay ? 4 : 8;
+        const hourlyRate = dailyRate / standardHours;
+        const deductionAmount = deductionHours * hourlyRate;
+
+        dailyTotalPay = (dailyRate * multiplier) + mealAllowance - deductionAmount;
+
+        // Add OT pay for regular shifts
+        const otCalculation = calculateOTPay(dateObj, baseRate);
+        console.log(`🎯 calculateDailyPay OT check for ${dateObj.date}: hasOTPay=${dateObj.hasOTPay}, otResult=`, otCalculation);
+        if (otCalculation.otPay > 0) {
+            dailyTotalPay += otCalculation.otPay;
+        }
     }
 
-    // For regular shifts, use existing logic
-    const isHalfDay = dateObj.shift === "Closing Half-Day";
-    const dailyRate = isHalfDay ? baseRate / 2 : baseRate;
-    const mealAllowance = isHalfDay ? dailyMealAllowance / 2 : dailyMealAllowance;
+    if (dateObj.transpoAllowance) {
+        dailyTotalPay += dateObj.transpoAllowance;
+    }
 
-    const deductionHours = calculateDeductions(
-        dateObj.timeIn,
-        dateObj.timeOut,
-        dateObj.scheduledIn,
-        dateObj.scheduledOut
-    );
-
-    const standardHours = isHalfDay ? 4 : 8;
-    const hourlyRate = dailyRate / standardHours;
-    const deductionAmount = deductionHours * hourlyRate;
-
-    const dailyBasePay = dailyRate * multiplier;
-    const dailyTotalPay = dailyBasePay + mealAllowance - deductionAmount;
+    // Add sales bonus if it exists in the data
+    if (dateObj.salesBonus) {
+        dailyTotalPay += dateObj.salesBonus;
+    }
 
     return dailyTotalPay;
+}
+
+function calculateOTPay(dateEntry, baseRate) {
+    console.log('dateEntry in calculateOTPay:', dateEntry);
+    if (!dateEntry.hasOTPay || !dateEntry.timeIn || !dateEntry.timeOut) {
+        return { otPay: 0, otHours: 0 };
+    }
+
+    const actualHours = calculateHours(dateEntry.timeIn, dateEntry.timeOut);
+    if (!actualHours || actualHours <= 0) return { otPay: 0, otHours: 0 };
+
+    let workHours = actualHours;
+    if (actualHours > 4) {
+        workHours = actualHours - 1; // Subtract meal break
+    }
+
+    workHours = Math.max(0, workHours);
+    const otHours = Math.max(0, workHours - 8); // OT = work hours beyond 8
+
+    if (otHours === 0) {
+        return { otPay: 0, otHours: 0 };
+    }
+
+    const dateStr = dateEntry.date || dateEntry;
+    const hourlyRate = baseRate / 8;
+    let otRate;
+
+    if (HOLIDAYS_2025[dateStr]) {
+        const holiday = HOLIDAYS_2025[dateStr];
+        if (holiday.type === 'regular') {
+            otRate = hourlyRate * 2.60;
+        } else if (holiday.type === 'special') {
+            otRate = hourlyRate * 1.69;
+        }
+    } else {
+        otRate = hourlyRate * 1.25;
+    }
+
+    const otPay = otHours * otRate;
+    return { otPay, otHours };
+}
+
+function calculateDailySalesBonus(dateStr) {
+    // Simplified version for staff app
+    return 0; // Staff app doesn't have sales data access
 }
 
 function calculateTotalPay(daysWorked, baseRate, datesWorked = []) {
@@ -3952,6 +4174,7 @@ function createScheduleRow(date, allScheduleData, isToday) {
 function createShiftCompact(shift) {
     const shiftTypes = {
         'opening': { name: 'Opening' },
+        'openingHalf': { name: 'Opening Half-Day', time: '9:30 AM - 1:30 PM' },
         'midshift': { name: 'Midshift' },
         'closing': { name: 'Closing' },
         'closingHalf': { name: 'Closing Half' },
@@ -4023,6 +4246,7 @@ function createScheduleCard(date, scheduleData, isToday) {
 
     const shiftTypes = {
         'opening': { name: 'Opening', time: '9:30 AM - 6:30 PM' },
+        'openingHalf': { name: 'Opening Half-Day', time: '9:30 AM - 1:30 PM' },
         'midshift': { name: 'Midshift', time: '11:00 AM - 8:00 PM' },
         'closing': { name: 'Closing', time: '1:00 PM - 10:00 PM' },
         'closingHalf': { name: 'Closing Half-Day', time: '6:00 PM - 10:00 PM' },
@@ -4089,6 +4313,8 @@ document.addEventListener('DOMContentLoaded', async function () {
         }
     }
 
+    await loadHolidays();
+
     // Add window resize handler to switch between mobile and desktop
     window.addEventListener('resize', function () {
         const wasDesktop = document.querySelector('.employee-grid') !== null;
@@ -4100,3 +4326,139 @@ document.addEventListener('DOMContentLoaded', async function () {
         }
     });
 });
+
+// Add payment confirmation checking function
+async function checkPaymentConfirmation(periodId) {
+    if (!navigator.onLine || !currentUser) return null;
+
+    try {
+        const paymentRef = doc(db, "payment_confirmations", `${currentUser}_${periodId}`);
+        const paymentSnap = await getDoc(paymentRef);
+
+        if (paymentSnap.exists()) {
+            const paymentData = paymentSnap.data();
+            return paymentData.screenshotUrl || null;
+        }
+        return null;
+    } catch (error) {
+        console.error("Error checking payment confirmation:", error);
+        return null;
+    }
+}
+
+// Function to show payment confirmation indicator
+function showPaymentConfirmationIndicator(screenshotUrl) {
+    // Remove existing indicator if present
+    clearPaymentIndicator();
+
+    // Create payment confirmation indicator
+    const indicator = document.createElement('div');
+    indicator.className = 'payment-confirmation-indicator';
+    indicator.innerHTML = `
+        <div class="payment-sent-badge">
+            💸 Payment Sent
+        </div>
+    `;
+
+    // Add click handler to show modal
+    indicator.addEventListener('click', () => {
+        openPaymentConfirmationModal(screenshotUrl);
+    });
+
+    // Insert above attendance record
+    const attendanceHeader = document.querySelector('.attendance-header');
+    if (attendanceHeader) {
+        attendanceHeader.parentNode.insertBefore(indicator, attendanceHeader);
+    }
+}
+
+// Function to clear payment indicator
+function clearPaymentIndicator() {
+    const existingIndicator = document.querySelector('.payment-confirmation-indicator');
+    if (existingIndicator) {
+        existingIndicator.remove();
+    }
+}
+
+// Modal functions
+function openPaymentConfirmationModal(screenshotUrl) {
+    const modal = document.getElementById('paymentConfirmationModal');
+    const image = document.getElementById('paymentModalImage');
+
+    image.src = screenshotUrl;
+    modal.style.display = 'flex';
+
+    modal.onclick = closePaymentConfirmationModal;
+}
+
+function closePaymentConfirmationModal() {
+    const modal = document.getElementById('paymentConfirmationModal');
+    const image = document.getElementById('paymentModalImage');
+
+    modal.style.display = 'none';
+    image.src = '';
+    modal.onclick = null;
+}
+
+// Expose functions for HTML onclick events
+window.openPaymentConfirmationModal = openPaymentConfirmationModal;
+window.closePaymentConfirmationModal = closePaymentConfirmationModal;
+
+// Add this to the end of your script.js file
+let deferredPrompt;
+
+// Listen for the beforeinstallprompt event
+window.addEventListener('beforeinstallprompt', (e) => {
+    console.log('PWA install prompt available');
+    e.preventDefault();
+    deferredPrompt = e;
+
+    // Show install button if you want (optional)
+    showInstallButton();
+});
+
+// Listen for app installed event
+window.addEventListener('appinstalled', (evt) => {
+    console.log('PWA was installed');
+    hideInstallButton();
+});
+
+function showInstallButton() {
+    // Create install button (optional)
+    const installBtn = document.createElement('button');
+    installBtn.textContent = '📱 Install App';
+    installBtn.className = 'install-btn';
+    installBtn.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: #2b9348;
+        color: white;
+        border: none;
+        padding: 12px 16px;
+        border-radius: 8px;
+        font-size: 14px;
+        z-index: 1000;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    `;
+
+    installBtn.addEventListener('click', installApp);
+    document.body.appendChild(installBtn);
+}
+
+function hideInstallButton() {
+    const installBtn = document.querySelector('.install-btn');
+    if (installBtn) {
+        installBtn.remove();
+    }
+}
+
+async function installApp() {
+    if (deferredPrompt) {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        console.log(`User response to install prompt: ${outcome}`);
+        deferredPrompt = null;
+        hideInstallButton();
+    }
+}
