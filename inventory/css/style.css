@@ -21,6 +21,11 @@ body {
     flex-shrink: 0;
     position: relative;
     z-index: 10;
+    transition: padding 0.4s ease;
+}
+
+.header-container.compact {
+    padding: 8px 20px 0;
 }
 
 .header-container,
@@ -60,6 +65,19 @@ body {
     background: #e0e0e0;
     border-radius: 8px;
     flex-shrink: 0;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #999;
+    font-size: 12px;
+    text-align: center;
+}
+
+.item-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
 }
 
 .item-info {
@@ -118,7 +136,7 @@ body {
 }
 
 .quantity-number:focus {
-    outline: 1px solid #8ba3b5;
+    outline: 1px solid #439407;
     border-radius: 4px;
     background: rgba(139, 163, 181, 0.1);
 }
@@ -150,7 +168,7 @@ body {
 .control-btn {
     width: 38px;
     height: 38px;
-    background: #8ba3b5;
+    background: #439407;
     color: white;
     border: none;
     border-radius: 12px;
@@ -179,11 +197,11 @@ body {
 
 .control-btn:active {
     transform: scale(0.95);
-    background: #7a92a4;
+    background: #2f6406;
 }
 
 .control-btn:hover {
-    background: #7a92a4;
+    background: #2f6406;
 }
 
 /* Ensure proper touch targets on mobile */
@@ -261,6 +279,17 @@ body {
     background: #fff;
     padding: 0 0 15px;
     z-index: 10;
+    transition: opacity 0.3s ease, transform 0.3s ease, padding 0.4s ease, max-height 0.4s ease;
+    max-height: 100px;
+    overflow: hidden;
+}
+
+.toggle-container.compact {
+    opacity: 0;
+    transform: translateY(-10px);
+    pointer-events: none;
+    max-height: 0;
+    padding: 0;
 }
 
 .toggle-buttons {
@@ -289,7 +318,7 @@ body {
 }
 
 .toggle-btn.active {
-    background: #8ba3b5;
+    background: #439407;
     color: white;
     font-weight: 400;
     box-shadow: 0 2px 4px rgba(139, 163, 181, 0.3);
@@ -329,7 +358,7 @@ body {
 }
 
 .add-item-btn {
-    background: #8ba3b5;
+    background: #439407;
     color: white;
     border: none;
     border-radius: 12px;
@@ -345,7 +374,7 @@ body {
 }
 
 .add-item-btn:hover {
-    background: #7a92a4;
+    background: #2f6406;
 }
 
 .add-item-btn:active {
@@ -447,7 +476,7 @@ body {
 .form-group input:focus,
 .form-group select:focus {
     outline: none;
-    border-color: #8ba3b5;
+    border-color: #439407;
     box-shadow: 0 0 0 3px rgba(139, 163, 181, 0.1);
 }
 
@@ -480,12 +509,12 @@ body {
 }
 
 .btn-add {
-    background: #8ba3b5;
+    background: #439407;
     color: white;
 }
 
 .btn-add:hover {
-    background: #7a92a4;
+    background: #2f6406;
 }
 
 .btn-add:active,
@@ -503,7 +532,7 @@ body {
     position: fixed;
     top: 20px;
     right: 20px;
-    background: #8ba3b5;
+    background: #439407;
     color: white;
     padding: 8px 16px;
     border-radius: 20px;
@@ -569,6 +598,59 @@ body {
     background: #fff;
     padding: 0 0px 15px;
     z-index: 9;
+    max-width: 600px;
+    margin: 0 auto;
+    display: flex;
+    gap: 10px;
+    transition: padding 0.4s ease, gap 0.4s ease;
+}
+
+.date-picker-container.compact {
+    padding: 0 0px 8px;
+    gap: 0;
+    flex-direction: column;
+}
+
+.date-picker,
+.branch-picker {
+    transition: none;
+    opacity: 1;
+}
+
+.date-picker-container.compact .date-picker,
+.date-picker-container.compact .branch-picker {
+    display: none;
+}
+
+.compact-branch {
+    font-size: 12px;
+    color: #666;
+    font-weight: 500;
+    max-width: 140px;
+    overflow: hidden;
+    /* text-overflow: ellipsis; */
+    white-space: nowrap;
+}
+
+.compact-info-row {
+    display: none;
+    justify-content: space-between;
+    align-items: center;
+    background: #f5f5f5;
+    border-radius: 12px;
+    padding: 8px 16px;
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 8px;
+    opacity: 0;
+    transform: scale(0.95);
+    transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+.date-picker-container.compact .compact-info-row {
+    display: flex;
+    opacity: 1;
+    transform: scale(1);
 }
 
 .date-picker {
@@ -577,16 +659,86 @@ body {
     justify-content: space-between;
     background: #e7e7e7;
     border-radius: 15px;
-    padding: 12px;
+    padding: 12px 8px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-    max-width: 600px;
-    margin: 0 auto;
+    flex: 1;
+    min-width: 0;
+}
+
+.date-picker-container.compact~.toggle-container {
+    opacity: 0;
+    transform: translateY(-10px);
+    pointer-events: none;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.toggle-container {
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.compact-mode {
+    background: #439407;
+    color: white;
+    padding: 4px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.compact-mode.closing {
+    background: #6c757d;
+}
+
+.branch-select.compact {
+    padding: 8px 12px;
+    font-size: 14px;
+    color: #666;
+    background: #f5f5f5;
+    pointer-events: none;
+    background-image: none;
+    padding-right: 12px;
+}
+
+.branch-picker {
+    flex: 1;
+}
+
+.branch-select {
+    width: 100%;
+    height: 100%;
+    background: #e7e7e7;
+    border: none;
+    border-radius: 15px;
+    padding: 12px 16px;
+    font-size: 16px;
+    font-weight: 500;
+    color: #333;
+    cursor: pointer;
+    font-family: inherit;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml;charset=US-ASCII,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 4 5'><path fill='%23666' d='M2 0L0 2h4zm0 5L0 3h4z'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 16px center;
+    background-size: 12px;
+    padding-right: 40px;
+}
+
+.branch-select:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(67, 148, 7, 0.2);
+}
+
+.branch-select:hover {
+    background-color: #ddd;
 }
 
 .date-nav-btn {
     width: 44px;
     height: 44px;
-    background: #8ba3b5;
+    background: #439407;
     border: none;
     border-radius: 12px;
     font-size: 20px;
@@ -613,16 +765,20 @@ body {
 .date-display {
     flex: 1;
     text-align: center;
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 500;
     color: #333;
-    padding: 0 20px;
+    padding: 0 8px;
     cursor: pointer;
     transition: color 0.2s;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
 }
 
 .date-display:hover {
-    color: #8ba3b5;
+    color: #439407;
 }
 
 /* Prevent scroll propagation from date picker */
@@ -696,18 +852,18 @@ body {
 }
 
 .date-cell.selected {
-    background: #8ba3b5;
+    background: #439407;
     color: white;
 }
 
 .date-cell.today {
     background: #e8f4f8;
-    color: #8ba3b5;
+    color: #439407;
     font-weight: 500;
 }
 
 .date-cell.selected.today {
-    background: #8ba3b5;
+    background: #439407;
     color: white;
 }
 
@@ -740,12 +896,12 @@ body {
     cursor: pointer;
     transition: all 0.2s;
     font-family: inherit;
-    background: #8ba3b5;
+    background: #439407;
     color: white;
 }
 
 .btn-today:hover {
-    background: #7a92a4;
+    background: #2f6406;
 }
 
 .btn-today:active {
@@ -762,7 +918,7 @@ body {
 
 .admin-btn {
     flex: 1;
-    background: #8ba3b5;
+    background: #439407;
     color: white;
     border: none;
     border-radius: 12px;
@@ -776,7 +932,7 @@ body {
 }
 
 .admin-btn:hover {
-    background: #7a92a4;
+    background: #2f6406;
 }
 
 .admin-btn:active {
@@ -881,7 +1037,7 @@ body {
 
 .drop-indicator {
     height: 4px;
-    background: #8ba3b5;
+    background: #439407;
     margin: 5px 0;
     border-radius: 2px;
 }
@@ -947,13 +1103,13 @@ body {
 }
 
 .category-edit-btn:hover {
-    color: #8ba3b5;
+    color: #439407;
     background: none;
 }
 
 .category-up-btn:hover,
 .category-down-btn:hover {
-    color: #8ba3b5;
+    color: #439407;
     background: none;
 }
 

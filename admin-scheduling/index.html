@@ -29,9 +29,9 @@
                     <input type="date" id="shiftDate" required>
                 </div>
                 <div class="form-group">
-                    <label for="shiftBranch">Branch</label>
+                    <label for="shiftBranch">Location</label>
                     <select id="shiftBranch" required>
-                        <option value="">Select branch</option>
+                        <option value="">Select location</option>
                         <option value="podium">Podium</option>
                         <option value="smnorth">SM North</option>
                         <option value="popup">Pop-up</option>
@@ -62,12 +62,6 @@
                         <option value="">Select employee</option>
                     </select>
                 </div>
-                <div class="form-group">
-                    <div class="toggle-container">
-                        <input type="checkbox" id="recurringWeekly">
-                        <label for="recurringWeekly">Repeat weekly</label>
-                    </div>
-                </div>
                 <input type="hidden" id="shiftId">
                 <input type="hidden" id="originalDate">
                 <input type="hidden" id="originalBranch">
@@ -80,16 +74,30 @@
         </div>
     </div>
 
-    <!-- Recurring Choice Modal -->
-    <div class="modal" id="recurringChoiceModal">
+    <!-- Add Location Modal -->
+    <div class="modal" id="addBranchModal">
         <div class="modal-content">
-            <h3 id="recurringChoiceTitle">Save Changes</h3>
-            <p id="recurringChoiceMessage">This is part of a recurring series. How would you like to apply the changes?</p>
-            <div class="form-actions">
-                <button type="button" class="submit-btn" id="thisDateOnlyBtn">This Date Only</button>
-                <button type="button" class="submit-btn" id="thisAndFutureBtn">This & Future Dates</button>
-                <button type="button" class="cancel-btn" id="cancelRecurringBtn">Cancel</button>
-            </div>
+            <span class="close-modal" id="closeBranchModal">&times;</span>
+            <h2 id="branchModalTitle">Add New Location</h2>
+            <form id="branchForm">
+                <div class="form-group">
+                    <label for="branchName">Location Name</label>
+                    <input type="text" id="branchName" required placeholder="Enter location name">
+                </div>
+                <div class="form-group">
+                    <label for="branchType">Location Type</label>
+                    <select id="branchType" required>
+                        <option value="">Select type</option>
+                        <option value="popup">Pop-up</option>
+                        <option value="workshop">Workshop</option>
+                    </select>
+                </div>
+                <input type="hidden" id="branchKey">
+                <div class="form-actions">
+                    <button type="submit" class="submit-btn">Add Location</button>
+                    <button type="button" class="cancel-btn" id="cancelBranchBtn">Cancel</button>
+                </div>
+            </form>
         </div>
     </div>
 
@@ -101,9 +109,9 @@
             </div>
             <div class="controls">
                 <div class="control-item">
-                    <label class="control-label">Branch Filter</label>
+                    <label class="control-label">Location Filter</label>
                     <select id="branchFilter">
-                        <option value="all">All Branches</option>
+                        <option value="all">All Locations</option>
                         <option value="podium">Podium</option>
                         <option value="smnorth">SM North</option>
                         <option value="popup">Pop-up</option>
@@ -120,6 +128,13 @@
                         <label for="calendarView">Calendar</label>
                         <input type="radio" name="viewMode" value="employee" id="employeeView">
                         <label for="employeeView">Employee</label>
+                    </div>
+                </div>
+                <div class="control-item">
+                    <label class="control-label">Past Days Display</label>
+                    <div class="toggle-container">
+                        <input type="checkbox" id="actualAttendanceToggle">
+                        <label for="actualAttendanceToggle">Show Actual Attendance</label>
                     </div>
                 </div>
                 <button class="refresh-btn" id="syncBtn">
@@ -145,19 +160,29 @@
 
         <!-- Week Navigation -->
         <div class="week-navigation">
-            <button class="nav-btn" id="prevWeekBtn">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M15 18l-6-6 6-6"/>
-                </svg>
-                Previous Week
-            </button>
+            <div class="week-nav-left">
+                <button class="nav-btn" id="prevWeekBtn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M15 18l-6-6 6-6" />
+                    </svg>
+                    Previous Week
+                </button>
+                <button class="copy-prev-week-btn" id="copyPrevWeekBtn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                    Copy from last week
+                </button>
+            </div>
             <h2 class="week-title" id="weekTitle">Week of January 15 - 21, 2025</h2>
             <button class="nav-btn" id="nextWeekBtn">
                 Next Week
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
                     stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M9 18l6-6-6-6"/>
+                    <path d="M9 18l6-6-6-6" />
                 </svg>
             </button>
         </div>

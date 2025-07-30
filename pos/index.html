@@ -50,10 +50,13 @@
                         <span class="price">₱ 0.00</span>
                     </div>
                 </div>
-                <div class="payment-methods">
+                <div class="payment-methods popup-payment-methods">
                     <button class="payment-button" id="cash-payment">CASH</button>
                     <button class="payment-button" id="gcash-payment">GCASH</button>
                     <button class="payment-button" id="maya-payment">MAYA</button>
+                </div>
+                <div class="payment-methods package-payment-methods" style="display: none;">
+                    <button class="payment-button package-submit-btn" id="package-submit">SUBMIT ORDER</button>
                 </div>
             </div>
             <div id="orders-container" class="content orders" style="display: none;">
@@ -64,8 +67,6 @@
                                 <select class="event-selector" id="eventSelector">
                                     <option value="pop-up">Pop-up (Main)</option>
                                 </select>
-                                <button class="edit-event-btn" id="editEventBtn">✎</button>
-                                <button class="add-event-btn" id="addEventBtn">+</button>
                             </div>
                             <button class="date-nav-btn" id="prevDay">‹</button>
                             <button class="date-display" id="dateDisplay">TODAY</button>

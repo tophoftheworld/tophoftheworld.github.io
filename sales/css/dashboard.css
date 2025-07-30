@@ -1,0 +1,469 @@
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: #f9f9f9;
+    color: #333;
+    padding: 2rem;
+}
+
+.container {
+    max-width: 1200px;
+    margin: auto;
+    width: 100%;
+    /* Add this */
+    box-sizing: border-box;
+    /* Add this */
+}
+h1 {
+    font-size: 1.8rem;
+    color: #2b9348;
+    margin-bottom: 1rem;
+}
+
+.controls {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 2rem;
+}
+
+.summary-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.summary-card {
+    background: white;
+    border-radius: 10px;
+    padding: 1.2rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    border-left: 4px solid #2b9348;
+}
+
+.summary-cards,
+#salesChartContainer,
+.main-controls,
+.chart-controls,
+.data-table-container {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.card-title {
+    font-size: 0.9rem;
+    color: #666;
+    margin-bottom: 0.5rem;
+}
+
+.card-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #2b9348;
+}
+
+input[type="text"] {
+    padding: 0.6rem 1rem;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    background-color: white;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+th,
+td {
+    padding: 0.75rem 0.75rem;
+    border-bottom: 1px solid #eee;
+    text-align: left;
+    font-size: 0.9rem;
+}
+
+th {
+    background-color: #f5f5f5;
+    font-weight: 600;
+    color: #333;
+    cursor: pointer;
+}
+
+td.total {
+    font-weight: 700;
+}
+
+tr:last-child td {
+    border-bottom: none;
+}
+
+#salesChartContainer {
+    margin-top: 2rem;
+    margin-bottom: 2rem;
+    position: relative;
+    height: 300px;
+    width: 100%;
+    border: 1px solid #eee;
+    background-color: white;
+    border-radius: 10px;
+    padding: 1rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+#salesChart {
+    width: 100% !important;
+    height: 100% !important;
+    display: block;
+}
+
+.date-shortcut-btn {
+    padding: 0.5rem 0.8rem;
+    background: white;
+    border: 1px solid #e5e5e5;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: #666;
+    transition: all 0.2s;
+    font-family: 'Inter', sans-serif;
+}
+
+.date-shortcut-btn:hover {
+    border-color: #2b9348;
+    color: #2b9348;
+}
+
+.date-shortcut-btn.active {
+    background: #2b9348;
+    border-color: #2b9348;
+    color: white;
+}
+
+.date-shortcuts {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    /* Add this to allow wrapping if needed */
+}
+
+.flatpickr-monthDropdown-months {
+    appearance: menulist;
+    background: white;
+    border: 1px solid #eee;
+    border-radius: 4px;
+    padding: 2px 5px;
+}
+
+.flatpickr-monthDropdown-month {
+    background-color: white;
+    color: #333;
+    padding: 4px 8px;
+}
+
+.flatpickr-months .flatpickr-month {
+    background: #f5f5f5;
+    color: #333;
+    fill: #333;
+}
+
+.graph-type-btn {
+    padding: 0.4rem 0.8rem;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+}
+
+.graph-type-btn:hover, .graph-type-btn.active {
+    background: #f0f9f2;
+    border-color: #2b9348;
+}
+
+.graph-type-btn.active {
+    background: #2b9348;
+    color: white;
+}
+
+.main-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    width: 100%;
+    /* Add this */
+    box-sizing: border-box;
+    /* Add this */
+}
+
+.chart-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    width: 100%;
+    /* Add this */
+    box-sizing: border-box;
+    /* Add this */
+}
+
+.view-selector {
+    display: flex;
+    gap: 0.25rem;
+    background: #f5f5f5;
+    padding: 0.25rem;
+    border-radius: 8px;
+}
+
+.view-btn {
+    padding: 0.6rem 1.2rem;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #666;
+    transition: all 0.2s;
+    font-family: 'Inter', sans-serif;
+}
+
+.view-btn:hover {
+    color: #333;
+}
+
+.view-btn.active {
+    background: white;
+    color: #2b9348;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.period-indicator {
+    font-size: 0.85rem;
+    color: #666;
+    font-weight: 500;
+}
+
+/* Flatpickr custom styling */
+#dateRange {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: #666;
+    border-color: #e5e5e5;
+    transition: all 0.2s;
+    min-width: 200px;
+    /* Add this to prevent wrapping */
+    white-space: nowrap;
+    /* Add this */
+}
+
+#dateRange:hover {
+    border-color: #2b9348;
+}
+
+#dateRange.custom-range {
+    border-color: #2b9348;
+    color: #2b9348;
+    background: #f0f9f2;
+}
+
+.chart-options, .projection-options {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.control-label {
+    font-size: 0.9rem;
+    color: #666;
+    font-weight: 500;
+}
+
+.option-buttons {
+    display: flex;
+    gap: 0.25rem;
+    background: #f5f5f5;
+    padding: 0.25rem;
+    border-radius: 8px;
+}
+
+.option-btn {
+    padding: 0.5rem 1rem;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: #666;
+    transition: all 0.2s;
+    font-family: 'Inter', sans-serif;
+}
+
+.option-btn:hover:not(:disabled) {
+    color: #333;
+}
+
+.option-btn.active {
+    background: white;
+    color: #2b9348;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.option-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    color: #999;
+}
+
+.header-section {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+}
+
+.branch-selector {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.branch-label {
+    font-size: 0.9rem;
+    color: #666;
+    font-weight: 500;
+}
+
+.branch-dropdown {
+    padding: 0.6rem 1rem;
+    background: white;
+    border: 1px solid #e5e5e5;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: #333;
+    transition: all 0.2s;
+    font-family: 'Inter', sans-serif;
+    min-width: 120px;
+}
+
+.branch-dropdown:hover {
+    border-color: #2b9348;
+}
+
+.branch-dropdown:focus {
+    outline: none;
+    border-color: #2b9348;
+    box-shadow: 0 0 0 2px rgba(43, 147, 72, 0.1);
+}
+
+.logo-section {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.logo {
+    height: 40px;
+}
+
+.app-title {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #2b9348;
+}
+
+.admin-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.import-section {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    background: #fff3cd;
+    border: 1px solid #ffeaa7;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+}
+
+.import-label {
+    font-size: 0.9rem;
+    color: #856404;
+    font-weight: 500;
+}
+
+#csvFileInput {
+    padding: 0.4rem;
+    border: 1px solid #e5e5e5;
+    border-radius: 6px;
+    font-size: 0.85rem;
+}
+
+.import-btn {
+    padding: 0.5rem 1rem;
+    background: #2b9348;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.import-btn:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+}
+
+.import-btn:hover:not(:disabled) {
+    background: #1e7e34;
+}
+
+.import-status {
+    font-size: 0.85rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+}
+
+.import-status.success {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.import-status.error {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
+/* Fix Day column width to accommodate full day names */
+table th:nth-child(2),
+table td:nth-child(2) {
+    width: 50px;
+    min-width: 50px;
+}

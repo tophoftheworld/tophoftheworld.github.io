@@ -2254,3 +2254,39 @@ body.modal-open {
 .expense-branch:contains("VAT") {
     position: relative;
 }
+
+.merge-search-container {
+    padding: 16px 20px 0;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.merge-search-container .form-group {
+    margin-bottom: 16px;
+}
+
+.merge-search-container input {
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    font-size: 14px;
+}
+
+.merge-search-container input:focus {
+    background: white;
+    border-color: #439407;
+}
+
+.no-results-message {
+    text-align: center;
+    padding: 40px 20px;
+    color: #888;
+    font-style: italic;
+    font-size: 14px;
+}
+
+.merge-supplier-item {
+    transition: all 0.2s ease;
+}
+
+.merge-supplier-item[style*="display: none"] {
+    display: none !important;
+}

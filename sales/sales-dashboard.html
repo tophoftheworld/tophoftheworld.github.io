@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Matchanese Sales Dashboard</title>
+    <link rel="icon" href="data:,">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link rel="stylesheet" href="css/dashboard.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"
+        integrity="sha512-ElRFoEQdI5Ht6kZvyzXhYG9NqjtkmlkfYk0wr6wHxU9JEHakS7UJZNeml5ALk+8IKlU6jDgMabC3vkumRokgJA=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script type="module" src="./js/firebase-setup.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <div class="admin-header">
+            <div class="logo-section">
+                <img src="img/matchanese-logo.png" class="logo" alt="Matchanese Logo">
+                <h1 class="app-title">Sales Dashboard</h1>
+            </div>
+            <div class="branch-selector">
+                <span class="branch-label">Branch:</span>
+                <select class="branch-dropdown" id="branchSelector">
+                    <option value="sm-north">SM North</option>
+                    <option value="podium">Podium</option>
+                </select>
+            </div>
+            <div class="import-section" id="importSection" style="display: none;">
+                <span class="import-label">Import CSV:</span>
+                <input type="file" id="csvFileInput" accept=".csv" />
+                <button class="import-btn" id="importBtn" disabled>Import Data</button>
+                <div class="import-status" id="importStatus"></div>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <!-- Remove the old controls div content -->
+        </div>
+
+        <div class="summary-cards" id="summaryCards"></div>
+
+        <div id="salesChartContainer">
+            <canvas id="salesChart"></canvas>
+        </div>
+
+        <div class="main-controls">
+            <div class="view-selector">
+                <button class="view-btn active" data-view="daily">Daily</button>
+                <button class="view-btn" data-view="weekly">Weekly</button>
+                <button class="view-btn" data-view="monthly">Monthly</button>
+            </div>
+        
+            <div class="date-shortcuts" id="dateShortcuts"></div>
+        
+            <input type="text" id="dateRange" placeholder="Select date range" />
+        </div>
+
+        <div class="chart-controls">
+            <div class="chart-options">
+                <!-- <span class="control-label">Chart Display:</span> -->
+                <div class="option-buttons" id="chartDisplayOptions">
+                    <button class="option-btn active" data-type="total">Total Sales</button>
+                    <button class="option-btn" data-type="walkin">Walk-In Only</button>
+                    <button class="option-btn" data-type="grab">Grab Only</button>
+                </div>
+            </div>
+        
+            <div class="projection-options">
+                <!-- <span class="control-label">Projections:</span> -->
+                <div class="option-buttons">
+                    <button class="option-btn" id="projectionToggle" disabled>Show Projections</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="data-table-container">
+            <table>
+                <thead>
+                    <tr id="tableHeaders">
+                        <!-- Headers will be dynamically generated -->
+                    </tr>
+                </thead>
+                <tbody id="salesTableBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script type="module" src="js/dashboard.js"></script>
+</body>
+
+</html>

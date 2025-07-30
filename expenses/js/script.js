@@ -12,6 +12,11 @@ let collection, doc, getDocs, setDoc, deleteDoc, query, where, orderBy, serverTi
 let syncInProgress = false;
 let pendingOperations = [];
 
+// Debouncing for Firebase sync
+let syncTimeout = null;
+let hasPendingChanges = false;
+const SYNC_DEBOUNCE_DELAY = 3000; // 3 seconds
+
 // Initialize Firebase and load dependencies
 async function initializeFirebase() {
     try {
@@ -90,6 +95,21 @@ document.addEventListener('DOMContentLoaded', async function () {
             },
             true
         );
+    }
+});
+
+// Force sync before page unload
+window.addEventListener('beforeunload', function (e) {
+    if (hasPendingChanges && syncTimeout) {
+        // Clear the timeout and sync immediately
+        clearTimeout(syncTimeout);
+        syncTimeout = null;
+
+        // Force immediate sync (this is synchronous)
+        syncToFirebase();
+        hasPendingChanges = false;
+
+        console.log('Forced sync before page unload');
     }
 });
 
@@ -204,7 +224,9 @@ async function syncToFirebase() {
                 syncToFirebase();
             }
         }, 5000);
-
+        
+        // Clear pending changes flag on successful sync
+        hasPendingChanges = false;
     } finally {
         syncInProgress = false;
     }
@@ -319,9 +341,31 @@ function mergeData(localData, firebaseData) {
         }
     });
 
+    // Deduplicate suppliers by name, keeping most complete version
+    const deduplicatedSuppliers = [];
+    const seenNames = new Map();
+
+    mergedSuppliers.forEach(supplier => {
+        const existing = seenNames.get(supplier.name);
+        if (!existing) {
+            seenNames.set(supplier.name, supplier);
+            deduplicatedSuppliers.push(supplier);
+        } else {
+            // Keep the one with more complete data
+            const existingScore = (existing.tin ? 1 : 0) + (existing.businessName ? 1 : 0) + (existing.address ? 1 : 0);
+            const currentScore = (supplier.tin ? 1 : 0) + (supplier.businessName ? 1 : 0) + (supplier.address ? 1 : 0);
+
+            if (currentScore > existingScore) {
+                const index = deduplicatedSuppliers.findIndex(s => s.id === existing.id);
+                deduplicatedSuppliers[index] = supplier;
+                seenNames.set(supplier.name, supplier);
+            }
+        }
+    });
+
     return {
         expenses: mergedExpenses,
-        suppliers: mergedSuppliers,
+        suppliers: deduplicatedSuppliers,
         hasChanges
     };
 }
@@ -3323,42 +3367,92 @@ function showMergeSupplierModal(targetSupplierId) {
 
     // Build the supplier selection list
     content.innerHTML = `
-        <div class="merge-info">
-            <p>Select suppliers to merge into <strong>${targetSupplier.name}</strong>. All expenses from selected suppliers will be transferred to this supplier.</p>
+    <div class="merge-info">
+        <p>Select suppliers to merge into <strong>${targetSupplier.name}</strong>. All expenses from selected suppliers will be transferred to this supplier.</p>
+    </div>
+    
+    <div class="merge-search-container">
+        <div class="form-group">
+            <input type="text" id="mergeSupplierSearch" placeholder="Search suppliers..." style="margin-bottom: 0;">
         </div>
-        
-        <div class="merge-supplier-list">
-            ${otherSuppliers.map(supplier => {
+    </div>
+    
+    <div class="merge-supplier-list" id="mergeSupplierList">
+        ${otherSuppliers.map(supplier => {
         const supplierExpenseCount = expenses.filter(e =>
             e.supplierName.toLowerCase() === supplier.name.toLowerCase()
         ).length;
 
         return `
-                    <div class="merge-supplier-item">
-                        <label class="merge-checkbox-container">
-                            <input type="checkbox" value="${supplier.id}" class="merge-supplier-checkbox">
-                            <span class="merge-checkmark"></span>
-                            <div class="merge-supplier-info">
-                                <div class="merge-supplier-name">${supplier.name}</div>
-                                ${supplier.businessName ? `<div class="merge-supplier-business">${supplier.businessName}</div>` : ''}
-                                <div class="merge-supplier-count">${supplierExpenseCount} expense${supplierExpenseCount === 1 ? '' : 's'}</div>
-                            </div>
-                        </label>
-                    </div>
-                `;
+                <div class="merge-supplier-item" data-supplier-name="${supplier.name.toLowerCase()}" data-supplier-business="${(supplier.businessName || '').toLowerCase()}">
+                    <label class="merge-checkbox-container">
+                        <input type="checkbox" value="${supplier.id}" class="merge-supplier-checkbox">
+                        <span class="merge-checkmark"></span>
+                        <div class="merge-supplier-info">
+                            <div class="merge-supplier-name">${supplier.name}</div>
+                            ${supplier.businessName ? `<div class="merge-supplier-business">${supplier.businessName}</div>` : ''}
+                            <div class="merge-supplier-count">${supplierExpenseCount} expense${supplierExpenseCount === 1 ? '' : 's'}</div>
+                        </div>
+                    </label>
+                </div>
+            `;
     }).join('')}
-        </div>
-        
-        <div class="merge-actions">
-            <button type="button" class="cancel-btn" onclick="closeMergeSupplierModal()">Cancel</button>
-            <button type="button" class="merge-btn" onclick="executeMerge('${targetSupplierId}')">Merge Selected</button>
-        </div>
-    `;
+    </div>
+    
+    <div class="merge-actions">
+        <button type="button" class="cancel-btn" onclick="closeMergeSupplierModal()">Cancel</button>
+        <button type="button" class="merge-btn" onclick="executeMerge('${targetSupplierId}')">Merge Selected</button>
+    </div>
+`;
 
     modal.classList.add('show');
     document.body.style.overflow = 'hidden';
     document.body.style.position = 'fixed';
     document.body.style.width = '100%';
+
+    // Add search functionality after modal is shown
+    setTimeout(() => {
+        const searchInput = document.getElementById('mergeSupplierSearch');
+        const supplierItems = document.querySelectorAll('.merge-supplier-item');
+
+        if (searchInput) {
+            searchInput.addEventListener('input', function () {
+                const query = this.value.toLowerCase().trim();
+
+                supplierItems.forEach(item => {
+                    const supplierName = item.getAttribute('data-supplier-name');
+                    const supplierBusiness = item.getAttribute('data-supplier-business');
+
+                    const matches = supplierName.includes(query) ||
+                        supplierBusiness.includes(query);
+
+                    if (matches || query === '') {
+                        item.style.display = 'block';
+                    } else {
+                        item.style.display = 'none';
+                    }
+                });
+
+                // Show "no results" message if needed
+                const visibleItems = Array.from(supplierItems).filter(item =>
+                    item.style.display !== 'none'
+                );
+
+                let noResultsMsg = document.getElementById('noMergeResults');
+                if (visibleItems.length === 0 && query !== '') {
+                    if (!noResultsMsg) {
+                        noResultsMsg = document.createElement('div');
+                        noResultsMsg.id = 'noMergeResults';
+                        noResultsMsg.className = 'no-results-message';
+                        noResultsMsg.textContent = 'No suppliers found matching your search.';
+                        document.getElementById('mergeSupplierList').appendChild(noResultsMsg);
+                    }
+                } else if (noResultsMsg) {
+                    noResultsMsg.remove();
+                }
+            });
+        }
+    }, 100);
 }
 
 function closeMergeSupplierModal() {
@@ -3407,6 +3501,11 @@ function performSupplierMerge(targetSupplier, suppliersToMerge) {
         expenses.forEach(expense => {
             if (expense.supplierName.toLowerCase() === supplierToMerge.name.toLowerCase()) {
                 expense.supplierName = targetSupplier.name;
+                // Also update other supplier fields in the expense
+                expense.businessName = targetSupplier.businessName || expense.businessName;
+                expense.tin = targetSupplier.tin || expense.tin;
+                expense.address = targetSupplier.address || expense.address;
+                expense.isVatRegistered = targetSupplier.isVatRegistered;
                 totalTransferred++;
             }
         });
@@ -3415,11 +3514,9 @@ function performSupplierMerge(targetSupplier, suppliersToMerge) {
     // Remove the merged suppliers from the suppliers array
     const supplierIdsToRemove = suppliersToMerge.map(s => s.id);
     suppliers = suppliers.filter(s => !supplierIdsToRemove.includes(s.id));
-    saveToLocalStorage(); 
 
     // Save to localStorage
-    
-    
+    saveToLocalStorage();
 
     // Close modals and refresh
     closeMergeSupplierModal();
@@ -3498,10 +3595,24 @@ function saveToLocalStorage() {
         localStorage.setItem('expenseTracker_suppliers', JSON.stringify(suppliers));
         console.log('Data saved to localStorage');
 
-        // Trigger Firebase sync in background
-        setTimeout(() => {
-            syncToFirebase();
-        }, 100);
+        // Mark that we have pending changes
+        hasPendingChanges = true;
+
+        // Clear existing timeout if there is one
+        if (syncTimeout) {
+            clearTimeout(syncTimeout);
+        }
+
+        // Set new timeout for debounced sync
+        syncTimeout = setTimeout(() => {
+            if (hasPendingChanges) {
+                syncToFirebase();
+                hasPendingChanges = false;
+            }
+            syncTimeout = null;
+        }, SYNC_DEBOUNCE_DELAY);
+
+        console.log('Sync scheduled for 3 seconds from now');
     } catch (error) {
         console.error('Failed to save to localStorage:', error);
     }

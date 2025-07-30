@@ -106,6 +106,14 @@ export const menuData = {
         },
         {
             categoryId: "specials",
+            name: "<span class=\"text-span-2\">matchanese</span> float",
+            description: "Our Signature Matchanese Latte with a Scoope of our Matcha Ice Cream",
+            tags: ["Limited Time"],
+            price: 290,
+            type: "Iced"
+        },
+        {
+            categoryId: "specials",
             name: "earl grey <span class=\"text-span-2\">matchanese</span> latte",
             description: "Our Signature Matchanese Latte with Earl Grey Syrup",
             tags: ["Limited Time"],
@@ -114,8 +122,8 @@ export const menuData = {
         },
         {
             categoryId: "specials",
-            name: "triple <span class=\"text-span-2\">matchanese</span> cloud",
-            description: "Our Signature Matchanese Latte topped with Matcha Cream and Matcha Powder",
+            name: "<span class=\"text-span-2\">matchanese</span> yama latte",
+            description: "Our Signature Matchanese Latte topped with Matcha Whipped Cream and Matcha Syrup",
             price: 270,
             type: "Iced"
         },
@@ -182,9 +190,78 @@ export const menuData = {
         },
         {
             categoryId: "desserts",
-            name: "<span class=\"text-span-2\">obanyaki</span>",
+            name: "<span class=\"text-span-2\">matcha tiramisu</span>",
             description: "",
-            price: 80,
+            price: 240,
+            type: "",
+            customizations: {
+                size: false,      // Can customize size
+                serving: false,   // Can customize serving
+                sweetness: false, // Can customize sweetness
+                milk: false      // Cannot customize milk
+            }
+        },
+        {
+            categoryId: "desserts",
+            name: "<span class=\"text-span-2\">warabi mochi</span>",
+            description: "",
+            price: 270,
+            type: "",
+            variants: [
+                { name: "Matcha", price: 0 },
+                { name: "Kinako", price: 0 },
+            ],
+            customizations: {
+                size: false,      // Can customize size
+                serving: false,   // Can customize serving
+                sweetness: false, // Can customize sweetness
+                milk: false      // Cannot customize milk
+            }
+        },
+        {
+            categoryId: "desserts",
+            name: "<span class=\"text-span-2\">matcha ice cream - scoop</span>",
+            description: "",
+            price: 160,
+            type: "",
+            customizations: {
+                size: false,      // Can customize size
+                serving: false,   // Can customize serving
+                sweetness: false, // Can customize sweetness
+                milk: false      // Cannot customize milk
+            }
+        },
+        {
+            categoryId: "desserts",
+            name: "<span class=\"text-span-2\">matcha ice cream level one</span>",
+            description: "",
+            price: 160,
+            type: "",
+            customizations: {
+                size: false,      // Can customize size
+                serving: false,   // Can customize serving
+                sweetness: false, // Can customize sweetness
+                milk: false      // Cannot customize milk
+            }
+        },
+        {
+            categoryId: "desserts",
+            name: "<span class=\"text-span-2\">matcha ice cream level two</span>",
+            description: "",
+            price: 190,
+            type: "",
+            customizations: {
+                size: false,      // Can customize size
+                serving: false,   // Can customize serving
+                sweetness: false, // Can customize sweetness
+                milk: false      // Cannot customize milk
+            }
+        },
+        {
+            categoryId: "desserts",
+            name: "<span class=\"text-span-2\">matcha ice cream level three</span>",
+            description: "",
+            price: 220,
             type: "",
             customizations: {
                 size: false,      // Can customize size

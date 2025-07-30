@@ -102,7 +102,6 @@ button:hover {
 .refresh-btn:hover {
     background-color: #3a5a8c;
 }
-
 /* Week Navigation */
 .week-navigation {
     display: flex;
@@ -115,10 +114,52 @@ button:hover {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
+.week-nav-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
 .week-title {
     font-size: 1.25rem;
     font-weight: 600;
     color: #2b9348;
+}
+
+.copy-prev-week-btn {
+    background-color: #6c757d;
+    color: white;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.8rem;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    transition: background-color 0.2s;
+}
+
+.copy-prev-week-btn:hover {
+    background-color: #5a6268;
+}
+
+@media (max-width: 768px) {
+    .week-navigation {
+        flex-direction: column;
+        gap: 1rem;
+        text-align: center;
+    }
+
+    .week-nav-left {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .copy-prev-week-btn {
+        font-size: 0.75rem;
+        padding: 0.3rem 0.6rem;
+    }
 }
 
 /* Sync Status */
@@ -596,7 +637,7 @@ button:hover {
 .shift-branch {
     font-size: 0.7rem;
     font-weight: 600;
-    background-color: rgba(255, 255, 255, 0.2);
+    background-color: rgb(193, 219, 201);
     padding: 1px 4px;
     border-radius: 3px;
     margin-bottom: 6px;
@@ -796,6 +837,14 @@ button:hover {
     border-radius: 2px;
     margin-bottom: 1px;
     display: inline-block;
+}
+
+.shift-employee-block.completed .shift-branch {
+    background-color: rgba(109, 204, 136, 0.24) !important;
+    padding: 1px 3px !important;
+    border-radius: 2px !important;
+    margin-bottom: 1px !important;
+    display: inline-block !important;
 }
 
 .shift-employee-block .shift-type {
@@ -1127,12 +1176,6 @@ button:hover {
 
     .control-item {
         width: 100%;
-    }
-
-    .week-navigation {
-        flex-direction: column;
-        gap: 1rem;
-        text-align: center;
     }
 
     .schedule-grid {

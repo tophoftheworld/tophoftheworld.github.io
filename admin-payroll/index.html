@@ -111,57 +111,107 @@
 
     <!-- Shift Edit Modal -->
     <div class="modal" id="shiftEditModal">
-        <div class="modal-content">
+        <div class="modal-content shift-edit-modal">
             <span class="close-modal" id="closeShiftEditModal">&times;</span>
             <h2>Edit Shift Details</h2>
             <form id="shiftEditForm">
-                <div class="form-group">
-                    <label for="editShiftBranch">Branch</label>
-                    <select id="editShiftBranch" required>
-                        <option value="Podium">Podium</option>
-                        <option value="SM North">SM North</option>
-                        <option value="Pop-up">Pop-up</option>
-                        <option value="Workshop">Workshop</option>
-                        <option value="Other Events">Other Events</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="editShiftSchedule">Shift</label>
-                    <select id="editShiftSchedule" required>
-                        <option value="Opening">Opening (9:30 AM - 6:30 PM)</option>
-                        <option value="Opening Half-Day">Opening Half-Day (9:30 AM - 1:30 PM)</option> <!-- Add this -->
-                        <option value="Midshift">Midshift (11:00 AM - 8:00 PM)</option>
-                        <option value="Closing">Closing (1:00 PM - 10:00 PM)</option>
-                        <option value="Closing Half-Day">Closing Half-Day (6:00 PM - 10:00 PM)</option>
-                        <option value="Custom">Custom</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="editShiftTimeIn">Time In</label>
-                    <input type="time" id="editShiftTimeIn">
-                </div>
-                <div class="form-group">
-                    <label for="editShiftTimeOut">Time Out</label>
-                    <input type="time" id="editShiftTimeOut">
-                </div>
-                <div class="form-group">
-                    <label for="editTranspoAllowance">Transportation Allowance (₱)</label>
-                    <div style="position: relative;">
-                        <span
-                            style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #666;">₱</span>
-                        <input type="number" id="editTranspoAllowance" min="0" step="10" placeholder="0"
-                            style="padding-left: 25px;">
+                <!-- Basic Shift Info -->
+                <div class="form-section">
+                    <h3>Shift Information</h3>
+                    <div class="form-row">
+                        <div class="form-group half">
+                            <label for="editShiftBranch">Branch</label>
+                            <select id="editShiftBranch" required>
+                                <option value="Podium">Podium</option>
+                                <option value="SM North">SM North</option>
+                                <option value="Pop-up">Pop-up</option>
+                                <option value="Workshop">Workshop</option>
+                                <option value="Other Events">Other Events</option>
+                            </select>
+                        </div>
+                        <div class="form-group half">
+                            <label for="editShiftSchedule">Shift Type</label>
+                            <select id="editShiftSchedule" class="shift-type-select" required>
+                                <option value="Opening">Opening (9:30 AM - 6:30 PM)</option>
+                                <option value="Opening Half-Day">Opening Half-Day (9:30 AM - 1:30 PM)</option>
+                                <option value="Midshift">Midshift (11:00 AM - 8:00 PM)</option>
+                                <option value="Closing">Closing (1:00 PM - 10:00 PM)</option>
+                                <option value="Closing Half-Day">Closing Half-Day (6:00 PM - 10:00 PM)</option>
+                                <option value="Custom">Custom</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group half">
+                            <label for="editShiftTimeIn">Time In</label>
+                            <input type="time" id="editShiftTimeIn">
+                        </div>
+                        <div class="form-group half">
+                            <label for="editShiftTimeOut">Time Out</label>
+                            <input type="time" id="editShiftTimeOut">
+                        </div>
                     </div>
                 </div>
-                <div class="form-group">
-                    <label for="editOTPay">Overtime Pay</label>
-                    <div class="toggle-container">
-                        <input type="checkbox" id="editOTPay">
-                        <label for="editOTPay">Apply overtime pay for this shift</label>
+    
+                <!-- Pay Calculation -->
+                <div class="form-section">
+                    <h3>Pay Calculation</h3>
+    
+                    <!-- Pay Type Options -->
+                    <div class="pay-type-options">
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="editShiftDoublePay">
+                            <label for="editShiftDoublePay">Apply double pay</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="editShiftFixedPay">
+                            <label for="editShiftFixedPay">Use fixed pay amount</label>
+                        </div>
+                    </div>
+    
+                    <!-- Fixed Pay Amount (shown when fixed pay is checked) -->
+                    <div class="form-group" id="editShiftFixedAmountGroup" style="display: none;">
+                        <label for="editShiftFixedAmount">Fixed Pay Amount</label>
+                        <div class="input-with-prefix compact">
+                            <span class="prefix">₱</span>
+                            <input type="number" id="editShiftFixedAmount" min="0" step="50" placeholder="Enter amount">
+                        </div>
+                        <small class="form-hint">This will override normal pay calculation. Meal allowance and
+                            transportation will still be added.</small>
+                    </div>
+    
+                    <!-- Meal Allowance Option -->
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="editMealAllowance" checked>
+                        <label for="editMealAllowance">Include meal allowance (₱150 full day / ₱75 half day)</label>
                     </div>
                 </div>
+    
+                <!-- Additional Allowances & Overtime -->
+                <div class="form-section">
+                    <h3>Additional Options</h3>
+    
+                    <div class="form-row">
+                        <div class="form-group half">
+                            <label for="editTranspoAllowance">Transportation Allowance</label>
+                            <div class="input-with-prefix compact">
+                                <span class="prefix">₱</span>
+                                <input type="number" id="editTranspoAllowance" min="0" max="9999" step="10" placeholder="0">
+                            </div>
+                        </div>
+                        <div class="form-group half overtime-section">
+                            <label>Overtime Pay</label>
+                            <div class="toggle-container">
+                                <input type="checkbox" id="editOTPay">
+                                <label for="editOTPay">Apply overtime pay</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+    
                 <input type="hidden" id="editShiftEmployeeId">
                 <input type="hidden" id="editShiftDate">
+    
                 <div class="form-actions">
                     <button type="submit" class="submit-btn">Save Changes</button>
                     <button type="button" class="cancel-btn" id="cancelShiftEditBtn">Cancel</button>
@@ -199,6 +249,7 @@
                         <option value="Custom">Custom</option>
                     </select>
                 </div>
+                
                 <input type="hidden" id="batchEditEmployeeId">
                 <div class="form-actions">
                     <button type="submit" class="submit-btn">Apply Changes</button>
@@ -405,13 +456,24 @@
                     Add Employee
                 </button>
                 <button class="export-btn" id="exportBtn">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                         <polyline points="7 10 12 15 17 10"></polyline>
                         <line x1="12" y1="15" x2="12" y2="3"></line>
                     </svg>
-                    Export to CSV
+                    Export Detailed
+                </button>
+                <button class="export-btn" id="exportPayrollBtn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14,2 14,8 20,8"></polyline>
+                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                        <polyline points="10,9 9,9 8,9"></polyline>
+                    </svg>
+                    Export Payroll
                 </button>
                 <button class="refresh-btn" id="refreshBtn">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"

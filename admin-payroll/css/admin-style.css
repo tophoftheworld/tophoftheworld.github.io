@@ -118,8 +118,8 @@ button:hover {
 }
 
 .export-btn {
-    display: none;
     background-color: #4a6fa5;
+    margin-right: 0.5rem;
 }
 
 .export-btn:hover {
@@ -498,6 +498,8 @@ button:hover {
         flex-wrap: wrap;
     }
 }
+
+
 
 .time-cell {
     white-space: nowrap;
@@ -979,7 +981,7 @@ button:hover {
 }
 
 .form-row select {
-    width: 100px;
+    width: 150px;
 }
 
 .form-row .submit-btn {
@@ -1145,4 +1147,167 @@ button:hover {
 #updateScreenshotBtn {
     margin: 1.5rem auto 0 auto;
     display: block;
+}
+
+.fast-loading {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #4CAF50, #81C784);
+    z-index: 1000;
+    animation: loadingProgress 2s ease-in-out;
+}
+
+@keyframes loadingProgress {
+    0% {
+        width: 0%;
+    }
+
+    50% {
+        width: 70%;
+    }
+
+    100% {
+        width: 100%;
+    }
+}
+
+/* Enhanced Modal Styling */
+.shift-edit-modal {
+    max-width: 600px;
+    width: 95%;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+/* Form Sections */
+.form-section {
+    margin-bottom: 1.5rem;
+    padding: 1.2rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+}
+
+.form-section h3 {
+    margin: 0 0 1rem 0;
+    color: #495057;
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+/* Form Rows */
+.form-row {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.form-row:last-child {
+    margin-bottom: 0;
+}
+
+.form-group.half {
+    flex: 1;
+}
+
+/* Pay Type Options */
+.pay-type-options {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+/* Checkbox Items */
+.checkbox-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0;
+}
+
+.checkbox-item input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+}
+
+.checkbox-item label {
+    margin: 0;
+    font-weight: normal;
+    cursor: pointer;
+    flex: 1;
+}
+
+/* Compact Input with Prefix */
+.input-with-prefix.compact {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    width: 180px;
+}
+
+.input-with-prefix.compact .prefix {
+    position: absolute;
+    left: 12px;
+    color: #666;
+    font-weight: 500;
+    z-index: 1;
+}
+
+.input-with-prefix.compact input {
+    padding-left: 30px;
+    width: 100%;
+}
+
+/* Shift Type Select */
+.shift-type-select {
+    min-width: 280px;
+}
+
+/* Overtime Section */
+.overtime-section {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+}
+
+.overtime-section label:first-child {
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    color: #444;
+}
+
+.overtime-section .toggle-container {
+    margin-top: 0.25rem;
+}
+
+/* Form Hints */
+.form-hint {
+    display: block;
+    margin-top: 0.5rem;
+    color: #666;
+    font-size: 0.85rem;
+    line-height: 1.4;
+}
+
+/* Responsive Design */
+@media (max-width: 640px) {
+    .form-row {
+        flex-direction: column;
+    }
+
+    .pay-type-options {
+        gap: 0.5rem;
+    }
+
+    .shift-type-select {
+        min-width: 100%;
+    }
+
+    .input-with-prefix.compact {
+        width: 100%;
+    }
 }

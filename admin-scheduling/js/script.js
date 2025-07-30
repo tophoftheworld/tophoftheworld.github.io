@@ -1,8 +1,8 @@
 // Import Firebase modules
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
-import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, setDoc, query, where, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
-
+import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, setDoc, query, where, deleteDoc, addDoc } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 // Firebase configuration
+
 const firebaseConfig = {
     apiKey: "AIzaSyA6ikBMsQACcUpn4Jff7PQFeWLN8wv18EE",
     authDomain: "matchanese-attendance.firebaseapp.com",
@@ -28,14 +28,13 @@ const SHIFT_TYPES = {
     custom: { name: "Custom", start: null, end: null, display: "Custom Hours" }
 };
 
-// Branch configuration
-const BRANCHES = {
+// Branch configuration - will be loaded from Firebase
+let BRANCHES = {
     podium: "Podium",
-    smnorth: "SM North",
-    popup: "Pop-up",
-    workshop: "Workshop",
-    other: "Other Events"
+    smnorth: "SM North"
 };
+
+let allBranches = []; // Will be loaded from Firebase
 
 // Global state
 let currentWeekStart = new Date();
@@ -43,10 +42,7 @@ let scheduleData = {};
 let currentView = 'shift';
 let selectedEmployee = '';
 let localChanges = false;
-
-let pendingRecurringAction = null;
-let pendingShiftData = null;
-let pendingOriginalShift = null;
+let isDeletingShifts = false;
 
 // DOM elements
 const prevWeekBtn = document.getElementById('prevWeekBtn');
@@ -82,7 +78,6 @@ const originalDate = document.getElementById('originalDate');
 const originalBranch = document.getElementById('originalBranch');
 const cancelShiftBtn = document.getElementById('cancelShiftBtn');
 const deleteShiftBtn = document.getElementById('deleteShiftBtn');
-const recurringWeekly = document.getElementById('recurringWeekly');
 
 // Recurring choice modal elements
 const recurringChoiceModal = document.getElementById('recurringChoiceModal');
@@ -94,15 +89,17 @@ const cancelRecurringBtn = document.getElementById('cancelRecurringBtn');
 
 document.addEventListener('DOMContentLoaded', async function () {
     initSchedulingApp();
-    setupEventListeners();
+    setupEventListeners(); 
     setCurrentWeek();
-    await loadAllEmployees(); // Load employees first
-    loadEmployeeNicknames(); // Add this line
+    await loadBranchesFromFirebase(); // Load branches first
+    await loadAllEmployees(); // Load employees
+    loadEmployeeNicknames();
     loadScheduleData();
 });
 
 function initSchedulingApp() {
     console.log('Scheduling app initialized');
+    loadBranchesFromFirebase(); // Add this line
 }
 
 function setupEventListeners() {
@@ -118,6 +115,25 @@ function setupEventListeners() {
     // Branch filter
     branchFilter.addEventListener('change', renderCurrentView);
 
+    // Past days toggle with immediate feedback
+    document.getElementById('actualAttendanceToggle').addEventListener('change', async (e) => {
+        console.log('🔄 Toggle changed:', e.target.checked);
+
+        // Show immediate loading feedback
+        const gridBody = document.querySelector('.shift-grid-body');
+        if (gridBody) {
+            gridBody.innerHTML = '<div style="text-align: center; padding: 2rem; color: #666;">Loading...</div>';
+        }
+
+        actualAttendanceCache = {}; // Clear cache when switching
+        console.log('🗑️ Cache cleared');
+
+        // Small delay to show loading state
+        setTimeout(() => {
+            renderCurrentView();
+        }, 100);
+    });
+    
     // Sync button
     syncBtn.addEventListener('click', syncToFirebase);
 
@@ -128,18 +144,100 @@ function setupEventListeners() {
         if (e.target === shiftModal) closeModal();
     });
 
+    // Branch modal events
+    const addBranchModal = document.getElementById('addBranchModal');
+    const closeBranchModalBtn = document.getElementById('closeBranchModal');
+    const cancelBranchBtn = document.getElementById('cancelBranchBtn');
+    const branchForm = document.getElementById('branchForm');
+
+    closeBranchModalBtn.addEventListener('click', closeBranchModal);
+    cancelBranchBtn.addEventListener('click', closeBranchModal);
+    addBranchModal.addEventListener('click', (e) => {
+        if (e.target === addBranchModal) closeBranchModal();
+    });
+
+    branchForm.addEventListener('submit', handleBranchSubmit);
+
+    // Branch dropdown change handler
+    shiftBranch.addEventListener('change', handleBranchDropdownChange);
+
+    function closeBranchModal() {
+        addBranchModal.style.display = 'none';
+        branchForm.reset();
+    }
+
+    function handleBranchDropdownChange(e) {
+        const value = e.target.value;
+        if (value === 'add-popup') {
+            e.target.value = ''; // Reset selection
+            openBranchModal('popup');
+        } else if (value === 'add-workshop') {
+            e.target.value = ''; // Reset selection  
+            openBranchModal('workshop');
+        }
+    }
+
+    function openBranchModal(type) {
+        document.getElementById('branchModalTitle').textContent = `Add New ${type.charAt(0).toUpperCase() + type.slice(1)}`;
+        document.getElementById('branchType').value = type;
+        document.getElementById('branchType').disabled = true;
+        addBranchModal.style.display = 'flex';
+        document.getElementById('branchName').focus();
+    }
+
+    async function handleBranchSubmit(e) {
+        e.preventDefault();
+
+        const branchName = document.getElementById('branchName').value.trim();
+        const branchType = document.getElementById('branchType').value;
+
+        if (!branchName || !branchType) return;
+
+        // Create unique key
+        const branchKey = `${branchType}-${branchName.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
+
+        // Check if already exists
+        if (BRANCHES[branchKey]) {
+            alert('Branch already exists');
+            return;
+        }
+
+        try {
+            updateSyncStatus('syncing');
+
+            const branchData = {
+                key: branchKey,
+                name: branchName,
+                type: branchType,
+                createdAt: new Date().toISOString(),
+                createdBy: 'scheduling-app',
+                status: 'active'
+            };
+
+            const newBranch = await saveBranchToFirebase(branchData);
+            allBranches.push(newBranch);
+            BRANCHES[branchKey] = branchName;
+
+            localStorage.setItem('branches-cache', JSON.stringify(allBranches));
+            updateBranchDropdowns();
+
+            // Select the new branch in the dropdown
+            document.getElementById('shiftBranch').value = branchKey;
+
+            closeBranchModal();
+            updateSyncStatus('synced');
+
+        } catch (error) {
+            console.error('Error creating branch:', error);
+            updateSyncStatus('local');
+            alert('Failed to create branch');
+        }
+    }
+
     // Form events
     shiftForm.addEventListener('submit', handleShiftSubmit);
     shiftType.addEventListener('change', handleShiftTypeChange);
     deleteShiftBtn.addEventListener('click', handleShiftDelete);
-
-    // Recurring choice modal events
-    thisDateOnlyBtn.addEventListener('click', () => handleRecurringChoice('thisOnly'));
-    thisAndFutureBtn.addEventListener('click', () => handleRecurringChoice('thisAndFuture'));
-    cancelRecurringBtn.addEventListener('click', closeRecurringChoiceModal);
-    recurringChoiceModal.addEventListener('click', (e) => {
-        if (e.target === recurringChoiceModal) closeRecurringChoiceModal();
-    });
 
     // Multi-select events  
     document.getElementById('deleteSelectedBtn').addEventListener('click', deleteSelectedShifts);
@@ -153,6 +251,122 @@ function setupEventListeners() {
 
     // Delete all data button
     document.getElementById('deleteFutureBtn').addEventListener('click', deleteAllData);
+
+    // Copy previous week button
+    document.getElementById('copyPrevWeekBtn').addEventListener('click', copyPreviousWeekSchedule);
+}
+
+let currentPastDaysMode = 'scheduled';
+
+function togglePastDaysView(mode) {
+    currentPastDaysMode = mode;
+    renderCurrentView();
+}
+
+let actualAttendanceCache = {};
+
+async function preloadActualAttendanceForWeek() {
+    console.log('🔄 preloadActualAttendanceForWeek called, mode:', currentPastDaysMode);
+
+    if (currentPastDaysMode !== 'actual') {
+        console.log('❌ Not in actual mode, skipping preload');
+        return;
+    }
+
+    try {
+        const weekDates = getWeekDates();
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        console.log('📅 Week dates:', weekDates.map(formatDate));
+        console.log('📅 Today:', formatDate(today));
+
+        // Only load for past dates
+        const pastDates = weekDates.filter(date => date < today).map(formatDate);
+        console.log('📅 Past dates to load:', pastDates);
+
+        if (pastDates.length === 0) {
+            console.log('❌ No past dates to load');
+            return;
+        }
+
+        // Get all employee IDs
+        const employeeIds = Object.keys(employees);
+        console.log('👥 Employee IDs:', employeeIds);
+
+        // Clear existing cache
+        actualAttendanceCache = {};
+        console.log('🗑️ Cleared attendance cache');
+
+        // Load all attendance data for the week in parallel
+        const attendancePromises = employeeIds.map(async (employeeId) => {
+            console.log(`🔍 Loading attendance for employee: ${employeeId} (${employees[employeeId]})`);
+
+            try {
+                const attendanceRef = collection(db, "attendance", employeeId, "dates");
+                const snapshot = await getDocs(query(
+                    attendanceRef,
+                    where("__name__", ">=", pastDates[0]),
+                    where("__name__", "<=", pastDates[pastDates.length - 1])
+                ));
+
+                console.log(`📄 ${employeeId}: Found ${snapshot.size} attendance records`);
+
+                let employeeAttendanceCount = 0;
+
+                snapshot.forEach(doc => {
+                    const dateStr = doc.id;
+                    const docData = doc.data();
+
+                    console.log(`📝 ${employeeId} on ${dateStr}:`, {
+                        hasClockIn: !!docData.clockIn,
+                        hasClockOut: !!docData.clockOut,
+                        timeIn: docData.clockIn?.time,
+                        timeOut: docData.clockOut?.time,
+                        branch: docData.clockIn?.branch
+                    });
+
+                    if (docData.clockIn?.time) {  // Only require clock-in, not clock-out
+                        if (!actualAttendanceCache[dateStr]) {
+                            actualAttendanceCache[dateStr] = {};
+                        }
+
+                        actualAttendanceCache[dateStr][employeeId] = {
+                            timeIn: docData.clockIn?.time || null,
+                            timeOut: docData.clockOut?.time || null,
+                            branch: docData.clockIn?.branch || 'Unknown',
+                            shift: docData.clockIn?.shift || 'Custom'
+                        };
+
+                        employeeAttendanceCount++;
+                        console.log(`✅ Cached attendance for ${employeeId} on ${dateStr}`);
+                    }
+                });
+
+                console.log(`📊 ${employeeId}: Cached ${employeeAttendanceCount} attendance records`);
+
+            } catch (error) {
+                console.error(`❌ Error loading attendance for ${employeeId}:`, error);
+            }
+        });
+
+        await Promise.all(attendancePromises);
+
+        console.log('🎉 Preload complete. Final cache:', actualAttendanceCache);
+        console.log('📊 Cache summary:', {
+            totalDates: Object.keys(actualAttendanceCache).length,
+            totalAttendanceRecords: Object.values(actualAttendanceCache).reduce((sum, dateData) => sum + Object.keys(dateData).length, 0)
+        });
+
+    } catch (error) {
+        console.error('❌ Error preloading actual attendance:', error);
+    }
+}
+
+function getActualAttendanceForDate(dateStr) {
+    const result = actualAttendanceCache[dateStr] || {};
+    console.log(`🔍 getActualAttendanceForDate(${dateStr}):`, result);
+    return result;
 }
 
 // Multi-select state
@@ -248,16 +462,22 @@ function updateSelectionCounter() {
     document.getElementById('copySelectedBtn').disabled = count === 0;
 }
 
-function deleteSelectedShifts() {
+async function deleteSelectedShifts() {
     if (selectedShifts.size === 0) return;
 
     const count = selectedShifts.size;
     if (!confirm(`Delete ${count} shift${count > 1 ? 's' : ''}?`)) return;
 
-    selectedShifts.forEach(shiftId => deleteShift(shiftId));
+    const deletePromises = [];
+    selectedShifts.forEach(shiftId => {
+        deletePromises.push(deleteShift(shiftId));
+    });
+
+    await Promise.all(deletePromises);
+
     exitMultiSelectMode();
     saveToLocalStorage();
-    syncToFirebase(); // Immediately sync to Firebase
+    // Don't call syncToFirebase() here since deleteShift already handles Firebase
     renderCurrentView();
 }
 
@@ -287,7 +507,6 @@ async function copySelectedShiftsToNextDay() {
             employeeId: shift.employeeId,
             customStart: shift.customStart,
             customEnd: shift.customEnd,
-            recurring: false // Copies are individual shifts
         };
 
         // Initialize data structures if needed
@@ -327,32 +546,87 @@ function setCurrentWeek() {
 }
 
 function changeWeek(direction) {
+    // Show immediate loading feedback
+    const gridBody = document.querySelector('.shift-grid-body');
+    if (gridBody) {
+        gridBody.innerHTML = '<div style="text-align: center; padding: 2rem; color: #666;">Loading week...</div>';
+    }
+
     const newWeek = new Date(currentWeekStart);
     newWeek.setDate(currentWeekStart.getDate() + (direction * 7));
     currentWeekStart = newWeek;
     updateWeekTitle();
+
+    // Clear cache for immediate response
+    actualAttendanceCache = {};
+
     loadScheduleData();
-    // debugRecurringShifts(); // Add this line
 }
 
-function generateRecurringShiftsForMultipleWeeks() {
-    const currentWeek = new Date(currentWeekStart);
+function copyPreviousWeekSchedule() {
+    const currentWeekKey = getWeekKey();
+    const previousWeek = new Date(currentWeekStart);
+    previousWeek.setDate(currentWeekStart.getDate() - 7);
+    const previousWeekKey = formatDate(previousWeek);
 
-    // Generate for current week + next 4 weeks (5 weeks total)
-    for (let i = 0; i < 5; i++) {
-        const targetWeek = new Date(currentWeek);
-        targetWeek.setDate(currentWeek.getDate() + (i * 7));
+    // Check if current week already has schedules
+    const hasCurrentSchedules = scheduleData[currentWeekKey] &&
+        Object.keys(scheduleData[currentWeekKey]).length > 0;
 
-        const weekKey = formatDate(targetWeek);
-        const weekDates = getWeekDatesForDate(targetWeek);
-
-        generateRecurringShiftsForWeek(weekKey, weekDates);
+    if (hasCurrentSchedules) {
+        if (!confirm('Current week already has shifts. Copy previous week anyway? This will add to existing shifts.')) {
+            return;
+        }
     }
 
+    // Check if previous week has data
+    if (!scheduleData[previousWeekKey] || Object.keys(scheduleData[previousWeekKey]).length === 0) {
+        alert('No schedule found for previous week to copy.');
+        return;
+    }
+
+    if (!confirm('Copy all shifts from previous week to current week?')) {
+        return;
+    }
+
+    // Initialize current week data
+    if (!scheduleData[currentWeekKey]) scheduleData[currentWeekKey] = {};
+
+    // Copy shifts from previous week
+    const currentWeekDates = getWeekDates();
+    Object.keys(scheduleData[previousWeekKey]).forEach(prevDateStr => {
+        const prevDate = new Date(prevDateStr + 'T00:00:00');
+        const dayOfWeek = prevDate.getDay();
+        const dayIndex = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Convert to Monday=0 index
+
+        const currentDate = currentWeekDates[dayIndex];
+        const currentDateStr = formatDate(currentDate);
+
+        if (!scheduleData[currentWeekKey][currentDateStr]) {
+            scheduleData[currentWeekKey][currentDateStr] = [];
+        }
+
+        // Copy each shift
+        scheduleData[previousWeekKey][prevDateStr].forEach(shift => {
+            const newShift = {
+                id: generateShiftId(),
+                date: currentDateStr,
+                branch: shift.branch,
+                type: shift.type,
+                employeeId: shift.employeeId,
+                customStart: shift.customStart,
+                customEnd: shift.customEnd
+            };
+
+            scheduleData[currentWeekKey][currentDateStr].push(newShift);
+        });
+    });
+
     saveToLocalStorage();
+    syncToFirebase();
+    renderCurrentView();
+    alert('Previous week schedule copied successfully!');
 }
-
-
 
 function getWeekDatesForDate(weekStart) {
     const dates = [];
@@ -363,125 +637,6 @@ function getWeekDatesForDate(weekStart) {
         dates.push(date);
     }
     return dates;
-}
-
-function generateRecurringShiftsForWeek(weekKey, weekDates) {
-    console.log('Generating recurring shifts for week:', weekKey);
-
-    // Look for recurring shifts from all previous weeks
-    Object.keys(scheduleData).forEach(sourceWeekKey => {
-        if (sourceWeekKey >= weekKey) return; // Skip current and future weeks
-
-        Object.keys(scheduleData[sourceWeekKey]).forEach(dateStr => {
-            scheduleData[sourceWeekKey][dateStr].forEach(shift => {
-                if (shift.recurring && !shift.isRecurringInstance) {
-                    // This is an original recurring shift
-                    generateFutureRecurringShift(shift, weekDates, weekKey);
-                }
-            });
-        });
-    });
-}
-
-function generateRecurringShiftsForCurrentWeek() {
-    const currentWeekKey = getWeekKey();
-    const currentWeekDates = getWeekDates();
-
-    console.log('Generating recurring shifts for week:', currentWeekKey);
-
-    // Look for recurring shifts from all previous weeks
-    Object.keys(scheduleData).forEach(weekKey => {
-        if (weekKey >= currentWeekKey) return; // Skip current and future weeks
-
-        Object.keys(scheduleData[weekKey]).forEach(dateStr => {
-            scheduleData[weekKey][dateStr].forEach(shift => {
-                if (shift.recurring && !shift.isRecurringInstance) {
-                    // This is an original recurring shift
-                    generateFutureRecurringShift(shift, currentWeekDates, currentWeekKey);
-                }
-            });
-        });
-    });
-
-    saveToLocalStorage();
-}
-
-function generateFutureRecurringShift(originalShift, targetWeekDates, targetWeekKey) {
-    const originalDate = new Date(originalShift.date + 'T00:00:00');
-    const dayOfWeek = originalDate.getDay();
-    const targetDayIndex = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-    const targetDate = targetWeekDates[targetDayIndex];
-    const targetDateStr = formatDate(targetDate);
-
-    // Only generate if target date is after original date
-    if (targetDate <= originalDate) return;
-
-    // Initialize data structures
-    if (!scheduleData[targetWeekKey]) scheduleData[targetWeekKey] = {};
-    if (!scheduleData[targetWeekKey][targetDateStr]) scheduleData[targetWeekKey][targetDateStr] = [];
-
-    // STRICT duplicate check - check for ANY shift with same employee, branch, type on same date
-    const exists = scheduleData[targetWeekKey][targetDateStr].some(s =>
-        s.employeeId === originalShift.employeeId &&
-        s.branch === originalShift.branch &&
-        s.type === originalShift.type &&
-        ((s.customStart || null) === (originalShift.customStart || null)) &&
-        ((s.customEnd || null) === (originalShift.customEnd || null))
-    );
-
-    if (!exists) {
-        const newShift = {
-            id: generateShiftId(),
-            date: targetDateStr,
-            branch: originalShift.branch,
-            type: originalShift.type,
-            employeeId: originalShift.employeeId,
-            customStart: originalShift.customStart,
-            customEnd: originalShift.customEnd,
-            recurring: false,
-            isRecurringInstance: true,
-            originalShiftId: originalShift.id,
-            recurringSeriesId: originalShift.id
-        };
-
-        scheduleData[targetWeekKey][targetDateStr].push(newShift);
-        console.log('Generated recurring shift:', newShift);
-    } else {
-        console.log('Skipping duplicate recurring shift for', targetDateStr, originalShift.employeeId);
-    }
-}
-
-function debugRecurringShifts() {
-    console.log('=== DEBUGGING RECURRING SHIFTS ===');
-
-    // Check the ORIGINAL week (2025-06-02 from your logs)
-    console.log('ORIGINAL WEEK DATA (2025-06-02):');
-    if (scheduleData['2025-06-02']) {
-        Object.keys(scheduleData['2025-06-02']).forEach(dateStr => {
-            console.log(`Original shifts on ${dateStr}:`, scheduleData['2025-06-02'][dateStr]);
-            scheduleData['2025-06-02'][dateStr].forEach(shift => {
-                console.log('  ORIGINAL Shift details:', {
-                    id: shift.id,
-                    employee: shift.employeeId,
-                    recurring: shift.recurring,
-                    recurringSeriesId: shift.recurringSeriesId,
-                    isRecurringInstance: shift.isRecurringInstance
-                });
-            });
-        });
-    }
-
-    // Check current week
-    const currentWeekKey = getWeekKey();
-    console.log('CURRENT WEEK DATA:', currentWeekKey);
-
-    if (scheduleData[currentWeekKey]) {
-        Object.keys(scheduleData[currentWeekKey]).forEach(dateStr => {
-            console.log(`Current shifts on ${dateStr}:`, scheduleData[currentWeekKey][dateStr]);
-        });
-    }
-
-    console.log('=== END DEBUG ===');
 }
 
 function updateWeekTitle() {
@@ -538,6 +693,75 @@ function populateEmployeeDropdowns() {
     shiftEmployee.innerHTML = '<option value="">Select employee</option>' + employeeOptions;
 }
 
+function updateBranchDropdowns() {
+    // Update shift modal branch dropdown
+    const shiftBranch = document.getElementById('shiftBranch');
+    if (shiftBranch) {
+        const currentValue = shiftBranch.value;
+        shiftBranch.innerHTML = '<option value="">Select location</option>';
+
+        // Add default branches
+        const defaultOptions = [
+            { value: 'podium', text: 'Podium' },
+            { value: 'smnorth', text: 'SM North' }
+        ];
+
+        defaultOptions.forEach(option => {
+            const optionElement = document.createElement('option');
+            optionElement.value = option.value;
+            optionElement.textContent = option.text;
+            shiftBranch.appendChild(optionElement);
+        });
+
+        // Add Firebase branches grouped by type
+        const popupBranches = allBranches.filter(b => b.type === 'popup').sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+        const workshopBranches = allBranches.filter(b => b.type === 'workshop').sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+        popupBranches.forEach(branch => {
+            const option = document.createElement('option');
+            option.value = branch.key;
+            option.textContent = `[Popup] ${branch.name}`;
+            shiftBranch.appendChild(option);
+        });
+
+        workshopBranches.forEach(branch => {
+            const option = document.createElement('option');
+            option.value = branch.key;
+            option.textContent = `[Workshop] ${branch.name}`;
+            shiftBranch.appendChild(option);
+        });
+
+        // Add "Add New" options
+        const addPopupOption = document.createElement('option');
+        addPopupOption.value = 'add-popup';
+        addPopupOption.textContent = '+ Add Pop-up';
+        shiftBranch.appendChild(addPopupOption);
+
+        const addWorkshopOption = document.createElement('option');
+        addWorkshopOption.value = 'add-workshop';
+        addWorkshopOption.textContent = '+ Add Workshop';
+        shiftBranch.appendChild(addWorkshopOption);
+
+        shiftBranch.value = currentValue;
+    }
+
+    // Update branch filter dropdown
+    const branchFilter = document.getElementById('branchFilter');
+    if (branchFilter) {
+        const currentValue = branchFilter.value;
+        branchFilter.innerHTML = '<option value="all">All Locations</option>';
+
+        Object.entries(BRANCHES).forEach(([key, name]) => {
+            const option = document.createElement('option');
+            option.value = key;
+            option.textContent = name;
+            branchFilter.appendChild(option);
+        });
+
+        branchFilter.value = currentValue;
+    }
+}
+
 async function loadAllEmployees() {
     try {
         const employeesRef = collection(db, "employees");
@@ -557,6 +781,53 @@ async function loadAllEmployees() {
     } catch (error) {
         console.error("Error loading employees:", error);
         return {};
+    }
+}
+
+async function loadBranchesFromFirebase() {
+    try {
+        // console.log('Loading branches from Firebase...');
+        const snapshot = await getDocs(collection(db, "branches"));
+        const firebaseBranches = [];
+        snapshot.forEach(doc => {
+            // console.log('Found branch:', doc.id, doc.data());
+            firebaseBranches.push({ id: doc.id, ...doc.data() });
+        });
+
+        allBranches = firebaseBranches;
+
+        // Update BRANCHES object with loaded branches
+        allBranches.forEach(branch => {
+            BRANCHES[branch.key] = branch.name;
+        });
+
+        localStorage.setItem('branches-cache', JSON.stringify(allBranches));
+        console.log('Loaded branches:', allBranches);
+        updateBranchDropdowns();
+
+        return allBranches;
+    } catch (error) {
+        console.error('Error loading branches:', error);
+        // Fallback to local cache
+        const cached = localStorage.getItem('branches-cache');
+        if (cached) {
+            allBranches = JSON.parse(cached);
+            allBranches.forEach(branch => {
+                BRANCHES[branch.key] = branch.name;
+            });
+            updateBranchDropdowns();
+        }
+        return allBranches;
+    }
+}
+
+async function saveBranchToFirebase(branchData) {
+    try {
+        const docRef = await addDoc(collection(db, "branches"), branchData);
+        return { id: docRef.id, ...branchData };
+    } catch (error) {
+        console.error('Error saving branch:', error);
+        throw error;
     }
 }
 
@@ -604,20 +875,58 @@ function renderCalendarView() {
     });
 }
 
-function renderShiftView() {
-    console.log('Rendering shift view...');
-    const weekDates = getWeekDates();
+async function renderShiftView() {
+    console.log('🎨 renderShiftView started');
+    
+    // Read mode directly from toggle
+    const actualToggle = document.getElementById('actualAttendanceToggle');
+    currentPastDaysMode = actualToggle && actualToggle.checked ? 'actual' : 'scheduled';
+    console.log('🎯 Current mode check:', currentPastDaysMode);
 
-    // Default to SM North and Podium only for shift view
+
+    const weekDates = getWeekDates();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Preload actual attendance data if needed
+    if (currentPastDaysMode === 'actual') {
+        console.log('⏳ Preloading actual attendance...');
+        await preloadActualAttendanceForWeek();
+        console.log('✅ Preload finished');
+    }
+
+    // Add this debug section right after preload:
+    console.log('🔍 Debug: Checking what data we have');
+    weekDates.forEach(date => {
+        const dateStr = formatDate(date);
+        const isPastDate = date < today;
+        console.log(`📅 ${dateStr} (past: ${isPastDate}):`);
+
+        if (isPastDate && currentPastDaysMode === 'actual') {
+            const actualData = getActualAttendanceForDate(dateStr);
+            console.log(`  📊 Actual attendance:`, actualData);
+        } else {
+            const scheduledData = getAllShiftsForDay(dateStr);
+            console.log(`  📅 Scheduled shifts:`, scheduledData.length, 'shifts');
+        }
+    });
+
     // Apply branch filter to determine which branches to show
-    const allBranches = ['smnorth', 'podium', 'popup', 'workshop', 'other'];
+    const allBranchKeys = Object.keys(BRANCHES);
     const filter = branchFilter.value;
-    const shiftViewBranches = filter === 'all' ? allBranches : [filter];
-    const shiftTypes = ['opening', 'midshift', 'closing', 'closingHalf', 'custom'];
+    const shiftViewBranches = filter === 'all' ? allBranchKeys : [filter];
+
+    // Simplified shift categories
+    const shiftCategories = ['opening', 'midshift', 'closing'];
+    const shiftCategoryNames = {
+        'opening': 'Opening',
+        'midshift': 'Midshift',
+        'closing': 'Closing'
+    };
 
     let gridHTML = `
         <div class="shift-grid-header">
-            <div class="shift-branch-column">Branch / Shift</div>
+            <div class="shift-branch-column">Location / Shift</div>
             ${weekDates.map(date => {
         const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
         const dayNum = date.getDate();
@@ -632,91 +941,165 @@ function renderShiftView() {
     `;
 
     // Generate rows for each branch + shift combination
-    shiftViewBranches.forEach(branchKey => {
+    for (const branchKey of shiftViewBranches) {
         const branchName = BRANCHES[branchKey];
-
-        // Always show Podium and SM North, even if empty
         const isDefaultBranch = branchKey === 'podium' || branchKey === 'smnorth';
 
-        // Quick check if this branch has ANY shifts at all this week
-        const hasAnyShifts = weekDates.some(date => {
+        // Check if this branch has ANY shifts at all this week
+        let hasAnyShifts = false;
+        for (const date of weekDates) {
             const dateStr = formatDate(date);
-            const allShiftsForDay = getAllShiftsForDay(dateStr);
-            return allShiftsForDay.some(shift => shift.branch === branchKey);
-        });
+            const isPastDate = date < today;
 
-        if (!hasAnyShifts && !isDefaultBranch) {
-            return; // Skip this entire branch if no shifts (unless it's podium/smnorth)
+            let shiftsForDay = [];
+
+            if ((isPastDate || isToday(date)) && currentPastDaysMode === 'actual') {
+                // Use cached actual attendance
+                const actualAttendance = getActualAttendanceForDate(dateStr);
+                shiftsForDay = Object.entries(actualAttendance)
+                    .filter(([_, attendance]) => attendance.branch === branchName)
+                    .map(([employeeId, attendance]) => ({
+                        id: `actual_${employeeId}_${dateStr}`,
+                        employeeId: employeeId,
+                        branch: branchKey,
+                        type: categorizeShiftByTime(attendance.shift, attendance.timeIn),
+                        customStart: attendance.timeIn?.split(':').slice(0, 2).join(':') || null,
+                        customEnd: attendance.timeOut?.split(':').slice(0, 2).join(':') || null,
+                        isActual: true
+                    }));
+            } else {
+                // Use scheduled shifts
+                const allShiftsForDay = getAllShiftsForDay(dateStr);
+                shiftsForDay = allShiftsForDay.filter(shift => shift.branch === branchKey);
+            }
+
+            if (shiftsForDay.length > 0) {
+                hasAnyShifts = true;
+                break;
+            }
         }
 
-        // Check which shift types have content for this branch for the entire week
-        const shiftsWithContent = [];
-        shiftTypes.forEach(shiftType => {
-            const hasContentThisWeek = weekDates.some(date => {
-                const dateStr = formatDate(date);
-                const shiftsForDay = getShiftsForBranchAndType(dateStr, branchKey, shiftType);
-                return shiftsForDay.length > 0;
-            });
-
-            if (hasContentThisWeek) {
-                shiftsWithContent.push(shiftType);
-            }
-        });
+        if (!hasAnyShifts && !isDefaultBranch) {
+            continue; // Skip this entire branch if no shifts
+        }
 
         // Add branch header
         gridHTML += `<div class="shift-branch-section">
-    <div class="shift-branch-title">${branchName}</div>
-</div>`;
+            <div class="shift-branch-title">${branchName}</div>
+        </div>`;
 
-        // Only show shift types that have content, but always add "New Shift" for default branches
-        const shiftsToShow = shiftsWithContent.length > 0 ? shiftsWithContent : [];
+        // Check which shift categories have content for this branch
+        const categoriesWithContent = [];
+        for (const category of shiftCategories) {
+            let hasContentThisWeek = false;
 
-        // For default branches (podium/smnorth), always show even if empty and add "New Shift" row
-        if (isDefaultBranch) {
-            shiftsToShow.push('newshift'); // Add special marker for new shift row
-        } else if (shiftsToShow.length === 0) {
-            return; // Skip non-default branches if they have no content
+            for (const date of weekDates) {
+                const dateStr = formatDate(date);
+                const isPastDate = date < today;
+
+                let shiftsForCategory = [];
+
+                if ((isPastDate || isToday(date)) && currentPastDaysMode === 'actual') {
+                    const actualAttendance = getActualAttendanceForDate(dateStr);
+                    shiftsForCategory = Object.entries(actualAttendance)
+                        .filter(([_, attendance]) =>
+                            attendance.branch === branchName &&
+                            categorizeShiftByTime(attendance.shift, attendance.timeIn) === category
+                        );
+                } else {
+                    const allShiftsForDay = getAllShiftsForDay(dateStr);
+                    shiftsForCategory = allShiftsForDay.filter(shift =>
+                        shift.branch === branchKey &&
+                        categorizeShiftByTime(shift.type, getShiftStartTime(shift)) === category
+                    );
+                }
+
+                if (shiftsForCategory.length > 0) {
+                    hasContentThisWeek = true;
+                    break;
+                }
+            }
+
+            if (hasContentThisWeek) {
+                categoriesWithContent.push(category);
+            }
         }
 
-        shiftsToShow.forEach(shiftType => {
-            if (shiftType === 'newshift') {
+        // Show categories that have content, plus "New Shift" for default branches
+        const categoriesToShow = categoriesWithContent.length > 0 ? categoriesWithContent : [];
+        if (isDefaultBranch) {
+            categoriesToShow.push('newshift');
+        } else if (categoriesToShow.length === 0) {
+            continue;
+        }
+
+        for (const category of categoriesToShow) {
+            if (category === 'newshift') {
                 // Special case for "New Shift" row
                 gridHTML += `<div class="shift-grid-row">
-            <div class="shift-type-header"></div>`;
+                    <div class="shift-type-header"></div>`;
 
-                // Add cells for each day with branch pre-filled
                 weekDates.forEach(date => {
                     const dateStr = formatDate(date);
                     gridHTML += `<div class="shift-cell" data-date="${dateStr}" data-branch="${branchKey}" data-shift-type="">
-                <button class="add-shift-btn-small">+</button>
-            </div>`;
+                        <button class="add-shift-btn-small">+</button>
+                    </div>`;
                 });
 
                 gridHTML += '</div>';
-                return;
+                continue;
             }
 
-            const shiftName = SHIFT_TYPES[shiftType].name;
+            const categoryName = shiftCategoryNames[category];
 
             gridHTML += `<div class="shift-grid-row">
-        <div class="shift-type-header">${shiftName}</div>`;
+                <div class="shift-type-header">${categoryName}</div>`;
 
             // Add cells for each day
-            weekDates.forEach(date => {
+            for (const date of weekDates) {
                 const dateStr = formatDate(date);
-                const shiftsForDay = getShiftsForBranchAndType(dateStr, branchKey, shiftType);
+                const isPastDate = date < today;
 
-                gridHTML += `<div class="shift-cell" data-date="${dateStr}" data-branch="${branchKey}" data-shift-type="${shiftType}">`;
+                let shiftsForCell = [];
 
-                if (shiftsForDay.length > 0) {
-                    shiftsForDay.forEach(shift => {
-                        const conflict = hasConflict(shift, dateStr);
+                if ((isPastDate || isToday(date)) && currentPastDaysMode === 'actual') {
+                    // Show actual attendance
+                    const actualAttendance = getActualAttendanceForDate(dateStr);
+                    shiftsForCell = Object.entries(actualAttendance)
+                        .filter(([_, attendance]) =>
+                            attendance.branch === branchName &&
+                            categorizeShiftByTime(attendance.shift, attendance.timeIn) === category
+                        )
+                        .map(([employeeId, attendance]) => ({
+                            id: `actual_${employeeId}_${dateStr}`,
+                            employeeId: employeeId,
+                            branch: branchKey,
+                            type: 'custom', // Always use custom for actual attendance
+                            customStart: attendance.timeIn ? removeSecondsFromTime(attendance.timeIn) : null,
+                            customEnd: attendance.timeOut ? removeSecondsFromTime(attendance.timeOut) : null,
+                            isActual: true
+                        }));
+                } else {
+                    // Show scheduled shifts
+                    const allShiftsForDay = getAllShiftsForDay(dateStr);
+                    shiftsForCell = allShiftsForDay.filter(shift =>
+                        shift.branch === branchKey &&
+                        categorizeShiftByTime(shift.type, getShiftStartTime(shift)) === category
+                    );
+                }
+
+                gridHTML += `<div class="shift-cell" data-date="${dateStr}" data-branch="${branchKey}" data-shift-type="${category}">`;
+
+                if (shiftsForCell.length > 0) {
+                    shiftsForCell.forEach(shift => {
+                        const conflict = !shift.isActual && hasConflict(shift, dateStr);
+
                         gridHTML += `
-                            <div class="shift-employee-block ${shift.type} ${conflict ? 'shift-conflict' : ''} ${isPastDate(dateStr) ? 'completed' : ''} ${shift.employeeId === 'unassigned' ? 'unassigned' : ''} ${selectedShifts.has(shift.id) ? 'selected' : ''}"
+                            <div class="shift-employee-block ${shift.type} ${conflict ? 'shift-conflict' : ''} ${isPastDate ? 'completed' : ''} ${shift.employeeId === 'unassigned' ? 'unassigned' : ''} ${selectedShifts.has(shift.id) ? 'selected' : ''}"
                                  data-shift-id="${shift.id}">
                                 <div class="shift-employee">${shift.employeeId === 'unassigned' ? 'UNASSIGNED' : (employeeNicknames[shift.employeeId] || employees[shift.employeeId])}</div>
                                 <div class="shift-branch">${BRANCHES[shift.branch]}</div>
-                                <div class="shift-type">${SHIFT_TYPES[shift.type].name}</div>
+                                <div class="shift-type">${shift.isActual ? '' : (SHIFT_TYPES[shift.type]?.name || 'Custom')}</div>
                                 <div class="shift-time">${getShiftTimeDisplay(shift)}</div>
                             </div>
                         `;
@@ -726,29 +1109,28 @@ function renderShiftView() {
                 }
 
                 gridHTML += '</div>';
-            });
+            }
 
             gridHTML += '</div>';
-        });
-    });
+        }
+    }
 
     // Add general "Add New Shift" row for other branches
     gridHTML += `<div class="shift-branch-section">
-    <div class="shift-branch-title">Add New Shift</div>
-</div>`;
+        <div class="shift-branch-title">Add New Shift</div>
+    </div>`;
 
     gridHTML += `<div class="shift-grid-row">
-    <div class="shift-type-header"></div>`;
+        <div class="shift-type-header"></div>`;
 
-    // Add cells for each day without branch pre-filled
     weekDates.forEach(date => {
         const dateStr = formatDate(date);
         gridHTML += `<div class="shift-cell" data-date="${dateStr}" data-branch="" data-shift-type="">
-        <button class="add-shift-btn-small">+</button>
-    </div>`;
+            <button class="add-shift-btn-small">+</button>
+        </div>`;
     });
 
-    gridHTML += '</div>';
+    gridHTML += '</div></div>';
 
     shiftScheduleGrid.innerHTML = gridHTML;
 
@@ -760,6 +1142,41 @@ function renderShiftView() {
     document.querySelectorAll('.shift-employee-block').forEach(block => {
         block.addEventListener('mousedown', handleShiftClick);
     });
+}
+
+function isToday(date) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const checkDate = new Date(date);
+    checkDate.setHours(0, 0, 0, 0);
+    return checkDate.getTime() === today.getTime();
+}
+
+function removeSecondsFromTime(timeStr) {
+    if (!timeStr) return null;
+
+    const parts = timeStr.split(' ');
+
+    if (parts.length === 2) {
+        // Format: "1:52:02 PM" -> "1:52 PM"
+        const [time, meridian] = parts;
+        const timeParts = time.split(':');
+        if (timeParts.length >= 2) {
+            return `${timeParts[0]}:${timeParts[1]} ${meridian}`;
+        }
+    } else if (parts.length === 1 && timeStr.includes(':')) {
+        // Format: "18:40:50" -> "6:40 PM" (convert 24-hour to 12-hour)
+        const timeParts = timeStr.split(':');
+        if (timeParts.length >= 2) {
+            const hours = parseInt(timeParts[0]);
+            const minutes = timeParts[1];
+            const meridian = hours >= 12 ? 'PM' : 'AM';
+            const displayHours = hours % 12 || 12;
+            return `${displayHours}:${minutes} ${meridian}`;
+        }
+    }
+
+    return timeStr;
 }
 
 function getShiftsForBranchAndType(dateStr, branchKey, shiftType) {
@@ -1238,58 +1655,6 @@ function getEmployeeShiftsForDay(employeeId, dateStr) {
     return scheduleData[weekKey][dateStr].filter(shift => shift.employeeId === employeeId);
 }
 
-function getVirtualRecurringShifts(dateStr) {
-    const targetDate = new Date(dateStr + 'T00:00:00');
-    const targetDayOfWeek = targetDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
-    const virtualShifts = [];
-
-    // Look through all stored weeks for recurring shifts
-    Object.keys(scheduleData).forEach(weekKey => {
-        Object.keys(scheduleData[weekKey]).forEach(storedDateStr => {
-            scheduleData[weekKey][storedDateStr].forEach(shift => {
-                if (shift.recurring) {
-                    const originalDate = new Date(shift.date + 'T00:00:00');
-                    const originalDayOfWeek = originalDate.getDay();
-
-                    // Check if this recurring shift should appear on the target date
-                    if (originalDayOfWeek === targetDayOfWeek && targetDate > originalDate) {
-                        // Check for exceptions
-                        if (shift.recurringExceptions && shift.recurringExceptions.includes(dateStr)) {
-                            return; // Skip this date due to exception
-                        }
-
-                        // Check if there's already a stored shift for this recurring series on this date
-                        const hasStoredInstance = scheduleData[getWeekKeyForDate(targetDate)] &&
-                            scheduleData[getWeekKeyForDate(targetDate)][dateStr] &&
-                            scheduleData[getWeekKeyForDate(targetDate)][dateStr].some(s =>
-                                s.originalShiftId === shift.id || s.recurringSeriesId === shift.id
-                            );
-
-                        if (!hasStoredInstance) {
-                            // Create virtual shift (not stored anywhere)
-                            const virtualShift = {
-                                id: `virtual|||${shift.id}|||${dateStr}`, // Virtual ID with different separator
-                                date: dateStr,
-                                branch: shift.branch,
-                                type: shift.type,
-                                employeeId: shift.employeeId,
-                                customStart: shift.customStart,
-                                customEnd: shift.customEnd,
-                                recurring: true, // Virtual shifts show as recurring
-                                isVirtualRecurring: true, // Flag to identify virtual shifts
-                                originalShiftId: shift.id
-                            };
-                            virtualShifts.push(virtualShift);
-                        }
-                    }
-                }
-            });
-        });
-    });
-
-    return virtualShifts;
-}
-
 function getWeekKeyForDate(date) {
     const weekStart = getWeekStart(date);
     return formatDate(weekStart);
@@ -1297,13 +1662,41 @@ function getWeekKeyForDate(date) {
 
 function getAllShiftsForDay(dateStr) {
     const weekKey = getWeekKey();
-    const storedShifts = scheduleData[weekKey] && scheduleData[weekKey][dateStr] ? scheduleData[weekKey][dateStr] : [];
-    
-    // Get virtual recurring shifts for this date
-    const virtualRecurringShifts = getVirtualRecurringShifts(dateStr);
-    
-    // Combine stored shifts with virtual recurring shifts
-    return [...storedShifts, ...virtualRecurringShifts];
+    return scheduleData[weekKey] && scheduleData[weekKey][dateStr] ? scheduleData[weekKey][dateStr] : [];
+}
+
+function categorizeShiftByTime(shift, timeIn = null) {
+    // If it's a custom shift, categorize by actual time-in
+    if (shift === 'custom' && timeIn) {
+        const [time, meridian] = timeIn.split(' ');
+        const [hours, minutes] = time.split(':').map(Number);
+        let hour24 = hours;
+
+        if (meridian === 'PM' && hours !== 12) hour24 += 12;
+        if (meridian === 'AM' && hours === 12) hour24 = 0;
+
+        const totalMinutes = hour24 * 60 + minutes;
+
+        // Categorize based on start time
+        if (totalMinutes < 11 * 60) return 'opening'; // Before 11:00 AM
+        if (totalMinutes < 13 * 60) return 'midshift'; // 11:00 AM - 12:59 PM
+        return 'closing'; // 1:00 PM and later
+    }
+
+    // For non-custom shifts, map to categories
+    switch (shift.toLowerCase()) {
+        case 'opening':
+        case 'opening half-day':
+            return 'opening';
+        case 'midshift':
+            return 'midshift';
+        case 'closing':
+        case 'closing half-day':
+        case 'closinghalf':
+            return 'closing';
+        default:
+            return 'midshift'; // Default fallback
+    }
 }
 
 function removeDuplicateShifts() {
@@ -1362,14 +1755,27 @@ function removeDuplicateShifts() {
 }
 
 function getShiftTimeDisplay(shift) {
+    // Handle actual attendance shifts
+    if (shift.isActual || (shift.customStart && shift.customEnd)) {
+        const startTime = shift.customStart || 'N/A';
+        const endTime = shift.customEnd || 'N/A';
+        return `${startTime} - ${endTime}`;
+    }
+
+    // Handle regular scheduled shifts
     if (shift.type === 'custom') {
-        return `${formatTimeTo12Hour(shift.customStart)} - ${formatTimeTo12Hour(shift.customEnd)}`;
+        const startTime = shift.customStart ? formatTimeTo12Hour(shift.customStart) : 'N/A';
+        const endTime = shift.customEnd ? formatTimeTo12Hour(shift.customEnd) : 'N/A';
+        return `${startTime} - ${endTime}`;
     } else {
-        return SHIFT_TYPES[shift.type].display;
+        const shiftType = SHIFT_TYPES[shift.type];
+        return shiftType ? shiftType.display : 'N/A';
     }
 }
 
 function formatTimeTo12Hour(time24) {
+    if (!time24) return 'N/A'; // Add this line
+
     const [hours, minutes] = time24.split(':');
     const hour = parseInt(hours);
     const ampm = hour >= 12 ? 'PM' : 'AM';
@@ -1386,10 +1792,10 @@ function hasConflict(shift, dateStr) {
     const shiftStart = getShiftStartTime(shift);
     const shiftEnd = getShiftEndTime(shift);
 
-    console.log(`Checking conflicts for ${shift.employeeId} on ${dateStr}: ${shiftStart}-${shiftEnd} (${shift.isVirtualRecurring ? 'virtual' : 'stored'})`);
+    // console.log(`Checking conflicts for ${shift.employeeId} on ${dateStr}: ${shiftStart}-${shiftEnd}`);
 
     for (let otherShift of otherShifts) {
-        console.log(`  Against: ${otherShift.employeeId} ${otherShift.type}: ${getShiftStartTime(otherShift)}-${getShiftEndTime(otherShift)}`);
+        // console.log(`  Against: ${otherShift.employeeId} ${otherShift.type}: ${getShiftStartTime(otherShift)}-${getShiftEndTime(otherShift)}`);
 
         // Check for exact duplicates (same employee, branch, type, times)
         if (shift.employeeId === otherShift.employeeId &&
@@ -1416,7 +1822,7 @@ function hasConflict(shift, dateStr) {
         }
     }
 
-    console.log('  → No conflict found');
+    // console.log('  → No conflict found');
     return false;
 }
 
@@ -1482,15 +1888,13 @@ async function handleShiftSubmit(e) {
     e.preventDefault();
 
     const isEdit = shiftId.value !== '';
-    const originalShift = isEdit ? findShiftById(shiftId.value) : null;
 
     const shiftData = {
         id: shiftId.value || generateShiftId(),
         date: shiftDate.value,
         branch: shiftBranch.value,
         type: shiftType.value,
-        employeeId: shiftEmployee.value || 'unassigned',
-        recurring: recurringWeekly.checked
+        employeeId: shiftEmployee.value || 'unassigned'
     };
 
     if (shiftType.value === 'custom') {
@@ -1499,148 +1903,15 @@ async function handleShiftSubmit(e) {
     }
 
     if (isEdit) {
-        const originalShift = findShiftById(shiftId.value);
-
-        // Handle virtual shifts
-        let shiftToEdit = originalShift;
-        if (!originalShift && shiftId.value.startsWith('virtual|||')) {
-            const parts = shiftId.value.split('|||');
-            const originalShiftId = parts[1];
-            const virtualDate = parts[2];
-            const foundOriginal = findAnyShiftById(originalShiftId);
-
-            if (foundOriginal) {
-                shiftToEdit = {
-                    id: shiftId.value,
-                    date: virtualDate,
-                    branch: foundOriginal.branch,
-                    type: foundOriginal.type,
-                    employeeId: foundOriginal.employeeId,
-                    customStart: foundOriginal.customStart,
-                    customEnd: foundOriginal.customEnd,
-                    recurring: true,
-                    isVirtualRecurring: true,
-                    originalShiftId: originalShiftId
-                };
-            }
-        }
-
-        // Check if this is part of a recurring series
-        if (shiftToEdit && (shiftToEdit.recurring || shiftToEdit.recurringSeriesId || shiftToEdit.isRecurringInstance || shiftToEdit.originalShiftId || shiftToEdit.isVirtualRecurring)) {
-            showRecurringChoiceModal('save', shiftData, shiftToEdit);
-        } else {
-            updateShift(shiftData);
-        }
+        updateShift(shiftData);
     } else {
         addShift(shiftData);
     }
 
     closeModal();
     saveToLocalStorage();
-    syncToFirebase(); // Immediately sync to Firebase
+    syncToFirebase();
     renderCurrentView();
-}
-
-function convertToIndividualShift(shift) {
-    delete shift.recurringSeriesId;
-    delete shift.isRecurringInstance;
-    delete shift.originalShiftId;
-    shift.recurring = false;
-}
-
-function deleteThisAndFutureShifts(targetShift, skipCurrent = false) {
-    console.log('=== DELETE THIS AND FUTURE DEBUG ===');
-    console.log('Target shift:', targetShift);
-
-    const targetDate = new Date(targetShift.date + 'T00:00:00');
-
-    Object.keys(scheduleData).forEach(weekKey => {
-        Object.keys(scheduleData[weekKey]).forEach(dateStr => {
-            const shiftDate = new Date(dateStr + 'T00:00:00');
-            const shouldDelete = skipCurrent ? shiftDate > targetDate : shiftDate >= targetDate;
-
-            if (shouldDelete) {
-                const shifts = scheduleData[weekKey][dateStr];
-                for (let i = shifts.length - 1; i >= 0; i--) {
-                    const shift = shifts[i];
-
-                    // Match by any recurring identifier OR exact same shift pattern
-                    const isRelated = (
-                        shift.id === targetShift.id ||
-                        (shift.recurringSeriesId && shift.recurringSeriesId === targetShift.recurringSeriesId) ||
-                        (shift.originalShiftId && shift.originalShiftId === targetShift.originalShiftId) ||
-                        (shift.originalShiftId === targetShift.id) ||
-                        // Pattern match for shifts without proper IDs
-                        (shift.employeeId === targetShift.employeeId &&
-                            shift.branch === targetShift.branch &&
-                            shift.type === targetShift.type &&
-                            shift.recurring === true &&
-                            shiftDate.getDay() === targetDate.getDay())
-                    );
-
-                    if (isRelated) {
-                        console.log('DELETING related shift:', shift);
-                        shifts.splice(i, 1);
-                    }
-                }
-
-                if (shifts.length === 0) {
-                    delete scheduleData[weekKey][dateStr];
-                }
-            }
-        });
-    });
-
-    // Also clean up any empty week objects
-    Object.keys(scheduleData).forEach(weekKey => {
-        if (Object.keys(scheduleData[weekKey]).length === 0) {
-            delete scheduleData[weekKey];
-        }
-    });
-
-    console.log('=== END DELETE DEBUG ===');
-}
-
-function splitRecurringSeries(originalShift, newShiftData) {
-    console.log('=== SPLIT RECURRING SERIES DEBUG ===');
-    console.log('Original shift:', originalShift);
-    console.log('New shift data:', newShiftData);
-
-    // DON'T delete anything when user chooses "This Date Only"
-    // Just convert the current shift to individual
-    newShiftData.recurring = false;
-    convertToIndividualShift(newShiftData);
-
-    console.log('=== END SPLIT DEBUG ===');
-}
-
-function updateThisAndFutureShifts(originalShift, newShiftData) {
-    const targetDate = new Date(originalShift.date + 'T00:00:00');
-    const seriesId = originalShift.recurringSeriesId || originalShift.originalShiftId;
-
-    Object.keys(scheduleData).forEach(weekKey => {
-        Object.keys(scheduleData[weekKey]).forEach(dateStr => {
-            const shiftDate = new Date(dateStr + 'T00:00:00');
-
-            if (shiftDate >= targetDate) {
-                const shifts = scheduleData[weekKey][dateStr];
-                for (let i = 0; i < shifts.length; i++) {
-                    const shift = shifts[i];
-                    if (shift.recurringSeriesId === seriesId || shift.originalShiftId === seriesId || shift.id === originalShift.id) {
-                        // Update this shift with new data
-                        Object.assign(shift, {
-                            branch: newShiftData.branch,
-                            type: newShiftData.type,
-                            employeeId: newShiftData.employeeId,
-                            customStart: newShiftData.customStart,
-                            customEnd: newShiftData.customEnd,
-                            recurring: newShiftData.recurring
-                        });
-                    }
-                }
-            }
-        });
-    });
 }
 
 function handleShiftTypeChange() {
@@ -1650,377 +1921,14 @@ function handleShiftTypeChange() {
 
 async function handleShiftDelete() {
     const id = shiftId.value;
-    let shift = findShiftById(id);
+    if (!id) return;
 
-    // Handle virtual shifts
-    if (!shift && id.startsWith('virtual|||')) {
-        const parts = id.split('|||');
-        const originalShiftId = parts[1];
-        const virtualDate = parts[2];
-
-        const originalShift = findAnyShiftById(originalShiftId);
-        if (originalShift) {
-            shift = {
-                id: id,
-                date: virtualDate,
-                branch: originalShift.branch,
-                type: originalShift.type,
-                employeeId: originalShift.employeeId,
-                recurring: true,
-                isVirtualRecurring: true,
-                originalShiftId: originalShiftId
-            };
-        }
-    }
-    if (!id || !shift) return;
-
-    // Check if this is part of a recurring series
-    if (shift.recurring || shift.recurringSeriesId || shift.isRecurringInstance || shift.originalShiftId || shift.isVirtualRecurring) {
-        showRecurringChoiceModal('delete', null, shift);
-    } else {
-        if (confirm('Are you sure you want to delete this shift?')) {
-            deleteShift(id);
-            closeModal();
-            saveToLocalStorage();
-            syncToFirebase(); // Immediately sync to Firebase
-            renderCurrentView();
-        }
-    }
-}
-
-function showRecurringChoiceModal(action, shiftData, originalShift) {
-    pendingRecurringAction = action;
-    pendingShiftData = shiftData;
-    pendingOriginalShift = originalShift;
-
-    if (action === 'save') {
-        recurringChoiceTitle.textContent = 'Save Changes';
-        recurringChoiceMessage.textContent = 'This is part of a recurring series. How would you like to apply the changes?';
-    } else {
-        recurringChoiceTitle.textContent = 'Delete Shift';
-        recurringChoiceMessage.textContent = 'This is part of a recurring series. Which shifts would you like to delete?';
-    }
-
-    recurringChoiceModal.style.display = 'flex';
-}
-
-function closeRecurringChoiceModal() {
-    recurringChoiceModal.style.display = 'none';
-    pendingRecurringAction = null;
-    pendingShiftData = null;
-    pendingOriginalShift = null;
-}
-
-function handleRecurringChoice(choice) {
-    console.log('=== RECURRING CHOICE DEBUG ===');
-    console.log('Choice:', choice);
-    console.log('Pending action:', pendingRecurringAction);
-
-    if (pendingRecurringAction === 'save') {
-        if (choice === 'thisOnly') {
-            // Split at this date: convert all prior to individual, edit this one as individual, continue original pattern for future
-            splitRecurringSeriesForEdit(pendingOriginalShift, pendingShiftData);
-        } else {
-            // Update this and future: convert all prior to individual, apply edits from this date forward
-            updateThisAndFutureForEdit(pendingOriginalShift, pendingShiftData);
-        }
-    } else if (pendingRecurringAction === 'delete') {
-        if (choice === 'thisOnly') {
-            // Split at this date: convert all prior instances to individual, delete this one, make next occurrence the new recurring master
-            splitRecurringSeriesAtThisDate(pendingOriginalShift);
-        } else {
-            // Delete this and future: convert all prior instances to individual, delete from this date forward
-            convertPriorToIndividualAndDeleteFromHere(pendingOriginalShift);
-        }
-    }
-
-    closeRecurringChoiceModal();
-    closeModal();
-    saveToLocalStorage();
-    syncToFirebase(); // Immediately sync to Firebase
-    renderCurrentView();
-
-    console.log('=== END RECURRING DEBUG ===');
-}
-
-function splitRecurringSeriesForEdit(targetShift, newShiftData) {
-    console.log('Splitting recurring series for edit at this date only:', targetShift.date);
-
-    const targetDate = new Date(targetShift.date + 'T00:00:00');
-    const originalShiftId = targetShift.originalShiftId || targetShift.id;
-
-    // Step 1: Convert ALL prior instances (including original) to individual shifts
-    convertAllPriorInstancesToIndividual(targetDate, originalShiftId);
-
-    // Step 2: Apply edits to this date as individual shift
-    newShiftData.recurring = false;
-    delete newShiftData.isRecurringInstance;
-    delete newShiftData.originalShiftId;
-    delete newShiftData.recurringSeriesId;
-
-    if (targetShift.isVirtualRecurring) {
-        // Create a new individual shift for this date
-        addShift(newShiftData);
-    } else {
-        updateShift(newShiftData);
-    }
-
-    // Step 3: Create new recurring master from next occurrence with ORIGINAL properties
-    createNewRecurringMasterFromNextOccurrence(targetDate, originalShiftId);
-
-    markLocalChanges();
-}
-
-function updateThisAndFutureForEdit(targetShift, newShiftData) {
-    console.log('Updating this and future for edit:', targetShift.date);
-
-    const targetDate = new Date(targetShift.date + 'T00:00:00');
-    const originalShiftId = targetShift.originalShiftId || targetShift.id;
-
-    // Step 1: Convert ALL prior instances (including original) to individual shifts
-    convertAllPriorInstancesToIndividual(targetDate, originalShiftId);
-
-    // Step 2: Apply edits to this date
-    if (targetShift.isVirtualRecurring) {
-        // Create a new shift for this date
-        newShiftData.id = generateShiftId();
-        addShift(newShiftData);
-    } else {
-        updateShift(newShiftData);
-    }
-
-    // Step 3: Handle future dates based on recurring checkbox
-    if (newShiftData.recurring) {
-        // Continue recurring pattern with NEW properties - update all future instances
-        updateAllFutureInstances(targetDate, originalShiftId, newShiftData);
-    } else {
-        // Stop recurring pattern - delete all future occurrences
-        deleteAllFutureOccurrences(targetDate, originalShiftId);
-    }
-
-    markLocalChanges();
-}
-
-function updateAllFutureInstances(targetDate, originalShiftId, newShiftData) {
-    console.log('Updating all future instances with new properties from:', targetDate);
-
-    Object.keys(scheduleData).forEach(weekKey => {
-        Object.keys(scheduleData[weekKey]).forEach(dateStr => {
-            const shiftDate = new Date(dateStr + 'T00:00:00');
-
-            // Update shifts AFTER the target date
-            if (shiftDate > targetDate) {
-                scheduleData[weekKey][dateStr].forEach(shift => {
-                    if (shift.originalShiftId === originalShiftId ||
-                        shift.recurringSeriesId === originalShiftId) {
-
-                        // Update with new properties but keep as recurring instances
-                        shift.branch = newShiftData.branch;
-                        shift.type = newShiftData.type;
-                        shift.employeeId = newShiftData.employeeId;
-                        shift.customStart = newShiftData.customStart;
-                        shift.customEnd = newShiftData.customEnd;
-                        shift.originalShiftId = newShiftData.id; // Point to new master
-
-                        console.log('Updated future instance:', shift);
-                    }
-                });
-            }
-        });
-    });
-}
-
-function deleteAllFutureOccurrences(targetDate, originalShiftId) {
-    console.log('Deleting all future occurrences after:', targetDate);
-
-    Object.keys(scheduleData).forEach(weekKey => {
-        Object.keys(scheduleData[weekKey]).forEach(dateStr => {
-            const shiftDate = new Date(dateStr + 'T00:00:00');
-
-            // Delete shifts AFTER the target date
-            if (shiftDate > targetDate) {
-                const shifts = scheduleData[weekKey][dateStr];
-                for (let i = shifts.length - 1; i >= 0; i--) {
-                    const shift = shifts[i];
-                    if (shift.originalShiftId === originalShiftId ||
-                        shift.recurringSeriesId === originalShiftId) {
-
-                        console.log('Deleting future occurrence:', shift);
-                        shifts.splice(i, 1);
-                    }
-                }
-
-                // Clean up empty date arrays
-                if (shifts.length === 0) {
-                    delete scheduleData[weekKey][dateStr];
-                }
-            }
-        });
-    });
-}
-
-function splitRecurringSeriesAtThisDate(targetShift) {
-    console.log('Splitting recurring series at this date only:', targetShift.date);
-
-    const targetDate = new Date(targetShift.date + 'T00:00:00');
-    const originalShiftId = targetShift.originalShiftId || targetShift.id;
-
-    // Step 1: Convert ALL prior instances (including original) to individual shifts
-    convertAllPriorInstancesToIndividual(targetDate, originalShiftId);
-
-    // Step 2: Delete this specific instance only
-    if (targetShift.isVirtualRecurring) {
-        // For virtual shifts, just mark as deleted - it won't appear anymore
-        console.log('Virtual shift will be skipped');
-    } else {
-        deleteShift(targetShift.id);
-    }
-
-    // Step 3: Only create new recurring master if the user kept recurring checked
-// For delete operations, we don't have newShiftData, so don't create new recurring master
-// if (newShiftData.recurring) {
-    // User kept it recurring for this individual edit, so continue original pattern for future
-    createNewRecurringMasterFromNextOccurrence(targetDate, originalShiftId);
-    // For delete operations, always delete future occurrences
-    deleteAllFutureOccurrences(targetDate, originalShiftId);
-
-    markLocalChanges();
-}
-
-function convertPriorToIndividualAndDeleteFromHere(targetShift) {
-    console.log('Converting prior to individual and deleting from here:', targetShift.date);
-
-    const targetDate = new Date(targetShift.date + 'T00:00:00');
-    const originalShiftId = targetShift.originalShiftId || targetShift.id;
-
-    // Step 1: Convert ALL prior instances (including original) to individual shifts
-    convertAllPriorInstancesToIndividual(targetDate, originalShiftId);
-
-    // Step 2: Delete this date and all future occurrences
-    deleteThisAndFutureShifts(targetShift);
-
-    markLocalChanges();
-}
-
-function convertAllPriorInstancesToIndividual(targetDate, originalShiftId) {
-    console.log('Converting all prior instances to individual before:', targetDate);
-
-    // First, find the original shift to get its properties
-    const originalShift = findAnyShiftById(originalShiftId);
-    if (!originalShift) return;
-
-    const originalDate = new Date(originalShift.date + 'T00:00:00');
-    const dayOfWeek = originalDate.getDay();
-
-    // Generate and store all missing weeks between original and target as individual shifts
-    let currentWeek = new Date(originalDate);
-    currentWeek.setDate(originalDate.getDate() + 7); // Start from week after original
-
-    while (currentWeek < targetDate) {
-        const currentDateStr = formatDate(currentWeek);
-        const currentWeekKey = getWeekKeyForDate(currentWeek);
-
-        // Initialize data structures if needed
-        if (!scheduleData[currentWeekKey]) scheduleData[currentWeekKey] = {};
-        if (!scheduleData[currentWeekKey][currentDateStr]) scheduleData[currentWeekKey][currentDateStr] = [];
-
-        // Check if this date already has a shift for this series
-        const existingShift = scheduleData[currentWeekKey][currentDateStr].find(s =>
-            s.originalShiftId === originalShiftId ||
-            s.recurringSeriesId === originalShiftId ||
-            s.id === originalShiftId
-        );
-
-        if (existingShift) {
-            // Convert existing shift to individual
-            existingShift.recurring = false;
-            delete existingShift.isRecurringInstance;
-            delete existingShift.originalShiftId;
-            delete existingShift.recurringSeriesId;
-            console.log('Converted existing shift to individual:', existingShift);
-        } else {
-            // Create new individual shift for this missing week
-            const newIndividualShift = {
-                id: generateShiftId(),
-                date: currentDateStr,
-                branch: originalShift.branch,
-                type: originalShift.type,
-                employeeId: originalShift.employeeId,
-                customStart: originalShift.customStart,
-                customEnd: originalShift.customEnd,
-                recurring: false
-            };
-
-            scheduleData[currentWeekKey][currentDateStr].push(newIndividualShift);
-            console.log('Created missing individual shift for week:', currentDateStr, newIndividualShift);
-        }
-
-        // Move to next week
-        currentWeek.setDate(currentWeek.getDate() + 7);
-    }
-
-    // Also convert the original master shift to individual
-    Object.keys(scheduleData).forEach(weekKey => {
-        Object.keys(scheduleData[weekKey]).forEach(dateStr => {
-            scheduleData[weekKey][dateStr].forEach(shift => {
-                if (shift.id === originalShiftId) {
-                    shift.recurring = false;
-                    delete shift.isRecurringInstance;
-                    delete shift.originalShiftId;
-                    delete shift.recurringSeriesId;
-                    console.log('Converted original master to individual:', shift);
-                }
-            });
-        });
-    });
-}
-
-function createNewRecurringMasterFromNextOccurrence(targetDate, originalShiftId) {
-    console.log('Creating new recurring master from next occurrence after:', targetDate);
-
-    // Find the original shift to get its properties
-    const originalShift = findAnyShiftById(originalShiftId);
-    if (!originalShift) return;
-
-    // Calculate the next occurrence date
-    const dayOfWeek = targetDate.getDay();
-    const nextOccurrence = new Date(targetDate);
-    nextOccurrence.setDate(targetDate.getDate() + 7); // Next week same day
-    const nextDateStr = formatDate(nextOccurrence);
-    const nextWeekKey = getWeekKeyForDate(nextOccurrence);
-
-    // Create the new recurring master shift for next occurrence
-    if (!scheduleData[nextWeekKey]) scheduleData[nextWeekKey] = {};
-    if (!scheduleData[nextWeekKey][nextDateStr]) scheduleData[nextWeekKey][nextDateStr] = [];
-
-    // Check if there's already a shift on that date for this series
-    const existingIndex = scheduleData[nextWeekKey][nextDateStr].findIndex(s =>
-        s.originalShiftId === originalShiftId || s.recurringSeriesId === originalShiftId
-    );
-
-    if (existingIndex !== -1) {
-        // Convert existing instance to new recurring master
-        const existingShift = scheduleData[nextWeekKey][nextDateStr][existingIndex];
-        existingShift.recurring = true;
-        delete existingShift.isRecurringInstance;
-        delete existingShift.originalShiftId;
-        delete existingShift.recurringSeriesId;
-        console.log('Converted existing instance to new recurring master:', existingShift);
-    } else {
-        // Create new recurring master
-        const newRecurringShift = {
-            id: generateShiftId(),
-            date: nextDateStr,
-            branch: originalShift.branch,
-            type: originalShift.type,
-            employeeId: originalShift.employeeId,
-            customStart: originalShift.customStart,
-            customEnd: originalShift.customEnd,
-            recurring: true
-        };
-
-        scheduleData[nextWeekKey][nextDateStr].push(newRecurringShift);
-        console.log('Created new recurring master:', newRecurringShift);
+    if (confirm('Are you sure you want to delete this shift?')) {
+        await deleteShift(id);
+        closeModal();
+        saveToLocalStorage();
+        // Don't call syncToFirebase() here since deleteShift already handles Firebase
+        renderCurrentView();
     }
 }
 
@@ -2039,7 +1947,7 @@ function openShiftModal(mode, data) {
         originalBranch.value = data.branch || '';
         shiftDate.value = data.date;
 
-        // Pre-select branch and shift type if provided
+        // Pre-Select location and shift type if provided
         if (data.branch) {
             shiftBranch.value = data.branch;
         }
@@ -2054,40 +1962,6 @@ function openShiftModal(mode, data) {
         // Edit mode
         let shift = findShiftById(data.shiftId);
 
-        // If not found, it might be a virtual recurring shift
-        if (!shift && data.shiftId.startsWith('virtual|||')) {
-            console.log('Handling virtual shift:', data.shiftId);
-            // Extract the original shift ID and date from virtual ID
-            const parts = data.shiftId.split('|||'); // virtual|||originalId|||date
-            const originalShiftId = parts[1];
-            const virtualDate = parts[2];
-            console.log('Original shift ID:', originalShiftId, 'Virtual date:', virtualDate);
-
-            // Find the original recurring shift
-            const originalShift = findAnyShiftById(originalShiftId);
-            console.log('Found original shift:', originalShift);
-
-            if (originalShift) {
-                // Create a virtual shift object for the modal
-                shift = {
-                    id: data.shiftId,
-                    date: virtualDate,
-                    branch: originalShift.branch,
-                    type: originalShift.type,
-                    employeeId: originalShift.employeeId,
-                    customStart: originalShift.customStart,
-                    customEnd: originalShift.customEnd,
-                    recurring: true,
-                    isVirtualRecurring: true,
-                    originalShiftId: originalShiftId
-                };
-                console.log('Created virtual shift object:', shift);
-            } else {
-                console.log('Failed to find original shift for virtual shift');
-                return; // Don't open modal if we can't find the data
-            }
-        }
-
         if (shift) {
             console.log('About to populate modal with shift:', shift);
             shiftId.value = shift.id;
@@ -2097,14 +1971,12 @@ function openShiftModal(mode, data) {
             shiftBranch.value = shift.branch;
             shiftType.value = shift.type;
             shiftEmployee.value = shift.employeeId;
-            recurringWeekly.checked = Boolean(shift.recurring || shift.isVirtualRecurring);
 
             console.log('Populated modal fields:');
             console.log('Date:', shiftDate.value);
             console.log('Branch:', shiftBranch.value);
             console.log('Type:', shiftType.value);
             console.log('Employee:', shiftEmployee.value);
-            console.log('Recurring:', recurringWeekly.checked);
 
             if (shift.type === 'custom') {
                 customTimeGroup.style.display = 'block';
@@ -2167,15 +2039,18 @@ function updateShift(shiftData) {
     console.log('=== END UPDATE DEBUG ===');
 }
 
-function deleteShift(shiftId) {
+async function deleteShift(shiftId) {
+    isDeletingShifts = true;
     let deletedAny = false;
+    let deletedShifts = [];
 
-    // Delete from ALL weeks in one loop
+    // Delete from ALL weeks in local data
     Object.keys(scheduleData).forEach(wKey => {
         Object.keys(scheduleData[wKey]).forEach(dateStr => {
             const shifts = scheduleData[wKey][dateStr];
             for (let i = shifts.length - 1; i >= 0; i--) {
                 if (shifts[i].id === shiftId) {
+                    deletedShifts.push({ weekKey: wKey, shift: shifts[i] });
                     shifts.splice(i, 1);
                     deletedAny = true;
                 }
@@ -2188,7 +2063,23 @@ function deleteShift(shiftId) {
 
     if (deletedAny) {
         markLocalChanges();
+
+        // Immediately delete from Firebase
+        for (const deletion of deletedShifts) {
+            try {
+                const shiftRef = doc(db, "schedules", deletion.weekKey, "shifts", shiftId);
+                await deleteDoc(shiftRef);
+                console.log(`Deleted shift ${shiftId} from Firebase week ${deletion.weekKey}`);
+            } catch (error) {
+                console.error(`Error deleting shift ${shiftId} from Firebase:`, error);
+            }
+        }
     }
+    
+    // Reset the flag after a short delay
+    setTimeout(() => {
+        isDeletingShifts = false;
+    }, 1000);
 }
 
 function findShiftById(shiftId) {
@@ -2272,6 +2163,12 @@ async function loadScheduleData() {
     loadFromLocalStorage();
     renderCurrentView();
 
+    // Don't sync from Firebase if we're in the middle of deleting
+    if (isDeletingShifts) {
+        console.log('Skipping Firebase sync during deletion');
+        return;
+    }
+
     // Then sync from Firebase in background and update
     try {
         await syncFromFirebase();
@@ -2315,11 +2212,13 @@ async function syncFromFirebase() {
                         scheduleData[weekKey][dateStr] = [];
                     }
 
-                    // Replace or add shift
+                    // Only add if shift doesn't already exist locally
                     const existingIndex = scheduleData[weekKey][dateStr].findIndex(s => s.id === shift.id);
                     if (existingIndex !== -1) {
+                        // Update existing shift
                         scheduleData[weekKey][dateStr][existingIndex] = shift;
                     } else {
+                        // Add new shift
                         scheduleData[weekKey][dateStr].push(shift);
                     }
                 });
@@ -2328,6 +2227,9 @@ async function syncFromFirebase() {
 
         // Save to localStorage after syncing from Firebase
         saveToLocalStorage();
+
+        // Clean up any duplicates and save
+        cleanupAfterSync();
         updateSyncStatus('synced');
 
     } catch (error) {
@@ -2335,6 +2237,11 @@ async function syncFromFirebase() {
         updateSyncStatus('local');
         throw error;
     }
+}
+
+function cleanupAfterSync() {
+    removeDuplicateShifts();
+    saveToLocalStorage();
 }
 
 async function syncToFirebase() {
@@ -2364,7 +2271,6 @@ async function syncToFirebase() {
                         branch: shift.branch,
                         type: shift.type,
                         employeeId: shift.employeeId,
-                        recurring: shift.recurring || false,
                         customStart: shift.customStart || null,
                         customEnd: shift.customEnd || null,
                         createdAt: new Date(),

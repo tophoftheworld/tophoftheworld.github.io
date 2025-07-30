@@ -1834,6 +1834,17 @@ body {
   /* Use !important to override the last-child rule */
 }
 
+.refresh-btn,
+.force-sync-btn {
+  display: none;
+}
+
+/* Show when debug mode is enabled */
+body.debug-mode .refresh-btn,
+body.debug-mode .force-sync-btn {
+  display: block;
+}
+
 .refresh-btn:hover:not(:disabled) {
   background-color: #1d8a00;
   color: white;
@@ -2379,4 +2390,100 @@ body {
   font-weight: 400;
   font-style: normal;
   font-display: swap;
+}
+/* End of Day Modal Styles - Minimal */
+.eod-simple-section {
+  margin-bottom: 20px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #eee;
+}
+
+.eod-simple-section:last-of-type {
+  border-bottom: none;
+  margin-bottom: 10px;
+}
+
+.eod-simple-title {
+  font-family: 'Cocogoose pro trial', sans-serif;
+  font-size: 12px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin: 0 0 10px 0;
+  color: #1d8a00;
+}
+
+.eod-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  padding: 5px 0;
+}
+
+.eod-summary-row:last-child {
+  margin-bottom: 0;
+}
+
+.eod-label {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+  flex: 1;
+}
+
+.eod-value {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  text-align: right;
+  min-width: 120px;
+}
+
+.eod-input-wrapper {
+  position: relative;
+  display: inline-block;
+  width: 120px;
+}
+
+.peso-symbol {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 600;
+  color: #666;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.eod-input {
+  width: 100%;
+  padding: 6px 6px 6px 18px;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: right;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background-color: white;
+  box-sizing: border-box;
+}
+
+.eod-input:focus {
+  outline: none;
+  border-color: #1d8a00;
+}
+
+.eod-input::-webkit-outer-spin-button,
+.eod-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.eod-input[type=number] {
+  -moz-appearance: textfield;
 }

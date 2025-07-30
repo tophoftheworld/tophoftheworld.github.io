@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Matchanese Pop-up Sales Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/dashboard.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"
+        integrity="sha512-ElRFoEQdI5Ht6kZvyzXhYG9NqjtkmlkfYk0wr6wHxU9JEHakS7UJZNeml5ALk+8IKlU6jDgMabC3vkumRokgJA=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+</head>
+
+<body>
+    <div class="dashboard-container">
+        <header class="dashboard-header">
+            <h1>Matchanese Pop-up Sales Dashboard</h1>
+            <div class="header-controls">
+                <select id="eventSelector" class="event-selector">
+                    <option value="pop-up">Pop-up (Main)</option>
+                </select>
+                <input type="date" id="dateSelector" class="date-selector">
+                <button id="manageEventsBtn" class="manage-events-btn">Manage Events</button>
+                <button id="refreshBtn" class="refresh-btn">Refresh Data</button>
+            </div>
+        </header>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>Total Sales</h3>
+                <div class="stat-value" id="todaySales">₱0.00</div>
+            </div>
+            <div class="stat-card">
+                <h3>Total Orders</h3>
+                <div class="stat-value" id="todayOrders">0</div>
+            </div>
+            <div class="stat-card">
+                <h3>Cups Sold</h3>
+                <div class="stat-value" id="todayCups">0</div>
+            </div>
+            <div class="stat-card">
+                <h3>Pop-up Total (All Time)</h3>
+                <div class="stat-value" id="weekSales">₱0.00</div>
+            </div>
+        </div>
+        
+        <!-- Add proper spacing and structure for EOD section -->
+        <div id="eodDashboardSection" class="eod-dashboard-section" style="display: none;">
+            <h3>End of Day Summary</h3>
+            <div id="eodContent">
+                <div class="loading">No end of day summary available</div>
+            </div>
+        </div>
+
+        <div class="dashboard-grid">
+            <div class="chart-section">
+                <div class="chart-header">
+                    <h3>Daily Sales</h3>
+                    <div class="chart-toggle-buttons">
+                        <button class="chart-toggle-btn active" data-chart="daily">All Days</button>
+                        <button class="chart-toggle-btn" data-chart="hourly">Peak Hours</button>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="salesChart" width="400" height="200"></canvas>
+                    <div id="simpleChart" class="simple-chart" style="display: none;">
+                        <!-- Fallback simple chart will be inserted here -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="payment-breakdown">
+                <h3>Payment Methods (Selected Day)</h3>
+                <div class="payment-stats" id="paymentStats">
+                    <div class="payment-item">
+                        <span class="payment-method">Cash</span>
+                        <span class="payment-amount">₱0.00</span>
+                    </div>
+                    <div class="payment-item">
+                        <span class="payment-method">GCash</span>
+                        <span class="payment-amount">₱0.00</span>
+                    </div>
+                    <div class="payment-item">
+                        <span class="payment-method">Maya</span>
+                        <span class="payment-amount">₱0.00</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="recent-orders">
+                <h3>Orders (Selected Day)</h3>
+                <div class="orders-list" id="recentOrdersList">
+                    <div class="loading">Loading orders...</div>
+                </div>
+            </div>
+
+            <div class="top-items">
+                <h3>Top Items (Selected Day)</h3>
+                <div class="items-list" id="topItemsList">
+                    <div class="loading">Loading items...</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="data-section">
+            <h3>Daily Sales History</h3>
+            <div class="sales-table-container" id="eventsGrid">
+                <div class="loading">Loading events data...</div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="js/dashboard.js"></script>
+</body>
+
+</html>

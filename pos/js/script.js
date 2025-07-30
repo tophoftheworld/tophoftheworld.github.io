@@ -1,6 +1,7 @@
 import { menuData } from './menu-data.js';
-import { queueSync, initializeMenuItems, loadOrdersFromFirebase } from './firebase-sync.js';
+import { syncOrderToFirebase, syncAllPendingOrders, initializeMenuItems, loadEventsFromFirebase, saveEventToFirebase } from './firebase-sync.js';
 import { db, collection, doc, getDocs, deleteDoc } from './firebase-setup.js';
+
 
 // Customization options
 const customizationOptions = {
@@ -41,256 +42,185 @@ let availableEvents = JSON.parse(localStorage.getItem('availableEvents') || '["p
 window.currentEvent = currentEvent;
 window.syncOrdersWithFirebase = syncOrdersWithFirebase;
 
-function initializeEventSelector() {
-  const eventSelector = document.getElementById('eventSelector');
-  const addEventBtn = document.getElementById('addEventBtn');
+async function loadAvailableEvents() {
+  try {
+    // Load from localStorage immediately for fast display
+    const cachedEvents = JSON.parse(localStorage.getItem('cachedEvents') || '[]');
 
-  // Populate event selector
-  updateEventSelector();
+    if (cachedEvents.length > 0) {
+      console.log('Loading cached events for immediate display');
+      availableEvents = ['pop-up', ...cachedEvents.filter(event => !event.archived).map(event => event.key)];
+      localStorage.setItem('availableEvents', JSON.stringify(availableEvents));
 
-  // Set current event
-  eventSelector.value = currentEvent;
-
-  // Event selector change handler
-  eventSelector.addEventListener('change', (e) => {
-    currentEvent = e.target.value;
-    window.currentEvent = currentEvent;  // Add this line
-    localStorage.setItem('currentEvent', currentEvent);
-
-    // Reload orders for the new event
-    syncOrdersWithFirebase();
-    displayOrderHistory();
-  });
-
-  // Add event button handler
-  addEventBtn.addEventListener('click', showAddEventModal);
-
-  // Edit event button handler
-  const editEventBtn = document.getElementById('editEventBtn');
-  editEventBtn.addEventListener('click', showEditEventModal);
-}
-
-function showEditEventModal() {
-  if (currentEvent === 'pop-up') {
-    alert('Cannot edit the main Pop-up event name');
-    return;
-  }
-
-  const existingModal = document.querySelector('.edit-event-modal');
-  if (existingModal) {
-    existingModal.remove();
-  }
-
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay edit-event-modal';
-
-  const modal = document.createElement('div');
-  modal.className = 'modal';
-
-  const header = document.createElement('h2');
-  header.className = 'modal-header';
-  header.textContent = 'Edit Event Name';
-  modal.appendChild(header);
-
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.placeholder = 'Enter new event name';
-  input.value = currentEvent;
-  input.maxLength = 30;
-  
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      updateEventName(input.value, overlay);
+      // Update UI immediately with cached data
+      updateEventSelector();
     }
-  });
-  
-  modal.appendChild(input);
 
-  const footer = document.createElement('div');
-  footer.className = 'modal-footer';
+    // Load from Firebase in background
+    console.log('Fetching latest events from Firebase...');
+    const firebaseEvents = await loadEventsFromFirebase();
 
-  const cancelBtn = document.createElement('button');
-  cancelBtn.className = 'checkout-button modal-cancel';
-  cancelBtn.textContent = 'CANCEL';
-  cancelBtn.addEventListener('click', () => overlay.remove());
+    // Check if there are differences
+    const hasChanges = !eventsAreEqual(cachedEvents, firebaseEvents);
 
-  const updateBtn = document.createElement('button');
-  updateBtn.className = 'checkout-button modal-add';
-  updateBtn.textContent = 'UPDATE';
-  updateBtn.addEventListener('click', () => updateEventName(input.value, overlay));
+    if (hasChanges) {
+      console.log('Events have changed, updating cache and UI');
 
-  footer.appendChild(cancelBtn);
-  footer.appendChild(updateBtn);
-  modal.appendChild(footer);
+      // Update cache
+      localStorage.setItem('cachedEvents', JSON.stringify(firebaseEvents));
 
-  overlay.appendChild(modal);
-  document.body.appendChild(overlay);
+      // Filter out archived events for POS - only keep active events
+      const activeEvents = firebaseEvents.filter(event => !event.archived);
+      availableEvents = ['pop-up', ...activeEvents.map(event => event.key)];
+      localStorage.setItem('availableEvents', JSON.stringify(availableEvents));
 
-  setTimeout(() => input.focus(), 100);
-}
-
-function updateEventName(newName, overlay) {
-  const trimmedName = newName.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
-  
-  if (!trimmedName || trimmedName.length < 2) {
-    alert('Please enter a valid event name (at least 2 characters)');
-    return;
-  }
-
-  if (trimmedName === currentEvent) {
-    overlay.remove();
-    return;
-  }
-
-  if (availableEvents.includes(trimmedName)) {
-    alert('Event name already exists');
-    return;
-  }
-
-  // Update the event in availableEvents array
-  const oldEventIndex = availableEvents.indexOf(currentEvent);
-  if (oldEventIndex > -1) {
-    availableEvents[oldEventIndex] = trimmedName;
-    localStorage.setItem('availableEvents', JSON.stringify(availableEvents));
-  }
-
-  // Update all orders with the old event name to use the new name
-  const orders = JSON.parse(localStorage.getItem('orderHistory') || '[]');
-  orders.forEach(order => {
-    if (order.event === currentEvent) {
-      order.event = trimmedName;
+      // Update UI with new data
+      updateEventSelector();
     }
-  });
-  localStorage.setItem('orderHistory', JSON.stringify(orders));
-  orderHistory = orders;
 
-  // Switch to the new event name
-  currentEvent = trimmedName;
-  window.currentEvent = currentEvent;
-  localStorage.setItem('currentEvent', currentEvent);
-  
-  updateEventSelector();
-  document.getElementById('eventSelector').value = currentEvent;
-  
-  overlay.remove();
+    // Load custom menu for current event
+    await loadEventMenu(currentEvent);
+
+    return availableEvents;
+  } catch (error) {
+    console.error('Error loading events:', error);
+    return ['pop-up'];
+  }
 }
+
+function eventsAreEqual(cachedEvents, firebaseEvents) {
+  if (cachedEvents.length !== firebaseEvents.length) {
+    return false;
+  }
+
+  // Compare each event
+  for (let i = 0; i < cachedEvents.length; i++) {
+    const cached = cachedEvents[i];
+    const firebase = firebaseEvents[i];
+
+    if (cached.key !== firebase.key ||
+      cached.name !== firebase.name ||
+      cached.serviceType !== firebase.serviceType ||
+      cached.archived !== firebase.archived) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+let isUpdatingEventSelector = false;
 
 function updateEventSelector() {
+  if (isUpdatingEventSelector) {
+    console.log('updateEventSelector already running, skipping...');
+    return;
+  }
+
+  isUpdatingEventSelector = true;
+
   const eventSelector = document.getElementById('eventSelector');
+  const currentValue = eventSelector.value;
+
+  // Clear existing options
   eventSelector.innerHTML = '';
 
-  availableEvents.forEach(event => {
-    const option = document.createElement('option');
-    option.value = event;
-    option.textContent = event === 'pop-up' ? 'Pop-up (Main)' : event;
-    eventSelector.appendChild(option);
-  });
-}
+  // Add default pop-up option
+  const defaultOption = document.createElement('option');
+  defaultOption.value = 'pop-up';
+  defaultOption.textContent = 'Legacy Data';
+  eventSelector.appendChild(defaultOption);
 
-function showAddEventModal() {
-  const existingModal = document.querySelector('.add-event-modal');
-  if (existingModal) {
-    existingModal.remove();
-  }
+  loadEventsFromFirebase().then(firebaseEvents => {
+    // Filter out archived events for POS (only show active events)
+    const activeEvents = firebaseEvents.filter(event => !event.archived);
 
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay add-event-modal';
+    console.log('Active events loaded:', activeEvents);
 
-  const modal = document.createElement('div');
-  modal.className = 'modal';
-
-  const header = document.createElement('h2');
-  header.className = 'modal-header';
-  header.textContent = 'Add New Event';
-  modal.appendChild(header);
-
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.placeholder = 'Enter event name';
-  input.maxLength = 30;
-
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      addNewEvent(input.value, overlay);
-    }
-  });
-
-  modal.appendChild(input);
-
-  const footer = document.createElement('div');
-  footer.className = 'modal-footer';
-
-  const cancelBtn = document.createElement('button');
-  cancelBtn.className = 'checkout-button modal-cancel';
-  cancelBtn.textContent = 'CANCEL';
-  cancelBtn.addEventListener('click', () => overlay.remove());
-
-  const addBtn = document.createElement('button');
-  addBtn.className = 'checkout-button modal-add';
-  addBtn.textContent = 'ADD EVENT';
-  addBtn.addEventListener('click', () => addNewEvent(input.value, overlay));
-
-  footer.appendChild(cancelBtn);
-  footer.appendChild(addBtn);
-  modal.appendChild(footer);
-
-  overlay.appendChild(modal);
-  document.body.appendChild(overlay);
-
-  setTimeout(() => input.focus(), 100);
-}
-
-function addNewEvent(eventName, overlay) {
-  const trimmedName = eventName.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
-
-  if (!trimmedName || trimmedName.length < 2) {
-    alert('Please enter a valid event name (at least 2 characters)');
-    return;
-  }
-
-  if (availableEvents.includes(trimmedName)) {
-    alert('Event already exists');
-    return;
-  }
-
-  availableEvents.push(trimmedName);
-  localStorage.setItem('availableEvents', JSON.stringify(availableEvents));
-
-  updateEventSelector();
-
-  // Switch to the new event
-  currentEvent = trimmedName;
-  localStorage.setItem('currentEvent', currentEvent);
-  document.getElementById('eventSelector').value = currentEvent;
-
-  // Clear current order and reload
-  clearOrder();
-  syncOrdersWithFirebase();
-  displayOrderHistory();
-
-  overlay.remove();
-}
-
-function initializeMenu(container) {
-  // Create menu categories
-  menuData.categories.forEach(category => {
-    // Create category element
-    const categoryElement = createCategoryElement(category);
-
-    // Add menu items for this category
-    const categoryItems = menuData.items.filter(item => item.categoryId === category.id);
-
-    // Add each menu item to the category
-    categoryItems.forEach(item => {
-      const menuItemElement = createMenuItemElement(item);
-      categoryElement.appendChild(menuItemElement);
+    activeEvents.forEach(event => {
+      console.log('Processing event in updateEventSelector:', event);
+      const option = document.createElement('option');
+      option.value = event.key;
+      const serviceLabel = event.serviceType === 'package' ? 'Package' : 'Popup';
+      option.textContent = `[${serviceLabel}] ${event.name}`;
+      option.dataset.serviceType = event.serviceType || 'popup';
+      eventSelector.appendChild(option);
     });
 
-    // Add the complete category to the container
-    container.appendChild(categoryElement);
+    // Restore selection if it's still valid (not archived)
+    const isCurrentEventActive = activeEvents.some(event => event.key === currentEvent) || currentEvent === 'pop-up';
+
+    if (isCurrentEventActive) {
+      eventSelector.value = currentEvent;
+    } else {
+      // Current event was archived, default to Legacy Data
+      eventSelector.value = 'pop-up';
+      currentEvent = 'pop-up';
+      window.currentEvent = currentEvent;
+      localStorage.setItem('currentEvent', currentEvent);
+    }
+
+    // Update display mode based on selected event
+    setTimeout(() => {
+      updateDisplayMode();
+    }, 100);
+
+    isUpdatingEventSelector = false;
+  }).catch(() => {
+    isUpdatingEventSelector = false;
   });
+}
+
+function clearEventsCache() {
+  localStorage.removeItem('cachedEvents');
+  console.log('Events cache cleared');
+}
+
+
+// Get current event's service type
+function getCurrentEventServiceType() {
+  const eventSelector = document.getElementById('eventSelector');
+  const selectedOption = eventSelector.selectedOptions[0];
+
+  console.log('getCurrentEventServiceType debug:', {
+    currentValue: eventSelector.value,
+    selectedOption: selectedOption,
+    datasetServiceType: selectedOption ? selectedOption.dataset.serviceType : 'none'
+  });
+
+  if (eventSelector.value === 'pop-up') {
+    return 'popup'; // Legacy data is popup type
+  }
+
+  return selectedOption ? selectedOption.dataset.serviceType || 'popup' : 'popup';
+}
+
+// Update display mode based on service type
+function updateDisplayMode() {
+  const serviceType = getCurrentEventServiceType();
+  const isPackageMode = serviceType === 'package';
+
+  console.log('updateDisplayMode called:', {
+    serviceType,
+    isPackageMode,
+    currentEvent,
+    eventSelectorValue: document.getElementById('eventSelector').value
+  });
+
+  // Hide/show prices in menu
+  document.querySelectorAll('.menu-item-price').forEach(priceElement => {
+    priceElement.style.display = isPackageMode ? 'none' : 'block';
+  });
+
+  // Update order total display
+  updateOrderDisplay();
+}
+
+function getEventDisplayName(eventKey) {
+  if (eventKey === 'pop-up') return 'Legacy Data';
+
+  // Remove 'popup-' prefix and format nicely
+  return eventKey.replace('popup-', '').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 }
 
 function createCategoryElement(category) {
@@ -423,6 +353,8 @@ function updateQuantity(index, newQuantity) {
 }
 
 function updateOrderDisplay() {
+  const serviceType = getCurrentEventServiceType();
+  const isPackageMode = serviceType === 'package';
   const orderItemsContainer = document.querySelector('.order-items');
 
   // Clear current display
@@ -435,20 +367,39 @@ function updateOrderDisplay() {
     emptyMessage.textContent = 'Your order is empty';
     orderItemsContainer.appendChild(emptyMessage);
 
-    // Update totals
-    // document.querySelector('.order-subtotal .price').textContent = '₱ 0.00';
-    document.querySelector('.order-total .price').textContent = '₱ 0.00';
-
-    return;
+    // Update totals based on mode
+    if (isPackageMode) {
+      document.querySelector('.order-total .price').textContent = '0 drinks';
+    } else {
+      document.querySelector('.order-total .price').textContent = '₱ 0.00';
+    }
+    // DON'T return here - let it continue to payment method switching
+  } else {
+    // All the existing item rendering code goes here
+    // (move all the forEach code and item creation here)
   }
 
-  // Calculate subtotal
+  // Payment method switching logic (always runs regardless of items)
+  const popupPaymentMethods = document.querySelector('.popup-payment-methods');
+  const packagePaymentMethods = document.querySelector('.package-payment-methods');
+
+  if (isPackageMode) {
+    popupPaymentMethods.style.display = 'none';
+    packagePaymentMethods.style.display = 'flex';
+  } else {
+    popupPaymentMethods.style.display = 'flex';
+    packagePaymentMethods.style.display = 'none';
+  }
+
+  // Calculate totals
   let subtotal = 0;
+  let totalCups = 0;
 
   // Create order item elements
   currentOrder.forEach((item, index) => {
     const itemTotal = item.price * item.quantity;
     subtotal += itemTotal;
+    totalCups += item.quantity;
 
     const orderItemElement = document.createElement('div');
     orderItemElement.className = 'order-item';
@@ -458,12 +409,11 @@ function updateOrderDisplay() {
 
     const orderItemName = document.createElement('div');
     orderItemName.className = 'order-item-name';
-    orderItemName.textContent = item.name.replace(/<[^>]*>/g, ''); // Remove HTML tags
-
+    orderItemName.textContent = item.name.replace(/<[^>]*>/g, '');
     orderItemName.style.cursor = 'pointer';
     orderItemName.addEventListener('click', () => editOrderItem(index));
 
-    // Add customization text
+    // Add customization text (same as before)
     if (item.customizations) {
       const customText = document.createElement('div');
       customText.className = 'edit-custm-text';
@@ -472,9 +422,7 @@ function updateOrderDisplay() {
       customText.style.color = '#666';
       customText.style.cursor = 'pointer';
 
-      // Only add customizations that exist
       const customDisplay = [];
-      
       if (item.customizations.variant) customDisplay.push(item.customizations.variant);
       if (item.customizations.size) customDisplay.push(item.customizations.size);
       if (item.customizations.serving) customDisplay.push(item.customizations.serving);
@@ -487,7 +435,7 @@ function updateOrderDisplay() {
       }
       if (item.customizations.milk) customDisplay.push(item.customizations.milk);
 
-      if(item.customizations.discount && item.customizations.discount !== 'none') {
+      if (item.customizations.discount && item.customizations.discount !== 'none') {
         const discountBadge = document.createElement('span');
         discountBadge.style.backgroundColor = '#1d8a00';
         discountBadge.style.color = 'white';
@@ -500,30 +448,29 @@ function updateOrderDisplay() {
       }
 
       customText.innerHTML = customDisplay.join(' | ');
-
-      // Add click handler for editing customization
       customText.addEventListener('click', (e) => {
         e.stopPropagation();
         editOrderItem(index);
       });
-
       orderItemName.appendChild(customText);
     }
 
-
     orderItemHeader.appendChild(orderItemName);
 
-    const orderItemPrice = document.createElement('div');
-    orderItemPrice.className = 'order-item-price';
-    orderItemPrice.textContent = '₱ ' + itemTotal.toFixed(2);
-    orderItemHeader.appendChild(orderItemPrice);
+    // Show/hide price based on mode
+    if (!isPackageMode) {
+      const orderItemPrice = document.createElement('div');
+      orderItemPrice.className = 'order-item-price';
+      orderItemPrice.textContent = '₱ ' + itemTotal.toFixed(2);
+      orderItemHeader.appendChild(orderItemPrice);
+    }
 
     orderItemElement.appendChild(orderItemHeader);
 
+    // Add controls (same for both modes)
     const orderItemControls = document.createElement('div');
     orderItemControls.className = 'order-item-controls';
 
-    // Quantity controls
     const quantityControl = document.createElement('div');
     quantityControl.className = 'quantity-control';
 
@@ -546,7 +493,6 @@ function updateOrderDisplay() {
 
     orderItemControls.appendChild(quantityControl);
 
-    // Remove button
     const removeBtn = document.createElement('button');
     removeBtn.className = 'remove-btn';
     removeBtn.textContent = 'Remove';
@@ -554,14 +500,18 @@ function updateOrderDisplay() {
     orderItemControls.appendChild(removeBtn);
 
     orderItemElement.appendChild(orderItemControls);
-
     orderItemsContainer.appendChild(orderItemElement);
   });
 
-  // Update totals
-  const total = subtotal; // Add tax calculation here if needed
-  // document.querySelector('.order-subtotal .price').textContent = '₱ ' + subtotal.toFixed(2);
-  document.querySelector('.order-total .price').textContent = '₱ ' + total.toFixed(2);
+  if (isPackageMode) {
+    document.querySelector('.order-total .price').textContent = `${totalCups} drinks`;
+    popupPaymentMethods.style.display = 'none';
+    packagePaymentMethods.style.display = 'flex';
+  } else {
+    document.querySelector('.order-total .price').textContent = '₱ ' + subtotal.toFixed(2);
+    popupPaymentMethods.style.display = 'flex';
+    packagePaymentMethods.style.display = 'none';
+  }
 }
 
 // Toggle between menu and orders view
@@ -972,13 +922,20 @@ function deleteOrderConfirmed(orderId) {
     // Mark as deleted but DON'T remove from local storage
     orderHistory[orderIndex].status = 'deleted';
     orderHistory[orderIndex].lastModified = new Date().toISOString();
+    orderHistory[orderIndex].needsSync = true;
     
     // Update local storage with the 'deleted' status
     localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
     
     // Update Firebase with deleted status
     const orderDate = getLocalDateString(new Date(orderHistory[orderIndex].timestamp));
-    queueSync('update', orderId, orderHistory[orderIndex], orderDate);
+
+    syncOrderToFirebase(orderHistory[orderIndex]).then(success => {
+      if (success) {
+        orderHistory[orderIndex].needsSync = false;
+        localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+      }
+    });
     
     // Update display (which will filter out deleted items)
     displayOrderHistory();
@@ -1033,11 +990,18 @@ function returnToPending(orderId) {
   if (orderIndex > -1) {
     orderHistory[orderIndex].status = 'pending';
     orderHistory[orderIndex].lastModified = new Date().toISOString(); // Add timestamp
+    orderHistory[orderIndex].needsSync = true;
     localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
 
     // Pass order date to sync queue
     const orderDate = getLocalDateString(new Date(orderHistory[orderIndex].timestamp));
-    queueSync('update', orderId, orderHistory[orderIndex], orderDate);
+
+    syncOrderToFirebase(orderHistory[orderIndex]).then(success => {
+      if (success) {
+        orderHistory[orderIndex].needsSync = false;
+        localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+      }
+    });
 
     displayOrderHistory();
   }
@@ -1059,13 +1023,20 @@ function cancelOrderConfirmed(orderId) {
     // Mark as deleted but DON'T remove from local storage
     orderHistory[orderIndex].status = 'deleted';
     orderHistory[orderIndex].lastModified = new Date().toISOString();
+    orderHistory[orderIndex].needsSync = true;
 
     // Update local storage with the 'deleted' status
     localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
 
     // Update Firebase with 'deleted' status
     const orderDate = getLocalDateString(new Date(orderHistory[orderIndex].timestamp));
-    queueSync('update', orderId, orderHistory[orderIndex], orderDate);
+
+    syncOrderToFirebase(orderHistory[orderIndex]).then(success => {
+      if (success) {
+        orderHistory[orderIndex].needsSync = false;
+        localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+      }
+    });
 
     // Update display (which will filter out deleted items)
     displayOrderHistory();
@@ -1087,11 +1058,18 @@ function voidOrderConfirmed(orderId) {
   if (orderIndex > -1) {
     orderHistory[orderIndex].status = 'voided';
     orderHistory[orderIndex].lastModified = new Date().toISOString();
+    orderHistory[orderIndex].needsSync = true;
     localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
 
     // Pass order date to sync queue
     const orderDate = getLocalDateString(new Date(orderHistory[orderIndex].timestamp));
-    queueSync('update', orderId, orderHistory[orderIndex], orderDate);
+
+    syncOrderToFirebase(orderHistory[orderIndex]).then(success => {
+      if (success) {
+        orderHistory[orderIndex].needsSync = false;
+        localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+      }
+    });
 
     displayOrderHistory();
   }
@@ -1111,11 +1089,18 @@ function completeOrder(orderId) {
   if (orderIndex > -1) {
     orderHistory[orderIndex].status = 'completed';
     orderHistory[orderIndex].lastModified = new Date().toISOString();
+    orderHistory[orderIndex].needsSync = true;
     localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
 
     // Pass order date to sync queue
     const orderDate = getLocalDateString(new Date(orderHistory[orderIndex].timestamp));
-    queueSync('update', orderId, orderHistory[orderIndex], orderDate);
+
+    syncOrderToFirebase(orderHistory[orderIndex]).then(success => {
+      if (success) {
+        orderHistory[orderIndex].needsSync = false;
+        localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+      }
+    });
 
     displayOrderHistory();
   }
@@ -1607,12 +1592,17 @@ function updateItemTotal() {
   buttonTextSpan.textContent = addButton.textContent.includes('UPDATE') ? 'UPDATE ORDER ' : 'ADD TO ORDER ';
   addButton.appendChild(buttonTextSpan);
 
-  // Add price with Montserrat font for numbers
-  const priceSpan = document.createElement('span');
-  priceSpan.style.fontFamily = 'Montserrat, sans-serif';
-  priceSpan.style.fontWeight = '600';
-  priceSpan.textContent = `(₱${finalPrice.toFixed(2)})`;
-  addButton.appendChild(priceSpan);
+  // Only show price for popup mode
+  const serviceType = getCurrentEventServiceType();
+  const isPackageMode = serviceType === 'package';
+
+  if (!isPackageMode) {
+    const priceSpan = document.createElement('span');
+    priceSpan.style.fontFamily = 'Montserrat, sans-serif';
+    priceSpan.style.fontWeight = '600';
+    priceSpan.textContent = `(₱${finalPrice.toFixed(2)})`;
+    addButton.appendChild(priceSpan);
+  }
 }
 
 
@@ -1778,72 +1768,171 @@ function showEndOfDayModal() {
   // Get today's sales data
   const salesData = calculateSalesByPaymentMethod(selectedDate);
 
-  // Only need expenses data
-  const cashData = JSON.parse(localStorage.getItem('cashFlowData') || '{"expenses": 0}');
+  // Get existing cash flow data for this specific date and event
+  const dateStr = getLocalDateString(selectedDate);
+  const cashFlowKey = `cashFlow_${currentEvent}_${dateStr}`;
+  const existingCashData = JSON.parse(localStorage.getItem(cashFlowKey) || '{"startingCash": 0, "expenses": 0}');
 
   // Calculate expected cash
-  const expectedCash = salesData.cash - cashData.expenses;
+  const expectedCash = existingCashData.startingCash + salesData.cash - existingCashData.expenses;
 
-  // Create modal HTML
+  // Create modal HTML with minimal design
   const modalContent = `
     <h2 class="modal-header">End of Day Summary</h2>
     
-    <div class="eod-summary-row">
-      <div class="eod-label">TOTAL SALES</div>
-      <div class="eod-value">₱${formatWithCommas(salesData.total.toFixed(2))}</div>
-    </div>
-    
-    <div class="eod-summary-row">
-      <div class="eod-label">CASH</div>
-      <div class="eod-value">₱${formatWithCommas(salesData.cash.toFixed(2))}</div>
-    </div>
-    
-    <div class="eod-summary-row">
-      <div class="eod-label">GCASH</div>
-      <div class="eod-value">₱${formatWithCommas(salesData.gcash.toFixed(2))}</div>
-    </div>
-    
-    <div class="eod-summary-row">
-      <div class="eod-label">MAYA</div>
-      <div class="eod-value">₱${formatWithCommas(salesData.maya.toFixed(2))}</div>
-    </div>
-    
-    <div class="eod-summary-row" style="margin-top: 30px;">
-      <div class="eod-label">EXPENSES</div>
-      <div class="eod-value">
-        <input type="number" id="expenses" class="eod-input" value="${cashData.expenses}">
+    <div class="eod-simple-section">
+      <h3 class="eod-simple-title">Sales Breakdown</h3>
+      <div class="eod-summary-row">
+        <div class="eod-label">Total Sales</div>
+        <div class="eod-value">₱${formatWithCommas(salesData.total.toFixed(2))}</div>
+      </div>
+      
+      <div class="eod-summary-row">
+        <div class="eod-label">Cash Sales</div>
+        <div class="eod-value">₱${formatWithCommas(salesData.cash.toFixed(2))}</div>
+      </div>
+      
+      <div class="eod-summary-row">
+        <div class="eod-label">GCash Sales</div>
+        <div class="eod-value">₱${formatWithCommas(salesData.gcash.toFixed(2))}</div>
+      </div>
+      
+      <div class="eod-summary-row">
+        <div class="eod-label">Maya Sales</div>
+        <div class="eod-value">₱${formatWithCommas(salesData.maya.toFixed(2))}</div>
       </div>
     </div>
     
+    <div class="eod-simple-section">
+      <h3 class="eod-simple-title">Cash Management</h3>
+      <div class="eod-summary-row">
+        <div class="eod-label">Starting Cash</div>
+        <div class="eod-value">
+          <div class="eod-input-wrapper">
+            <span class="peso-symbol">₱</span>
+            <input type="number" id="startingCash" class="eod-input" value="${existingCashData.startingCash}" step="0.01" placeholder="0.00">
+          </div>
+        </div>
+      </div>
+      
+      <div class="eod-summary-row">
+        <div class="eod-label">Expenses</div>
+        <div class="eod-value">
+          <div class="eod-input-wrapper">
+            <span class="peso-symbol">₱</span>
+            <input type="number" id="expenses" class="eod-input" value="${existingCashData.expenses}" step="0.01" placeholder="0.00">
+          </div>
+        </div>
+      </div>
+      
+      <div class="eod-summary-row">
+        <div class="eod-label">Expected Cash</div>
+        <div class="eod-value" id="expectedCash">₱${formatWithCommas(expectedCash.toFixed(2))}</div>
+      </div>
+
+      <div class="eod-summary-row">
+        <div class="eod-label">Actual Cash Count</div>
+        <div class="eod-value">
+          <div class="eod-input-wrapper">
+            <span class="peso-symbol">₱</span>
+            <input type="number" id="actualCash" class="eod-input" value="${existingCashData.actualCash || expectedCash}" step="0.01" placeholder="0.00">
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="eod-summary-row">
-      <div class="eod-label">CASH LEFT</div>
-      <div class="eod-value" id="expectedCash">₱${formatWithCommas(expectedCash.toFixed(2))}</div>
+      <div class="eod-label">Cash Variance</div>
+      <div class="eod-value" id="cashVariance">₱0.00</div>
     </div>
   `;
 
-  // Show the modal
+  // Show the modal with save functionality
   showModal(modalContent, function () {
-    // Save only the expenses data when the modal is closed
-    const expenses = parseFloat(document.getElementById('expenses').value) || 0;
-    localStorage.setItem('cashFlowData', JSON.stringify({
-      expenses
-    }));
-  });
+    saveCashFlowData();
+  }, true);
 
-  // Add event listener to update expected cash in real-time
+  // Add event listeners with peso formatting
+  const startingCashInput = document.getElementById('startingCash');
   const expensesInput = document.getElementById('expenses');
+  const actualCashInput = document.getElementById('actualCash');
 
-  function updateExpectedCash() {
+  function updateCalculations() {
+    const startingCash = parseFloat(startingCashInput.value) || 0;
     const expenses = parseFloat(expensesInput.value) || 0;
-    const expectedCash = salesData.cash - expenses;
+    const actualCash = parseFloat(actualCashInput.value) || 0;
+
+    const expectedCash = startingCash + salesData.cash - expenses;
+    const variance = actualCash - expectedCash;
+
     document.getElementById('expectedCash').textContent = `₱${formatWithCommas(expectedCash.toFixed(2))}`;
+
+    const varianceElement = document.getElementById('cashVariance');
+
+    if (variance > 0) {
+      varianceElement.style.color = '#1d8a00';
+      varianceElement.textContent = `+₱${formatWithCommas(variance.toFixed(2))}`;
+    } else if (variance < 0) {
+      varianceElement.style.color = '#ff4444';
+      varianceElement.textContent = `-₱${formatWithCommas(Math.abs(variance).toFixed(2))}`;
+    } else {
+      varianceElement.style.color = '#333';
+      varianceElement.textContent = `₱${formatWithCommas(variance.toFixed(2))}`;
+    }
   }
 
-  expensesInput.addEventListener('input', updateExpectedCash);
+  startingCashInput.addEventListener('input', updateCalculations);
+  expensesInput.addEventListener('input', updateCalculations);
+  actualCashInput.addEventListener('input', updateCalculations);
+
+  // Initial calculation
+  updateCalculations();
 }
 
-// Helper function to show a modal with the given content
-function showModal(content, onClose) {
+function saveCashFlowData() {
+  const dateStr = getLocalDateString(selectedDate);
+  const cashFlowKey = `cashFlow_${currentEvent}_${dateStr}`;
+
+  const startingCash = parseFloat(document.getElementById('startingCash').value) || 0;
+  const expenses = parseFloat(document.getElementById('expenses').value) || 0;
+  const actualCash = parseFloat(document.getElementById('actualCash').value) || 0;
+
+  const salesData = calculateSalesByPaymentMethod(selectedDate);
+  const expectedCash = startingCash + salesData.cash - expenses;
+  const variance = actualCash - expectedCash;
+
+  const cashFlowData = {
+    date: dateStr,
+    event: currentEvent,
+    startingCash,
+    expenses,
+    actualCash,
+    expectedCash,
+    variance,
+    salesData,
+    savedAt: new Date().toISOString()
+  };
+
+  // Save to localStorage
+  localStorage.setItem(cashFlowKey, JSON.stringify(cashFlowData));
+
+  // Also save to a summary for dashboard access
+  const summaryKey = 'eodSummaries';
+  const existingSummaries = JSON.parse(localStorage.getItem(summaryKey) || '[]');
+
+  // Remove existing entry for this date/event if exists
+  const filteredSummaries = existingSummaries.filter(
+    summary => !(summary.date === dateStr && summary.event === currentEvent)
+  );
+
+  // Add new entry
+  filteredSummaries.push(cashFlowData);
+  localStorage.setItem(summaryKey, JSON.stringify(filteredSummaries));
+
+  alert('End of day summary saved successfully!');
+}
+
+function showModal(content, onClose, showSaveButton = false) {
   const existingModal = document.querySelector('.modal-overlay');
   if (existingModal) {
     existingModal.remove();
@@ -1862,17 +1951,34 @@ function showModal(content, onClose) {
   const footer = document.createElement('div');
   footer.className = 'modal-footer';
 
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'checkout-button';
-  closeBtn.textContent = 'CLOSE';
-  closeBtn.addEventListener('click', () => {
-    if (onClose) onClose();
-    overlay.remove();
-  });
+  if (showSaveButton) {
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'checkout-button modal-add';
+    saveBtn.textContent = 'SAVE';
+    saveBtn.addEventListener('click', () => {
+      if (onClose) onClose();
+      overlay.remove();
+    });
 
-  footer.appendChild(closeBtn);
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'checkout-button modal-cancel';
+    cancelBtn.textContent = 'CANCEL';
+    cancelBtn.addEventListener('click', () => overlay.remove());
+
+    footer.appendChild(cancelBtn);
+    footer.appendChild(saveBtn);
+  } else {
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'checkout-button';
+    closeBtn.textContent = 'CLOSE';
+    closeBtn.addEventListener('click', () => {
+      if (onClose) onClose();
+      overlay.remove();
+    });
+    footer.appendChild(closeBtn);
+  }
+
   modal.appendChild(footer);
-
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
 }
@@ -2205,16 +2311,17 @@ function completeCashPayment() {
   // Determine if we're editing or creating a new order
   const isEditing = window.editingOrderData !== undefined;
 
-  // Create the order object with shared properties
   const order = {
     id: isEditing ? window.editingOrderData.originalId : now.getTime().toString().slice(-5),
     items: [...currentOrder],
     total: calculateOrderTotal(),
-    paymentMethod: 'Cash',
+    paymentMethod: 'Cash', // or method
     timestamp: isEditing ? window.editingOrderData.timestamp : now.toISOString(),
     status: 'pending',
     customerName: customerName,
-    event: currentEvent 
+    event: currentEvent,
+    needsSync: true,
+    lastModified: now.toISOString()
   };
 
   // Add Firebase ID if we're editing
@@ -2230,8 +2337,16 @@ function completeCashPayment() {
   const orderDate = getLocalDateString(new Date(order.timestamp));
   console.log(`Creating/updating order with date: ${orderDate}`);
 
-  const syncAction = isEditing ? 'update' : 'create';
-  queueSync(syncAction, order.id, order, orderDate);
+  // Sync immediately to Firebase
+  syncOrderToFirebase(order).then(success => {
+    if (success) {
+      const orderIndex = orderHistory.findIndex(o => o.id === order.id);
+      if (orderIndex > -1) {
+        orderHistory[orderIndex].needsSync = false;
+        localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+      }
+    }
+  });
 
   // Clear editing state if needed
   if (isEditing) {
@@ -2247,16 +2362,17 @@ function completeDigitalPayment(method) {
   // Determine if we're editing or creating a new order
   const isEditing = window.editingOrderData !== undefined;
 
-  // Create the order object with shared properties
   const order = {
     id: isEditing ? window.editingOrderData.originalId : now.getTime().toString().slice(-5),
     items: [...currentOrder],
     total: calculateOrderTotal(),
-    paymentMethod: method,
+    paymentMethod: method, // or method
     timestamp: isEditing ? window.editingOrderData.timestamp : now.toISOString(),
     status: 'pending',
     customerName: customerName,
-    event: currentEvent 
+    event: currentEvent,
+    needsSync: true,
+    lastModified: now.toISOString()
   };
   
   // Add Firebase ID if we're editing
@@ -2272,8 +2388,16 @@ function completeDigitalPayment(method) {
   const orderDate = getLocalDateString(new Date(order.timestamp));
   console.log(`Creating/updating order with date: ${orderDate}`);
 
-  const syncAction = isEditing ? 'update' : 'create';
-  queueSync(syncAction, order.id, order, orderDate);
+  // Sync immediately to Firebase
+  syncOrderToFirebase(order).then(success => {
+    if (success) {
+      const orderIndex = orderHistory.findIndex(o => o.id === order.id);
+      if (orderIndex > -1) {
+        orderHistory[orderIndex].needsSync = false;
+        localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+      }
+    }
+  });
 
   // Clear editing state if needed
   if (isEditing) {
@@ -2372,11 +2496,36 @@ function showOrderConfirmation() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+  // Migrate existing orders to new sync format
+  function migrateExistingOrders() {
+    const orderHistory = JSON.parse(localStorage.getItem('orderHistory') || '[]');
+    let needsMigration = false;
+
+    orderHistory.forEach(order => {
+      if (order.needsSync === undefined) {
+        order.needsSync = false; // Assume existing orders are already synced
+        order.lastModified = order.lastModified || order.timestamp;
+        needsMigration = true;
+      }
+    });
+
+    if (needsMigration) {
+      localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+      console.log('Migrated existing orders to new sync format');
+    }
+  }
+
+  // Call migration before other initialization
+  migrateExistingOrders();
+
   initializeMenu(document.getElementById('menuContent'));
   updateOrderDisplay();
   initializePaymentHandlers();
   initializeDatePicker();
-  initializeEventSelector();
+  updateEventDisplay();
+
+  // Load events before initializing selector
+  await initializeEventSelector();
   updateEventDisplay();
 
   // Initialize menu items in Firebase on first run
@@ -2406,7 +2555,53 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (forceSyncBtn) {
     forceSyncBtn.addEventListener('click', forceFullSync);
   }
+
+  // Package submit handler
+  const packageSubmitBtn = document.getElementById('package-submit');
+  if (packageSubmitBtn) {
+    packageSubmitBtn.addEventListener('click', () => {
+      if (currentOrder.length === 0) {
+        alert('Please add items to your order first.');
+        return;
+      }
+      submitPackageOrder();
+    });
+  }
 });
+
+async function initializeEventSelector() {
+  console.log('=== initializeEventSelector called ===');
+  const eventSelector = document.getElementById('eventSelector');
+
+  // Load events from Firebase first
+  await loadAvailableEvents();
+  console.log('availableEvents after loading:', availableEvents);
+
+  // Populate event selector (this will handle filtering)
+  updateEventSelector();
+  // Set current event
+  eventSelector.value = currentEvent;
+
+  // Event selector change handler
+  eventSelector.addEventListener('change', async (e) => {
+    currentEvent = e.target.value;
+    window.currentEvent = currentEvent;
+    localStorage.setItem('currentEvent', currentEvent);
+
+    // Load custom menu for the new event
+    await loadEventMenu(currentEvent);
+
+    // Update display mode for new service type
+    updateDisplayMode();
+
+    // Force update order display for payment buttons
+    updateOrderDisplay();
+
+    // Reload orders for the new event
+    syncOrdersWithFirebase();
+    displayOrderHistory();
+  });
+}
 
 async function forceFullSync() {
   const forceSyncBtn = document.getElementById('forceSyncBtn');
@@ -2439,7 +2634,7 @@ async function forceFullSync() {
         if (order.status === 'deleted') continue;
 
         // Force sync to Firebase
-        queueSync('create', order.id, order, dateStr);
+        await syncOrderToFirebase(order);
       }
     }
 
@@ -2461,152 +2656,13 @@ async function loadOrdersFromLocalStorage() {
 }
 
 async function syncOrdersWithFirebase() {
-  try {
-    console.log("Starting sync with Firebase...");
+  console.log('Running periodic sync...');
+  await syncAllPendingOrders();
 
-    // Only sync the currently selected date
-    const syncDate = selectedDate;
-    const dateStr = getLocalDateString(syncDate);
-
-    console.log(`Syncing orders for ${dateStr}...`);
-
-    // Only fetch orders for the selected date
-    let firebaseOrders = [];
-    try {
-      const fbOrders = await loadOrdersFromFirebase(syncDate);
-      if (fbOrders && fbOrders.length > 0) {
-        console.log(`Found ${fbOrders.length} orders in Firebase for ${dateStr}.`);
-        firebaseOrders = fbOrders;
-      }
-    } catch (error) {
-      console.log(`No orders found in Firebase for ${dateStr}: ${error.message}`);
-    }
-
-    // Create a map of firebase orders by ID for efficient lookup
-    const firebaseOrderMap = new Map();
-    firebaseOrders.forEach(order => {
-      firebaseOrderMap.set(order.id, order);
-    });
-
-    // Get local orders
-    const localOrders = JSON.parse(localStorage.getItem('orderHistory') || '[]');
-
-    // Filter local orders to only include those from the selected date AND current event
-    const selectedDateLocalOrders = localOrders.filter(order => {
-      const orderDate = new Date(order.timestamp);
-      const orderEvent = order.event || 'pop-up'; // Default to 'pop-up' for existing orders
-      return orderDate.toDateString() === syncDate.toDateString() && orderEvent === currentEvent;
-    });
-
-    console.log(`Found ${selectedDateLocalOrders.length} local orders for ${dateStr}`);
-
-    // Process each local order for sync
-    for (const localOrder of selectedDateLocalOrders) {
-      const orderDate = getLocalDateString(new Date(localOrder.timestamp));
-      const fbOrder = firebaseOrderMap.get(localOrder.id);
-
-      // Always try to sync orders that aren't marked as synced
-      if (!localOrder.syncedWithFirebase || !fbOrder) {
-        console.log(`Queuing order ${localOrder.id} for sync...`);
-        queueSync('create', localOrder.id, localOrder, orderDate);
-      }
-      // If order exists in Firebase but has been modified locally
-      else if (fbOrder && localOrder.lastModified &&
-        new Date(localOrder.lastModified) > new Date(fbOrder.lastModified || 0)) {
-        console.log(`Queuing updated order ${localOrder.id} for sync...`);
-        queueSync('update', localOrder.id, localOrder, orderDate);
-      }
-    }
-
-    // Save updated local orders with sync flags
-    localStorage.setItem('orderHistory', JSON.stringify(localOrders));
-
-    // Merge Firebase orders into local storage
-    const mergedOrders = mergeOrders(localOrders, firebaseOrders);
-
-    // Update local storage
-    orderHistory = mergedOrders;
-    localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
-
-    console.log(`Successfully synced with Firebase. Total orders: ${orderHistory.length}`);
-
-    // Update display if on orders page
-    if (document.getElementById('orders-container').style.display !== 'none') {
-      displayOrderHistory();
-    }
-
-  } catch (error) {
-    console.error('Error syncing with Firebase:', error);
+  // Update display if on orders page
+  if (document.getElementById('orders-container').style.display !== 'none') {
+    displayOrderHistory();
   }
-}
-
-function mergeOrders(localOrders, firebaseOrders) {
-  // Create a map of local orders by ID
-  const orderMap = new Map();
-  localOrders.forEach(order => {
-    // Keep all orders in the map, including deleted ones
-    const syncedWithFirebase = order.syncedWithFirebase || false;
-    orderMap.set(order.id, { ...order, syncedWithFirebase });
-  });
-
-  // Process Firebase orders
-  firebaseOrders.forEach(fbOrder => {
-    const existingLocalOrder = orderMap.get(fbOrder.id);
-
-    // If Firebase order doesn't exist locally, add it
-    if (!existingLocalOrder) {
-      fbOrder.firebaseId = fbOrder.firebaseId || fbOrder.id;
-      fbOrder.syncedWithFirebase = true;
-      orderMap.set(fbOrder.id, fbOrder);
-    }
-    // If both exist, determine which to keep
-    else {
-      // Update Firebase ID reference
-      existingLocalOrder.firebaseId = fbOrder.firebaseId || fbOrder.id;
-      existingLocalOrder.syncedWithFirebase = true; // Always mark as synced
-
-      // First, check for lastModified timestamps
-      const localLastModified = existingLocalOrder.lastModified ? new Date(existingLocalOrder.lastModified).getTime() : 0;
-      const fbLastModified = fbOrder.lastModified ? new Date(fbOrder.lastModified).getTime() : 0;
-
-      // Always choose newer data based on lastModified timestamp
-      if (fbLastModified > localLastModified) {
-        // Firebase has newer changes
-        orderMap.set(fbOrder.id, {
-          ...fbOrder,
-          syncedWithFirebase: true,
-          firebaseId: fbOrder.firebaseId || fbOrder.id
-        });
-      }
-      // Otherwise keep local changes if local is newer
-      else if (localLastModified > fbLastModified) {
-        // Local is newer, keep it (already in map)
-      }
-      // If timestamps equal or not available, use status priority
-      else {
-        // Status priority (higher number = higher priority)
-        const statusPriority = {
-          'deleted': 4,  // Make deleted highest priority
-          'voided': 3,
-          'completed': 2,
-          'pending': 1
-        };
-
-        if ((statusPriority[fbOrder.status] || 0) > (statusPriority[existingLocalOrder.status] || 0)) {
-          // Firebase status has higher priority
-          orderMap.set(fbOrder.id, {
-            ...fbOrder,
-            syncedWithFirebase: true,
-            firebaseId: fbOrder.firebaseId || fbOrder.id
-          });
-        }
-      }
-    }
-  });
-
-  // Convert map back to array and sort by timestamp (newest first)
-  return Array.from(orderMap.values())
-    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 }
 
 // Replace the existing showNameInputModal function:
@@ -2812,13 +2868,6 @@ function initializeMobileLayout() {
       }
     }
   }
-
-  // Extend the existing updateOrderDisplay function
-  const originalUpdateOrderDisplay = updateOrderDisplay;
-  window.updateOrderDisplay = function () {
-    originalUpdateOrderDisplay();
-    updateMobileOrderButton();
-  };
 }
 
 // Call this in your DOMContentLoaded event
@@ -2954,3 +3003,158 @@ window.addEventListener('online', () => {
 window.addEventListener('offline', () => {
   console.log('Connection lost - orders will be queued for sync');
 });
+
+function submitPackageOrder() {
+  const now = new Date();
+
+  // Determine if we're editing or creating a new order
+  const isEditing = window.editingOrderData !== undefined;
+
+  const order = {
+    id: isEditing ? window.editingOrderData.originalId : now.getTime().toString().slice(-5),
+    items: [...currentOrder],
+    total: currentOrder.reduce((total, item) => total + item.quantity, 0), // Total cups for package service
+    paymentMethod: 'Package Service', // Fixed payment method for package orders
+    timestamp: isEditing ? window.editingOrderData.timestamp : now.toISOString(),
+    status: 'pending',
+    customerName: customerName,
+    event: currentEvent,
+    serviceType: 'package',
+    needsSync: true,
+    lastModified: now.toISOString()
+  };
+
+  // Add Firebase ID if we're editing
+  if (isEditing && window.editingOrderData.firebaseId) {
+    order.firebaseId = window.editingOrderData.firebaseId;
+  }
+
+  // Save to order history
+  orderHistory.push(order);
+  localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+
+  // Sync immediately to Firebase
+  syncOrderToFirebase(order).then(success => {
+    if (success) {
+      const orderIndex = orderHistory.findIndex(o => o.id === order.id);
+      if (orderIndex > -1) {
+        orderHistory[orderIndex].needsSync = false;
+        localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+      }
+    }
+  });
+
+  // Clear editing state if needed
+  if (isEditing) {
+    window.editingOrderData = undefined;
+  }
+
+  showPackageOrderConfirmation();
+}
+
+function showPackageOrderConfirmation() {
+  // Create a simple success message without payment modal styling
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.style.cssText = `
+    width: 300px;
+    padding: 40px;
+    text-align: center;
+    border-radius: 8px;
+  `;
+
+  const successMessage = document.createElement('div');
+  successMessage.innerHTML = 'ORDER<br>SUBMITTED!';
+  successMessage.style.cssText = `
+    font-family: "Cocogoose pro trial", sans-serif;
+    font-size: 24px;
+    color: #1d8a00;
+    line-height: 1.2;
+    letter-spacing: 1px;
+  `;
+
+  modal.appendChild(successMessage);
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  // Auto-close after 2 seconds
+  setTimeout(() => {
+    overlay.remove();
+    clearOrder();
+  }, 2000);
+}
+
+window.debugEventData = async function () {
+  console.log('=== DEBUG EVENT DATA ===');
+  const events = await loadEventsFromFirebase();
+  console.log('All events loaded:', events);
+
+  const targetEvent = events.find(e => e.key === 'package-wedding-service--7-15-');
+  console.log('Target event data:', targetEvent);
+
+  if (targetEvent) {
+    console.log('Service Type:', targetEvent.serviceType);
+    console.log('All properties:', Object.keys(targetEvent));
+  } else {
+    console.log('Event not found!');
+  }
+};
+
+let currentMenuData = null;
+
+async function loadEventMenu(eventKey) {
+  if (eventKey === 'pop-up') {
+    // Use default menu for legacy pop-up
+    currentMenuData = (await import('./menu-data.js')).menuData;
+    refreshMenuDisplay();
+    return;
+  }
+
+  try {
+    // Load event data from Firebase to get custom menu
+    const events = await loadEventsFromFirebase();
+    const event = events.find(e => e.key === eventKey);
+
+    if (event && event.customMenu) {
+      console.log('Loading custom menu for event:', eventKey);
+      currentMenuData = event.customMenu;
+    } else {
+      console.log('No custom menu found, using default for event:', eventKey);
+      currentMenuData = (await import('./menu-data.js')).menuData;
+    }
+
+    refreshMenuDisplay();
+  } catch (error) {
+    console.error('Error loading event menu:', error);
+    // Fallback to default menu
+    currentMenuData = (await import('./menu-data.js')).menuData;
+    refreshMenuDisplay();
+  }
+}
+
+function refreshMenuDisplay() {
+  const menuContainer = document.getElementById('menuContent');
+  menuContainer.innerHTML = ''; // Clear existing menu
+  initializeMenu(menuContainer); // Rebuild menu with current data
+}
+
+// Update the initializeMenu function to use currentMenuData instead of importing menuData
+function initializeMenu(container) {
+  const menuDataToUse = currentMenuData || menuData;
+
+  // Create menu categories
+  menuDataToUse.categories.forEach(category => {
+    const categoryElement = createCategoryElement(category);
+    const categoryItems = menuDataToUse.items.filter(item => item.categoryId === category.id);
+
+    categoryItems.forEach(item => {
+      const menuItemElement = createMenuItemElement(item);
+      categoryElement.appendChild(menuItemElement);
+    });
+
+    container.appendChild(categoryElement);
+  });
+}

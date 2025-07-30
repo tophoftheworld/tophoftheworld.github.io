@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Matchanese Expense Admin</title>
+    <link rel="icon" href="data:,">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"
+        integrity="sha512-ElRFoEQdI5Ht6kZvyzXhYG9NqjtkmlkfYk0wr6wHxU9JEHakS7UJZNeml5ALk+8IKlU6jDgMabC3vkumRokgJA=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script type="module" src="./js/admin.js"></script>
+    <link rel="stylesheet" href="css/admin.css">
+</head>
+
+<body>
+    <div class="container">
+        <div class="admin-header">
+            <div class="logo-section">
+                <img src="img/matchanese-logo.png" class="logo" alt="Matchanese Logo">
+                <h1 class="app-title">Expense Admin</h1>
+            </div>
+            <div class="header-actions">
+                <div class="branch-selector">
+                    <span class="branch-label">Branch:</span>
+                    <select class="branch-dropdown" id="branchSelector">
+                        <option value="all">All Branches</option>
+                        <option value="SM North">SM North</option>
+                        <option value="Podium">Podium</option>
+                        <option value="BGC">BGC</option>
+                        <option value="Makati">Makati</option>
+                    </select>
+                </div>
+                <button class="mobile-app-btn" onclick="window.open('index.html', '_blank')">
+                    📱 Mobile App
+                </button>
+            </div>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="summary-cards" id="summaryCards">
+            <!-- Cards will be populated by JS -->
+        </div>
+
+        <!-- Main Controls -->
+        <div class="main-controls">
+            <div class="view-selector">
+                <button class="view-btn active" data-view="expenses">Expenses</button>
+                <button class="view-btn" data-view="suppliers">Suppliers</button>
+                <button class="view-btn" data-view="analytics">Analytics</button>
+            </div>
+
+            <div class="date-shortcuts" id="dateShortcuts">
+                <button class="date-shortcut-btn" data-range="today">Today</button>
+                <button class="date-shortcut-btn" data-range="week">Last 7 Days</button>
+                <button class="date-shortcut-btn" data-range="month">This Month</button>
+                <button class="date-shortcut-btn" data-range="year">This Year</button>
+                <button class="date-shortcut-btn active" data-range="all">All Data</button>
+            </div>
+
+            <input type="text" id="dateRange" placeholder="Select date range" />
+        </div>
+
+        <!-- Table Controls -->
+        <div class="table-controls">
+            <div class="table-actions">
+                <button class="action-btn primary" id="addExpenseBtn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    Add Expense
+                </button>
+                <button class="action-btn secondary" id="exportBtn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7,10 12,15 17,10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Export CSV
+                </button>
+                <button class="action-btn secondary" id="importBtn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17,8 12,3 7,8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    Import CSV
+                </button>
+            </div>
+
+            <div class="table-search">
+                <input type="text" id="searchInput" placeholder="Search expenses, suppliers, items..." />
+                <button class="filter-btn" id="filterBtn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="22,3 2,3 10,12.46 10,19 14,21 14,12.46"></polygon>
+                    </svg>
+                    Filter
+                </button>
+            </div>
+        </div>
+
+        <!-- Data Views -->
+        <div class="data-view" id="expensesView">
+            <div class="data-table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr id="expenseTableHeaders">
+                            <th><input type="checkbox" id="selectAllExpenses"></th>
+                            <th data-sort="date">Date</th>
+                            <th data-sort="supplier">Supplier</th>
+                            <th>Items</th>
+                            <th data-sort="amount">Amount</th>
+                            <th data-sort="branch">Branch</th>
+                            <th data-sort="payment">Payment</th>
+                            <th data-sort="vat">VAT</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="expenseTableBody">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+                <div id="expensesPaginationControls" class="pagination-container">
+                    <!-- Pagination will be populated by JS -->
+                </div>
+            </div>
+        </div>
+
+        <div class="data-view hidden" id="suppliersView">
+            <div class="data-table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr id="supplierTableHeaders">
+                            <th><input type="checkbox" id="selectAllSuppliers"></th>
+                            <th data-sort="name">Supplier Name</th>
+                            <th data-sort="business">Business Name</th>
+                            <th data-sort="tin">TIN</th>
+                            <th data-sort="vat">VAT Status</th>
+                            <th data-sort="transactions">Transactions</th>
+                            <th data-sort="total">Total Amount</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="supplierTableBody">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+                <div id="suppliersPaginationControls" class="pagination-container">
+                    <!-- Pagination will be populated by JS -->
+                </div>
+            </div>
+        </div>
+
+        <div class="data-view hidden" id="analyticsView">
+            <div class="analytics-container">
+                <div class="chart-section">
+                    <div class="chart-header">
+                        <h3>Expense Trends</h3>
+                        <div class="chart-controls">
+                            <button class="chart-btn active" data-chart="daily">Daily</button>
+                            <button class="chart-btn" data-chart="weekly">Weekly</button>
+                            <button class="chart-btn" data-chart="monthly">Monthly</button>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="expenseChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="analytics-grid">
+                    <div class="analytics-card">
+                        <h4>Top Suppliers</h4>
+                        <div id="topSuppliers"></div>
+                    </div>
+                    <div class="analytics-card">
+                        <h4>Expense Categories</h4>
+                        <div id="expenseCategories"></div>
+                    </div>
+                    <div class="analytics-card">
+                        <h4>Payment Methods</h4>
+                        <div id="paymentMethods"></div>
+                    </div>
+                    <div class="analytics-card">
+                        <h4>VAT Summary</h4>
+                        <div id="vatSummary"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden file input for imports -->
+    <input type="file" id="fileInput" accept=".csv" style="display: none;">
+
+    <!-- Toast for notifications -->
+    <div id="toast" class="toast"></div>
+</body>
+
+</html>
