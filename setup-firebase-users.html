@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setup Firebase Users - Matchanese Admin</title>
+    <link rel="icon" href="icons/icon-64.png" type="image/png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .setup-container {
+            background: linear-gradient(135deg, #2b9348 0%, #1e7e34 100%);
+        }
+        
+        .setup-card {
+            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.95);
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #2b9348 0%, #1e7e34 100%);
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(43, 147, 72, 0.3);
+        }
+        
+        .btn-primary:disabled {
+            background: #9ca3af;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .log-entry {
+            animation: slideIn 0.3s ease;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .loading-spinner {
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="min-h-screen setup-container flex items-center justify-center p-4">
+    <div class="setup-card w-full max-w-4xl p-8 rounded-2xl shadow-2xl">
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <img 
+                src="shared/assets/images/matchanese-logo-full.png" 
+                alt="Matchanese" 
+                class="h-12 mx-auto mb-4"
+            />
+            <h1 class="text-3xl font-bold text-gray-800">Firebase Users Setup</h1>
+            <p class="text-gray-600 mt-2">Create Firebase Authentication users from staff data</p>
+        </div>
+
+        <!-- Info -->
+        <div class="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded-lg mb-6">
+            <div class="flex items-center">
+                <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+                </svg>
+                <span class="font-semibold">Info:</span>
+                <span class="ml-2">This will create Firebase Auth users from your current Firebase "employees" collection. Only run this once!</span>
+            </div>
+        </div>
+
+        <!-- Setup Button -->
+        <div class="text-center mb-8">
+            <button
+                id="setupButton"
+                class="btn-primary text-white py-3 px-8 rounded-lg font-semibold text-lg"
+            >
+                <span id="setupButtonText">Create Firebase Users</span>
+                <svg id="setupSpinner" class="hidden w-5 h-5 ml-2 loading-spinner" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                </svg>
+            </button>
+        </div>
+
+        <!-- Log Output -->
+        <div class="bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-sm max-h-96 overflow-y-auto">
+            <div id="logOutput">
+                <div class="text-gray-400">Ready to create Firebase users...</div>
+            </div>
+        </div>
+
+        <!-- Navigation -->
+        <div class="text-center mt-8">
+            <a href="admin-login.html" class="text-accent hover:underline">← Back to Login</a>
+        </div>
+    </div>
+
+    <!-- Firebase Auth Script -->
+    <script type="module">
+        import { createFirebaseUsers, loadEmployeesFromFirebase } from './js/firebase-auth-setup.js';
+
+        // DOM elements
+        const setupButton = document.getElementById('setupButton');
+        const setupButtonText = document.getElementById('setupButtonText');
+        const setupSpinner = document.getElementById('setupSpinner');
+        const logOutput = document.getElementById('logOutput');
+
+        // Add log entry
+        function addLog(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry mb-1';
+            
+            let color = 'text-gray-400';
+            if (type === 'success') color = 'text-green-400';
+            if (type === 'error') color = 'text-red-400';
+            if (type === 'warning') color = 'text-yellow-400';
+            
+            logEntry.innerHTML = `<span class="text-gray-500">[${timestamp}]</span> <span class="${color}">${message}</span>`;
+            logOutput.appendChild(logEntry);
+            logOutput.scrollTop = logOutput.scrollHeight;
+        }
+
+        // Set loading state
+        function setLoadingState(loading) {
+            setupButton.disabled = loading;
+            if (loading) {
+                setupButtonText.textContent = 'Creating Users...';
+                setupSpinner.classList.remove('hidden');
+            } else {
+                setupButtonText.textContent = 'Create Firebase Users';
+                setupSpinner.classList.add('hidden');
+            }
+        }
+
+        // Handle setup button click
+        setupButton.addEventListener('click', async () => {
+            setLoadingState(true);
+            addLog('Starting Firebase user creation process...', 'info');
+            addLog('Loading employees from Firebase...', 'info');
+            
+            try {
+                // First load employees to show what will be created
+                const employees = await loadEmployeesFromFirebase();
+                addLog(`Found ${Object.keys(employees).length} employees in Firebase`, 'info');
+                
+                // Show admin staff
+                const adminStaff = Object.entries(employees).filter(([code, data]) => data.role === 'admin');
+                if (adminStaff.length > 0) {
+                    addLog('Admin staff (full access):', 'info');
+                    adminStaff.forEach(([code, data]) => {
+                        addLog(`  - ${data.name} (${code})`, 'info');
+                    });
+                }
+                
+                // Show regular staff
+                const regularStaff = Object.entries(employees).filter(([code, data]) => data.role === 'staff');
+                if (regularStaff.length > 0) {
+                    addLog(`Regular staff (login only): ${regularStaff.length} users`, 'info');
+                }
+                
+                addLog('Creating Firebase Auth users...', 'info');
+                await createFirebaseUsers();
+                addLog('Firebase user creation completed successfully!', 'success');
+                addLog('You can now use the admin login page.', 'info');
+            } catch (error) {
+                addLog(`Error creating users: ${error.message}`, 'error');
+            } finally {
+                setLoadingState(false);
+            }
+        });
+
+        // Override console.log to show in our log output
+        const originalLog = console.log;
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            addLog(args.join(' '), 'info');
+        };
+
+        const originalError = console.error;
+        console.error = function(...args) {
+            originalError.apply(console, args);
+            addLog(args.join(' '), 'error');
+        };
+    </script>
+</body>
+</html>

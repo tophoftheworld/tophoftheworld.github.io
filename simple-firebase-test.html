@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Firebase Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+        input, button { margin: 5px; padding: 8px; }
+    </style>
+</head>
+<body>
+    <h1>Simple Firebase Authentication Test</h1>
+    
+    <div>
+        <h3>Test 1: Check if user exists</h3>
+        <input type="text" id="testEmail" placeholder="Email (e.g., 130129@matchanese.local)" value="130129@matchanese.local">
+        <button onclick="checkUserExists()">Check User</button>
+        <div id="userResult"></div>
+    </div>
+    
+    <div>
+        <h3>Test 2: Try creating a test user</h3>
+        <input type="text" id="createEmail" placeholder="Email" value="test@matchanese.local">
+        <input type="password" id="createPassword" placeholder="Password" value="testpass123">
+        <button onclick="createTestUser()">Create Test User</button>
+        <div id="createResult"></div>
+    </div>
+    
+    <div>
+        <h3>Test 3: Try login with test user</h3>
+        <button onclick="loginTestUser()">Login Test User</button>
+        <div id="loginResult"></div>
+    </div>
+    
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+        import { 
+            getAuth, 
+            signInWithEmailAndPassword, 
+            createUserWithEmailAndPassword,
+            fetchSignInMethodsForEmail 
+        } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
+        
+        const firebaseConfig = {
+            apiKey: "AIzaSyA6ikBMsQACcUpn4Jff7PQFeWLN8wv18EE",
+            authDomain: "matchanese-attendance.firebaseapp.com",
+            projectId: "matchanese-attendance",
+            storageBucket: "matchanese-attendance.firebasestorage.app",
+            messagingSenderId: "339591618451",
+            appId: "1:339591618451:web:23f9d95833ee5010bbd266",
+            measurementId: "G-YEK4GML6SJ"
+        };
+        
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        
+        // Test 1: Check if user exists
+        window.checkUserExists = async function() {
+            const email = document.getElementById('testEmail').value;
+            const resultDiv = document.getElementById('userResult');
+            
+            try {
+                const methods = await fetchSignInMethodsForEmail(auth, email);
+                if (methods.length > 0) {
+                    resultDiv.innerHTML = `<p class="success">✅ User exists! Sign-in methods: ${methods.join(', ')}</p>`;
+                } else {
+                    resultDiv.innerHTML = `<p class="error">❌ User does not exist</p>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<p class="error">❌ Error checking user: ${error.message}</p>`;
+            }
+        };
+        
+        // Test 2: Create test user
+        window.createTestUser = async function() {
+            const email = document.getElementById('createEmail').value;
+            const password = document.getElementById('createPassword').value;
+            const resultDiv = document.getElementById('createResult');
+            
+            try {
+                const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                resultDiv.innerHTML = `<p class="success">✅ Test user created! UID: ${userCredential.user.uid}</p>`;
+            } catch (error) {
+                resultDiv.innerHTML = `<p class="error">❌ Error creating user: ${error.message}</p>`;
+            }
+        };
+        
+        // Test 3: Login test user
+        window.loginTestUser = async function() {
+            const email = document.getElementById('createEmail').value;
+            const password = document.getElementById('createPassword').value;
+            const resultDiv = document.getElementById('loginResult');
+            
+            try {
+                const userCredential = await signInWithEmailAndPassword(auth, email, password);
+                resultDiv.innerHTML = `<p class="success">✅ Login successful! UID: ${userCredential.user.uid}</p>`;
+            } catch (error) {
+                resultDiv.innerHTML = `<p class="error">❌ Login failed: ${error.message}</p>`;
+            }
+        };
+    </script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

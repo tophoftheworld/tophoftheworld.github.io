@@ -1,10 +1,14 @@
 rules_version = '2';
 
-// Craft rules based on data in your Firestore database
-// allow write: if firestore.get(
-//    /databases/(default)/documents/users/$(request.auth.uid)).data.isAdmin;
+// Firebase Storage rules for Matchanese staff management
 service firebase.storage {
   match /b/{bucket}/o {
+    // Allow staff photo uploads and reads
+    match /staff-photos/{employeeId} {
+      allow read, write: if true; // Allow public access for staff photos
+    }
+    
+    // Keep existing rules for other paths
     match /{allPaths=**} {
       allow read, write: if false;
     }

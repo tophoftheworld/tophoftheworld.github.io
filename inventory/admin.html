@@ -1,0 +1,1410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Inventory Management</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    body { background: #f9f9f9; font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial, sans-serif; color: #333; }
+    .builder-container { max-width: 1440px; margin: 0 auto; padding: 24px; box-sizing: border-box; }
+    .builder-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+    .builder-title { font-size: 1.6rem; font-weight: 600; color: #2b9348; }
+
+    /* Tabs */
+    .task-navigation { display: flex; gap: 8px; background: #f5f5f5; padding: 6px; border-radius: 8px; width: fit-content; }
+    .task-nav-btn { padding: 10px 16px; background: transparent; border: none; border-radius: 6px; cursor: pointer; font-size: 0.95rem; color: #666; }
+    .task-nav-btn.active { background: #fff; color: #2b9348; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+
+    /* Panels */
+    .task-section { display: none; }
+    .task-section.active { display: block; }
+
+    /* Cards */
+    .section { background: white; border-radius: 10px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-top: 16px; }
+    .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 8px; }
+    .section-title { font-size: 1.05rem; font-weight: 600; color: #333; }
+
+    /* Buttons */
+    .btn { padding: 0.55rem 1rem; border: none; border-radius: 8px; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: all 0.2s; }
+    .btn-primary { background: #2b9348; color: white; }
+    .btn-primary:hover { background: #22863a; }
+    .btn-secondary { background: white; color: #333; border: 1px solid #e5e5e5; }
+    .btn-secondary:hover { background: #f8f9fa; }
+    .btn-info { background: #17a2b8; color: white; }
+    .btn-info:hover { background: #138496; }
+    .btn-light { background: #f5f5f5; color: #333; }
+    .btn-light:hover { background: #e9ecef; }
+    .btn-small { padding: 0.35rem 0.7rem; border-radius: 6px; font-size: 0.85rem; }
+    .btn-disabled { opacity: 0.5; cursor: not-allowed; }
+    
+    /* Navigation */
+    .builder-navigation { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .nav-buttons { display: flex; gap: 8px; }
+    .nav-btn { padding: 8px 12px; background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 6px; cursor: pointer; font-size: 0.85rem; color: #333; text-decoration: none; transition: all 0.2s; }
+    .nav-btn:hover { background: #e8e8e8; border-color: #ccc; }
+
+    /* Lists */
+    .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .toolbar input[type="text"] { padding: 0.5rem 0.8rem; border-radius: 8px; border: 1px solid #ddd; min-width: 260px; }
+    
+    /* Control field fixes */
+    .control-group .branch-select {
+      padding: 6px 12px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      min-width: 160px;
+      background: white;
+      height: 32px;
+      box-sizing: border-box;
+    }
+    
+    .control-group .date-picker {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 6px 12px;
+      height: 32px;
+      box-sizing: border-box;
+    }
+    
+    .control-group .date-nav-btn {
+      background: none;
+      border: none;
+      font-size: 0.75rem;
+      cursor: pointer;
+      padding: 0;
+      margin: 0;
+      border-radius: 4px;
+      color: #666;
+      transition: all 0.2s;
+      height: 12px;
+      width: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      flex-shrink: 0;
+      font-family: inherit;
+      font-weight: 400;
+    }
+    
+    .control-group .date-display {
+      padding: 0;
+      margin: 0;
+      font-weight: 500;
+      color: #333;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: background 0.2s;
+      min-width: 120px;
+      text-align: center;
+      height: 18px;
+      font-size: 0.85rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      flex: 1;
+    }
+    
+    /* Quantity font fix */
+    .quantity-cell {
+      font-weight: 500 !important;
+      text-align: right !important;
+      font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial, sans-serif !important;
+      white-space: nowrap !important;
+    }
+    
+    .quantity-cell.opening,
+    .quantity-cell.closing,
+    .quantity-cell.difference {
+      font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial, sans-serif !important;
+    }
+
+    /* Desktop table reused across panels */
+    .inv-table { width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05); table-layout: fixed; }
+    .inv-table th, .inv-table td { padding: 12px; border-bottom: 1px solid #eee; text-align: left; font-size: 0.92rem; height: 60px; vertical-align: middle; }
+    .inv-table th { background: #f5f5f5; font-weight: 600; color: #333; user-select: none; }
+    .inv-table tr:last-child td { border-bottom: none; }
+    .inv-table img { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; border: 1px solid #eee; }
+    
+    .photo-container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+      margin: 0 auto;
+    }
+    
+    .photo-placeholder {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      border: 1px solid #ddd;
+      background: #f5f5f5;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .photo-placeholder:hover {
+      border-color: #2b9348;
+      background: #f0f8f0;
+    }
+    /* Column widths are now defined in the main CSS section below */
+
+    /* Drag and drop styles */
+    .drag-handle { 
+      cursor: grab; 
+      color: #999; 
+      font-size: 1.2rem; 
+      user-select: none; 
+      display: inline-block;
+      margin-right: 8px;
+      padding: 4px;
+      border-radius: 4px;
+      transition: background-color 0.2s;
+    }
+    .drag-handle:hover { 
+      background-color: #f0f0f0; 
+      color: #666; 
+    }
+    .drag-handle:active { 
+      cursor: grabbing; 
+      background-color: #e0e0e0;
+    }
+    .dragging { 
+      opacity: 0.5; 
+      background: #f0f8ff !important; 
+      transform: rotate(2deg);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    .drag-over { 
+      border-top: 3px solid #2b9348 !important; 
+    }
+    .category-header { background: #f9faf9; font-weight: 600; padding: 16px 12px; border-bottom: 1px solid #eee; }
+    
+    /* Edit controls */
+    .edit-controls { 
+      display: flex; 
+      gap: 8px; 
+      align-items: center; 
+    }
+    
+    /* Category header styling */
+    .category-header-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .category-name {
+      font-weight: 600;
+      color: #333;
+      font-size: 1.1rem;
+    }
+    
+    .category-edit-controls {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+    }
+    
+    .category-drag-handle {
+      cursor: grab;
+      color: #999;
+      font-size: 1.2rem;
+      user-select: none;
+      display: inline-block;
+      margin-right: 8px;
+      padding: 4px;
+      border-radius: 4px;
+      transition: background-color 0.2s;
+    }
+    
+    .category-drag-handle:hover {
+      background-color: #f0f0f0;
+      color: #666;
+    }
+    
+    .category-drag-handle:active {
+      cursor: grabbing;
+      background-color: #e0e0e0;
+    }
+
+    .empty-state { text-align: center; padding: 32px 16px; color: #777; }
+
+    /* Modal overrides */
+    .modal .form-group label { font-weight: 600; color: #444; }
+    
+    /* Dashboard controls */
+    .toolbar {
+      display: flex;
+      gap: 24px;
+      align-items: end;
+      flex-wrap: wrap;
+    }
+    
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    
+    .control-group label {
+      font-weight: 600;
+      color: #333;
+      font-size: 0.9rem;
+    }
+    
+    .branch-select {
+      padding: 10px 12px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      min-width: 160px;
+      background: white;
+    }
+    
+    .date-picker {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 4px;
+    }
+    
+    .date-nav-btn {
+      background: none;
+      border: none;
+      font-size: 1.2rem;
+      cursor: pointer;
+      padding: 8px;
+      border-radius: 4px;
+      color: #666;
+      transition: all 0.2s;
+    }
+    
+    .date-nav-btn:hover {
+      background: #f0f0f0;
+      color: #333;
+    }
+    
+    .date-display {
+      padding: 8px 12px;
+      font-weight: 500;
+      color: #333;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: background 0.2s;
+      min-width: 120px;
+      text-align: center;
+    }
+    
+    .date-display:hover {
+      background: #f0f0f0;
+    }
+    
+    /* Dashboard table styles */
+    .inv-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+      table-layout: fixed;
+    }
+
+    
+    .inv-table th,
+    .inv-table td {
+      padding: 12px 8px;
+      border-bottom: 1px solid #eee;
+      text-align: left;
+      font-size: 0.9rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      height: 60px; /* Consistent height */
+      vertical-align: middle;
+    }
+    
+    .inv-table th {
+      background: #f8f9fa;
+      font-weight: 600;
+      color: #333;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    
+    .inv-table tr:last-child td {
+      border-bottom: none;
+    }
+    
+    .inv-table tr:hover {
+      background: #f8f9fa;
+    }
+    
+    /* Dashboard table column widths */
+    #inventoryTable .inv-table th:nth-child(1),
+    #inventoryTable .inv-table td:nth-child(1) {
+      width: 100px; /* Photo - reduced width */
+      text-align: center;
+      padding: 8px 6px;
+    }
+    
+    #inventoryTable .inv-table th:nth-child(2),
+    #inventoryTable .inv-table td:nth-child(2) {
+      width: 25%; /* Item name */
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-weight: 600;
+    }
+    
+    #inventoryTable .inv-table th:nth-child(3),
+    #inventoryTable .inv-table td:nth-child(3) {
+      width: 15%; /* Description - reduced width */
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    #inventoryTable .inv-table th:nth-child(4),
+    #inventoryTable .inv-table td:nth-child(4) {
+      width: 18%; /* Category */
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    #inventoryTable .inv-table th:nth-child(5),
+    #inventoryTable .inv-table td:nth-child(5) {
+      width: 8%; /* Unit */
+      text-align: center;
+    }
+    
+    #inventoryTable .inv-table th:nth-child(6),
+    #inventoryTable .inv-table td:nth-child(6) {
+      width: 10%; /* Opening */
+      text-align: right;
+    }
+    
+    #inventoryTable .inv-table th:nth-child(7),
+    #inventoryTable .inv-table td:nth-child(7) {
+      width: 10%; /* Added */
+      text-align: right;
+    }
+    
+    #inventoryTable .inv-table th:nth-child(8),
+    #inventoryTable .inv-table td:nth-child(8) {
+      width: 10%; /* Closing */
+      text-align: right;
+    }
+    
+    #inventoryTable .inv-table th:nth-child(9),
+    #inventoryTable .inv-table td:nth-child(9) {
+      width: 10%; /* Used */
+      text-align: right;
+    }
+    
+    /* Master items table - completely separate styling */
+    .master-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+      table-layout: fixed;
+    }
+    
+    .master-table th,
+    .master-table td {
+      padding: 12px 8px;
+      border-bottom: 1px solid #eee;
+      text-align: left;
+      font-size: 0.9rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      height: 60px; /* Consistent height */
+      vertical-align: middle;
+    }
+    
+    .master-table th {
+      background: #f8f9fa;
+      font-weight: 600;
+      color: #333;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    
+    .master-table tr:last-child td {
+      border-bottom: none;
+    }
+    
+    .master-table tr:hover {
+      background: #f8f9fa;
+    }
+    
+    /* Master table specific column widths */
+    .master-table th:nth-child(1),
+    .master-table td:nth-child(1) {
+      width: 100px; /* Photo - reduced width */
+      text-align: center;
+      padding: 8px 6px;
+    }
+    
+    .master-table th:nth-child(2),
+    .master-table td:nth-child(2) {
+      width: 20%; /* Item name - consistent with dashboard */
+    }
+    
+    .master-table th:nth-child(3),
+    .master-table td:nth-child(3) {
+      width: 20%; /* Description - reduced width */
+    }
+    
+    .master-table th:nth-child(4),
+    .master-table td:nth-child(4) {
+      width: 15%; /* Category - consistent with dashboard */
+    }
+    
+    .master-table th:nth-child(5),
+    .master-table td:nth-child(5) {
+      width: 6%; /* Unit */
+      text-align: center;
+    }
+    
+    .master-table th:nth-child(6),
+    .master-table td:nth-child(6) {
+      width: 8%; /* Restock Value */
+      text-align: center;
+    }
+    
+    .master-table th:nth-child(7),
+    .master-table td:nth-child(7) {
+      width: 22%; /* Actions */
+      text-align: center;
+    }
+    
+    /* Branch list table - completely separate styling */
+    .branch-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+      table-layout: fixed;
+    }
+    
+    .branch-table th,
+    .branch-table td {
+      padding: 12px 8px;
+      border-bottom: 1px solid #eee;
+      text-align: left;
+      font-size: 0.9rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      height: 60px; /* Consistent height */
+      vertical-align: middle;
+    }
+    
+    .branch-table th {
+      background: #f8f9fa;
+      font-weight: 600;
+      color: #333;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    
+    .branch-table tr:last-child td {
+      border-bottom: none;
+    }
+    
+    .branch-table tr:hover {
+      background: #f8f9fa;
+    }
+    
+    /* Branch table specific column widths - Non-edit mode */
+    .branch-table th:nth-child(1),
+    .branch-table td:nth-child(1) {
+      width: 120px; /* Photo - reduced width */
+      text-align: center;
+      padding: 8px 6px;
+    }
+    
+    .branch-table th:nth-child(2),
+    .branch-table td:nth-child(2) {
+      width: 20%; /* Item name - consistent with dashboard */
+    }
+    
+    .branch-table th:nth-child(3),
+    .branch-table td:nth-child(3) {
+      width: 25%; /* Description - consistent with dashboard */
+    }
+    
+    .branch-table th:nth-child(4),
+    .branch-table td:nth-child(4) {
+      width: 15%; /* Category - consistent with dashboard */
+    }
+    
+    .branch-table th:nth-child(5),
+    .branch-table td:nth-child(5) {
+      width: 8%; /* Unit - consistent with dashboard */
+      text-align: center;
+    }
+    
+    .branch-table th:nth-child(6),
+    .branch-table td:nth-child(6) {
+      width: 15%; /* Restock */
+      text-align: center;
+    }
+
+    /* Branch table specific column widths - Edit mode (with Include column) */
+    .branch-table.edit-mode th:nth-child(1),
+    .branch-table.edit-mode td:nth-child(1) {
+      width: 50px; /* Include column - narrow for checkbox */
+      text-align: center;
+      padding: 4px;
+    }
+    
+    .branch-table.edit-mode th:nth-child(2),
+    .branch-table.edit-mode td:nth-child(2) {
+      width: 100px; /* Photo - reduced width to accommodate Include */
+      text-align: center;
+      padding: 8px 6px;
+    }
+    
+    .branch-table.edit-mode th:nth-child(3),
+    .branch-table.edit-mode td:nth-child(3) {
+      width: 20%; /* Item name - consistent with dashboard */
+    }
+    
+    .branch-table.edit-mode th:nth-child(4),
+    .branch-table.edit-mode td:nth-child(4) {
+      width: 25%; /* Description - consistent with dashboard */
+    }
+    
+    .branch-table.edit-mode th:nth-child(5),
+    .branch-table.edit-mode td:nth-child(5) {
+      width: 15%; /* Category - consistent with dashboard */
+    }
+    
+    .branch-table.edit-mode th:nth-child(6),
+    .branch-table.edit-mode td:nth-child(6) {
+      width: 8%; /* Unit - consistent with dashboard */
+      text-align: center;
+    }
+    
+    .branch-table.edit-mode th:nth-child(7),
+    .branch-table.edit-mode td:nth-child(7) {
+      width: 15%; /* Restock */
+      text-align: center;
+    }
+    
+    /* Category header styles */
+    .category-header {
+      background: #f8f9fa;
+      font-weight: 600;
+      border-bottom: 2px solid #dee2e6;
+      height: 60px; /* Match table header height */
+    }
+    
+    .category-header td {
+      height: 60px; /* Match table header height */
+      vertical-align: middle;
+    }
+    
+    .category-header-container {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .category-header-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 100%;
+    }
+    
+    .category-name {
+      font-size: 1rem;
+      color: #333;
+    }
+    
+    .category-collapse-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 4px;
+      color: #666;
+      transition: all 0.2s;
+    }
+    
+    .category-collapse-btn:hover {
+      background: #e9ecef;
+      color: #333;
+    }
+    
+    .category-collapse-btn.collapsed svg {
+      transform: rotate(-90deg);
+    }
+    
+    .quantity-cell {
+      font-weight: 500;
+      text-align: right;
+      font-family: 'Courier New', monospace;
+    }
+    
+    .quantity-cell.opening {
+      color: #333;
+    }
+    
+    .quantity-cell.closing {
+      color: #333;
+    }
+    
+    /* Bold styling for most recent data */
+    .quantity-cell.most-recent {
+      font-weight: 700 !important;
+    }
+    
+    .quantity-cell.added {
+      color: #333;
+      font-weight: 500;
+    }
+    
+    .quantity-cell.used {
+      color: #333;
+      font-weight: 500;
+    }
+    
+    /* Color coding for low stock and out of stock */
+    .quantity-cell.out-of-stock {
+      color: #d32f2f !important;
+      font-weight: 600 !important;
+    }
+    
+    .quantity-cell.low-stock {
+      color: #f57c00 !important;
+      font-weight: 600 !important;
+    }
+    
+    .inventory-row.out-of-stock {
+      background-color: #ffebee;
+    }
+    
+    .inventory-row.low-stock {
+      background-color: #fff3e0;
+    }
+    
+    /* Photo container */
+    .photo-container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+      margin: 0 auto;
+    }
+    
+    .photo-placeholder {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      border: 1px solid #ddd;
+      background: #f5f5f5;
+    }
+    
+    .inv-table img {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      object-fit: contain;
+      border: 1px solid #eee;
+    }
+    
+    .master-table img,
+    .branch-table img {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      object-fit: contain;
+      border: 1px solid #eee;
+    }
+    
+    /* Calendar styles */
+    .calendar-header {
+      text-align: center;
+      margin-bottom: 16px;
+    }
+    
+    .calendar-header h4 {
+      margin: 0;
+      font-size: 1.1rem;
+      color: #333;
+    }
+    
+    .calendar-weekdays {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 1px;
+      margin-bottom: 8px;
+    }
+    
+    .weekday {
+      padding: 8px;
+      text-align: center;
+      font-weight: 600;
+      color: #666;
+      font-size: 0.8rem;
+    }
+    
+    .calendar-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 1px;
+    }
+    
+    .calendar-day {
+      padding: 12px 8px;
+      text-align: center;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: all 0.2s;
+      font-size: 0.9rem;
+    }
+    
+    .calendar-day:hover {
+      background: #f0f0f0;
+    }
+    
+    .calendar-day.other-month {
+      color: #ccc;
+    }
+    
+    .calendar-day.today {
+      background: #e3f2fd;
+      color: #1976d2;
+      font-weight: 600;
+    }
+    
+    .calendar-day.selected {
+      background: #2b9348;
+      color: white;
+      font-weight: 600;
+    }
+    
+    .calendar-day.selected.today {
+      background: #2b9348;
+      color: white;
+    }
+
+    /* Bulk Add Table Styles */
+    .bulk-add-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .bulk-add-table th,
+    .bulk-add-table td {
+      padding: 8px;
+      border-bottom: 1px solid #eee;
+      text-align: left;
+      font-size: 0.9rem;
+      vertical-align: middle;
+    }
+
+    .bulk-add-table th {
+      background: #f8f9fa;
+      font-weight: 600;
+      color: #333;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .bulk-add-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .bulk-add-table tr:hover {
+      background: #f8f9fa;
+    }
+
+    .bulk-add-table input,
+    .bulk-add-table select {
+      width: 100%;
+      padding: 6px 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 0.9rem;
+      box-sizing: border-box;
+    }
+
+    .bulk-add-table input:focus,
+    .bulk-add-table select:focus {
+      outline: none;
+      border-color: #2b9348;
+      box-shadow: 0 0 0 2px rgba(43, 147, 72, 0.1);
+    }
+
+    .bulk-add-table .row-number {
+      text-align: center;
+      font-weight: 500;
+      color: #666;
+      font-size: 0.8rem;
+    }
+
+    .bulk-add-table .delete-row-btn {
+      background: #dc3545;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 4px 8px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      transition: background 0.2s;
+    }
+
+    .bulk-add-table .delete-row-btn:hover {
+      background: #c82333;
+    }
+
+    .bulk-add-table .delete-row-btn:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    kbd {
+      background: #f1f3f4;
+      border: 1px solid #dadce0;
+      border-radius: 3px;
+      box-shadow: 0 1px 0 rgba(0,0,0,0.2);
+      color: #3c4043;
+      display: inline-block;
+      font-family: monospace;
+      font-size: 0.8em;
+      font-weight: 500;
+      line-height: 1;
+      padding: 2px 4px;
+      white-space: nowrap;
+    }
+
+    /* Move buttons */
+    .move-btn {
+      width: 32px !important;
+      height: 32px !important;
+      padding: 0 !important;
+      font-size: 0.8rem !important;
+      font-weight: bold !important;
+      line-height: 1 !important;
+      background: #28a745 !important;
+      color: white !important;
+      border: 1px solid #28a745 !important;
+      border-radius: 4px !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+    }
+
+    .move-btn:hover {
+      background: #218838 !important;
+      border-color: #1e7e34 !important;
+      color: white !important;
+    }
+
+    .move-btn:active {
+      background: #1e7e34 !important;
+      color: white !important;
+    }
+
+    /* Modal overlay styles - only when visible */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    /* Low Stocks Section Styles */
+    .low-stocks-container {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 16px 0;
+    }
+    
+    .low-stock-item {
+      background: white;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      padding: 8px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .low-stock-name {
+      font-weight: 600;
+      color: #333;
+      font-size: 0.9rem;
+    }
+    
+    .low-stock-quantity {
+      font-size: 0.85rem;
+      color: #666;
+    }
+    
+    .no-low-stocks {
+      text-align: center;
+      padding: 32px 16px;
+      color: #666;
+      font-style: italic;
+      background: #f8f9fa;
+      border-radius: 8px;
+      border: 1px solid #e9ecef;
+    }
+    
+    .no-low-stocks-icon {
+      font-size: 2rem;
+      margin-bottom: 8px;
+      opacity: 0.5;
+    }
+    
+    /* Weekly table specific column widths */
+    .weekly-table th:nth-child(1),
+    .weekly-table td:nth-child(1) {
+      width: 80px; /* Photo - increased from 50px to show full "Photo" text */
+      text-align: center;
+      padding: 8px 6px;
+    }
+    
+    .weekly-table th:nth-child(2),
+    .weekly-table td:nth-child(2) {
+      width: 15%; /* Item name - reduced from 20% */
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-weight: 600;
+    }
+    
+    .weekly-table th:nth-child(3),
+    .weekly-table td:nth-child(3) {
+      width: 12%; /* Description - reduced from 15% */
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    .weekly-table th:nth-child(n+4),
+    .weekly-table td:nth-child(n+4) {
+      width: 10%; /* Each day column - increased from 9% to 10% */
+      text-align: center; /* Changed from right to center */
+      font-weight: 500;
+    }
+    
+    /* Segmented Control Styles (from sales dashboard) */
+    .segmented-control {
+      display: flex;
+      gap: 0.25rem;
+      background: #f5f5f5;
+      padding: 0.25rem;
+      border-radius: 8px;
+    }
+    
+    .segmented-btn {
+      padding: 0.6rem 1.2rem;
+      background: transparent;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: #666;
+      transition: all 0.2s;
+      font-family: 'Inter', sans-serif;
+    }
+    
+    .segmented-btn:hover {
+      color: #333;
+    }
+    
+    .segmented-btn.active {
+      background: white;
+      color: #2b9348;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+  </style>
+</head>
+<body>
+  <div class="builder-container">
+    <div class="builder-header">
+              <div class="builder-title">Inventory Management</div>
+            <div class="builder-navigation">
+        <div class="task-navigation">
+          <button class="task-nav-btn active" data-task="dashboard">Dashboard</button>
+          <button class="task-nav-btn" data-task="weekly-view">Weekly View</button>
+          <button class="task-nav-btn" data-task="master-items">Master Items</button>
+          <button class="task-nav-btn" data-task="branch-list">Branch List</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dashboard -->
+    <div class="task-section active" id="dashboard-task">
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">Inventory Dashboard</div>
+          <div class="toolbar">
+            <div class="segmented-control">
+              <button class="segmented-btn active" id="filterLowStocksBtn">Show All</button>
+              <button class="segmented-btn" id="showLowStocksBtn">Running Low</button>
+            </div>
+            <div class="control-group">
+              <select id="branchSelector" class="branch-select">
+                <option value="sm-north">SM North</option>
+                <option value="podium" selected>Podium</option>
+              </select>
+            </div>
+            <div class="control-group">
+              <div class="date-picker">
+                <button class="date-nav-btn" id="prevDate">‹</button>
+                <div class="date-display" id="dateDisplay"></div>
+                <button class="date-nav-btn" id="nextDate">›</button>
+              </div>
+            </div>
+            <div class="control-group">
+              <button class="btn btn-primary" id="refreshBtn">Refresh Data</button>
+            </div>
+          </div>
+        </div>
+        <div id="inventoryTable">
+          <!-- Placeholder table - will be replaced with real data -->
+          <table class="inv-table">
+            <thead>
+              <tr>
+                <th style="width:50px;text-align:center;">Photo</th>
+                <th style="width:200px;">Item Name</th>
+                <th style="width:150px;">Description</th>
+                <th style="width:180px;">Category</th>
+                <th style="width:120px;text-align:right;">Opening</th>
+                <th style="width:120px;text-align:right;">Added</th>
+                <th style="width:120px;text-align:right;">Closing</th>
+                <th style="width:120px;text-align:right;">Used</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="category-header" data-category="Loading...">
+                <td colspan="8" style="padding: 8px 12px;">
+                  <div class="category-header-container">
+                    <div class="category-header-left">
+                      <button class="category-collapse-btn" data-category="Loading...">
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                          <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                      </button>
+                      <span class="category-name">Loading...</span>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+              <tr class="inventory-row category-item-row" data-category="Loading...">
+                <td style="width:50px;text-align:center;padding:4px;">
+                  <div class="photo-container">
+                    <div class="photo-placeholder"></div>
+                  </div>
+                </td>
+                <td style="width:200px;">Loading...</td>
+                <td style="width:150px;">Loading...</td>
+                <td style="width:180px;">Loading...</td>
+                <td class="quantity-cell opening">-</td>
+                <td class="quantity-cell added">-</td>
+                <td class="quantity-cell closing">-</td>
+                <td class="quantity-cell used">-</td>
+              </tr>
+            </tbody>
+          </table>
+          <div style="text-align: center; padding: 20px; color: #666; font-style: italic;">
+            Loading inventory data...
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Weekly View -->
+    <div class="task-section" id="weekly-view-task">
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">Weekly Usage View</div>
+          <div class="toolbar">
+            <div class="control-group">
+              <select id="weeklyBranchSelector" class="branch-select">
+                <option value="sm-north">SM North</option>
+                <option value="podium" selected>Podium</option>
+              </select>
+            </div>
+            <div class="control-group">
+              <div class="segmented-control">
+                <button class="segmented-btn active" data-quantity-type="used">Show Usage</button>
+                <button class="segmented-btn" data-quantity-type="closing">Show Stock</button>
+              </div>
+            </div>
+            <div class="control-group">
+              <button class="btn btn-primary" id="weeklyRefreshBtn">Refresh Data</button>
+            </div>
+          </div>
+        </div>
+        <div id="weeklyTable">
+          <!-- Placeholder table - will be replaced with real data -->
+          <table class="inv-table weekly-table">
+            <thead>
+              <tr>
+                <th style="width:50px;text-align:center;">Photo</th>
+                <th style="width:200px;">Item Name</th>
+                <th style="width:150px;">Description</th>
+                <th style="width:120px;text-align:center;"><strong>Mon</strong><br>Oct 10</th>
+                <th style="width:120px;text-align:center;"><strong>Tue</strong><br>Oct 11</th>
+                <th style="width:120px;text-align:center;"><strong>Wed</strong><br>Oct 12</th>
+                <th style="width:120px;text-align:center;"><strong>Thu</strong><br>Oct 13</th>
+                <th style="width:120px;text-align:center;"><strong>Fri</strong><br>Oct 14</th>
+                <th style="width:120px;text-align:center;"><strong>Sat</strong><br>Oct 15</th>
+                <th style="width:120px;text-align:center;"><strong>Sun</strong><br>Oct 16</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="category-header" data-category="Loading...">
+                <td colspan="10" style="padding: 8px 12px;">
+                  <div class="category-header-container">
+                    <div class="category-header-left">
+                      <button class="category-collapse-btn" data-category="Loading...">
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                          <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                      </button>
+                      <span class="category-name">Loading...</span>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+              <tr class="inventory-row category-item-row" data-category="Loading...">
+                <td style="width:50px;text-align:center;padding:4px;">
+                  <div class="photo-container">
+                    <div class="photo-placeholder"></div>
+                  </div>
+                </td>
+                <td style="width:200px;">Loading...</td>
+                <td style="width:150px;">Loading...</td>
+                <td class="quantity-cell used">-</td>
+                <td class="quantity-cell used">-</td>
+                <td class="quantity-cell used">-</td>
+                <td class="quantity-cell used">-</td>
+                <td class="quantity-cell used">-</td>
+                <td class="quantity-cell used">-</td>
+                <td class="quantity-cell used">-</td>
+              </tr>
+            </tbody>
+          </table>
+          <div style="text-align: center; padding: 20px; color: #666; font-style: italic;">
+            Loading weekly usage data...
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Master Items -->
+    <div class="task-section" id="master-items-task">
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">Master Items</div>
+          <div class="toolbar">
+            <input type="text" id="masterSearch" placeholder="Search items..." />
+            <button class="btn btn-secondary" id="importMasterBtn">Import JSON</button>
+            <button class="btn btn-secondary" id="addMasterItemBtn">+ Add Item</button>
+            <button class="btn btn-secondary" id="addMultipleItemsBtn">+ Add Multiple</button>
+            <button class="btn btn-secondary" id="addCategoryBtn">+ Add Category</button>
+            <button class="btn btn-primary" id="toggleMasterEditBtn">Rearrange</button>
+          </div>
+        </div>
+        <div id="masterItemsList">
+          <div class="empty-state">
+            No master items created yet
+            <div style="margin-top:10px"><button class="btn btn-primary" id="emptyStateAddBtn">Create Your First Item</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Branch List -->
+    <div class="task-section" id="branch-list-task">
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">Branch List</div>
+          <div class="toolbar">
+
+            <select id="branchListSelector" class="btn btn-secondary" style="min-width:160px"></select>
+            <input type="text" id="branchSearch" placeholder="Search items..." />
+            <button class="btn btn-primary" id="toggleBranchEditBtn">Edit</button>
+
+          </div>
+        </div>
+        <div id="branchItemsList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add/Edit Master Item Modal -->
+  <div class="modal-overlay" id="masterItemModalOverlay" style="display: none;">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="masterItemModalTitle">Add Master Item</h3>
+        <button class="modal-close" id="masterItemModalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="masterItemForm">
+          <div class="form-group">
+            <label for="masterItemName">Item Name</label>
+            <input type="text" id="masterItemName" required>
+          </div>
+          <div class="form-group">
+            <label for="masterItemDescription">Description</label>
+            <input type="text" id="masterItemDescription">
+          </div>
+          <div class="form-group">
+            <label for="masterItemCategory">Category</label>
+            <select id="masterItemCategory" required>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="masterItemUnit">Unit</label>
+            <select id="masterItemUnit" required>
+              <option value="pcs">pcs</option>
+              <option value="g">g</option>
+              <option value="kg">kg</option>
+              <option value="L">L</option>
+              <option value="ml">ml</option>
+              <option value="pans">Pans</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="masterItemRestock">Restock Amount (default)</label>
+            <input type="number" id="masterItemRestock" min="0" value="0">
+          </div>
+          <div class="form-group">
+            <label for="masterItemPhoto">Photo</label>
+            <input type="file" id="masterItemPhoto" accept="image/*" style="display:none;">
+            <div style="display:flex; gap:8px; align-items:center;">
+              <button type="button" class="btn btn-secondary btn-small" onclick="document.getElementById('masterItemPhoto').click()">Choose Photo</button>
+              <button type="button" class="btn btn-light btn-small" id="removeMasterPhoto">Remove</button>
+            </div>
+            <div id="masterPhotoPreview" style="display:none; margin-top:8px;">
+              <img id="masterPreviewImage" src="" alt="Preview" style="max-width:100px; max-height:100px; border-radius:4px;">
+            </div>
+          </div>
+          <div class="form-buttons">
+            <button type="button" class="btn btn-secondary" id="masterItemCancelBtn">Cancel</button>
+            <button type="button" class="btn btn-primary" id="masterItemSaveBtn">Save Item</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Multiple Items Modal -->
+  <div class="modal-overlay" id="addMultipleItemsModalOverlay" style="display: none;">
+    <div class="modal" style="max-width: 1200px; max-height: 90vh;">
+      <div class="modal-header">
+        <h3>Add Multiple Items</h3>
+        <button class="modal-close" id="addMultipleItemsModalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+              <div style="margin-bottom: 16px; padding: 12px; background: #f8f9fa; border-radius: 8px; font-size: 0.9rem; color: #666;">
+                <strong>Quick Tips:</strong> Press <kbd>Enter</kbd> to add a new row • Press <kbd>Shift</kbd>+<kbd>Enter</kbd> to copy last row • Press <kbd>Tab</kbd> to move between fields • Leave fields empty to skip
+              </div>
+        
+        <div style="overflow-x: auto; max-height: 60vh;">
+          <table class="bulk-add-table" id="bulkAddTable">
+            <thead>
+              <tr>
+                <th style="width: 30px;">#</th>
+                <th style="width: 25%;">Item Name *</th>
+                <th style="width: 20%;">Description</th>
+                <th style="width: 15%;">Category</th>
+                <th style="width: 10%;">Unit</th>
+                <th style="width: 10%;">Restock</th>
+                <th style="width: 30px;">Del</th>
+              </tr>
+            </thead>
+            <tbody id="bulkAddTableBody">
+              <!-- Rows will be added dynamically -->
+            </tbody>
+          </table>
+        </div>
+        
+        <div style="margin-top: 16px; display: flex; gap: 8px; align-items: center;">
+          <button class="btn btn-secondary btn-small" id="addBulkRowBtn">+ Add Row</button>
+          <button class="btn btn-info btn-small" id="copyLastRowBtn" disabled>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 4px;">
+              <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+            </svg>
+            Copy Last Row
+          </button>
+          <button class="btn btn-light btn-small" id="clearBulkTableBtn">Clear All</button>
+          <span id="bulkItemCount" style="margin-left: auto; color: #666; font-size: 0.9rem;">0 items</span>
+        </div>
+        
+        <div class="form-buttons" style="margin-top: 20px;">
+          <button class="btn btn-secondary" id="bulkAddCancelBtn">Cancel</button>
+          <button class="btn btn-primary" id="bulkAddSaveBtn" disabled>Save All Items</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hidden file inputs -->
+  <input type="file" id="masterImportFile" accept=".json" style="display:none;" />
+
+  <!-- Date Picker Modal -->
+  <div class="modal-overlay" id="dateModalOverlay" style="display: none;">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Select Date</h3>
+        <button class="modal-close" id="dateModalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="calendarContainer">
+          <!-- Calendar will be generated here -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <script type="module" src="js/inventory-builder.js?v=37&t=1734567904"></script>
+</body>
+</html>

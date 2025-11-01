@@ -1,0 +1,355 @@
+{
+  "categories": [
+    {
+      "id": "matcha-lattes",
+      "name": "Matcha Lattes"
+    },
+    {
+      "id": "matcha-lite",
+      "name": "Matcha Lite"
+    },
+    {
+      "id": "matcha-fest-exclusives",
+      "name": "Matcha Fest Exclusives"
+    },
+    {
+      "id": "matcha-specials",
+      "name": "Matcha Specials"
+    },
+    {
+      "id": "beyond-matcha",
+      "name": "Beyond Matcha"
+    },
+    {
+      "id": "desserts",
+      "name": "Desserts"
+    },
+    {
+      "id": "add-ons",
+      "name": "Add-ons"
+    },
+    {
+      "id": "matcha-brew-bar",
+      "name": "Matcha Brew Bar"
+    }
+  ],
+  "items": [
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Signature Matchanese Latte",
+      "description": "Freshly Whisked Matcha over Milk",
+      "price": 200,
+      "type": "Iced",
+      "shorthand": "SML"
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Matchanese Seasalt Latte",
+      "description": "Our Signature Matcha Latte topped with Seasalt Cream",
+      "price": 240,
+      "tags": ["Best Seller"],
+      "type": "Iced",
+      "shorthand": "MSL"
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Quattro Spanish Matchanese Latte",
+      "description": "Freshly Whisked Matcha over 4 types of Milk",
+      "price": 220,
+      "type": "Iced",
+      "shorthand": "QSML"
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Strawberry Matchanese Latte",
+      "description": "Freshly Whisked Matcha over Milk and Strawberry Puree",
+      "price": 250,
+      "type": "Iced",
+      "shorthand": "SML"
+    },
+    {
+      "categoryId": "matcha-lite",
+      "name": "Matchanese Tea",
+      "description": "Freshly Whisked Matcha over Water",
+      "price": 190,
+      "type": "Iced",
+      "shorthand": "MT"
+    },
+    {
+      "categoryId": "matcha-lite",
+      "name": "Matchanese Dalandan",
+      "description": "Freshly Whisked Matcha over Dalandan Juice",
+      "price": 200,
+      "tags": ["Must-Try"],
+      "type": "Iced",
+      "shorthand": "MD"
+    },
+    {
+      "categoryId": "matcha-lite",
+      "name": "Matchanese Coconut",
+      "description": "Freshly Whisked Matcha over Coconut Water",
+      "price": 200,
+      "type": "Iced",
+      "shorthand": "MC"
+    },
+    {
+      "categoryId": "matcha-fest-exclusives",
+      "name": "Earl Grey Matchanese Latte",
+      "description": "Freshly Whisked Matcha over Milk and Earl Grey Syrup",
+      "price": 220,
+      "type": "Iced",
+      "shorthand": "EGML"
+    },
+    {
+      "categoryId": "matcha-fest-exclusives",
+      "name": "Blueberry Matchanese Latte",
+      "description": "Freshly Whisked Matcha over Milk and Blueberry Puree",
+      "price": 250,
+      "type": "Iced",
+      "shorthand": "BML"
+    },
+    {
+      "categoryId": "matcha-fest-exclusives",
+      "name": "Matchanese Tiramisu Latte",
+      "description": "Our Signature Matcha Latte topped with a Ladyfinger and Mascarpone Cream",
+      "price": 270,
+      "type": "Iced",
+      "shorthand": "MTL"
+    },
+    {
+      "categoryId": "matcha-fest-exclusives",
+      "name": "Matchanese Banoffee Latte",
+      "description": "Our Signature Matcha Latte topped with Caramelize Banana Cream and Biscoff Matcha Crumbs",
+      "price": 270,
+      "type": "Iced"
+    },
+    {
+      "categoryId": "matcha-fest-exclusives",
+      "name": "Matchanese Mousse Latte",
+      "description": "Our Signature Matcha Latte topped with Whipped Matcha Cream",
+      "price": 270,
+      "type": "Iced"
+    },
+    {
+      "categoryId": "matcha-specials",
+      "name": "Matchanese Einspanner",
+      "description": "Our Signature Matcha Latte topped with Sweet Cream",
+      "price": 270,
+      "type": "Iced"
+    },
+    {
+      "categoryId": "matcha-specials",
+      "name": "Matchanese Float",
+      "description": "Our Signature Matcha Latte topped with a scoop of our Matcha Ice Cream",
+      "price": 270,
+      "type": "Iced"
+    },
+    {
+      "categoryId": "beyond-matcha",
+      "name": "Hojicha Latte",
+      "description": "Freshly Whisked Hojicha over Milk",
+      "price": 190,
+      "type": "Iced",
+      "shorthand": "HL"
+    },
+    {
+      "categoryId": "beyond-matcha",
+      "name": "Genmaicha Latte",
+      "description": "Freshly Whisked Genmaicha over Milk",
+      "price": 190,
+      "type": "Iced"
+    },
+    {
+      "categoryId": "desserts",
+      "name": "Matcha Tiramisu",
+      "description": "Matcha Tiramisu",
+      "price": 320,
+      "type": "Dessert",
+      "shorthand": "TMS"
+    },
+    {
+      "categoryId": "desserts",
+      "name": "Mochi Donut",
+      "description": "Mochi Donut",
+      "price": 70,
+      "type": "Dessert",
+      "shorthand": "TMS"
+    },
+    {
+      "categoryId": "desserts",
+      "name": "Matcha Cookie",
+      "description": "Cookie",
+      "price": 180,
+      "type": "Dessert",
+      "shorthand": "CK"
+    },
+    {
+      "categoryId": "desserts",
+      "name": "Ice Cream Cup (Level 1)",
+      "description": "Level 1 matcha ice cream",
+      "price": 160,
+      "type": "Dessert",
+      "shorthand": "IC1"
+    },
+    {
+      "categoryId": "desserts",
+      "name": "Ice Cream Cup (Level 2)",
+      "description": "Level 2 matcha ice cream",
+      "price": 190,
+      "type": "Dessert",
+      "shorthand": "IC2"
+    },
+    {
+      "categoryId": "desserts",
+      "name": "Ice Cream Cup (Level 3)",
+      "description": "Level 3 matcha ice cream",
+      "price": 220,
+      "type": "Dessert",
+      "shorthand": "IC3"
+    },
+    {
+      "categoryId": "add-ons",
+      "name": "Level 2 Drink Upgrade",
+      "description": "Upgrade your drink to level 2 intensity",
+      "price": 50,
+      "type": "Add-on",
+      "shorthand": "+L2"
+    },
+    {
+      "categoryId": "add-ons",
+      "name": "Level 3 Drink Upgrade",
+      "description": "Upgrade your drink to level 3 intensity",
+      "price": 90,
+      "type": "Add-on",
+      "shorthand": "+L3"
+    },
+    {
+      "categoryId": "add-ons",
+      "name": "Ice Cream Scoop",
+      "description": "Add a scoop of matcha ice cream to your drink",
+      "price": 90,
+      "type": "Add-on",
+      "shorthand": "+IC"
+    },
+    {
+      "categoryId": "matcha-brew-bar",
+      "name": "Ogurayama",
+      "description": "Yamamasa Koyamaen - Sweet, Creamy, Nutty",
+      "price": 165,
+      "type": "Brew Bar",
+      "customizations": {
+        "preparation": {
+          "usucha-hot": 165,
+          "usucha-iced": 285,
+          "classic-latte": 315,
+          "cold-whisked-latte": 325
+        }
+      }
+    },
+    {
+      "categoryId": "matcha-brew-bar",
+      "name": "Sayaka No Mukashi",
+      "description": "Ippodo - Full-bodied, Balanced",
+      "price": 175,
+      "type": "Brew Bar",
+      "customizations": {
+        "preparation": {
+          "usucha-hot": 175,
+          "usucha-iced": 300,
+          "classic-latte": 330,
+          "cold-whisked-latte": 340
+        }
+      }
+    },
+    {
+      "categoryId": "matcha-brew-bar",
+      "name": "Yugen 1",
+      "description": "Yugen - Smooth, Rounded Aroma",
+      "price": 140,
+      "type": "Brew Bar",
+      "customizations": {
+        "preparation": {
+          "usucha-hot": 140,
+          "usucha-iced": 230,
+          "classic-latte": 290,
+          "cold-whisked-latte": 300
+        }
+      }
+    },
+    {
+      "categoryId": "matcha-brew-bar",
+      "name": "Fuji No Shiro",
+      "description": "Nakamura Tokichi - Mild Umami, Smooth Finish",
+      "price": 140,
+      "type": "Brew Bar",
+      "customizations": {
+        "preparation": {
+          "usucha-hot": 140,
+          "usucha-iced": 230,
+          "classic-latte": 290,
+          "cold-whisked-latte": 300
+        }
+      }
+    },
+    {
+      "categoryId": "matcha-brew-bar",
+      "name": "Seikan No Shiro",
+      "description": "Nakamura Tokichi - Mellow Umami, Gentle Sweetness",
+      "price": 165,
+      "type": "Brew Bar",
+      "customizations": {
+        "preparation": {
+          "usucha-hot": 165,
+          "usucha-iced": 285,
+          "classic-latte": 345,
+          "cold-whisked-latte": 355
+        }
+      }
+    },
+    {
+      "categoryId": "matcha-brew-bar",
+      "name": "Biwa No Shiro",
+      "description": "Kanbayashi Shunsho - Sweet Milk, Caramel, Silky",
+      "price": 145,
+      "type": "Brew Bar",
+      "customizations": {
+        "preparation": {
+          "usucha-hot": 145,
+          "usucha-iced": 240,
+          "classic-latte": 300,
+          "cold-whisked-latte": 310
+        }
+      }
+    },
+    {
+      "categoryId": "matcha-brew-bar",
+      "name": "Kogacha Blend",
+      "description": "Rocky's Matcha - Slight Sweetness, Mild Umami",
+      "price": 290,
+      "type": "Brew Bar",
+      "customizations": {
+        "preparation": {
+          "usucha-hot": 290,
+          "usucha-iced": 530,
+          "classic-latte": 590,
+          "cold-whisked-latte": 560
+        }
+      }
+    },
+    {
+      "categoryId": "matcha-brew-bar",
+      "name": "Okumidori",
+      "description": "Rocky's Matcha - Strong-bodied, Nutty, Floral",
+      "price": 310,
+      "type": "Brew Bar",
+      "customizations": {
+        "preparation": {
+          "usucha-hot": 310,
+          "usucha-iced": 570,
+          "classic-latte": 630,
+          "cold-whisked-latte": 640
+        }
+      }
+    }
+  ]
+}

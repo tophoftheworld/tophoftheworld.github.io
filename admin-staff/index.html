@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title>Staff Management - Matchanese Admin</title>
+    <link rel="icon" href="data:,">
+    
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://matchanese.site/admin-staff/">
+    <meta property="og:title" content="Staff Management">
+    <meta property="og:description" content="Matchanese Staff Management System">
+    <meta property="og:image" content="https://matchanese.site/attendance/img/banner.jpg">
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link rel="stylesheet" href="css/admin-style.css">
+</head>
+
+<body>
+    <!-- Employee Edit Modal -->
+    <div class="modal" id="employeeEditModal" style="display: none;">
+        <div class="modal-content">
+            <span class="close-modal" id="closeEditModal">&times;</span>
+            <h2>Edit Employee Details</h2>
+            <form id="employeeEditForm">
+                <div class="form-group">
+                    <label for="editEmployeeName">Employee Name</label>
+                    <input type="text" id="editEmployeeName" required>
+                </div>
+                <div class="form-group">
+                    <label for="editNickname">Nickname</label>
+                    <input type="text" id="editNickname" placeholder="Auto-generated if empty">
+                </div>
+                <div class="form-group">
+                    <label for="editBaseRate">Base Rate</label>
+                    <input type="number" id="editBaseRate" min="0" step="10" required>
+                </div>
+                <div class="form-group">
+                    <label for="editActive">Status</label>
+                    <div class="toggle-container">
+                        <input type="checkbox" id="editActive" checked>
+                        <label for="editActive">Active Employee</label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="editPhoto">Display Photo</label>
+                    <div class="current-photo" id="editCurrentPhoto" style="display: none;">
+                        <img id="editCurrentPhotoImg" alt="Current Photo">
+                        <span class="current-photo-label">Current Photo</span>
+                    </div>
+                    <input type="file" id="editPhoto" accept="image/*" class="photo-input">
+                    <div class="photo-preview" id="editPhotoPreview" style="display: none;">
+                        <img id="editPhotoPreviewImg" alt="Preview">
+                        <button type="button" class="remove-photo-btn" onclick="removePhotoPreview('edit')">Remove</button>
+                    </div>
+                </div>
+                <input type="hidden" id="editEmployeeId">
+                <div class="form-actions">
+                    <button type="submit" class="submit-btn">Save Changes</button>
+                    <button type="button" class="cancel-btn" id="cancelEditBtn">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Role Management Modal -->
+    <div class="modal" id="roleManagementModal" style="display: none;">
+        <div class="modal-content">
+            <span class="close-modal" id="closeRoleModal">&times;</span>
+            <h2>Manage Employee Role</h2>
+            <form id="roleManagementForm">
+                <div class="form-group">
+                    <label for="roleEmployeeName">Employee</label>
+                    <input type="text" id="roleEmployeeName" readonly>
+                </div>
+                <div class="form-group">
+                    <label for="roleSelect">Role</label>
+                    <select id="roleSelect" required>
+                        <option value="staff">Staff - No Admin Access</option>
+                        <option value="manager">Manager - Select Access</option>
+                        <option value="admin">Admin - Full Access</option>
+                    </select>
+                </div>
+                
+                <!-- Manager Permissions (shown when Manager is selected) -->
+                <div class="form-section" id="managerPermissionsSection" style="display: none;">
+                    <h3>Manager Permissions</h3>
+                    <p class="form-hint">Select which admin tabs this manager can access:</p>
+                    <div class="permissions-grid">
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="permPayroll">
+                            <label for="permPayroll">Payroll</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="permSchedule">
+                            <label for="permSchedule">Schedule</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="permSales">
+                            <label for="permSales">Sales</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="permExpenses">
+                            <label for="permExpenses">Expenses</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="permInventory">
+                            <label for="permInventory">Inventory</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="permPopups">
+                            <label for="permPopups">Pop-ups</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="permStaff">
+                            <label for="permStaff">Staff Management</label>
+                        </div>
+                    </div>
+                </div>
+                
+                <input type="hidden" id="roleEmployeeId">
+                <div class="form-actions">
+                    <button type="submit" class="submit-btn">Save Role</button>
+                    <button type="button" class="cancel-btn" id="cancelRoleBtn">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add Employee Modal -->
+    <div class="modal" id="addEmployeeModal" style="display: none;">
+        <div class="modal-content">
+            <span class="close-modal" id="closeAddEmployeeModal">&times;</span>
+            <h2>Add New Employee</h2>
+            <form id="addEmployeeForm">
+                <div class="form-group">
+                    <label for="addEmployeeId">Employee ID</label>
+                    <input type="text" id="addEmployeeId" required placeholder="e.g., 131929">
+                </div>
+                <div class="form-group">
+                    <label for="addEmployeeName">Full Name</label>
+                    <input type="text" id="addEmployeeName" required placeholder="e.g., John Doe">
+                </div>
+                <div class="form-group">
+                    <label for="addNickname">Nickname (Optional)</label>
+                    <input type="text" id="addNickname" placeholder="Auto-generated if empty">
+                </div>
+                <div class="form-group">
+                    <label for="addBaseRate">Base Rate</label>
+                    <input type="number" id="addBaseRate" min="0" step="10" required placeholder="e.g., 700">
+                </div>
+                <div class="form-group">
+                    <label for="addPhoto">Display Photo (Optional)</label>
+                    <input type="file" id="addPhoto" accept="image/*" class="photo-input">
+                    <div class="photo-preview" id="addPhotoPreview" style="display: none;">
+                        <img id="addPhotoPreviewImg" alt="Preview">
+                        <button type="button" class="remove-photo-btn" onclick="removePhotoPreview('add')">Remove</button>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="submit-btn">Add Employee</button>
+                    <button type="button" class="cancel-btn" id="cancelAddEmployeeBtn">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="admin-header">
+            <div class="logo-section">
+                <img src="img/matchanese-logo.png" class="logo" alt="Matchanese Logo">
+                <h1 class="app-title">Staff Management</h1>
+            </div>
+            <div class="controls">
+                <button class="employee-btn" id="addEmployeeBtn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="9" cy="7" r="4"></circle>
+                        <line x1="19" x2="19" y1="8" y2="14"></line>
+                        <line x1="22" x2="16" y1="11" y2="11"></line>
+                    </svg>
+                    Add Employee
+                </button>
+                <button class="refresh-btn" id="refreshBtn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 2v6h-6"></path>
+                        <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+                        <path d="M3 22v-6h6"></path>
+                        <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+                    </svg>
+                    Refresh Data
+                </button>
+            </div>
+        </div>
+
+
+        <!-- Wrap table in a container for loading overlay -->
+        <div class="data-table-container">
+            <!-- Loading overlay just for the table -->
+            <div class="loading-overlay" id="loadingOverlay">
+                <div class="spinner"></div>
+            </div>
+
+            <table class="data-table" id="employeeTable">
+                <thead>
+                    <tr>
+                        <th>Photo</th>
+                        <th>Employee Code</th>
+                        <th>Name</th>
+                        <th>Role</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="employeeTableBody">
+                    <!-- Employee rows will be populated by JavaScript -->
+                </tbody>
+            </table>
+        </div>
+
+        <div class="pagination" id="pagination">
+            <span class="pagination-info">Showing all 0 employees</span>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script type="module" src="js/staff-script.js"></script>
+</body>
+
+</html>

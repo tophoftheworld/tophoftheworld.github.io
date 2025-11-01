@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Matchanese Schedule</title>
+    <link rel="icon" href="icons/icon-64.png" type="image/png">
+    
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://matchanese.site/scheduling/">
+    <meta property="og:title" content="Matchanese Scheduling">
+    <meta property="og:description" content="Matchanese Employee Scheduling System">
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+</head>
+
+<body>
+    <!-- Shift Modal -->
+    <div class="modal" id="shiftModal">
+        <div class="modal-content">
+            <span class="close-modal" id="closeShiftModal">&times;</span>
+            <h2 id="modalTitle">Add Shift</h2>
+            <form id="shiftForm">
+                <div class="form-group">
+                    <label for="shiftDate">Date</label>
+                    <input type="date" id="shiftDate" required>
+                </div>
+                <div class="form-group">
+                    <label for="shiftBranch">Location</label>
+                    <select id="shiftBranch" required>
+                        <option value="">Select location</option>
+                        <option value="podium">Podium</option>
+                        <option value="smnorth">SM North</option>
+                        <option value="popup">Pop-up</option>
+                        <option value="workshop">Workshop</option>
+                        <option value="other">Other Events</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="shiftType">Shift Type</label>
+                    <select id="shiftType" required>
+                        <option value="">Select shift type</option>
+                        <option value="opening">Opening (9:30 AM - 6:30 PM)</option>
+                        <option value="midshift">Midshift (11:00 AM - 8:00 PM)</option>
+                        <option value="closing">Closing (1:00 PM - 10:00 PM)</option>
+                        <option value="closingHalf">Closing Half Day (6:00 PM - 10:00 PM)</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                </div>
+                <div class="form-group" id="customTimeGroup" style="display: none;">
+                    <label for="customStartTime">Start Time</label>
+                    <input type="time" id="customStartTime">
+                    <label for="customEndTime">End Time</label>
+                    <input type="time" id="customEndTime">
+                </div>
+                <div class="form-group">
+                    <label for="shiftEmployee">Employee</label>
+                    <select id="shiftEmployee">
+                        <option value="">Select employee</option>
+                    </select>
+                </div>
+                <input type="hidden" id="shiftId">
+                <input type="hidden" id="originalDate">
+                <input type="hidden" id="originalBranch">
+                <div class="form-actions">
+                    <button type="submit" class="submit-btn">Save Shift</button>
+                    <button type="button" class="cancel-btn" id="cancelShiftBtn">Cancel</button>
+                    <button type="button" class="danger-btn" id="deleteShiftBtn" style="display: none;">Delete Shift</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add Location Modal -->
+    <div class="modal" id="addBranchModal">
+        <div class="modal-content">
+            <span class="close-modal" id="closeBranchModal">&times;</span>
+            <h2 id="branchModalTitle">Add New Location</h2>
+            <form id="branchForm">
+                <div class="form-group">
+                    <label for="branchName">Location Name</label>
+                    <input type="text" id="branchName" required placeholder="Enter location name">
+                </div>
+                <div class="form-group">
+                    <label for="branchType">Location Type</label>
+                    <select id="branchType" required>
+                        <option value="">Select type</option>
+                        <option value="popup">Pop-up</option>
+                        <option value="workshop">Workshop</option>
+                    </select>
+                </div>
+                <input type="hidden" id="branchKey">
+                <div class="form-actions">
+                    <button type="submit" class="submit-btn">Add Location</button>
+                    <button type="button" class="cancel-btn" id="cancelBranchBtn">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="admin-header">
+            <div class="header-content">
+                <h1 class="app-title">Schedule Dashboard</h1>
+                
+                <div class="controls">
+                    <div class="control-group">
+                        <label class="control-label">Location Filter</label>
+                        <select id="branchFilter">
+                            <option value="all">All Locations</option>
+                            <option value="podium">Podium</option>
+                            <option value="smnorth">SM North</option>
+                            <option value="popup">Pop-up</option>
+                            <option value="workshop">Workshop</option>
+                            <option value="other">Other Events</option>
+                        </select>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label class="control-label">View Mode</label>
+                        <div class="toggle-container">
+                            <input type="radio" name="viewMode" value="shift" id="shiftView" checked>
+                            <label for="shiftView">Shift</label>
+                            <input type="radio" name="viewMode" value="calendar" id="calendarView">
+                            <label for="calendarView">Calendar</label>
+                            <input type="radio" name="viewMode" value="employee" id="employeeView">
+                            <label for="employeeView">Employee</label>
+                        </div>
+                    </div>
+                    
+                    <div class="control-group horizontal">
+                        <button class="refresh-btn" id="syncBtn">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 2v6h-6"></path>
+                                <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+                                <path d="M3 22v-6h6"></path>
+                                <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+                            </svg>
+                            Sync
+                        </button>
+                        <button class="danger-btn" id="deleteFutureBtn" style="background-color: #dc3545;">
+                            💀 Delete All
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Multi-select Controls -->
+        <div class="multi-select-controls hidden" id="multiSelectControls">
+            <span class="selection-counter" id="selectionCounter">0 selected</span>
+            <button class="delete-selected-btn" id="deleteSelectedBtn" disabled>Delete</button>
+            <button id="copySelectedBtn" disabled>Copy to Next Day</button>
+            <button class="exit-selection-btn" id="exitSelectionBtn">Cancel</button>
+        </div>
+        
+
+        <!-- Calendar View -->
+        <div id="calendarViewContainer" class="view-container" style="display: none;">
+            <div class="schedule-grid-container">
+                <div class="schedule-grid" id="scheduleGrid">
+                    <!-- Grid will be populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Shift View -->
+        <div id="shiftViewContainer" class="view-container">
+            <!-- Week Navigation integrated with calendar -->
+            <div class="week-navigation">
+                <button class="nav-btn icon-only" id="prevWeekBtn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M16 6 Q16 4 14 4 L8 10 Q6 12 8 14 L14 20 Q16 20 16 18 L16 6 Z" fill="currentColor"/>
+                    </svg>
+                </button>
+                <h2 class="week-title" id="weekTitle">Loading...</h2>
+                <button class="nav-btn icon-only" id="nextWeekBtn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M8 6 Q8 4 10 4 L16 10 Q18 12 16 14 L10 20 Q8 20 8 18 L8 6 Z" fill="currentColor"/>
+                    </svg>
+                </button>
+                <button class="nav-btn copy-week-btn" id="copyPreviousWeekBtn" style="display: flex;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                    Copy Previous Week
+                </button>
+            </div>
+            <div class="shift-schedule-container">
+                <div class="shift-schedule-grid" id="shiftScheduleGrid">
+                    <!-- Grid will be populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Mobile Daily View -->
+        <div id="mobileDailyView" class="mobile-daily-view" style="display: none;">
+            <!-- Mobile Day Navigation -->
+            <div class="mobile-day-navigation">
+                <button class="mobile-nav-btn" id="prevDayBtn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M16 6 Q16 4 14 4 L8 10 Q6 12 8 14 L14 20 Q16 20 16 18 L16 6 Z" fill="currentColor"/>
+                    </svg>
+                </button>
+                <div class="mobile-day-info">
+                    <div class="mobile-month-year" id="mobileMonthYear">September 2025</div>
+                    <div class="mobile-day-strip" id="mobileDayStrip">
+                        <!-- Day strip will be populated by JavaScript -->
+                    </div>
+                </div>
+                <button class="mobile-nav-btn" id="nextDayBtn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M8 6 Q8 4 10 4 L16 10 Q18 12 16 14 L10 20 Q8 20 8 18 L8 6 Z" fill="currentColor"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Mobile Daily Schedule -->
+            <div class="mobile-daily-schedule" id="mobileDailySchedule">
+                <!-- Shift group rows will be populated by JavaScript -->
+            </div>
+        </div>
+
+        <!-- Employee View -->
+        <div id="employeeViewContainer" class="view-container" style="display: none;">
+            <div class="employee-schedule" id="employeeSchedule">
+                <!-- Employee schedule will be populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="js/script.js?v=15"></script>
+</body>
+
+</html>

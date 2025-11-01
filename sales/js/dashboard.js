@@ -462,6 +462,7 @@ function changeView(newView) {
 // Chart display type
 let currentChartDisplay = 'total';
 let showProjections = false;
+let showCurrentMonth = true;
 
 // Initialize chart controls
 function initializeChartControls() {
@@ -487,18 +488,33 @@ function initializeChartControls() {
         projectionToggle.textContent = showProjections ? 'Hide Projections' : 'Show Projections';
         filterAndRender();
     });
+    
+    // Current month toggle
+    const currentMonthToggle = document.getElementById('currentMonthToggle');
+    currentMonthToggle.addEventListener('click', () => {
+        showCurrentMonth = !showCurrentMonth;
+        currentMonthToggle.classList.toggle('active', showCurrentMonth);
+        currentMonthToggle.textContent = showCurrentMonth ? 'Hide Current Month' : 'Show Current Month';
+        filterAndRender();
+    });
 }
 
-// Update projection toggle based on view
 function updateProjectionToggle(viewType) {
     const projectionToggle = document.getElementById('projectionToggle');
+    const currentMonthToggle = document.getElementById('currentMonthToggle');
     const isMonthly = viewType === 'monthly';
 
     projectionToggle.disabled = !isMonthly;
+    currentMonthToggle.disabled = !isMonthly;
+
     if (!isMonthly) {
         showProjections = false;
         projectionToggle.classList.remove('active');
         projectionToggle.textContent = 'Show Projections';
+
+        showCurrentMonth = true;
+        currentMonthToggle.classList.remove('active');
+        currentMonthToggle.textContent = 'Hide Current Month';
     }
 }
 
@@ -539,6 +555,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
         toggleImportSection(); // Add this line
         loadSalesData();
+    });
+
+    // Add window resize listener to update table format on mobile/desktop switch
+    window.addEventListener('resize', function() {
+        // Debounce the resize event
+        clearTimeout(window.resizeTimeout);
+        window.resizeTimeout = setTimeout(() => {
+            filterAndRender();
+        }, 250);
     });
 
     // Set default after a small delay to ensure flatpickr is ready
@@ -886,9 +911,14 @@ function updateTableForView(days, dataMap, viewType) {
                 const tr = document.createElement("tr");
                 let cells = [];
 
+                // Check if mobile view (screen width <= 768px)
+                const isMobile = window.innerWidth <= 768;
+                
                 if (currentBranch === 'podium') {
                     cells = [
-                        date.toLocaleDateString("en-PH", { month: 'long', day: 'numeric' }),
+                        isMobile ? 
+                            date.toLocaleDateString("en-PH", { month: 'short', day: 'numeric' }) :
+                            date.toLocaleDateString("en-PH", { month: 'long', day: 'numeric' }),
                         date.toLocaleDateString("en-PH", { weekday: 'long' }),
                         data?.staff || "-",
                         format(totalSales, true),
@@ -904,7 +934,9 @@ function updateTableForView(days, dataMap, viewType) {
                 } else {
                     // SM North (existing)
                     cells = [
-                        date.toLocaleDateString("en-PH", { month: 'long', day: 'numeric' }),
+                        isMobile ? 
+                            date.toLocaleDateString("en-PH", { month: 'short', day: 'numeric' }) :
+                            date.toLocaleDateString("en-PH", { month: 'long', day: 'numeric' }),
                         date.toLocaleDateString("en-PH", { weekday: 'long' }),
                         data?.staff || "-",
                         format(totalSales, true),
@@ -1039,6 +1071,11 @@ function updateTableForView(days, dataMap, viewType) {
         });
 
         sortedMonthKeys.forEach(monthKey => {
+            // Skip current month if toggle is off
+            if (!showCurrentMonth && isCurrentMonth(monthKey)) {
+                return;
+            }
+
             const monthDays = monthGroups[monthKey];
 
             // Calculate monthly totals
@@ -1132,6 +1169,12 @@ function calculateWalkInSales(data) {
             return data.totalSales || 0;
         }
     }
+}
+
+function isCurrentMonth(monthKey) {
+    const now = new Date();
+    const currentMonthKey = now.toLocaleDateString("en-PH", { month: 'short', year: 'numeric' });
+    return monthKey === currentMonthKey;
 }
 
 function calculateTotalSales(data) {
@@ -1377,10 +1420,11 @@ function renderChart(labels, data, viewType) {
         myChart.destroy();
     }
 
+    // --- Base Actual dataset ---
     let datasets = [{
         label: viewType === 'daily' ? 'Daily Sales' :
             viewType === 'weekly' ? 'Weekly Sales' : 'Monthly Sales',
-        data: data,
+        data: filterCurrentMonthFromData(labels, data),
         borderColor: '#2b9348',
         backgroundColor: 'rgba(43, 147, 72, 0.1)',
         tension: 0.3,
@@ -1389,29 +1433,82 @@ function renderChart(labels, data, viewType) {
         pointBackgroundColor: '#2b9348'
     }];
 
+    // --- Add dashed segment for last -> current month ---
+    datasets[0].tension = 0.35;
+    datasets[0].cubicInterpolationMode = 'monotone';
+
+    const _now = new Date();
+    const _currentMonthLabel = _now.toLocaleDateString("en-PH", { month: 'short', year: 'numeric' });
+    const _currentIndex = labels.findIndex(l => l === _currentMonthLabel);
+    const _lastIndex = _currentIndex - 1;
+
+    if (viewType === 'monthly' && _currentIndex > 0) {
+        datasets[0].segment = {
+            borderDash: ctx => ctx.p1DataIndex === _currentIndex ? [5, 5] : undefined
+        };
+    }
+
+
     // Add projection for monthly view - only if enabled
     if (viewType === 'monthly' && showProjections) {
-        const allProjections = calculateAllMonthlyProjections(labels, data);
-        if (allProjections.length > 0) {
-            // Create projection data array
-            const projectionData = labels.map((label, index) => {
-                const projection = allProjections.find(p => p.monthLabel === label);
-                return projection ? projection.projectedTotal : null;
-            });
+        const proj = calculateMonthlyProjection(labels, data);
+        if (proj && proj.hasProjection) {
+            const now = new Date();
+            const currentMonthLabel = now.toLocaleDateString("en-PH", { month: 'short', year: 'numeric' });
+            const currentIndex = labels.findIndex(l => l === currentMonthLabel);
+            const lastIndex = currentIndex - 1;
+            const prevPrevIndex = lastIndex - 1;
 
-            // Add projected dataset
+            if (lastIndex >= 0) {
+                // Build 3-point dataset for curvature: (two months ago) -> last month -> projected
+                const connectorData = labels.map((_, i) => {
+                    if (prevPrevIndex >= 0 && i === prevPrevIndex) return data[prevPrevIndex];  // hidden control point
+                    if (i === lastIndex) return data[lastIndex];                                // last month actual
+                    if (i === currentIndex) return proj.projectedTotal;                         // projected current
+                    return null;
+                });
+
+                datasets.push({
+                    label: 'Projection Connector',
+                    data: connectorData,
+                    tension: 0.4,
+                    cubicInterpolationMode: 'monotone',
+                    fill: 'origin',
+                    pointRadius: 0,
+                    spanGaps: true,
+
+                    // Default transparent; we’ll paint only the segment we want
+                    borderColor: 'rgba(0,0,0,0)',
+                    backgroundColor: 'rgba(0,0,0,0)',
+
+                    // Style per segment so ONLY (lastIndex -> currentIndex) is visible & shaded
+                    segment: {
+                        borderColor: ctx => (
+                            ctx.p0DataIndex === lastIndex && ctx.p1DataIndex === currentIndex
+                                ? 'rgba(43,147,72,0.6)'
+                                : 'rgba(0,0,0,0)'
+                        ),
+                        backgroundColor: ctx => (
+                            ctx.p0DataIndex === lastIndex && ctx.p1DataIndex === currentIndex
+                                ? 'rgba(43,147,72,0.15)'
+                                : 'rgba(0,0,0,0)'
+                        )
+                    }
+                });
+            }
+
+            // Single projected dot (lighter green)
             datasets.push({
-                label: 'Projected',
-                data: projectionData,
-                borderColor: '#ff6b35',
-                backgroundColor: 'rgba(255, 107, 53, 0.1)',
-                borderDash: [5, 5],
-                tension: 0.3,
-                fill: false,
-                pointRadius: 4,
-                pointBackgroundColor: '#ff6b35',
-                pointBorderColor: '#ff6b35',
-                pointBorderWidth: 2
+                label: 'Projected (Current Month)',
+                data: labels.map((_, i) => (i === currentIndex ? proj.projectedTotal : null)),
+                borderColor: 'rgba(43,147,72,0)',
+                backgroundColor: 'rgba(43,147,72,0.5)',
+                pointBackgroundColor: 'rgba(43,147,72,0.5)',
+                pointBorderColor: 'rgba(43,147,72,0.5)',
+                pointRadius: 5,
+                pointHoverRadius: 6,
+                showLine: false,
+                fill: false
             });
         }
     }
@@ -1502,6 +1599,16 @@ function getActualSalesForFirstDays(monthStart, numDays) {
     }
 
     return total;
+}
+
+function filterCurrentMonthFromData(labels, data) {
+    if (currentView !== 'monthly' || showCurrentMonth) {
+        return data;
+    }
+
+    return data.map((value, index) => {
+        return isCurrentMonth(labels[index]) ? null : value;
+    });
 }
 
 function groupDataByRolling7Days(labels, data) {

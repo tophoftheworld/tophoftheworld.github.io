@@ -1,0 +1,2143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MMF QR Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    
+    <style>
+        /* Ensure table columns maintain fixed widths */
+        .table-fixed {
+            table-layout: fixed;
+        }
+        
+        .table-fixed th,
+        .table-fixed td {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        /* Allow some columns to wrap if needed */
+        .table-fixed td.allow-wrap {
+            white-space: normal;
+            word-wrap: break-word;
+        }
+    </style>
+    
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
+        import { getFirestore } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCjXM75RSdlSmEKIgPC6DUGdmERG6P7_-8",
+            authDomain: "manila-matcha-fest.firebaseapp.com",
+            projectId: "manila-matcha-fest",
+            storageBucket: "manila-matcha-fest.firebasestorage.app",
+            messagingSenderId: "110163876581",
+            appId: "1:110163876581:web:7d28c7758ddd30eac1520c",
+            measurementId: "G-89F877CS05"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        window.firebase = { app, db };
+    </script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-6 py-8">
+        <!-- Header -->
+        <div class="mb-8">
+            <h1 class="text-3xl font-bold text-gray-900">MMF QR Dashboard</h1>
+            <p class="text-gray-600 mt-2">Manage and monitor QR codes across all merchants</p>
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="grid grid-cols-4 gap-6 mb-8" id="statsCards">
+            <!-- QR Codes Tab Stats -->
+            <div class="bg-white rounded-lg shadow p-6" id="qrStats">
+                <div class="flex items-center">
+                    <div class="p-2 bg-blue-100 rounded-lg">
+                        <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                        </svg>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">Total QRs</p>
+                        <p class="text-2xl font-semibold text-gray-900" id="totalQRs">-</p>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-6" id="qrStats">
+                <div class="flex items-center">
+                    <div class="p-2 bg-green-100 rounded-lg">
+                        <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">Unused QRs</p>
+                        <p class="text-2xl font-semibold text-gray-900" id="unusedQRs">-</p>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-6" id="qrStats">
+                <div class="flex items-center">
+                    <div class="p-2 bg-red-100 rounded-lg">
+                        <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">Used QRs</p>
+                        <p class="text-2xl font-semibold text-gray-900" id="usedQRs">-</p>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-6" id="qrStats">
+                <div class="flex items-center">
+                    <div class="p-2 bg-purple-100 rounded-lg">
+                        <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z"></path>
+                        </svg>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">Users</p>
+                        <p class="text-2xl font-semibold text-gray-900" id="totalUsers">-</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters and Actions -->
+        <div class="bg-white rounded-lg shadow mb-6">
+            <div class="p-6 border-b border-gray-200">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-4">
+                        <!-- Brand Filter -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Brand</label>
+                            <select id="brandFilter" class="border border-gray-300 rounded-md px-3 py-2 text-sm">
+                                <option value="">All Brands</option>
+                                <option value="B01">Matchanese</option>
+                                <option value="B02">Shizu Matcha Bar</option>
+                                <option value="B03">Oh Hey There</option>
+                                <option value="B04">Day Off Space</option>
+                                <option value="B05">Aichi Cafe</option>
+                                <option value="B06">Take Five Slow Bar</option>
+                                <option value="B07">Matcha Mama</option>
+                                <option value="B08">Ujisan</option>
+                                <option value="B09">Matcha Tokyo</option>
+                                <option value="B10">Chotto Matcha</option>
+                                <option value="B11">The Matcha Co.</option>
+                                <option value="B12">Melc Patisserie</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Status Filter -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                            <select id="statusFilter" class="border border-gray-300 rounded-md px-3 py-2 text-sm">
+                                <option value="">All Status</option>
+                                <option value="unused">Unused</option>
+                                <option value="used">Used</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Type Filter -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                            <select id="typeFilter" class="border border-gray-300 rounded-md px-3 py-2 text-sm">
+                                <option value="">All Types</option>
+                                <option value="live">Live</option>
+                                <option value="batch">Batch</option>
+                            </select>
+                        </div>
+                        
+                        <!-- User Filter -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">User</label>
+                            <select id="userFilter" class="border border-gray-300 rounded-md px-3 py-2 text-sm">
+                                <option value="">All Users</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-center space-x-3">
+                        <button id="refreshBtn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm">
+                            Refresh
+                        </button>
+                        <button id="exportBtn" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm">
+                            Export CSV
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Batch Actions -->
+            <div class="p-4 bg-gray-50 border-b border-gray-200">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-4">
+                        <label class="flex items-center">
+                            <input type="checkbox" id="selectAll" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                            <span class="ml-2 text-sm text-gray-700">Select All Displayed</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="checkbox" id="selectAllFiltered" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                            <span class="ml-2 text-sm text-gray-700">Select All Filtered</span>
+                        </label>
+                        <span id="selectedCount" class="text-sm text-gray-600">0 selected</span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <button id="deleteSelectedBtn" class="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                            Delete Selected
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab Navigation -->
+        <div class="bg-white rounded-lg shadow mb-6">
+            <div class="border-b border-gray-200">
+                <nav class="-mb-px flex space-x-8 px-6">
+                    <button id="qrTabBtn" class="border-b-2 border-green-500 py-4 px-1 text-sm font-medium text-green-600">
+                        QR Codes
+                    </button>
+                    <button id="usersTabBtn" class="border-b-2 border-transparent py-4 px-1 text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                        Users
+                    </button>
+                    <button id="merchantsTabBtn" class="border-b-2 border-transparent py-4 px-1 text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                        Merchants
+                    </button>
+                </nav>
+            </div>
+        </div>
+
+        <!-- QR Table -->
+        <div id="qrTableSection" class="bg-white rounded-lg shadow overflow-hidden">
+            <!-- Pagination Info -->
+            <div class="px-6 py-3 bg-gray-50 border-b border-gray-200">
+                <div class="flex items-center justify-between">
+                    <div class="text-sm text-gray-600">
+                        Showing <span id="displayedCount" class="font-medium">0</span> of <span id="totalCount" class="font-medium">0</span> QR codes
+                        <span id="pageInfo" class="ml-2 text-gray-500">(Page <span id="currentPageNum">1</span> of <span id="totalPagesNum">1</span>)</span>
+                    </div>
+                    <div class="text-sm text-gray-500">
+                        <span id="paginationNote" class="hidden">Use filters to narrow down results.</span>
+                    </div>
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200 table-fixed">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="w-12 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <input type="checkbox" id="headerSelectAll" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                            </th>
+                            <th class="w-24 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">QR Code</th>
+                            <th class="w-48 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" onclick="sortTable('merchantName')">
+                                Merchant <span id="merchantNameSort" class="ml-1">↕</span>
+                            </th>
+                            <th class="w-32 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Token</th>
+                            <th class="w-20 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" onclick="sortTable('status')">
+                                Status <span id="statusSort" class="ml-1">↕</span>
+                            </th>
+                            <th class="w-20 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" onclick="sortTable('type')">
+                                Type <span id="typeSort" class="ml-1">↕</span>
+                            </th>
+                            <th class="w-40 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" onclick="sortTable('createdAt')">
+                                Created <span id="createdAtSort" class="ml-1">↕</span>
+                            </th>
+                            <th class="w-40 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" onclick="sortTable('usedAt')">
+                                Used At <span id="usedAtSort" class="ml-1">↕</span>
+                            </th>
+                            <th class="w-48 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" onclick="sortTable('userEmail')">
+                                User <span id="userEmailSort" class="ml-1">↕</span>
+                            </th>
+                            <th class="w-20 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="qrTableBody" class="bg-white divide-y divide-gray-200">
+                        <!-- QR rows will be populated here -->
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Pagination Controls -->
+            <div class="px-6 py-3 bg-gray-50 border-t border-gray-200">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-2">
+                        <button id="firstPageBtn" class="px-3 py-1 text-sm text-gray-600 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                            First
+                        </button>
+                        <button id="prevPageBtn" class="px-3 py-1 text-sm text-gray-600 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                            Previous
+                        </button>
+                    </div>
+                    
+                    <div class="flex items-center space-x-1">
+                        <span class="text-sm text-gray-600">Page</span>
+                        <input type="number" id="pageInput" min="1" class="w-16 px-2 py-1 text-sm border border-gray-300 rounded text-center" value="1">
+                        <span class="text-sm text-gray-600">of <span id="totalPagesDisplay">1</span></span>
+                        <button id="goToPageBtn" class="ml-2 px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700">
+                            Go
+                        </button>
+                    </div>
+                    
+                    <div class="flex items-center space-x-2">
+                        <button id="nextPageBtn" class="px-3 py-1 text-sm text-gray-600 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                            Next
+                        </button>
+                        <button id="lastPageBtn" class="px-3 py-1 text-sm text-gray-600 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                            Last
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Users Table -->
+        <div id="usersTableSection" class="bg-white rounded-lg shadow overflow-hidden hidden">
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Profile</th>
+                            <th class="w-48 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" onclick="sortUsersTable('userEmail')">
+                                User <span id="userEmailSortUsers" class="ml-1">↕</span>
+                            </th>
+                            <th class="w-32 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" onclick="sortUsersTable('userName')">
+                                Name <span id="userNameSortUsers" class="ml-1">↕</span>
+                            </th>
+                            <th class="w-24 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" onclick="sortUsersTable('qrCount')">
+                                Scans <span id="qrCountSortUsers" class="ml-1">↕</span>
+                            </th>
+                            <th class="w-32 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" onclick="sortUsersTable('lastScan')">
+                                Last Scan <span id="lastScanSortUsers" class="ml-1">↕</span>
+                            </th>
+                            <th class="w-24 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reward</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersTableBody" class="bg-white divide-y divide-gray-200">
+                        <!-- User rows will be populated here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Merchants Table -->
+        <div id="merchantsTableSection" class="bg-white rounded-lg shadow overflow-hidden hidden">
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Logo</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" onclick="sortMerchantsTable('merchantName')">
+                                Merchant <span id="merchantNameSortMerchants" class="ml-1">↕</span>
+                            </th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" onclick="sortMerchantsTable('totalQRs')">
+                                Total QRs <span id="totalQRsSortMerchants" class="ml-1">↕</span>
+                            </th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" onclick="sortMerchantsTable('unusedQRs')">
+                                Unused QRs <span id="unusedQRsSortMerchants" class="ml-1">↕</span>
+                            </th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" onclick="sortMerchantsTable('usedQRs')">
+                                Used QRs <span id="usedQRsSortMerchants" class="ml-1">↕</span>
+                            </th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" onclick="sortMerchantsTable('usageRate')">
+                                Usage Rate <span id="usageRateSortMerchants" class="ml-1">↕</span>
+                            </th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" onclick="sortMerchantsTable('lastActivity')">
+                                Last Activity <span id="lastActivitySortMerchants" class="ml-1">↕</span>
+                            </th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="merchantsTableBody" class="bg-white divide-y divide-gray-200">
+                        <!-- Merchant rows will be populated here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loadingState" class="hidden text-center py-12">
+            <div class="inline-flex items-center px-4 py-2 font-semibold leading-6 text-gray-600">
+                <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-gray-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Loading QR codes...
+            </div>
+        </div>
+
+        <!-- Empty State -->
+        <div id="emptyState" class="hidden text-center py-12">
+            <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+            <h3 class="mt-2 text-sm font-medium text-gray-900" id="emptyStateTitle">No QR codes found</h3>
+            <p class="mt-1 text-sm text-gray-500" id="emptyStateMessage">Get started by creating some QR codes in the merchant app.</p>
+        </div>
+    </div>
+
+    <!-- QR Modal -->
+    <div id="qrModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <div class="mt-3 text-center">
+                <h3 class="text-lg font-medium text-gray-900 mb-4">QR Code</h3>
+                <div id="modalQRCode" class="flex justify-center mb-4"></div>
+                <div class="text-sm text-gray-600 mb-4">
+                    <p><strong>Token:</strong> <span id="modalToken"></span></p>
+                    <p><strong>Merchant:</strong> <span id="modalMerchant"></span></p>
+                </div>
+                <div class="flex justify-end space-x-3">
+                    <button id="closeModal" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Details Modal -->
+    <div id="userModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div class="relative top-10 mx-auto p-6 border w-[600px] max-h-[90vh] shadow-lg rounded-md bg-white overflow-y-auto">
+            <div class="mt-3">
+                <h3 class="text-xl font-medium text-gray-900 mb-6 text-center">User Details</h3>
+                
+                <!-- User Info Section -->
+                <div class="flex items-center justify-center mb-6">
+                    <div id="modalUserProfilePicture" class="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center">
+                        <svg class="w-10 h-10 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                        </svg>
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4 mb-6">
+                    <div class="text-sm text-gray-600">
+                        <p><strong>Email:</strong> <span id="modalUserEmail"></span></p>
+                        <p><strong>Name:</strong> <span id="modalUserName"></span></p>
+                    </div>
+                    <div class="text-sm text-gray-600">
+                        <p><strong>Total Scans:</strong> <span id="modalUserScans"></span></p>
+                        <p><strong>Stamps Collected:</strong> <span id="modalUserStamps"></span></p>
+                    </div>
+                </div>
+                
+
+                
+                <!-- Reward Status -->
+                <div id="rewardStatus" class="mb-6 p-4 bg-gray-50 rounded-lg hidden">
+                    <div id="rewardStatusContent" class="text-sm text-gray-600">
+                        <!-- Reward status will be populated here -->
+                    </div>
+                </div>
+                
+                <!-- Stamp Collection Grid -->
+                <div class="mb-6">
+                    <h4 class="font-medium text-gray-900 mb-4 text-center">Stamp Collection</h4>
+                    <div class="grid grid-cols-4 gap-3" id="modalUserStampGrid">
+                        <!-- Stamp grid will be populated here -->
+                    </div>
+                </div>
+                
+                <div class="flex justify-between items-center">
+                    <div class="flex space-x-2">
+                        <button id="editUserInModal" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm">
+                            Edit User
+                        </button>
+                        <button id="claimRewardBtn" class="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 text-sm hidden">
+                            Claim Reward
+                        </button>
+                    </div>
+                    <button id="closeUserModal" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reward Selection Modal -->
+    <div id="rewardModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div class="relative top-20 mx-auto p-6 border w-96 shadow-lg rounded-md bg-white">
+            <div class="mt-3">
+                <h3 class="text-lg font-medium text-gray-900 mb-4 text-center">Select Reward</h3>
+                <p class="text-sm text-gray-600 mb-6 text-center">Congratulations! You've collected all stamps. Choose your reward:</p>
+                
+                <div class="space-y-3 mb-6">
+                    <label class="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
+                        <input type="radio" name="reward" value="sticker-set" class="mr-3 text-purple-600 focus:ring-purple-500">
+                        <div>
+                            <div class="font-medium text-gray-900">Sticker Set</div>
+                            <div class="text-sm text-gray-500">Collectible Manila Matcha Fest stickers</div>
+                        </div>
+                    </label>
+                    
+                    <label class="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
+                        <input type="radio" name="reward" value="tote-bag" class="mr-3 text-purple-600 focus:ring-purple-500">
+                        <div>
+                            <div class="font-medium text-gray-900">Tote Bag</div>
+                            <div class="text-sm text-gray-500">Eco-friendly canvas tote bag</div>
+                        </div>
+                    </label>
+                    
+                    <label class="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
+                        <input type="radio" name="reward" value="cap" class="mr-3 text-purple-600 focus:ring-purple-500">
+                        <div>
+                            <div class="font-medium text-gray-900">Cap</div>
+                            <div class="text-sm text-gray-500">Stylish Manila Matcha Fest cap</div>
+                        </div>
+                    </label>
+                    
+                    <label class="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
+                        <input type="radio" name="reward" value="shirt" class="mr-3 text-purple-600 focus:ring-purple-500">
+                        <div>
+                            <div class="font-medium text-gray-900">T-Shirt</div>
+                            <div class="text-sm text-gray-500">Comfortable cotton t-shirt</div>
+                        </div>
+                    </label>
+                </div>
+                
+                <div class="flex justify-end space-x-3">
+                    <button id="cancelReward" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400">
+                        Cancel
+                    </button>
+                    <button id="confirmReward" class="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700">
+                        Claim Reward
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit User Modal -->
+    <div id="editUserModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <div class="mt-3">
+                <h3 class="text-lg font-medium text-gray-900 mb-4 text-center">Edit User</h3>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                    <input type="email" id="editUserEmail" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" readonly>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">First Name</label>
+                    <input type="text" id="editUserFirstName" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="Enter first name">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Last Name</label>
+                    <input type="text" id="editUserLastName" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="Enter last name">
+                </div>
+                <div class="flex justify-end space-x-3">
+                    <button id="cancelEditUser" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400">
+                        Cancel
+                    </button>
+                    <button id="saveEditUser" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">
+                        Save Changes
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let allQRCodes = [];
+        let filteredQRCodes = [];
+        let selectedQRCodes = new Set();
+        let currentSort = { field: null, direction: 'asc' };
+        let allUsers = [];
+        let filteredUsers = [];
+        let currentUsersSort = { field: null, direction: 'asc' };
+        
+        // Pagination settings
+        const QR_DISPLAY_LIMIT = 100;
+        let displayedQRCodes = [];
+        let currentPage = 1;
+        let totalPages = 1;
+
+        // Tab switching functions
+        function showQRTab() {
+            document.getElementById('qrTabBtn').classList.add('border-green-500', 'text-green-600');
+            document.getElementById('qrTabBtn').classList.remove('border-transparent', 'text-gray-500');
+            document.getElementById('usersTabBtn').classList.remove('border-green-500', 'text-green-600');
+            document.getElementById('usersTabBtn').classList.add('border-transparent', 'text-gray-500');
+            document.getElementById('merchantsTabBtn').classList.remove('border-green-500', 'text-green-600');
+            document.getElementById('merchantsTabBtn').classList.add('border-transparent', 'text-gray-500');
+            
+            document.getElementById('qrTableSection').classList.remove('hidden');
+            document.getElementById('usersTableSection').classList.add('hidden');
+            document.getElementById('merchantsTableSection').classList.add('hidden');
+            
+            updateStatsCards();
+        }
+        
+        function showUsersTab() {
+            document.getElementById('usersTabBtn').classList.add('border-green-500', 'text-green-600');
+            document.getElementById('usersTabBtn').classList.remove('border-transparent', 'text-gray-500');
+            document.getElementById('qrTabBtn').classList.remove('border-green-500', 'text-green-600');
+            document.getElementById('qrTabBtn').classList.add('border-transparent', 'text-gray-500');
+            document.getElementById('merchantsTabBtn').classList.remove('border-green-500', 'text-green-600');
+            document.getElementById('merchantsTabBtn').classList.add('border-transparent', 'text-gray-500');
+            
+            document.getElementById('usersTableSection').classList.remove('hidden');
+            document.getElementById('qrTableSection').classList.add('hidden');
+            document.getElementById('merchantsTableSection').classList.add('hidden');
+            
+            // Load users data if not already loaded
+            if (allUsers.length === 0) {
+                processUsersData();
+            }
+            
+            updateStatsCards();
+        }
+        
+        function showMerchantsTab() {
+            document.getElementById('merchantsTabBtn').classList.add('border-green-500', 'text-green-600');
+            document.getElementById('merchantsTabBtn').classList.remove('border-transparent', 'text-gray-500');
+            document.getElementById('qrTabBtn').classList.remove('border-green-500', 'text-green-600');
+            document.getElementById('qrTabBtn').classList.add('border-transparent', 'text-gray-500');
+            document.getElementById('usersTabBtn').classList.remove('border-green-500', 'text-green-600');
+            document.getElementById('usersTabBtn').classList.add('border-transparent', 'text-gray-500');
+            
+            document.getElementById('merchantsTableSection').classList.remove('hidden');
+            document.getElementById('qrTableSection').classList.add('hidden');
+            document.getElementById('usersTableSection').classList.add('hidden');
+            
+            // Load merchants data
+            processMerchantsData();
+            
+            updateStatsCards();
+        }
+        
+        // Initialize dashboard
+        async function initDashboard() {
+            showLoading();
+            await loadQRCodes();
+            updateStats();
+            hideLoading();
+            // Show merchants tab by default
+            showMerchantsTab();
+        }
+
+        // Load QR codes from Firebase
+        async function loadQRCodes() {
+            try {
+                if (!window.firebase || !window.firebase.db) {
+                    console.log('Firebase not available');
+                    showEmptyState();
+                    return;
+                }
+
+                const { collection, getDocs, onSnapshot } = await import("https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js");
+                
+                const qrRef = collection(window.firebase.db, 'qrcodes');
+                
+                // Set up real-time listener
+                const unsubscribe = onSnapshot(qrRef, (querySnapshot) => {
+                    allQRCodes = querySnapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }));
+                    
+                    // Make QR data available globally for stamp calculation
+                    window.allQRCodes = allQRCodes;
+                    
+                    filteredQRCodes = [...allQRCodes];
+                    
+                    // Apply current sorting if any
+                    if (currentSort.field) {
+                        sortData(currentSort.field, currentSort.direction);
+                        updateSortIndicators();
+                    }
+                    
+                    renderQRTable();
+                    updateStats();
+                    updateUserFilter();
+                    processUsersData();
+                }, (error) => {
+                    console.error('Error listening to QR codes:', error);
+                });
+                
+                // Store unsubscribe function for cleanup
+                window.unsubscribeQRCodes = unsubscribe;
+                
+            } catch (error) {
+                console.error('Error loading QR codes:', error);
+                showEmptyState();
+            }
+        }
+
+        // Render users table
+        function renderUsersTable() {
+            const tbody = document.getElementById('usersTableBody');
+            
+            // Clear the table body first
+            tbody.innerHTML = '';
+            
+            if (filteredUsers.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="px-6 py-4 text-center text-gray-500">No users found</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = filteredUsers.map(user => `
+                <tr class="hover:bg-gray-50 cursor-pointer transition-colors duration-150" onclick="showUserModal('${user.userEmail}')">
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="flex items-center">
+                            ${user.profilePicture ? 
+                                `<img src="${user.profilePicture}" alt="Profile" class="w-10 h-10 rounded-full object-cover border-2 border-gray-200">` :
+                                `<div class="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
+                                    <svg class="w-6 h-6 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                                    </svg>
+                                </div>`
+                            }
+                        </div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm font-medium text-gray-900">${user.userEmail}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm text-gray-900">${user.userName}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm text-gray-900">${user.qrCount}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        ${user.lastScan ? formatDate(user.lastScan) : '-'}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        ${user.rewardClaimed ? `
+                            <div class="flex items-center text-green-600" title="Reward claimed: ${getRewardDisplayName(user.rewardType)}">
+                                <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                                </svg>
+                                <span class="text-xs">${getRewardDisplayName(user.rewardType)}</span>
+                            </div>
+                        ` : '-'}
+                    </td>
+                </tr>
+            `).join('');
+        }
+        
+        // Render QR table
+        function renderQRTable() {
+            const tbody = document.getElementById('qrTableBody');
+            
+            // Clear the table body first
+            tbody.innerHTML = '';
+            
+            if (filteredQRCodes.length === 0) {
+                showEmptyState();
+                return;
+            }
+            
+            hideEmptyState();
+            
+            // Calculate pagination
+            totalPages = Math.ceil(filteredQRCodes.length / QR_DISPLAY_LIMIT);
+            currentPage = Math.min(currentPage, totalPages);
+            if (currentPage < 1) currentPage = 1;
+            
+            const startIndex = (currentPage - 1) * QR_DISPLAY_LIMIT;
+            const endIndex = startIndex + QR_DISPLAY_LIMIT;
+            displayedQRCodes = filteredQRCodes.slice(startIndex, endIndex);
+            
+            tbody.innerHTML = displayedQRCodes.map(qr => `
+                <tr class="hover:bg-gray-50">
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <input type="checkbox" class="qr-checkbox rounded border-gray-300 text-blue-600 focus:ring-blue-500" data-id="${qr.id}">
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <button onclick="showQRModal('${qr.token}', '${qr.merchantName}')" class="text-blue-600 hover:text-blue-900 text-sm">
+                            View QR
+                        </button>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm font-medium text-gray-900">${qr.merchantName}</div>
+                        <div class="text-sm text-gray-500">${qr.merchantId}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm text-gray-900 font-mono">${qr.token}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                            qr.status === 'unused' 
+                                ? 'bg-green-100 text-green-800' 
+                                : 'bg-red-100 text-red-800'
+                        }">
+                            ${qr.status}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                            qr.type === 'live' 
+                                ? 'bg-blue-100 text-blue-800' 
+                                : 'bg-purple-100 text-purple-800'
+                        }">
+                            ${qr.type}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        ${formatDate(qr.createdAt)}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        ${qr.usedAt ? formatDate(qr.usedAt) : '-'}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        ${qr.userEmail ? `<button onclick="showUserModal('${qr.userEmail}')" class="text-blue-600 hover:text-blue-900">${qr.userEmail}</button>` : '-'}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <button onclick="deleteQR('${qr.id}')" class="text-red-600 hover:text-red-900">Delete</button>
+                    </td>
+                </tr>
+            `).join('');
+            
+            // Add event listeners to checkboxes
+            document.querySelectorAll('.qr-checkbox').forEach(checkbox => {
+                checkbox.addEventListener('change', updateSelectedCount);
+            });
+            
+            // Update pagination info
+            document.getElementById('displayedCount').textContent = displayedQRCodes.length;
+            document.getElementById('totalCount').textContent = filteredQRCodes.length;
+            document.getElementById('currentPageNum').textContent = currentPage;
+            document.getElementById('totalPagesNum').textContent = totalPages;
+            document.getElementById('totalPagesDisplay').textContent = totalPages;
+            document.getElementById('pageInput').value = currentPage;
+            
+            // Update pagination controls
+            updatePaginationControls();
+            
+            // Show pagination note if there are more items than displayed
+            const paginationNote = document.getElementById('paginationNote');
+            if (filteredQRCodes.length > QR_DISPLAY_LIMIT) {
+                paginationNote.classList.remove('hidden');
+            } else {
+                paginationNote.classList.add('hidden');
+            }
+        }
+
+        // Filter QR codes
+        function filterQRCodes() {
+            const brandFilter = document.getElementById('brandFilter').value;
+            const statusFilter = document.getElementById('statusFilter').value;
+            const typeFilter = document.getElementById('typeFilter').value;
+            const userFilter = document.getElementById('userFilter').value;
+            
+            filteredQRCodes = allQRCodes.filter(qr => {
+                const brandMatch = !brandFilter || qr.merchantId === brandFilter;
+                const statusMatch = !statusFilter || qr.status === statusFilter;
+                const typeMatch = !typeFilter || qr.type === typeFilter;
+                const userMatch = !userFilter || qr.userEmail === userFilter;
+                
+                return brandMatch && statusMatch && typeMatch && userMatch;
+            });
+            
+            // Apply current sorting
+            if (currentSort.field) {
+                sortData(currentSort.field, currentSort.direction);
+            }
+            
+            // Reset to first page when filtering
+            currentPage = 1;
+            
+            renderQRTable();
+            updateStats();
+        }
+        
+        // Sort users table data
+        function sortUsersTable(field) {
+            // Toggle sort direction if same field
+            if (currentUsersSort.field === field) {
+                currentUsersSort.direction = currentUsersSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentUsersSort.field = field;
+                currentUsersSort.direction = 'asc';
+            }
+            
+            sortUsersData(field, currentUsersSort.direction);
+            updateUsersSortIndicators();
+            renderUsersTable();
+        }
+        
+        // Sort users data
+        function sortUsersData(field, direction) {
+            filteredUsers.sort((a, b) => {
+                let aVal, bVal;
+                
+                switch (field) {
+                                case 'userEmail':
+                aVal = a.userEmail;
+                bVal = b.userEmail;
+                        break;
+                    case 'userName':
+                        aVal = a.userName;
+                        bVal = b.userName;
+                        break;
+                    case 'qrCount':
+                        aVal = a.qrCount;
+                        bVal = b.qrCount;
+                        break;
+                    case 'lastScan':
+                        aVal = a.lastScan || new Date(0);
+                        bVal = b.lastScan || new Date(0);
+                        break;
+                    default:
+                        aVal = a[field];
+                        bVal = b[field];
+                }
+                
+                if (aVal < bVal) return direction === 'asc' ? -1 : 1;
+                if (aVal > bVal) return direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+        
+        // Update users sort indicators
+        function updateUsersSortIndicators() {
+            // Reset all indicators
+            document.querySelectorAll('[id$="SortUsers"]').forEach(span => {
+                span.textContent = '↕';
+            });
+            
+            // Set current sort indicator
+            if (currentUsersSort.field) {
+                const indicator = document.getElementById(currentUsersSort.field + 'SortUsers');
+                if (indicator) {
+                    indicator.textContent = currentUsersSort.direction === 'asc' ? '↑' : '↓';
+                }
+            }
+        }
+        
+        // Sort table data
+        function sortTable(field) {
+            // Toggle sort direction if same field
+            if (currentSort.field === field) {
+                currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort.field = field;
+                currentSort.direction = 'asc';
+            }
+            
+            sortData(field, currentSort.direction);
+            updateSortIndicators();
+            
+            // Reset to first page when sorting
+            currentPage = 1;
+            
+            renderQRTable();
+        }
+        
+        // Sort the data
+        function sortData(field, direction) {
+            filteredQRCodes.sort((a, b) => {
+                let aVal, bVal;
+                
+                switch (field) {
+                    case 'merchantName':
+                        aVal = a.merchantName;
+                        bVal = b.merchantName;
+                        break;
+                    case 'status':
+                        aVal = a.status;
+                        bVal = b.status;
+                        break;
+                    case 'type':
+                        aVal = a.type;
+                        bVal = b.type;
+                        break;
+                    case 'createdAt':
+                        aVal = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt);
+                        bVal = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt);
+                        break;
+                    case 'usedAt':
+                        aVal = a.usedAt?.toDate ? a.usedAt.toDate() : (a.usedAt ? new Date(a.usedAt) : new Date(0));
+                        bVal = b.usedAt?.toDate ? b.usedAt.toDate() : (b.usedAt ? new Date(b.usedAt) : new Date(0));
+                        break;
+                    default:
+                        aVal = a[field];
+                        bVal = b[field];
+                }
+                
+                if (aVal < bVal) return direction === 'asc' ? -1 : 1;
+                if (aVal > bVal) return direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+        
+        // Update sort indicators
+        function updateSortIndicators() {
+            // Reset all indicators
+            document.querySelectorAll('[id$="Sort"]').forEach(span => {
+                span.textContent = '↕';
+            });
+            
+            // Set current sort indicator
+            if (currentSort.field) {
+                const indicator = document.getElementById(currentSort.field + 'Sort');
+                if (indicator) {
+                    indicator.textContent = currentSort.direction === 'asc' ? '↑' : '↓';
+                }
+            }
+        }
+
+        // Update user filter options
+        function updateUserFilter() {
+            const userFilter = document.getElementById('userFilter');
+            const uniqueUsers = new Set(allQRCodes.filter(qr => qr.userEmail).map(qr => qr.userEmail));
+            
+            // Keep the current selection
+            const currentValue = userFilter.value;
+            
+            // Clear existing options except "All Users"
+            userFilter.innerHTML = '<option value="">All Users</option>';
+            
+            // Add user options
+            Array.from(uniqueUsers).sort().forEach(user => {
+                const option = document.createElement('option');
+                option.value = user;
+                option.textContent = user;
+                userFilter.appendChild(option);
+            });
+            
+            // Restore selection if it still exists
+            if (currentValue && uniqueUsers.has(currentValue)) {
+                userFilter.value = currentValue;
+            }
+        }
+        
+        // Process users data from QR codes
+        async function processUsersData() {
+            const userMap = new Map();
+            
+            // Group QR codes by user
+            allQRCodes.filter(qr => qr.userEmail).forEach(qr => {
+                if (!userMap.has(qr.userEmail)) {
+                    userMap.set(qr.userEmail, {
+                        userEmail: qr.userEmail,
+                        qrCount: 0,
+                        firstScan: null,
+                        lastScan: null,
+                        merchants: new Set()
+                    });
+                }
+                
+                const user = userMap.get(qr.userEmail);
+                user.qrCount++;
+                user.merchants.add(qr.merchantName);
+                
+                const scanTime = qr.usedAt ? (qr.usedAt.toDate ? qr.usedAt.toDate() : new Date(qr.usedAt)) : null;
+                if (scanTime) {
+                    if (!user.firstScan || scanTime < user.firstScan) {
+                        user.firstScan = scanTime;
+                    }
+                    if (!user.lastScan || scanTime > user.lastScan) {
+                        user.lastScan = scanTime;
+                    }
+                }
+            });
+            
+            // Fetch user names from Firebase
+            if (window.firebase && window.firebase.db) {
+                try {
+                    const { collection, query, where, getDocs } = await import("https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js");
+                    
+                    const usersRef = collection(window.firebase.db, 'users');
+                    const userQuery = query(usersRef);
+                    const querySnapshot = await getDocs(userQuery);
+                    
+                    const userDataMap = new Map();
+                    querySnapshot.forEach(doc => {
+                        const userData = doc.data();
+                        userDataMap.set(userData.email, userData);
+                    });
+                    
+                    // Merge user data with QR data
+                    allUsers = Array.from(userMap.values()).map(user => {
+                        const userData = userDataMap.get(user.userEmail);
+                        return {
+                            ...user,
+                            merchants: Array.from(user.merchants),
+                            firstName: userData?.firstName || '',
+                            lastName: userData?.lastName || '',
+                            userName: userData ? `${userData.firstName} ${userData.lastName}`.trim() : 'Unknown',
+                            profilePicture: userData?.profilePicture || null,
+                            rewardClaimed: userData?.rewardClaimed || false,
+                            rewardType: userData?.rewardType || null,
+                            rewardClaimedAt: userData?.rewardClaimedAt || null
+                        };
+                    });
+                } catch (error) {
+                    console.error('Error fetching user data:', error);
+                    // Fallback without names
+                    allUsers = Array.from(userMap.values()).map(user => ({
+                        ...user,
+                        merchants: Array.from(user.merchants),
+                        firstName: '',
+                        lastName: '',
+                        userName: 'Unknown',
+                        profilePicture: null
+                    }));
+                }
+            } else {
+                // No Firebase, use fallback
+                allUsers = Array.from(userMap.values()).map(user => ({
+                    ...user,
+                    merchants: Array.from(user.merchants),
+                    firstName: '',
+                    lastName: '',
+                    userName: 'Unknown',
+                    profilePicture: null
+                }));
+            }
+            
+            filteredUsers = [...allUsers];
+            renderUsersTable();
+        }
+        
+        // Update statistics
+        function updateStats() {
+            document.getElementById('totalQRs').textContent = allQRCodes.length;
+            document.getElementById('unusedQRs').textContent = allQRCodes.filter(qr => qr.status === 'unused').length;
+            document.getElementById('usedQRs').textContent = allQRCodes.filter(qr => qr.status === 'used').length;
+            
+            const uniqueUsers = new Set(allQRCodes.filter(qr => qr.userEmail).map(qr => qr.userEmail));
+            document.getElementById('totalUsers').textContent = uniqueUsers.size;
+            
+            updateStatsCards();
+        }
+        
+        // Update stats cards based on active tab
+        function updateStatsCards() {
+            const statsCards = document.getElementById('statsCards');
+            const activeTab = getActiveTab();
+            
+            if (activeTab === 'qr') {
+                updateQRStats();
+            } else if (activeTab === 'users') {
+                updateUserStats();
+            } else if (activeTab === 'merchants') {
+                updateMerchantStats();
+            }
+        }
+        
+        function getActiveTab() {
+            if (!document.getElementById('qrTableSection').classList.contains('hidden')) return 'qr';
+            if (!document.getElementById('usersTableSection').classList.contains('hidden')) return 'users';
+            if (!document.getElementById('merchantsTableSection').classList.contains('hidden')) return 'merchants';
+            return 'qr';
+        }
+        
+        function updateQRStats() {
+            const statsCards = document.getElementById('statsCards');
+            statsCards.innerHTML = `
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center">
+                        <div class="p-2 bg-blue-100 rounded-lg">
+                            <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-600">Total QRs</p>
+                            <p class="text-2xl font-semibold text-gray-900">${allQRCodes.length}</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center">
+                        <div class="p-2 bg-green-100 rounded-lg">
+                            <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-600">Unused QRs</p>
+                            <p class="text-2xl font-semibold text-gray-900">${allQRCodes.filter(qr => qr.status === 'unused').length}</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center">
+                        <div class="p-2 bg-red-100 rounded-lg">
+                            <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-600">Used QRs</p>
+                            <p class="text-2xl font-semibold text-gray-900">${allQRCodes.filter(qr => qr.status === 'used').length}</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center">
+                        <div class="p-2 bg-purple-100 rounded-lg">
+                            <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z"></path>
+                            </svg>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-600">Users</p>
+                            <p class="text-2xl font-semibold text-gray-900">${new Set(allQRCodes.filter(qr => qr.userEmail).map(qr => qr.userEmail)).size}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function updateUserStats() {
+            const statsCards = document.getElementById('statsCards');
+            const totalUsers = allUsers.length;
+            const usersWithAllStamps = allUsers.filter(user => user.merchants.length === MERCHANT_BRANDS.length).length;
+            const usersWithRewards = allUsers.filter(user => user.rewardClaimed).length;
+            const activeUsers = allUsers.filter(user => user.qrCount > 0).length;
+            
+            statsCards.innerHTML = `
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center">
+                        <div class="p-2 bg-blue-100 rounded-lg">
+                            <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z"></path>
+                            </svg>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-600">Total Users</p>
+                            <p class="text-2xl font-semibold text-gray-900">${totalUsers}</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center">
+                        <div class="p-2 bg-green-100 rounded-lg">
+                            <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-600">Active Users</p>
+                            <p class="text-2xl font-semibold text-gray-900">${activeUsers}</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center">
+                        <div class="p-2 bg-purple-100 rounded-lg">
+                            <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                            </svg>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-600">All Stamps</p>
+                            <p class="text-2xl font-semibold text-gray-900">${usersWithAllStamps}</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center">
+                        <div class="p-2 bg-yellow-100 rounded-lg">
+                            <svg class="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"></path>
+                            </svg>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-600">Rewards Claimed</p>
+                            <p class="text-2xl font-semibold text-gray-900">${usersWithRewards}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function updateMerchantStats() {
+            const statsCards = document.getElementById('statsCards');
+            const totalMerchants = allMerchants.length;
+            const totalQRsAcrossMerchants = allMerchants.reduce((sum, m) => sum + m.totalQRs, 0);
+            const totalUsedQRs = allMerchants.reduce((sum, m) => sum + m.usedQRs, 0);
+            const totalUnusedQRs = allMerchants.reduce((sum, m) => sum + m.unusedQRs, 0);
+            
+            statsCards.innerHTML = `
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center">
+                        <div class="p-2 bg-blue-100 rounded-lg">
+                            <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+                            </svg>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-600">Total Merchants</p>
+                            <p class="text-2xl font-semibold text-gray-900">${totalMerchants}</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center">
+                        <div class="p-2 bg-green-100 rounded-lg">
+                            <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-600">Total QRs</p>
+                            <p class="text-2xl font-semibold text-gray-900">${totalQRsAcrossMerchants}</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center">
+                        <div class="p-2 bg-red-100 rounded-lg">
+                            <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-600">Used QRs</p>
+                            <p class="text-2xl font-semibold text-gray-900">${totalUsedQRs}</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center">
+                        <div class="p-2 bg-yellow-100 rounded-lg">
+                            <svg class="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-600">Unused QRs</p>
+                            <p class="text-2xl font-semibold text-gray-900">${totalUnusedQRs}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Show user modal
+        function showUserModal(userEmail) {
+            const user = allUsers.find(u => u.userEmail === userEmail);
+            if (!user) return;
+            
+            const modal = document.getElementById('userModal');
+            const profilePictureDiv = document.getElementById('modalUserProfilePicture');
+            const emailSpan = document.getElementById('modalUserEmail');
+            const nameSpan = document.getElementById('modalUserName');
+            const scansSpan = document.getElementById('modalUserScans');
+            const progressSpan = document.getElementById('modalUserProgress');
+            const stampGridDiv = document.getElementById('modalUserStampGrid');
+            
+            // Store current user email for modal actions
+            modal.dataset.currentUserEmail = userEmail;
+            
+            // Set profile picture
+            if (user.profilePicture) {
+                profilePictureDiv.innerHTML = `<img src="${user.profilePicture}" alt="Profile" class="w-20 h-20 rounded-full object-cover">`;
+            } else {
+                profilePictureDiv.innerHTML = `<svg class="w-10 h-10 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                </svg>`;
+            }
+            
+            // Calculate user's collected merchants
+            const collectedMerchants = new Set(user.merchants);
+            const totalMerchants = MERCHANT_BRANDS.length;
+            const collectedCount = collectedMerchants.size;
+            const progressPercentage = Math.round((collectedCount / totalMerchants) * 100);
+            
+            // Check if user has collected all stamps and can claim reward
+            const hasAllStamps = collectedCount === totalMerchants;
+            const claimRewardBtn = document.getElementById('claimRewardBtn');
+            
+            if (hasAllStamps && !user.rewardClaimed) {
+                claimRewardBtn.classList.remove('hidden');
+            } else {
+                claimRewardBtn.classList.add('hidden');
+            }
+            
+            emailSpan.textContent = user.userEmail;
+            nameSpan.textContent = user.userName;
+            scansSpan.textContent = user.qrCount;
+            document.getElementById('modalUserStamps').textContent = `${collectedCount}/${totalMerchants}`;
+            
+            // Generate stamp grid with scan timestamps
+            stampGridDiv.innerHTML = MERCHANT_BRANDS.map(brand => {
+                const isCollected = collectedMerchants.has(brand.name);
+                
+                // Find scan timestamp for this merchant
+                let scanTimestamp = '';
+                if (isCollected) {
+                    const userQRs = allQRCodes.filter(qr => qr.userEmail === userEmail && qr.merchantName === brand.name);
+                    if (userQRs.length > 0) {
+                        const scanTime = userQRs[0].usedAt ? (userQRs[0].usedAt.toDate ? userQRs[0].usedAt.toDate() : new Date(userQRs[0].usedAt)) : null;
+                        if (scanTime) {
+                            scanTimestamp = formatDate(scanTime);
+                        }
+                    }
+                }
+                
+                return `
+                    <div class="relative flex flex-col items-center justify-center group">
+                        <div class="relative">
+                            <div class="w-12 h-12 rounded-full flex items-center justify-center text-center text-xs font-semibold select-none overflow-hidden bg-gray-50 transition-all duration-200 hover:scale-105" 
+                                 title="${isCollected ? `Scanned on ${scanTimestamp}` : 'Not scanned yet'}">
+                                <img src="${brand.logo}" alt="${brand.name}" class="w-full h-full object-cover rounded-full transition-opacity duration-200 ${isCollected ? 'opacity-100' : 'opacity-20'}" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                                <span class="px-2 leading-tight text-xs" style="display: none;">Logo</span>
+                            </div>
+                            ${isCollected ? `
+                                <div class="absolute -top-1 -right-1 bg-green-500 text-white rounded-full p-0.5 shadow-sm z-10">
+                                    <svg viewBox="0 0 24 24" width="10" height="10" aria-hidden="true">
+                                        <path d="M9 16.2l-3.5-3.5-1.4 1.4L9 19 20.3 7.7l-1.4-1.4z" fill="currentColor" />
+                                    </svg>
+                                </div>
+                            ` : ''}
+                        </div>
+                        <div class="mt-1 text-xs text-gray-500 text-center leading-tight">${brand.name}</div>
+                    </div>
+                `;
+            }).join('');
+            
+            // Update reward status - only show when there's a reward
+            const rewardStatus = document.getElementById('rewardStatus');
+            const rewardStatusContent = document.getElementById('rewardStatusContent');
+            
+            if (user.rewardClaimed) {
+                rewardStatusContent.innerHTML = `
+                    <div class="flex items-center text-green-600">
+                        <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                        </svg>
+                        <span class="font-medium">Reward Claimed</span>
+                    </div>
+                    <div class="mt-1">
+                        <strong>Selected:</strong> ${getRewardDisplayName(user.rewardType)}
+                    </div>
+                    <div class="mt-1">
+                        <strong>Claimed on:</strong> ${user.rewardClaimedAt ? formatDate(user.rewardClaimedAt) : 'Unknown'}
+                    </div>
+                `;
+                rewardStatus.classList.remove('hidden');
+            } else if (hasAllStamps) {
+                rewardStatusContent.innerHTML = `
+                    <div class="flex items-center text-purple-600">
+                        <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                        </svg>
+                        <span class="font-medium">Eligible for Reward</span>
+                    </div>
+                `;
+                rewardStatus.classList.remove('hidden');
+            } else {
+                rewardStatus.classList.add('hidden');
+            }
+            
+            modal.classList.remove('hidden');
+        }
+
+        // Show edit user modal
+        function showEditUserModal(userEmail) {
+            const user = allUsers.find(u => u.userEmail === userEmail);
+            if (!user) return;
+            
+            const modal = document.getElementById('editUserModal');
+            const emailInput = document.getElementById('editUserEmail');
+            const firstNameInput = document.getElementById('editUserFirstName');
+            const lastNameInput = document.getElementById('editUserLastName');
+            
+            // Populate the form with current user data
+            emailInput.value = user.userEmail;
+            firstNameInput.value = user.firstName || '';
+            lastNameInput.value = user.lastName || '';
+            
+            modal.classList.remove('hidden');
+        }
+
+        // Save user changes
+        async function saveUserChanges() {
+            const emailInput = document.getElementById('editUserEmail');
+            const firstNameInput = document.getElementById('editUserFirstName');
+            const lastNameInput = document.getElementById('editUserLastName');
+            
+            const userEmail = emailInput.value;
+            const firstName = firstNameInput.value.trim();
+            const lastName = lastNameInput.value.trim();
+            
+            if (!firstName && !lastName) {
+                alert('Please enter at least a first name or last name');
+                return;
+            }
+            
+            try {
+                const { collection, query, where, getDocs, updateDoc, doc } = await import("https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js");
+                
+                // Find the user document
+                const usersRef = collection(window.firebase.db, 'users');
+                const userQuery = query(usersRef, where('email', '==', userEmail));
+                const userSnapshot = await getDocs(userQuery);
+                
+                if (userSnapshot.empty) {
+                    alert('User not found in database');
+                    return;
+                }
+                
+                const userDoc = userSnapshot.docs[0];
+                const updateData = {};
+                
+                if (firstName) updateData.firstName = firstName;
+                if (lastName) updateData.lastName = lastName;
+                
+                // Update the user document
+                await updateDoc(doc(window.firebase.db, 'users', userDoc.id), updateData);
+                
+                // Update local data
+                const userIndex = allUsers.findIndex(u => u.userEmail === userEmail);
+                if (userIndex !== -1) {
+                    allUsers[userIndex].firstName = firstName;
+                    allUsers[userIndex].lastName = lastName;
+                    allUsers[userIndex].userName = `${firstName} ${lastName}`.trim();
+                    
+                    // Update filtered users as well
+                    const filteredUserIndex = filteredUsers.findIndex(u => u.userEmail === userEmail);
+                    if (filteredUserIndex !== -1) {
+                        filteredUsers[filteredUserIndex].firstName = firstName;
+                        filteredUsers[filteredUserIndex].lastName = lastName;
+                        filteredUsers[filteredUserIndex].userName = `${firstName} ${lastName}`.trim();
+                    }
+                }
+                
+                // Re-render the users table
+                renderUsersTable();
+                
+                // Close the modal
+                document.getElementById('editUserModal').classList.add('hidden');
+                
+                alert('User information updated successfully!');
+                
+            } catch (error) {
+                console.error('Error updating user:', error);
+                alert('Failed to update user information');
+            }
+        }
+        
+        // Show QR modal
+        function showQRModal(token, merchantName) {
+            const modal = document.getElementById('qrModal');
+            const qrContainer = document.getElementById('modalQRCode');
+            const tokenSpan = document.getElementById('modalToken');
+            const merchantSpan = document.getElementById('modalMerchant');
+            
+            // Clear previous QR
+            qrContainer.innerHTML = '';
+            
+            // Generate QR code
+            new QRCode(qrContainer, {
+                text: token,
+                width: 200,
+                height: 200,
+                colorDark: "#000000",
+                colorLight: "#ffffff",
+                correctLevel: QRCode.CorrectLevel.H
+            });
+            
+            tokenSpan.textContent = token;
+            merchantSpan.textContent = merchantName;
+            
+            modal.classList.remove('hidden');
+        }
+
+        // Delete QR code
+        async function deleteQR(qrId) {
+            if (!confirm('Are you sure you want to delete this QR code?')) return;
+            
+            try {
+                const { deleteDoc, doc } = await import("https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js");
+                
+                await deleteDoc(doc(window.firebase.db, 'qrcodes', qrId));
+                
+                // Remove from local arrays
+                allQRCodes = allQRCodes.filter(qr => qr.id !== qrId);
+                filteredQRCodes = filteredQRCodes.filter(qr => qr.id !== qrId);
+                selectedQRCodes.delete(qrId);
+                
+                renderQRTable();
+                updateStats();
+                updateSelectedCount();
+                
+            } catch (error) {
+                console.error('Error deleting QR:', error);
+                alert('Failed to delete QR code');
+            }
+        }
+        
+        // Delete user
+        async function deleteUser(userEmail) {
+            if (!confirm(`Are you sure you want to delete user "${userEmail}"? This will also delete all their QR code scans.`)) return;
+            
+            try {
+                const { deleteDoc, doc, collection, query, where, getDocs } = await import("https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js");
+                
+                // First, find and delete the user document
+                const usersRef = collection(window.firebase.db, 'users');
+                const userQuery = query(usersRef, where('email', '==', userEmail));
+                const userSnapshot = await getDocs(userQuery);
+                
+                if (!userSnapshot.empty) {
+                    const userDoc = userSnapshot.docs[0];
+                    await deleteDoc(doc(window.firebase.db, 'users', userDoc.id));
+                    console.log('User document deleted');
+                }
+                
+                // Then, find and delete all QR codes associated with this user
+                const qrRef = collection(window.firebase.db, 'qrcodes');
+                const qrQuery = query(qrRef, where('userEmail', '==', userEmail));
+                const qrSnapshot = await getDocs(qrQuery);
+                
+                let deletedQRCodes = 0;
+                for (const qrDoc of qrSnapshot.docs) {
+                    await deleteDoc(doc(window.firebase.db, 'qrcodes', qrDoc.id));
+                    deletedQRCodes++;
+                }
+                
+                console.log(`Deleted ${deletedQRCodes} QR codes for user ${userEmail}`);
+                
+                // Refresh the data
+                await loadData();
+                
+                alert(`User "${userEmail}" and ${deletedQRCodes} associated QR codes deleted successfully!`);
+                
+            } catch (error) {
+                console.error('Error deleting user:', error);
+                alert('Failed to delete user');
+            }
+        }
+
+
+
+        // Batch operations
+        function updateSelectedCount() {
+            const checkboxes = document.querySelectorAll('.qr-checkbox:checked');
+            selectedQRCodes = new Set(Array.from(checkboxes).map(cb => cb.dataset.id));
+            
+            document.getElementById('selectedCount').textContent = `${selectedQRCodes.size} selected`;
+            
+            const hasSelection = selectedQRCodes.size > 0;
+            document.getElementById('deleteSelectedBtn').disabled = !hasSelection;
+        }
+
+        // Select all displayed
+        function selectAll(checked) {
+            document.querySelectorAll('.qr-checkbox').forEach(checkbox => {
+                checkbox.checked = checked;
+            });
+            updateSelectedCount();
+        }
+        
+        // Select all filtered (all items that match current filters)
+        function selectAllFiltered(checked) {
+            // First uncheck all displayed checkboxes
+            document.querySelectorAll('.qr-checkbox').forEach(checkbox => {
+                checkbox.checked = false;
+            });
+            
+            if (checked) {
+                // Check all filtered QR codes (not just displayed ones)
+                filteredQRCodes.forEach(qr => {
+                    selectedQRCodes.add(qr.id);
+                });
+            } else {
+                selectedQRCodes.clear();
+            }
+            
+            updateSelectedCount();
+        }
+        
+        // Pagination functions
+        function updatePaginationControls() {
+            const firstBtn = document.getElementById('firstPageBtn');
+            const prevBtn = document.getElementById('prevPageBtn');
+            const nextBtn = document.getElementById('nextPageBtn');
+            const lastBtn = document.getElementById('lastPageBtn');
+            
+            // Enable/disable navigation buttons
+            firstBtn.disabled = currentPage <= 1;
+            prevBtn.disabled = currentPage <= 1;
+            nextBtn.disabled = currentPage >= totalPages;
+            lastBtn.disabled = currentPage >= totalPages;
+        }
+        
+        function goToPage(page) {
+            if (page >= 1 && page <= totalPages) {
+                currentPage = page;
+                renderQRTable();
+            }
+        }
+        
+        function goToFirstPage() {
+            goToPage(1);
+        }
+        
+        function goToLastPage() {
+            goToPage(totalPages);
+        }
+        
+        function goToNextPage() {
+            goToPage(currentPage + 1);
+        }
+        
+        function goToPrevPage() {
+            goToPage(currentPage - 1);
+        }
+        
+        // Reward claiming functions
+        function showRewardModal() {
+            const rewardModal = document.getElementById('rewardModal');
+            rewardModal.classList.remove('hidden');
+            
+            // Reset radio buttons
+            document.querySelectorAll('input[name="reward"]').forEach(radio => {
+                radio.checked = false;
+            });
+        }
+        
+        async function claimReward() {
+            const selectedReward = document.querySelector('input[name="reward"]:checked');
+            if (!selectedReward) {
+                alert('Please select a reward first.');
+                return;
+            }
+            
+            const rewardType = selectedReward.value;
+            const userEmail = document.getElementById('userModal').dataset.currentUserEmail;
+            
+            try {
+                const { collection, query, where, getDocs, updateDoc, doc } = await import("https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js");
+                
+                // Find the user document
+                const usersRef = collection(window.firebase.db, 'users');
+                const userQuery = query(usersRef, where('email', '==', userEmail));
+                const userSnapshot = await getDocs(userQuery);
+                
+                if (userSnapshot.empty) {
+                    alert('User not found in database');
+                    return;
+                }
+                
+                const userDoc = userSnapshot.docs[0];
+                const rewardData = {
+                    rewardClaimed: true,
+                    rewardType: rewardType,
+                    rewardClaimedAt: new Date()
+                };
+                
+                // Update the user document
+                await updateDoc(doc(window.firebase.db, 'users', userDoc.id), rewardData);
+                
+                // Update local data
+                const userIndex = allUsers.findIndex(u => u.userEmail === userEmail);
+                if (userIndex !== -1) {
+                    allUsers[userIndex] = { ...allUsers[userIndex], ...rewardData };
+                    
+                    // Update filtered users as well
+                    const filteredUserIndex = filteredUsers.findIndex(u => u.userEmail === userEmail);
+                    if (filteredUserIndex !== -1) {
+                        filteredUsers[filteredUserIndex] = { ...filteredUsers[filteredUserIndex], ...rewardData };
+                    }
+                }
+                
+                // Close modals
+                document.getElementById('rewardModal').classList.add('hidden');
+                document.getElementById('userModal').classList.add('hidden');
+                
+                // Show success message
+                alert(`Reward claimed successfully! User selected: ${getRewardDisplayName(rewardType)}`);
+                
+                // Refresh the users table
+                renderUsersTable();
+                
+            } catch (error) {
+                console.error('Error claiming reward:', error);
+                alert('Failed to claim reward. Please try again.');
+            }
+        }
+        
+        function getRewardDisplayName(rewardType) {
+            const rewardNames = {
+                'sticker-set': 'Sticker Set',
+                'tote-bag': 'Tote Bag',
+                'cap': 'Cap',
+                'shirt': 'T-Shirt'
+            };
+            return rewardNames[rewardType] || rewardType;
+        }
+
+        // Batch delete
+        async function deleteSelected() {
+            if (!confirm(`Are you sure you want to delete ${selectedQRCodes.size} QR codes?`)) return;
+            
+            try {
+                const { deleteDoc, doc } = await import("https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js");
+                
+                const deletePromises = Array.from(selectedQRCodes).map(qrId => 
+                    deleteDoc(doc(window.firebase.db, 'qrcodes', qrId))
+                );
+                
+                await Promise.all(deletePromises);
+                
+                // Remove from local arrays
+                allQRCodes = allQRCodes.filter(qr => !selectedQRCodes.has(qr.id));
+                filteredQRCodes = filteredQRCodes.filter(qr => !selectedQRCodes.has(qr.id));
+                selectedQRCodes.clear();
+                
+                renderQRTable();
+                updateStats();
+                updateSelectedCount();
+                
+            } catch (error) {
+                console.error('Error deleting selected QRs:', error);
+                alert('Failed to delete selected QR codes');
+            }
+        }
+
+
+
+        // Export CSV
+        function exportCSV() {
+            const headers = ['Merchant ID', 'Merchant Name', 'Token', 'Status', 'Type', 'Created', 'Used', 'Used By'];
+            const csvContent = [
+                headers.join(','),
+                ...filteredQRCodes.map(qr => [
+                    qr.merchantId,
+                    qr.merchantName,
+                    qr.token,
+                    qr.status,
+                    qr.type,
+                    formatDate(qr.createdAt),
+                    qr.usedAt ? formatDate(qr.usedAt) : '',
+                    qr.usedBy || ''
+                ].join(','))
+            ].join('\n');
+            
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `qr-codes-${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
+
+        // Utility functions
+        function formatDate(timestamp) {
+            if (!timestamp) return '-';
+            const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+            return date.toLocaleString();
+        }
+
+        function showLoading() {
+            document.getElementById('loadingState').classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            document.getElementById('loadingState').classList.add('hidden');
+        }
+
+        function showEmptyState() {
+            const brandFilter = document.getElementById('brandFilter').value;
+            const statusFilter = document.getElementById('statusFilter').value;
+            const typeFilter = document.getElementById('typeFilter').value;
+            
+            const titleElement = document.getElementById('emptyStateTitle');
+            const messageElement = document.getElementById('emptyStateMessage');
+            
+            // Check if any filters are active
+            if (brandFilter || statusFilter || typeFilter) {
+                titleElement.textContent = 'No QR codes match your filters';
+                messageElement.textContent = 'Try adjusting your filter criteria or clear all filters to see all QR codes.';
+            } else {
+                titleElement.textContent = 'No QR codes found';
+                messageElement.textContent = 'Get started by creating some QR codes in the merchant app.';
+            }
+            
+            document.getElementById('emptyState').classList.remove('hidden');
+        }
+
+        function hideEmptyState() {
+            document.getElementById('emptyState').classList.add('hidden');
+        }
+
+        // Merchants data processing
+        let allMerchants = [];
+        let filteredMerchants = [];
+        let currentMerchantsSort = { field: null, direction: 'asc' };
+
+        // Merchant brands data for stamp grid
+        const MERCHANT_BRANDS = [
+            { id: "B01", name: "Matchanese", logo: "images/matchanese.png" },
+            { id: "B02", name: "Shizu Matcha Bar", logo: "images/shizu.png" },
+            { id: "B03", name: "Oh Hey There", logo: "images/ohheythere.png" },
+            { id: "B04", name: "Day Off Space", logo: "images/dayoff.png" },
+            { id: "B05", name: "Aichi Cafe", logo: "images/aichi.png" },
+            { id: "B06", name: "Take Five Slow Bar", logo: "images/takefive.png" },
+            { id: "B07", name: "Matcha Mama", logo: "images/matchamama.png" },
+            { id: "B08", name: "Ujisan", logo: "images/ujisan.png" },
+            { id: "B09", name: "Matcha Tokyo", logo: "images/matchatokyo.png" },
+            { id: "B10", name: "Chotto Matcha", logo: "images/chotto.png" },
+            { id: "B11", name: "The Matcha Co.", logo: "images/thematchaco.png" },
+            { id: "B12", name: "Melc Patisserie", logo: "images/melc.png" }
+        ];
+
+        function processMerchantsData() {
+            const merchants = {
+                'B01': { id: 'B01', name: 'Matchanese', logo: 'images/matchanese.png' },
+                'B02': { id: 'B02', name: 'Shizu Matcha Bar', logo: 'images/shizu.png' },
+                'B03': { id: 'B03', name: 'Oh Hey There', logo: 'images/ohheythere.png' },
+                'B04': { id: 'B04', name: 'Day Off Space', logo: 'images/dayoff.png' },
+                'B05': { id: 'B05', name: 'Aichi Cafe', logo: 'images/aichi.png' },
+                'B06': { id: 'B06', name: 'Take Five Slow Bar', logo: 'images/takefive.png' },
+                'B07': { id: 'B07', name: 'Matcha Mama', logo: 'images/matchamama.png' },
+                'B08': { id: 'B08', name: 'Ujisan', logo: 'images/ujisan.png' },
+                'B09': { id: 'B09', name: 'Matcha Tokyo', logo: 'images/matchatokyo.png' },
+                'B10': { id: 'B10', name: 'Chotto Matcha', logo: 'images/chotto.png' },
+                'B11': { id: 'B11', name: 'The Matcha Co.', logo: 'images/thematchaco.png' },
+                'B12': { id: 'B12', name: 'Melc Patisserie', logo: 'images/melc.png' }
+            };
+
+            // Calculate stats for each merchant
+            allMerchants = Object.values(merchants).map(merchant => {
+                const merchantQRs = allQRCodes.filter(qr => qr.merchantId === merchant.id);
+                const totalQRs = merchantQRs.length;
+                const unusedQRs = merchantQRs.filter(qr => qr.status === 'unused').length;
+                const usedQRs = totalQRs - unusedQRs;
+                const usageRate = totalQRs > 0 ? ((usedQRs / totalQRs) * 100).toFixed(1) : '0.0';
+                
+                // Find last activity (most recent usedAt timestamp)
+                const lastActivity = merchantQRs
+                    .filter(qr => qr.usedAt)
+                    .sort((a, b) => {
+                        const dateA = a.usedAt.toDate ? a.usedAt.toDate() : new Date(a.usedAt);
+                        const dateB = b.usedAt.toDate ? b.usedAt.toDate() : new Date(b.usedAt);
+                        return dateB - dateA;
+                    })[0];
+
+                return {
+                    ...merchant,
+                    totalQRs,
+                    unusedQRs,
+                    usedQRs,
+                    usageRate: parseFloat(usageRate),
+                    lastActivity: lastActivity ? lastActivity.usedAt : null
+                };
+            });
+
+            filteredMerchants = [...allMerchants];
+            renderMerchantsTable();
+        }
+
+        function renderMerchantsTable() {
+            const tbody = document.getElementById('merchantsTableBody');
+            tbody.innerHTML = '';
+
+            filteredMerchants.forEach(merchant => {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-50';
+                
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <img src="${merchant.logo}" alt="${merchant.name}" class="w-8 h-8 rounded-full object-cover">
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        ${merchant.name}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        ${merchant.totalQRs}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <span class="text-green-600 font-medium">${merchant.unusedQRs}</span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <span class="text-blue-600 font-medium">${merchant.usedQRs}</span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${merchant.usageRate > 50 ? 'bg-green-100 text-green-800' : merchant.usageRate > 25 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}">
+                            ${merchant.usageRate}%
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        ${formatDate(merchant.lastActivity)}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <button onclick="viewMerchantDetails('${merchant.id}')" class="text-green-600 hover:text-green-900">
+                            View Details
+                        </button>
+                    </td>
+                `;
+                
+                tbody.appendChild(row);
+            });
+        }
+
+        function sortMerchantsTable(field) {
+            const currentDirection = currentMerchantsSort.field === field ? currentMerchantsSort.direction : 'asc';
+            const newDirection = currentDirection === 'asc' ? 'desc' : 'asc';
+            
+            currentMerchantsSort = { field, direction: newDirection };
+            
+            // Update sort indicators
+            document.querySelectorAll('[id$="SortMerchants"]').forEach(el => {
+                el.textContent = '↕';
+            });
+            
+            const sortElement = document.getElementById(field + 'SortMerchants');
+            if (sortElement) {
+                sortElement.textContent = newDirection === 'asc' ? '↑' : '↓';
+            }
+            
+            // Sort the data
+            filteredMerchants.sort((a, b) => {
+                let aVal = a[field];
+                let bVal = b[field];
+                
+                if (field === 'lastActivity') {
+                    aVal = aVal ? (aVal.toDate ? aVal.toDate() : new Date(aVal)) : new Date(0);
+                    bVal = bVal ? (bVal.toDate ? bVal.toDate() : new Date(bVal)) : new Date(0);
+                }
+                
+                if (aVal < bVal) return newDirection === 'asc' ? -1 : 1;
+                if (aVal > bVal) return newDirection === 'asc' ? 1 : -1;
+                return 0;
+            });
+            
+            renderMerchantsTable();
+        }
+
+        function viewMerchantDetails(merchantId) {
+            // This could open a modal with detailed merchant information
+            console.log('View details for merchant:', merchantId);
+            // For now, just show an alert
+            const merchant = allMerchants.find(m => m.id === merchantId);
+            if (merchant) {
+                alert(`${merchant.name}\nTotal QRs: ${merchant.totalQRs}\nUnused: ${merchant.unusedQRs}\nUsed: ${merchant.usedQRs}\nUsage Rate: ${merchant.usageRate}%`);
+            }
+        }
+
+        // Event listeners
+        document.addEventListener('DOMContentLoaded', () => {
+            // Initialize dashboard
+            initDashboard();
+            
+            // Filter event listeners
+            document.getElementById('brandFilter').addEventListener('change', filterQRCodes);
+            document.getElementById('statusFilter').addEventListener('change', filterQRCodes);
+            document.getElementById('typeFilter').addEventListener('change', filterQRCodes);
+            document.getElementById('userFilter').addEventListener('change', filterQRCodes);
+            
+            // Tab event listeners
+            document.getElementById('qrTabBtn').addEventListener('click', showQRTab);
+            document.getElementById('usersTabBtn').addEventListener('click', showUsersTab);
+            document.getElementById('merchantsTabBtn').addEventListener('click', showMerchantsTab);
+            
+            // Action event listeners
+            document.getElementById('refreshBtn').addEventListener('click', initDashboard);
+            document.getElementById('exportBtn').addEventListener('click', exportCSV);
+            
+            // Select all event listeners
+            document.getElementById('selectAll').addEventListener('change', (e) => selectAll(e.target.checked));
+            document.getElementById('headerSelectAll').addEventListener('change', (e) => selectAll(e.target.checked));
+            document.getElementById('selectAllFiltered').addEventListener('change', (e) => selectAllFiltered(e.target.checked));
+            
+            // Pagination event listeners
+            document.getElementById('firstPageBtn').addEventListener('click', goToFirstPage);
+            document.getElementById('prevPageBtn').addEventListener('click', goToPrevPage);
+            document.getElementById('nextPageBtn').addEventListener('click', goToNextPage);
+            document.getElementById('lastPageBtn').addEventListener('click', goToLastPage);
+            document.getElementById('goToPageBtn').addEventListener('click', () => {
+                const page = parseInt(document.getElementById('pageInput').value);
+                goToPage(page);
+            });
+            
+            // Allow Enter key on page input
+            document.getElementById('pageInput').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    const page = parseInt(e.target.value);
+                    goToPage(page);
+                }
+            });
+            
+            // Batch action event listeners
+            document.getElementById('deleteSelectedBtn').addEventListener('click', deleteSelected);
+            
+            // Modal event listeners
+            document.getElementById('closeModal').addEventListener('click', () => {
+                document.getElementById('qrModal').classList.add('hidden');
+            });
+            
+            document.getElementById('closeUserModal').addEventListener('click', () => {
+                document.getElementById('userModal').classList.add('hidden');
+            });
+            
+            // User modal action buttons
+            document.getElementById('editUserInModal').addEventListener('click', () => {
+                const userEmail = document.getElementById('userModal').dataset.currentUserEmail;
+                if (userEmail) {
+                    document.getElementById('userModal').classList.add('hidden');
+                    showEditUserModal(userEmail);
+                }
+            });
+            
+            document.getElementById('claimRewardBtn').addEventListener('click', () => {
+                showRewardModal();
+            });
+            
+            // Edit user modal event listeners
+            document.getElementById('cancelEditUser').addEventListener('click', () => {
+                document.getElementById('editUserModal').classList.add('hidden');
+            });
+            
+            document.getElementById('saveEditUser').addEventListener('click', saveUserChanges);
+            
+            // Reward modal event listeners
+            document.getElementById('cancelReward').addEventListener('click', () => {
+                document.getElementById('rewardModal').classList.add('hidden');
+            });
+            
+            document.getElementById('confirmReward').addEventListener('click', claimReward);
+            
+            // Close modals when clicking outside
+            document.getElementById('qrModal').addEventListener('click', (e) => {
+                if (e.target.id === 'qrModal') {
+                    e.target.classList.add('hidden');
+                }
+            });
+            
+            document.getElementById('userModal').addEventListener('click', (e) => {
+                if (e.target.id === 'userModal') {
+                    e.target.classList.add('hidden');
+                }
+            });
+            
+            document.getElementById('editUserModal').addEventListener('click', (e) => {
+                if (e.target.id === 'editUserModal') {
+                    e.target.classList.add('hidden');
+                }
+            });
+            
+            document.getElementById('rewardModal').addEventListener('click', (e) => {
+                if (e.target.id === 'rewardModal') {
+                    e.target.classList.add('hidden');
+                }
+            });
+        });
+        
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (window.unsubscribeQRCodes) {
+                window.unsubscribeQRCodes();
+            }
+        });
+    </script>
+</body>
+</html>

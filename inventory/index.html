@@ -11,29 +11,44 @@
         <div class="date-picker-container">
             <div class="date-picker">
                 <button class="date-nav-btn" id="prevDate">‹</button>
-                <div class="date-display" id="dateDisplay">June 24</div>
+                <div class="date-display" id="dateDisplay"></div>
                 <button class="date-nav-btn" id="nextDate">›</button>
             </div>
             <div class="branch-picker">
                 <select class="branch-select" id="branchSelect">
                     <option value="sm-north">SM North</option>
                     <option value="podium">Podium</option>
-                    <option value="new-popup">[New Pop-Up]</option>
+                    <!-- <option value="new-popup">[New Pop-Up]</option> -->
                 </select>
             </div>
         </div>
         <div class="toggle-container">
-            <div class="toggle-buttons">
-                <button class="toggle-btn active" data-mode="opening">Opening</button>
-                <button class="toggle-btn" data-mode="closing">Closing</button>
+            <div class="toggle-row">
+                <div class="toggle-buttons">
+                    <button class="toggle-btn active" data-mode="opening">Opening</button>
+                    <button class="toggle-btn" data-mode="closing">Closing</button>
+                </div>
+                <div class="plus-button-container">
+                    <button class="add-item-plus-btn" id="addItemPlusBtn">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                    <button class="hamburger-btn" id="hamburgerBtn">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <line x1="12" y1="6" x2="12" y2="14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                            <circle cx="12" cy="18" r="1" fill="currentColor"/>
+                        </svg>
+                    </button>
+                </div>
             </div>
         </div>
         <div class="admin-container">
             <!-- <button class="admin-btn" id="addItemBtn">Add Item</button> -->
             <!-- <button class="admin-btn" id="addCategoryBtn">Add Category</button> -->
             <!-- <button class="admin-btn" id="reorderBtn">Edit</button> -->
-            <button class="admin-btn" id="exportBtn">Export JSON</button>
-            <button class="admin-btn" id="importBtn">Import JSON</button>
+            <button class="admin-btn" id="exportBtn" style="display: none;">Export JSON</button>
+            <button class="admin-btn" id="importBtn" style="display: none;">Import JSON</button>
         </div>
         <!-- Hidden file input for JSON import -->
         <input type="file" id="jsonFileInput" accept=".json" style="display: none;">
@@ -75,15 +90,16 @@
                             <option value="kg">kg</option>
                             <option value="L">L</option>
                             <option value="ml">ml</option>
+                            <option value="pans">Pans</option>
                         </select>
                     </div>
                     <div class="form-group">
                         <label for="initialQuantity">Initial Quantity</label>
-                        <input type="number" id="initialQuantity" min="0" value="0" required>
+                        <input type="number" id="initialQuantity" min="0" step="0.1" value="0" inputmode="decimal" required>
                     </div>
                     <div class="form-group">
                         <label for="restockAmount">Restock Amount</label>
-                        <input type="number" id="restockAmount" min="0" value="0">
+                        <input type="number" id="restockAmount" min="0" step="0.1" value="0" inputmode="decimal">
                     </div>
                     <div class="form-group">
                         <label for="itemPhoto">Photo</label>
@@ -105,7 +121,7 @@
     </div>
 
     <!-- Add Pop-Up Modal -->
-    <div class="modal-overlay" id="addPopupModalOverlay">
+    <!-- <div class="modal-overlay" id="addPopupModalOverlay">
         <div class="modal">
             <div class="modal-header">
                 <h3>Add New Pop-Up</h3>
@@ -122,7 +138,7 @@
                 </div>
             </div>
         </div>
-    </div>
+    </div> -->
 
     <!-- Date Picker Modal -->
     <div class="modal-overlay" id="dateModalOverlay">
@@ -185,6 +201,82 @@
                 <div class="form-buttons">
                     <button type="button" class="btn-cancel" id="modeSwitchCancelBtn">Cancel</button>
                     <button type="button" class="btn-add" id="modeSwitchConfirmBtn">Continue</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Stocks Page -->
+    <div class="add-stocks-page" id="addStocksPage">
+        <div class="add-stocks-header">
+            <button class="back-btn" id="addStocksBackBtn">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M19 12H5M12 19L5 12L12 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </button>
+            <h2 class="add-stocks-title">Added Stocks</h2>
+            <div class="header-spacer"></div>
+        </div>
+        
+        <div class="add-stocks-content">
+            <div class="stocks-container">
+                <div class="stocks-list" id="stocksList">
+                    <!-- Stock items will be added here -->
+                </div>
+                <button class="add-stock-item-btn" id="addStockItemBtn">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <span>Add Item</span>
+                </button>
+                <button class="save-stocks-btn" id="saveStocksBtn" style="display: none;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <polyline points="17,21 17,13 7,13 7,21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <polyline points="7,3 7,8 15,8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <span>Save</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Running Low Page -->
+    <div class="running-low-page" id="runningLowPage">
+        <div class="running-low-header">
+            <button class="back-btn" id="runningLowBackBtn">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M19 12H5M12 19L5 12L12 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </button>
+            <h2 class="running-low-title">Running Low</h2>
+            <div class="header-spacer"></div>
+        </div>
+        
+        <div class="running-low-content">
+            <div class="running-low-container">
+                <div class="running-low-list" id="runningLowList">
+                    <!-- Running low items will be displayed here -->
+                </div>
+                <div class="no-items-message" id="noRunningLowMessage" style="display: none;">
+                    <div class="no-items-card">
+                        <p>No items running low</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Item Selection Modal -->
+    <div class="modal-overlay" id="itemSelectionModalOverlay">
+        <div class="modal item-selection-modal">
+            <div class="modal-header">
+                <h3>Select Item</h3>
+                <button class="modal-close" id="itemSelectionModalClose">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="item-selection-list" id="itemSelectionList">
+                    <!-- Items will be populated here -->
                 </div>
             </div>
         </div>

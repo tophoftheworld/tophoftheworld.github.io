@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Orders Viewer</title>
+<style>
+  :root {
+    --bg: #f2f4f7;
+    --card: #ffffff;
+    --text: #111827;
+    --muted: #6b7280;
+    --line: #e5e7eb;
+    --accent: #16a34a;       /* green accent like reference */
+    --accent-dark: #166534;  /* darker green */
+    --chip: #eef2f7;
+    --chip-green: #dcfce7;
+    --chip-blue: #dbeafe;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); }
+  header { position: sticky; top: 0; z-index: 5; background: var(--card); border-bottom: 1px solid var(--line); padding: 14px 16px; font-weight: 800; text-align: center; letter-spacing: 0.2px; }
+  .controls { display: flex; gap: 8px; padding: 10px; background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 56px; z-index: 4; }
+  .controls input[type="file"], .controls select { flex: 1; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: #fff; font-size: 15px; }
+  #orders { padding-bottom: 24px; }
+
+  /* Card list look similar to reference: white cards, soft shadow, big radius */
+  .order-card { background: var(--card); border-radius: 16px; box-shadow: 0 6px 20px rgba(0,0,0,.06); margin: 12px; padding: 14px; }
+  .summary { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 14px; }
+  .order-num { color: var(--muted); font-weight: 700; font-size: 13px; }
+  .name { font-weight: 700; font-size: 16px; color: var(--text); }
+  .qty { font-weight: 900; color: var(--accent); }
+  .item { color: var(--text); }
+  .total { font-weight: 800; }
+  .chip { padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; background: var(--chip); color: var(--muted); text-transform: capitalize; }
+  .chip.shipped { background: var(--chip-green); color: var(--accent-dark); }
+  .chip.ready { background: var(--chip-blue); color: #1e40af; }
+  .method { color: var(--text); font-weight: 700; }
+  .loc { color: var(--muted); font-weight: 700; }
+  .note { margin-top: 6px; padding: 8px; background: #fafafa; border: 1px solid var(--line); border-radius: 12px; font-size: 13px; color: #374151; }
+
+  .details { display: none; margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
+  .field { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; font-size: 14px; }
+  .label { color: var(--muted); }
+  .copy { color: var(--accent-dark); cursor: pointer; user-select: none; font-weight: 700; }
+  .btns { display: flex; gap: 10px; margin-top: 12px; }
+  .btn { flex: 1; border: none; border-radius: 999px; padding: 12px 14px; color: #fff; font-weight: 800; cursor: pointer; box-shadow: 0 6px 14px rgba(22,101,52,.18); }
+  .btn.ship { background: var(--accent); }
+  .btn.pickup { background: #1d4ed8; box-shadow: 0 6px 14px rgba(29,78,216,.18); }
+
+  .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: #111827; color: #fff; padding: 10px 14px; border-radius: 10px; font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .2s ease; z-index: 50; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+  <header>Orders Viewer</header>
+  <div class="controls">
+    <input type="file" id="csvFile" accept=".csv" />
+    <select id="filter">
+      <option value="all">All</option>
+      <option value="pickup">Pickup</option>
+      <option value="metro">Metro Manila</option>
+      <option value="nationwide">Nationwide</option>
+    </select>
+    <select id="sort">
+      <option value="order">Sort: Order #</option>
+      <option value="name">Sort: Name</option>
+      <option value="location">Sort: Location</option>
+    </select>
+  </div>
+  <div id="orders"></div>
+  <div id="toast" class="toast">Copied</div>
+
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script>
+  const ordersEl = document.getElementById('orders');
+  const filterEl = document.getElementById('filter');
+  const sortEl = document.getElementById('sort');
+  const toastEl = document.getElementById('toast');
+  let data = [];
+
+  document.getElementById('csvFile').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    Papa.parse(file, { header: true, skipEmptyLines: 'greedy', complete: ({ data: rows }) => {
+      data = rows.filter(r => r && (r.Name || r['Order Number']));
+      render();
+    }});
+  });
+
+  filterEl.addEventListener('change', render);
+  sortEl.addEventListener('change', render);
+
+  function isPickup(order) {
+    const method = (order['Shipping Method'] || '').toLowerCase();
+    const hasShipName = !!order['Shipping Name'];
+    return method.includes('pickup') || !hasShipName; // fallback when no shipping address present
+  }
+
+  function metroManila(order) {
+    const prov = (order['Shipping Province Name'] || '').toLowerCase();
+    return prov.includes('metro manila');
+  }
+
+  function computeLocation(order) {
+    if (isPickup(order)) {
+      return order['Pickup Location'] || 'Pickup Location';
+    }
+    if (metroManila(order)) {
+      return order['Shipping City'] || order['Billing City'] || '';
+    }
+    return order['Shipping Province Name'] || order['Shipping Province'] || '';
+  }
+
+  function getStatusClass(status) {
+    const s = (status || 'unfulfilled').toLowerCase();
+    if (s === 'shipped') return 'chip shipped';
+    if (s === 'ready for pickup') return 'chip ready';
+    return 'chip';
+  }
+
+  function toast(msg) {
+    toastEl.textContent = msg; toastEl.classList.add('show');
+    setTimeout(() => toastEl.classList.remove('show'), 900);
+  }
+
+  function copy(text) {
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => toast('Copied'));
+  }
+
+  function render() {
+    ordersEl.innerHTML = '';
+    const f = filterEl.value;
+    const s = sortEl.value;
+
+    let rows = data.filter(o => {
+      if (f === 'pickup') return isPickup(o);
+      if (f === 'metro') return !isPickup(o) && metroManila(o);
+      if (f === 'nationwide') return !isPickup(o) && !metroManila(o);
+      return true;
+    });
+
+    // Sorting
+    if (s === 'order') {
+      rows.sort((a, b) => (a.Name || '').localeCompare(b.Name || '', undefined, { numeric: true }));
+    } else if (s === 'name') {
+      rows.sort((a, b) => (a['Billing Name'] || '').localeCompare(b['Billing Name'] || ''));
+    } else if (s === 'location') {
+      rows.sort((a, b) => computeLocation(a).toLowerCase().localeCompare(computeLocation(b).toLowerCase()));
+    }
+
+    rows.forEach(o => ordersEl.appendChild(makeCard(o)));
+  }
+
+  function makeCard(o) {
+    const card = document.createElement('div');
+    card.className = 'order-card';
+
+    const status = o['Fulfillment Status'] || 'unfulfilled';
+    const method = o['Shipping Method'] || (isPickup(o) ? 'Pickup' : 'Shipping');
+    const loc = computeLocation(o);
+    const orderNum = o['Name'] || o['Order Number'] || '';
+    const item = o['Lineitem name'] || '';
+    const qty = o['Lineitem quantity'] || '1';
+    const total = parseFloat(o['Total'] || '0');
+    const note = o['Notes'] || o['Note'] || '';
+
+    const summary = document.createElement('div');
+    summary.className = 'summary';
+    summary.innerHTML = `
+      <div>
+        <div class="row"><span class="order-num">${orderNum}</span><span class="chip ${getStatusClass(status)}">${status}</span></div>
+        <div class="row"><span class="name">${o['Billing Name'] || 'No Name'}</span><span class="total">₱${isNaN(total) ? '—' : total.toFixed(2)}</span></div>
+        <div class="row"><span><span class="qty">${qty}</span> × <span class="item">${item}</span></span><span class="method">${method}</span></div>
+        <div class="row"><span class="loc">${loc}</span></div>
+        ${note ? `<div class="note">${note}</div>` : ''}
+      </div>
+    `;
+
+    const details = document.createElement('div');
+    details.className = 'details';
+    const address = `${o['Billing Street'] || ''}, ${o['Billing City'] || ''}, ${o['Billing Province'] || ''}`.replace(/^[,\s]+|[,\s]+$/g, '');
+    details.innerHTML = `
+      <div class="field"><span class="label">Name</span><span class="copy" onclick="copy('${(o['Billing Name']||'').replace(/'/g, "&#39;")}')">${o['Billing Name'] || '—'}</span></div>
+      <div class="field"><span class="label">Phone</span><span class="copy" onclick="copy('${(o['Billing Phone']||'').replace(/'/g, "&#39;")}')">${o['Billing Phone'] || '—'}</span></div>
+      <div class="field"><span class="label">Address</span><span class="copy" onclick="copy('${address.replace(/'/g, "&#39;")}')">${address || '—'}</span></div>
+      <div class="field"><span class="label">Email</span><span>${o['Email'] || '—'}</span></div>
+      <div class="btns">
+        ${isPickup(o)
+          ? `<button class="btn pickup" onclick="toggleStatus(this, 'Ready for Pickup')">Ready for Pickup</button>`
+          : `<button class="btn ship" onclick="toggleStatus(this, 'Shipped')">Mark Shipped</button>`}
+      </div>
+    `;
+
+    // summary toggles details. Buttons only visible when expanded (inside details)
+    summary.addEventListener('click', () => {
+      details.style.display = details.style.display === 'block' ? 'none' : 'block';
+    });
+
+    card.appendChild(summary);
+    card.appendChild(details);
+    return card;
+  }
+
+  window.toggleStatus = function(btn, to) {
+    const card = btn.closest('.order-card');
+    const chip = card.querySelector('.chip');
+    const cur = (chip.textContent || '').toLowerCase();
+    if (cur === to.toLowerCase()) {
+      chip.textContent = 'unfulfilled';
+      chip.className = 'chip';
+    } else {
+      chip.textContent = to;
+      chip.className = to.toLowerCase() === 'shipped' ? 'chip shipped' : 'chip ready';
+    }
+  }
+</script>
+</body>
+</html>

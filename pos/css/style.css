@@ -119,6 +119,42 @@ body {
   margin-bottom: 25px;
 }
 
+.header-left {
+  display: flex;
+  align-items: baseline;
+  gap: 15px;
+}
+
+.view-toggle-container {
+  display: flex;
+  align-items: center;
+}
+
+.view-toggle-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: #1d8a00;
+}
+
+.view-toggle-btn:hover {
+  opacity: 0.8;
+}
+
+.view-toggle-btn.active {
+  opacity: 0.8;
+}
+
+.view-toggle-icon {
+  display: inline-block;
+}
+
+.view-toggle-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
 .header-logo {
   padding-top: 15px;
   height: 34px;
@@ -245,6 +281,123 @@ body {
   font-weight: 300;
   letter-spacing: 0px;
 }
+
+/* Grid View Styles */
+.left-menu.grid-view {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  padding: 8px;
+  max-width: 100%;
+  align-items: start;
+  overflow: visible;
+}
+
+.left-menu.grid-view .menu-category {
+  margin-top: 0;
+  width: 100%;
+}
+
+.left-menu.grid-view .menu-category-label {
+  grid-column: 1 / -1;
+  margin-bottom: 15px;
+  width: 100%;
+}
+
+.left-menu.grid-view .menu-item {
+  width: 100%;
+  height: 120px;
+  border: 2px solid #e0e0e0;
+  border-radius: 12px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  background: white;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  position: relative;
+  box-sizing: border-box;
+  max-width: 180px;
+  justify-self: start;
+}
+
+.left-menu.grid-view .menu-item:hover {
+  border-color: #1d8a00;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(29, 138, 0, 0.15);
+}
+
+.left-menu.grid-view .menu-item-line {
+  width: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.left-menu.grid-view .menu-item-name {
+  font-size: 12px;
+  line-height: 14px;
+  margin: 0;
+  text-align: center;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+}
+
+.left-menu.grid-view .menu-item-shorthand {
+  font-family: 'Cocogoose pro trial', sans-serif;
+  font-size: 24px;
+  font-weight: 700;
+  color: #1d8a00;
+  margin: 0 0 6px 0;
+  text-align: center;
+  line-height: 1;
+  letter-spacing: 1px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Responsive adjustments for smaller screens */
+@media (max-width: 768px) {
+  .left-menu.grid-view {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    padding: 8px;
+  }
+  
+  .left-menu.grid-view .menu-item {
+    height: 100px;
+    padding: 6px;
+  }
+  
+  .left-menu.grid-view .menu-item-shorthand {
+    font-size: 20px;
+    margin: 0 0 4px 0;
+  }
+  
+  .left-menu.grid-view .menu-item-name {
+    font-size: 10px;
+    line-height: 12px;
+  }
+}
+
+.left-menu.grid-view .menu-item-desc {
+  display: none;
+}
+
+.left-menu.grid-view .menu-item-price {
+  display: none;
+}
+
 
 .kiosk-container {
   display: flex;
@@ -1011,6 +1164,15 @@ body {
   font-weight: 700;
   margin-bottom: 8px;
   display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.item-content {
+  flex: 1;
+  display: flex;
   flex-direction: column;
 }
 
@@ -1023,6 +1185,15 @@ body {
   color: #666;
   margin-bottom: 5px;
   font-weight: 300;
+}
+
+.item-checkbox {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  cursor: pointer;
+  accent-color: #1d8a00;
+  flex-shrink: 0;
 }
 
 .order-card-total {
@@ -2486,4 +2657,38 @@ body.debug-mode .force-sync-btn {
 
 .eod-input[type=number] {
   -moz-appearance: textfield;
+}
+
+/* Custom Discount Input Styles */
+.custom-discount-input {
+  background-color: white;
+  border: 1px solid #e9ecef;
+  border-radius: 4px;
+  padding: 6px 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  white-space: nowrap;
+}
+
+.custom-discount-input input[type="number"] {
+  width: 50px;
+  padding: 4px;
+  border: 1px solid #ced4da;
+  border-radius: 3px;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 12px;
+  text-align: center;
+  background-color: white;
+}
+
+.custom-discount-input input[type="number"]:focus {
+  outline: none;
+  border-color: #1d8a00;
+  box-shadow: 0 0 0 2px rgba(29, 138, 0, 0.1);
+}
+
+.custom-discount-input span {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 12px;
+  color: #666;
+  font-weight: 500;
 }

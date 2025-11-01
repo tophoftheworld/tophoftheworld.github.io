@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Firebase Debug</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+        .warning { color: orange; }
+        input, button { margin: 5px; padding: 8px; }
+        .debug-section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; }
+    </style>
+</head>
+<body>
+    <h1>Firebase Debug Test</h1>
+    <div id="status">Loading...</div>
+    
+    <div class="debug-section">
+        <h3>Test Login</h3>
+        <input type="text" id="username" placeholder="Employee Code (e.g., 130129)" value="130129">
+        <input type="password" id="password" placeholder="Password">
+        <button onclick="testLogin()">Test Login</button>
+        <div id="loginResult"></div>
+    </div>
+    
+    <div class="debug-section">
+        <h3>Check Employee Data</h3>
+        <button onclick="checkEmployees()">Load Employees from Firebase</button>
+        <div id="employeeResult"></div>
+    </div>
+    
+    <div class="debug-section">
+        <h3>Network Debug</h3>
+        <div id="networkInfo"></div>
+    </div>
+    
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
+        import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+        
+        const firebaseConfig = {
+            apiKey: "AIzaSyA6ikBMsQACcUpn4Jff7PQFeWLN8wv18EE",
+            authDomain: "matchanese-attendance.firebaseapp.com",
+            projectId: "matchanese-attendance",
+            storageBucket: "matchanese-attendance.firebasestorage.app",
+            messagingSenderId: "339591618451",
+            appId: "1:339591618451:web:23f9d95833ee5010bbd266",
+            measurementId: "G-YEK4GML6SJ"
+        };
+        
+        let app, auth, db;
+        
+        try {
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+            
+            document.getElementById('status').innerHTML = `
+                <p class="success">✅ Firebase initialized successfully!</p>
+                <p><strong>Auth Domain:</strong> ${firebaseConfig.authDomain}</p>
+                <p><strong>Project ID:</strong> ${firebaseConfig.projectId}</p>
+                <p><strong>Current Domain:</strong> ${window.location.hostname}</p>
+                <p><strong>Protocol:</strong> ${window.location.protocol}</p>
+                <p><strong>User Agent:</strong> ${navigator.userAgent}</p>
+            `;
+            
+            // Network info
+            document.getElementById('networkInfo').innerHTML = `
+                <p><strong>Connection Type:</strong> ${navigator.connection ? navigator.connection.effectiveType : 'Unknown'}</p>
+                <p><strong>Online Status:</strong> ${navigator.onLine ? 'Online' : 'Offline'}</p>
+            `;
+            
+        } catch (error) {
+            document.getElementById('status').innerHTML = `
+                <p class="error">❌ Firebase Error: ${error.message}</p>
+                <p><strong>Current Domain:</strong> ${window.location.hostname}</p>
+            `;
+        }
+        
+        // Test login function
+        window.testLogin = async function() {
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+            const resultDiv = document.getElementById('loginResult');
+            
+            if (!username || !password) {
+                resultDiv.innerHTML = '<p class="error">Please enter both username and password</p>';
+                return;
+            }
+            
+            resultDiv.innerHTML = '<p class="info">Testing login...</p>';
+            
+            try {
+                // Convert username to email format
+                const email = `${username}@matchanese.local`;
+                console.log('Attempting login with:', email);
+                
+                const userCredential = await signInWithEmailAndPassword(auth, email, password);
+                resultDiv.innerHTML = `
+                    <p class="success">✅ Login successful!</p>
+                    <p><strong>User ID:</strong> ${userCredential.user.uid}</p>
+                    <p><strong>Email:</strong> ${userCredential.user.email}</p>
+                `;
+            } catch (error) {
+                console.error('Login error:', error);
+                resultDiv.innerHTML = `
+                    <p class="error">❌ Login failed: ${error.message}</p>
+                    <p><strong>Error Code:</strong> ${error.code}</p>
+                    <p><strong>Full Error:</strong> ${JSON.stringify(error, null, 2)}</p>
+                `;
+            }
+        };
+        
+        // Check employees function
+        window.checkEmployees = async function() {
+            const resultDiv = document.getElementById('employeeResult');
+            resultDiv.innerHTML = '<p class="info">Loading employees...</p>';
+            
+            try {
+                const employeesRef = collection(db, "employees");
+                const snapshot = await getDocs(employeesRef);
+                
+                let employeeList = '<p class="success">✅ Employees loaded successfully!</p><ul>';
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    employeeList += `<li><strong>${doc.id}</strong>: ${data.name || data.fullName || 'No name'}</li>`;
+                });
+                employeeList += '</ul>';
+                
+                resultDiv.innerHTML = employeeList;
+            } catch (error) {
+                console.error('Employee load error:', error);
+                resultDiv.innerHTML = `
+                    <p class="error">❌ Failed to load employees: ${error.message}</p>
+                    <p><strong>Error Code:</strong> ${error.code}</p>
+                `;
+            }
+        };
+    </script>
+</body>
+</html>

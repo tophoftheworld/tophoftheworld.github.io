@@ -1,0 +1,373 @@
+/* Reset and Base Styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: #f9f9f9;
+    color: #333;
+    padding: 2rem;
+    line-height: 1.5;
+}
+
+.container {
+    max-width: 1400px;
+    margin: auto;
+}
+
+/* Header Section */
+.admin-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.logo-section {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.logo {
+    height: 40px;
+}
+
+.app-title {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #2b9348;
+    margin: 0;
+}
+
+.branch-selector {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.branch-label {
+    font-size: 0.9rem;
+    color: #666;
+    font-weight: 500;
+}
+
+.branch-dropdown {
+    padding: 0.6rem 1rem;
+    background: white;
+    border: 1px solid #e5e5e5;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: #333;
+    transition: all 0.2s;
+    font-family: 'Inter', sans-serif;
+    min-width: 120px;
+}
+
+.branch-dropdown:hover,
+.branch-dropdown:focus {
+    border-color: #2b9348;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(43, 147, 72, 0.1);
+}
+
+/* Filter Controls */
+.filter-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    padding: 0.75rem 1.5rem;
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+/* Main Controls */
+.main-controls {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.quarter-selector {
+    display: flex;
+    gap: 0.25rem;
+    background: #f5f5f5;
+    padding: 0.25rem;
+    border-radius: 8px;
+}
+
+.quarter-btn {
+    padding: 0.6rem 1.2rem;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #666;
+    transition: all 0.2s;
+    font-family: 'Inter', sans-serif;
+}
+
+.quarter-btn:hover {
+    color: #333;
+}
+
+.quarter-btn.active {
+    background: white;
+    color: #2b9348;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Summary Cards */
+.summary-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.summary-card {
+    background: white;
+    border-radius: 10px;
+    padding: 1.2rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    border-left: 4px solid #2b9348;
+}
+
+.card-title {
+    font-size: 0.9rem;
+    color: #666;
+    margin-bottom: 0.5rem;
+}
+
+.card-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #2b9348;
+}
+
+.card-subtitle {
+    font-size: 0.8rem;
+    color: #888;
+    margin-top: 0.25rem;
+}
+
+/* Quarterly Report Table */
+.data-table-container {
+    background: white;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    margin-bottom: 2rem;
+}
+
+.quarterly-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.quarterly-table th,
+.quarterly-table td {
+    padding: 0.75rem 1rem;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+    font-size: 0.9rem;
+}
+
+.quarterly-table th {
+    background-color: #2b9348 !important;
+    color: white !important;
+    font-weight: 600;
+    text-align: center;
+}
+
+.quarterly-table td {
+    background-color: white;
+}
+
+.quarterly-table .section-header {
+    background-color: #f0f9f2;
+    color: #2b9348;
+    font-weight: 600;
+    text-align: center;
+    border-left: 4px solid #2b9348;
+}
+
+.quarterly-table .section-header.cost {
+    background-color: #fff5f5;
+    color: #dc3545;
+    border-left: 4px solid #dc3545;
+}
+
+.quarterly-table .total-row {
+    background-color: #f0f9f2;
+    font-weight: 700;
+    color: #2b9348;
+}
+
+.quarterly-table .total-row.cost {
+    background-color: #fff5f5;
+    color: #dc3545;
+}
+
+.quarterly-table .currency {
+    text-align: right;
+    font-weight: 600;
+}
+
+.quarterly-table .total-row .currency {
+    font-weight: 700;
+}
+
+.quarterly-table tr:last-child td {
+    border-bottom: none;
+}
+
+.quarterly-table tr:hover {
+    background-color: #f8f9fa;
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+    .container {
+        padding: 0 1rem;
+    }
+}
+
+@media (max-width: 768px) {
+    body {
+        padding: 1rem;
+    }
+
+    .admin-header {
+        flex-direction: column;
+        text-align: center;
+    }
+
+    .summary-cards {
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    }
+
+    .quarterly-table {
+        font-size: 0.8rem;
+    }
+
+    .quarterly-table th,
+    .quarterly-table td {
+        padding: 0.5rem 0.75rem;
+    }
+
+    .report-title {
+        font-size: 1.5rem;
+    }
+
+    .report-subtitle {
+        font-size: 1rem;
+    }
+
+    .report-period {
+        font-size: 0.9rem;
+    }
+}
+
+@media (max-width: 480px) {
+    body {
+        padding: 0.5rem;
+    }
+
+    .summary-cards {
+        grid-template-columns: 1fr 1fr;
+        gap: 0.5rem;
+    }
+
+    .summary-card {
+        padding: 0.8rem;
+    }
+
+    .card-title {
+        font-size: 0.8rem;
+    }
+
+    .card-value {
+        font-size: 1.2rem;
+    }
+
+    .quarterly-table {
+        font-size: 0.7rem;
+    }
+
+    .quarterly-table th,
+    .quarterly-table td {
+        padding: 0.4rem 0.5rem;
+    }
+
+    .report-title {
+        font-size: 1.3rem;
+    }
+
+    .report-subtitle {
+        font-size: 0.9rem;
+    }
+
+    .report-period {
+        font-size: 0.8rem;
+    }
+}
+
+/* Loading States */
+.loading {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.loading-spinner {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid #f3f3f3;
+    border-top: 3px solid #2b9348;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Error States */
+.error-message {
+    background: #f8d7da;
+    color: #721c24;
+    padding: 1rem;
+    border-radius: 8px;
+    border: 1px solid #f5c6cb;
+    margin: 1rem 0;
+    text-align: center;
+}
+
+/* Success States */
+.success-message {
+    background: #d4edda;
+    color: #155724;
+    padding: 1rem;
+    border-radius: 8px;
+    border: 1px solid #c3e6cb;
+    margin: 1rem 0;
+    text-align: center;
+}

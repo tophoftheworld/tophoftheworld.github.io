@@ -14,6 +14,102 @@
         integrity="sha512-ElRFoEQdI5Ht6kZvyzXhYG9NqjtkmlkfYk0wr6wHxU9JEHakS7UJZNeml5ALk+8IKlU6jDgMabC3vkumRokgJA=="
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script type="module" src="./js/firebase-setup.js"></script>
+    <style>
+        /* Mobile-specific overrides */
+        @media (max-width: 768px) {
+            body {
+                padding: 0.5rem !important;
+                margin: 0 !important;
+            }
+            
+            .container {
+                max-width: 100% !important;
+                margin: 0 !important;
+            }
+            
+            .admin-header {
+                margin-bottom: 0.5rem !important;
+                padding: 0.5rem !important;
+            }
+            
+            .app-title {
+                display: none !important;
+            }
+            
+            .summary-cards {
+                grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)) !important;
+                gap: 0.3rem !important;
+                margin-bottom: 0.5rem !important;
+            }
+            
+            .summary-card {
+                padding: 0.5rem !important;
+            }
+            
+            .card-title {
+                font-size: 0.7rem !important;
+                margin-bottom: 0.2rem !important;
+            }
+            
+            .card-value {
+                font-size: 0.9rem !important;
+            }
+            
+            .main-controls, .chart-controls {
+                padding: 0.4rem !important;
+                margin-bottom: 0.5rem !important;
+            }
+            
+            #salesChartContainer {
+                height: 200px !important;
+                padding: 0.4rem !important;
+                margin: 0.5rem 0 !important;
+            }
+            
+            /* Hide table columns */
+            table th:nth-child(2),
+            table td:nth-child(2),
+            table th:nth-child(3),
+            table td:nth-child(3) {
+                display: none !important;
+            }
+            
+            table {
+                font-size: 0.7rem !important;
+            }
+            
+            th, td {
+                padding: 0.3rem 0.25rem !important;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            body {
+                padding: 0.3rem !important;
+            }
+            
+            .summary-cards {
+                grid-template-columns: 1fr 1fr !important;
+                gap: 0.25rem !important;
+            }
+            
+            .summary-card {
+                padding: 0.4rem !important;
+            }
+            
+            .card-title {
+                font-size: 0.65rem !important;
+            }
+            
+            .card-value {
+                font-size: 0.8rem !important;
+            }
+            
+            #salesChartContainer {
+                height: 180px !important;
+            }
+        }
+    </style>
 </head>
 
 <body>
@@ -30,7 +126,7 @@
                     <option value="podium">Podium</option>
                 </select>
             </div>
-            <div class="import-section" id="importSection" style="display: none;">
+            <div class="import-section" id="importSection" style="display: block;">
                 <span class="import-label">Import CSV:</span>
                 <input type="file" id="csvFileInput" accept=".csv" />
                 <button class="import-btn" id="importBtn" disabled>Import Data</button>
@@ -74,6 +170,7 @@
                 <!-- <span class="control-label">Projections:</span> -->
                 <div class="option-buttons">
                     <button class="option-btn" id="projectionToggle" disabled>Show Projections</button>
+                    <button class="option-btn active" id="currentMonthToggle" disabled>Hide Current Month</button>
                 </div>
             </div>
         </div>
@@ -90,7 +187,7 @@
         </div>
     </div>
 
-    <script type="module" src="js/dashboard.js"></script>
+    <script type="module" src="js/dashboard.js?v=2"></script>
 </body>
 
 </html>

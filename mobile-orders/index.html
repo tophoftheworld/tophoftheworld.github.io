@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Mobile Orders</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>">
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script type="module" src="js/script.js"></script>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header-container">
+        <button class="back-btn" id="backBtn" onclick="goBack()" style="display: none;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="15,18 9,12 15,6"></polyline>
+            </svg>
+            Back
+        </button>
+        <h1 class="header-title">Mobile Orders</h1>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls">
+        <div class="filter-section">
+            <label>Shipment:</label>
+            <select id="shipmentFilter">
+                <option value="all">All</option>
+                <option value="pickup">Pickup</option>
+                <option value="metro">Metro Manila</option>
+                <option value="nationwide">Nationwide</option>
+            </select>
+        </div>
+        <div class="filter-section">
+            <label>Quantity:</label>
+            <select id="quantityFilter">
+                <option value="all">All</option>
+                <option value="1x">1x</option>
+                <option value="2x">2x</option>
+                <option value="3x">3x</option>
+            </select>
+        </div>
+        <div class="filter-section">
+            <label>Sort:</label>
+            <select id="sort">
+                <option value="order">Order #</option>
+                <option value="name">Name</option>
+                <option value="location">Location</option>
+                <option value="status">Status</option>
+                <option value="quantity">Quantity</option>
+            </select>
+        </div>
+        <div class="filter-section">
+            <button id="exportBtn" class="print-btn" onclick="exportToExcel()">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14,2 14,8 20,8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                    <polyline points="10,9 9,9 8,9"></polyline>
+                </svg>
+                Export Excel
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="scrollable-content">
+        <div class="orders-container">
+            <!-- Order Groups (when viewing groups) -->
+            <div id="orderGroups" class="order-groups" style="display: none;">
+                <!-- Groups will be loaded here -->
+            </div>
+
+            <!-- Orders List (when viewing orders) -->
+            <div id="ordersList">
+                <!-- Orders will be loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Modal -->
+    <div class="import-modal-overlay" id="importModalOverlay">
+        <div class="import-modal">
+            <div class="modal-header">
+                <h1 class="modal-title">Import Orders</h1>
+                <button class="modal-close-btn" onclick="closeImportModal()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-content">
+                <form id="importForm">
+                    <div class="form-group">
+                        <label for="groupName">Group Name</label>
+                        <input type="text" id="groupName" required placeholder="Enter a name for this order group">
+                    </div>
+                    <div class="form-group">
+                        <label for="groupDescription">Description <span style="color: #888;">(optional)</span></label>
+                        <textarea id="groupDescription" rows="3" placeholder="Enter description for this order group"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="csvFileInput">CSV File</label>
+                        <input type="file" id="csvFileInput" accept=".csv" required>
+                    </div>
+                    <button type="submit" class="save-btn">Import Orders</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating Action Button -->
+    <div class="fab-container">
+        <button class="fab" onclick="showImportModal()" title="Import new orders">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+        </button>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast"></div>
+</body>
+</html>

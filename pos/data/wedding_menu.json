@@ -1,0 +1,62 @@
+{
+  "categories": [
+    {
+      "id": "matcha",
+      "name": "MATCHA"
+    },
+    {
+      "id": "coffee",
+      "name": "COFFEE"
+    }
+  ],
+  "items": [
+    {
+      "categoryId": "matcha",
+      "name": "signature matchanese latte",
+      "description": "Freshly-whisked Ceremonial Matcha over Milk",
+      "price": 0,
+      "type": "Matcha",
+      "shorthand": "SML"
+    },
+    {
+      "categoryId": "matcha",
+      "name": "strawberry matchanese latte",
+      "description": "Freshly-whisked Ceremonial Matcha over Milk with Strawberry Puree",
+      "price": 0,
+      "type": "Matcha",
+      "shorthand": "SML"
+    },
+    {
+      "categoryId": "matcha",
+      "name": "matchanese tea",
+      "description": "Freshly-whisked Ceremonial Matcha over Water",
+      "price": 0,
+      "type": "Matcha",
+      "shorthand": "MT"
+    },
+    {
+      "categoryId": "matcha",
+      "name": "hojicha latte",
+      "description": "Freshly-whisked Roasted Green Tea over Milk",
+      "price": 0,
+      "type": "Matcha",
+      "shorthand": "HL"
+    },
+    {
+      "categoryId": "coffee",
+      "name": "cafe americano",
+      "description": "Double Shot of Espresso over Water",
+      "price": 0,
+      "type": "Coffee",
+      "shorthand": "CA"
+    },
+    {
+      "categoryId": "coffee",
+      "name": "cafe latte",
+      "description": "Double Shot of Espresso over Milk",
+      "price": 0,
+      "type": "Coffee",
+      "shorthand": "CL"
+    }
+  ]
+}

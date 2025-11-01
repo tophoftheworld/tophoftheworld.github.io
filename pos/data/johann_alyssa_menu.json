@@ -1,0 +1,94 @@
+{
+  "categories": [
+    {
+      "id": "matcha",
+      "name": "MATCHA"
+    },
+    {
+      "id": "coffee",
+      "name": "COFFEE"
+    }
+  ],
+  "items": [
+    {
+      "categoryId": "matcha",
+      "name": "signature matchanese latte",
+      "description": "Hand-whisked Ceremonial Matcha over Milk",
+      "price": 180,
+      "type": "Matcha",
+      "shorthand": "SML"
+    },
+    {
+      "categoryId": "matcha",
+      "name": "matchanese seasalt latte",
+      "description": "Our Signature Matchanese Latte topped with Salted Cream",
+      "price": 200,
+      "type": "Matcha",
+      "shorthand": "MSL"
+    },
+    {
+      "categoryId": "matcha",
+      "name": "spanish matchanese latte",
+      "description": "Our Signature Matchanese Latte with Sweetened Milk",
+      "price": 190,
+      "type": "Matcha",
+      "shorthand": "SML"
+    },
+    {
+      "categoryId": "matcha",
+      "name": "early grey matchanese latte",
+      "description": "Our Signature Matchanese Latte with Early Grey Syrup",
+      "price": 195,
+      "type": "Matcha",
+      "shorthand": "EGML"
+    },
+    {
+      "categoryId": "matcha",
+      "name": "matchanese dalandan",
+      "description": "Hand-whisked Ceremonial Matcha over Dalandan Juice",
+      "price": 175,
+      "type": "Matcha",
+      "shorthand": "MD"
+    },
+    {
+      "categoryId": "matcha",
+      "name": "matchanese tea",
+      "description": "Hand-whisked Ceremonial Matcha with Water",
+      "price": 150,
+      "type": "Matcha",
+      "shorthand": "MT"
+    },
+    {
+      "categoryId": "coffee",
+      "name": "americano",
+      "description": "Double Shot of Espresso with Water",
+      "price": 120,
+      "type": "Coffee",
+      "shorthand": "AM"
+    },
+    {
+      "categoryId": "coffee",
+      "name": "kyoto latte",
+      "description": "Double Shot of Espresso with Milk",
+      "price": 160,
+      "type": "Coffee",
+      "shorthand": "KL"
+    },
+    {
+      "categoryId": "coffee",
+      "name": "spanish latte",
+      "description": "Double Shot of Espresso with Sweetened Milk",
+      "price": 170,
+      "type": "Coffee",
+      "shorthand": "SL"
+    },
+    {
+      "categoryId": "coffee",
+      "name": "matchanese espresso",
+      "description": "Our Signature Matchanese Latte with a Shot of Espresso",
+      "price": 220,
+      "type": "Coffee",
+      "shorthand": "ME"
+    }
+  ]
+}

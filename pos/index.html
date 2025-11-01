@@ -23,7 +23,28 @@
 <body class="body">
 <div class="menu-wrapper">
     <div class="header-container">
-        <h1 class="menu-header">MATCHA BAR <span class="light">MENU</span></h1>
+        <div class="header-left">
+            <h1 class="menu-header">MATCHA BAR <span class="light">MENU</span></h1>
+            <div class="view-toggle-container">
+                <button class="view-toggle-btn" id="viewToggleBtn" title="Toggle between list and grid view">
+                    <span class="view-toggle-icon">
+                        <!-- Grid icon (4 separated squares) -->
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" class="grid-icon">
+                            <rect x="1" y="1" width="6" height="6" rx="1"/>
+                            <rect x="9" y="1" width="6" height="6" rx="1"/>
+                            <rect x="1" y="9" width="6" height="6" rx="1"/>
+                            <rect x="9" y="9" width="6" height="6" rx="1"/>
+                        </svg>
+                        <!-- List icon (3 horizontal lines) -->
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" class="list-icon" style="display: none;">
+                            <rect x="2" y="3" width="12" height="2" rx="1"/>
+                            <rect x="2" y="7" width="12" height="2" rx="1"/>
+                            <rect x="2" y="11" width="12" height="2" rx="1"/>
+                        </svg>
+                    </span>
+                </button>
+            </div>
+        </div>
         <img src="images/matchanese-logo.png" alt="Matchanese Logo" class="header-logo header-logo-desktop">
         <img src="images/matchanese-icon.png" alt="Matchanese Logo" class="header-logo header-logo-mobile">
     </div>
@@ -79,8 +100,8 @@
                             <button class="force-sync-btn" id="forceSyncBtn">Force Sync</button>
                         </div>
                         <div class="total-sales">
-                            <div class="sales-amount">₱0.00</div>
-                            <div class="sales-label">TOTAL SALES</div>
+                            <div class="sales-amount" id="salesAmount">₱0.00</div>
+                            <div class="sales-label" id="salesLabel">TOTAL SALES</div>
                         </div>
                     </div>
                     <!-- Order cards will be displayed here -->

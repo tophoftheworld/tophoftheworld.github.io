@@ -1,0 +1,260 @@
+{
+  "categories": [
+    {
+      "id": "matcha-tools",
+      "name": "Matcha Tools"
+    },
+    {
+      "id": "apparel",
+      "name": "Apparel"
+    },
+    {
+      "id": "accessories",
+      "name": "Accessories"
+    },
+    {
+      "id": "matcha-powder",
+      "name": "Matcha Powder"
+    }
+  ],
+  "items": [
+    {
+      "categoryId": "matcha-tools",
+      "name": "Bamboo Whisk",
+      "description": "Traditional bamboo whisk for whisking matcha",
+      "price": 850,
+      "type": "Tool",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "matcha-tools",
+      "name": "Matcha Bowl",
+      "description": "Traditional matcha bowl for preparing matcha",
+      "price": 650,
+      "type": "Tool",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "matcha-tools",
+      "name": "Bamboo Scoop",
+      "description": "Traditional tool for scooping matcha",
+      "price": 120,
+      "type": "Tool",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "matcha-tools",
+      "name": "Whisk Stand",
+      "description": "Stand for storing and displaying your bamboo whisk",
+      "price": 650,
+      "type": "Tool",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "apparel",
+      "name": "Matchanese Shirt",
+      "description": "Matchanese branded shirt",
+      "price": 850,
+      "type": "Apparel",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "apparel",
+      "name": "Matchanese Cap",
+      "description": "Matchanese branded cap",
+      "price": 750,
+      "type": "Apparel",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "accessories",
+      "name": "Sticker Set",
+      "description": "Matchanese sticker collection",
+      "price": 150,
+      "type": "Accessory",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "accessories",
+      "name": "Tote Bag",
+      "description": "Matchanese branded tote bag",
+      "price": 129,
+      "type": "Accessory",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "matcha-powder",
+      "name": "Honmei",
+      "description": "Kumatcha",
+      "price": 820,
+      "type": "Powder",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "matcha-powder",
+      "name": "Okashi",
+      "description": "Kumatcha",
+      "price": 1020,
+      "type": "Powder",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "matcha-powder",
+      "name": "Yura Matcha",
+      "description": "Jas Matcha",
+      "price": 960,
+      "type": "Powder",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "matcha-powder",
+      "name": "Tenarai Matcha",
+      "description": "JapanMatcha.ph",
+      "price": 1950,
+      "type": "Powder",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "matcha-powder",
+      "name": "Ujitsuki Matcha",
+      "description": "JapanMatcha.ph",
+      "price": 1250,
+      "type": "Powder",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "matcha-powder",
+      "name": "Asanagi Matcha",
+      "description": "JapanMatcha.ph",
+      "price": 1150,
+      "type": "Powder",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "matcha-powder",
+      "name": "Hiroaki Matcha",
+      "description": "JapanMatcha.ph",
+      "price": 1050,
+      "type": "Powder",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "matcha-powder",
+      "name": "Latte Grade",
+      "description": "JapanMatcha.ph",
+      "price": 430,
+      "type": "Powder",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "matcha-powder",
+      "name": "Hojicha Powder",
+      "description": "JapanMatcha.ph",
+      "price": 280,
+      "type": "Powder",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "discount": true
+      }
+    }
+  ]
+}

@@ -1,70 +1,31 @@
-// Global state
-let expenses = [];
-let suppliers = [];
+// Import shared utilities
+import * as shared from './shared.js';
+
+// Local state for UI
 let itemCounter = 0;
 let currentFilter = 'all'; // Track current filter
-
-// Firebase dependencies - imported at module level
-let db;
-let collection, doc, getDocs, setDoc, deleteDoc, query, where, orderBy, serverTimestamp, writeBatch;
-
-// Firebase Sync Functions
-let syncInProgress = false;
-let pendingOperations = [];
-
-// Debouncing for Firebase sync
-let syncTimeout = null;
-let hasPendingChanges = false;
-const SYNC_DEBOUNCE_DELAY = 3000; // 3 seconds
-
-// Initialize Firebase and load dependencies
-async function initializeFirebase() {
-    try {
-        // Import Firebase configuration
-        const firebaseConfig = await import('./firebase-config.js');
-        db = firebaseConfig.db;
-
-        // Make db available globally for testing
-        window.db = db;
-
-        // Import Firestore functions
-        const firestoreModule = await import('https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js');
-        collection = firestoreModule.collection;
-        doc = firestoreModule.doc;
-        getDocs = firestoreModule.getDocs;
-        setDoc = firestoreModule.setDoc;
-        deleteDoc = firestoreModule.deleteDoc;
-        query = firestoreModule.query;
-        where = firestoreModule.where;
-        orderBy = firestoreModule.orderBy;
-        serverTimestamp = firestoreModule.serverTimestamp;
-        writeBatch = firestoreModule.writeBatch;
-
-        console.log('Firebase initialized successfully');
-        console.log('Database object:', db);
-        return true;
-    } catch (error) {
-        console.error('Firebase initialization failed:', error);
-        return false;
-    }
-}
 
 // Main initialization
 document.addEventListener('DOMContentLoaded', async function () {
     // Phase 1: Load from localStorage first (instant)
-    const hasLocalData = loadFromLocalStorage();
+    const hasLocalData = shared.loadFromLocalStorage();
 
-    // Immediately show UI with local data
-    loadDashboard();
+    if (hasLocalData) {
+        // Immediately show UI with local data
+        loadDashboard();
+    }
 
     // Phase 2: Initialize Firebase (in background)
-    const firebaseInitialized = await initializeFirebase();
+    const firebaseInitialized = await shared.initializeFirebase();
 
     if (firebaseInitialized) {
         // Phase 3: Background Firebase sync (non-blocking)
-        setTimeout(() => {
-            initializeFirebaseSync();
-        }, 100);
+        const hasChanges = await shared.initializeFirebaseSync();
+        
+        if (hasChanges) {
+            // Re-render with updated data
+            loadDashboard();
+        }
     } else {
         console.log('Running in offline mode - Firebase not available');
         showSyncStatus('⚠ Offline mode', 'error');
@@ -98,63 +59,12 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
 });
 
-// Force sync before page unload
-window.addEventListener('beforeunload', function (e) {
-    if (hasPendingChanges && syncTimeout) {
-        // Clear the timeout and sync immediately
-        clearTimeout(syncTimeout);
-        syncTimeout = null;
-
-        // Force immediate sync (this is synchronous)
-        syncToFirebase();
-        hasPendingChanges = false;
-
-        console.log('Forced sync before page unload');
-    }
-});
+// Force sync before page unload - now handled by shared.js
 
 // Initialize Firebase background sync
-async function initializeFirebaseSync() {
-    if (!db) {
-        console.log('Database not available, skipping sync');
-        return;
-    }
+// initializeFirebaseSync function removed - now using shared.js initializeFirebaseSync()
 
-    try {
-        // Fetch latest data from Firebase in background
-        await fetchFromFirebase();
-
-        // Set up periodic sync every 5 minutes
-        setInterval(fetchFromFirebase, 5 * 60 * 1000);
-
-        console.log('Firebase sync initialized');
-    } catch (error) {
-        console.error('Failed to initialize Firebase sync:', error);
-        showSyncStatus('⚠ Offline mode', 'error');
-    }
-}
-
-function loadFromLocalStorage() {
-    try {
-        const savedExpenses = localStorage.getItem('expenseTracker_expenses');
-        const savedSuppliers = localStorage.getItem('expenseTracker_suppliers');
-
-        if (savedExpenses) {
-            expenses = JSON.parse(savedExpenses);
-            console.log('Loaded expenses from localStorage:', expenses.length, 'items');
-        }
-
-        if (savedSuppliers) {
-            suppliers = JSON.parse(savedSuppliers);
-            console.log('Loaded suppliers from localStorage:', suppliers.length, 'items');
-        }
-
-        return expenses.length > 0 || suppliers.length > 0;
-    } catch (error) {
-        console.error('Failed to load from localStorage:', error);
-        return false;
-    }
-}
+// loadFromLocalStorage function removed - now using shared.loadFromLocalStorage()
 
 // Enhanced data structure for Firebase sync
 function enhanceDataForSync(item, type) {
@@ -176,230 +86,15 @@ function getDeviceId() {
     return deviceId;
 }
 
-window.syncToFirebase = syncToFirebase;
+// syncToFirebase function removed - now using shared.js sync functions
 
-async function syncToFirebase() {
-    if (!db || syncInProgress) {
-        console.log('Database not available or sync in progress');
-        return;
-    }
+// syncCollectionToFirebase function removed - now using shared.js sync functions
 
-    syncInProgress = true;
+// fetchFromFirebase function removed - now using shared.js fetchFromFirebase()
 
-    try {
-        console.log('Starting Firebase sync...');
+// mergeData function removed - now using shared.js mergeData()
 
-        // Sync expenses with batch writes for better performance
-        const batch = writeBatch(db);
-
-        expenses.forEach(expense => {
-            const docRef = doc(db, 'expenses', expense.id);
-            batch.set(docRef, {
-                ...expense,
-                syncedAt: serverTimestamp(),
-                deviceId: getDeviceId()
-            });
-        });
-
-        suppliers.forEach(supplier => {
-            const docRef = doc(db, 'suppliers', supplier.id);
-            batch.set(docRef, {
-                ...supplier,
-                syncedAt: serverTimestamp(),
-                deviceId: getDeviceId()
-            });
-        });
-
-        await batch.commit();
-        console.log('Firebase sync completed successfully');
-        showSyncStatus('✓ Synced', 'success');
-
-    } catch (error) {
-        console.error('Firebase sync failed:', error);
-        showSyncStatus('⚠ Sync failed - will retry', 'error');
-
-        // Queue for retry
-        setTimeout(() => {
-            if (!syncInProgress) {
-                syncToFirebase();
-            }
-        }, 5000);
-        
-        // Clear pending changes flag on successful sync
-        hasPendingChanges = false;
-    } finally {
-        syncInProgress = false;
-    }
-}
-
-async function syncCollectionToFirebase(collectionName, dataArray) {
-    const collectionRef = collection(db, collectionName);
-
-    for (const item of dataArray) {
-        try {
-            const enhancedItem = enhanceDataForSync(item, collectionName.slice(0, -1)); // Remove 's' from collection name
-            await setDoc(doc(collectionRef, item.id), enhancedItem);
-        } catch (error) {
-            console.error(`Failed to sync ${collectionName} item ${item.id}:`, error);
-            throw error;
-        }
-    }
-}
-
-// Fetch latest data from Firebase
-async function fetchFromFirebase() {
-    if (!db) {
-        console.log('Database not available for fetching');
-        return;
-    }
-
-    try {
-        console.log('Fetching data from Firebase...');
-
-        const [expensesSnapshot, suppliersSnapshot] = await Promise.all([
-            getDocs(collection(db, 'expenses')),
-            getDocs(collection(db, 'suppliers'))
-        ]);
-
-        const firebaseExpenses = expensesSnapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
-
-        const firebaseSuppliers = suppliersSnapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
-
-        // Merge with local data (smart conflict resolution)
-        const mergeResult = mergeData(
-            { expenses, suppliers },
-            { expenses: firebaseExpenses, suppliers: firebaseSuppliers }
-        );
-
-        if (mergeResult.hasChanges) {
-            expenses = mergeResult.expenses;
-            suppliers = mergeResult.suppliers;
-            saveToLocalStorage();
-            loadDashboard();
-
-            console.log('Data updated from Firebase');
-            showSyncStatus('↓ Updated', 'success');
-        } else {
-            console.log('Local data is up to date');
-        }
-
-    } catch (error) {
-        console.error('Failed to fetch from Firebase:', error);
-        showSyncStatus('⚠ Fetch failed', 'error');
-    }
-}
-
-// Smart data merging with conflict resolution
-function mergeData(localData, firebaseData) {
-    let hasChanges = false;
-    const mergedExpenses = [...localData.expenses];
-    const mergedSuppliers = [...localData.suppliers];
-
-    // Merge expenses
-    firebaseData.expenses.forEach(firebaseItem => {
-        const localIndex = mergedExpenses.findIndex(item => item.id === firebaseItem.id);
-
-        if (localIndex === -1) {
-            // New item from Firebase
-            mergedExpenses.push(firebaseItem);
-            hasChanges = true;
-        } else {
-            // Conflict resolution: use newer timestamp
-            const localItem = mergedExpenses[localIndex];
-            const firebaseUpdated = new Date(firebaseItem.updatedAt || firebaseItem.createdAt);
-            const localUpdated = new Date(localItem.updatedAt || localItem.createdAt);
-
-            if (firebaseUpdated > localUpdated) {
-                mergedExpenses[localIndex] = firebaseItem;
-                hasChanges = true;
-            }
-        }
-    });
-
-    // Merge suppliers (same logic)
-    firebaseData.suppliers.forEach(firebaseItem => {
-        const localIndex = mergedSuppliers.findIndex(item => item.id === firebaseItem.id);
-
-        if (localIndex === -1) {
-            mergedSuppliers.push(firebaseItem);
-            hasChanges = true;
-        } else {
-            const localItem = mergedSuppliers[localIndex];
-            const firebaseUpdated = new Date(firebaseItem.updatedAt || firebaseItem.createdAt);
-            const localUpdated = new Date(localItem.updatedAt || localItem.createdAt);
-
-            if (firebaseUpdated > localUpdated) {
-                mergedSuppliers[localIndex] = firebaseItem;
-                hasChanges = true;
-            }
-        }
-    });
-
-    // Deduplicate suppliers by name, keeping most complete version
-    const deduplicatedSuppliers = [];
-    const seenNames = new Map();
-
-    mergedSuppliers.forEach(supplier => {
-        const existing = seenNames.get(supplier.name);
-        if (!existing) {
-            seenNames.set(supplier.name, supplier);
-            deduplicatedSuppliers.push(supplier);
-        } else {
-            // Keep the one with more complete data
-            const existingScore = (existing.tin ? 1 : 0) + (existing.businessName ? 1 : 0) + (existing.address ? 1 : 0);
-            const currentScore = (supplier.tin ? 1 : 0) + (supplier.businessName ? 1 : 0) + (supplier.address ? 1 : 0);
-
-            if (currentScore > existingScore) {
-                const index = deduplicatedSuppliers.findIndex(s => s.id === existing.id);
-                deduplicatedSuppliers[index] = supplier;
-                seenNames.set(supplier.name, supplier);
-            }
-        }
-    });
-
-    return {
-        expenses: mergedExpenses,
-        suppliers: deduplicatedSuppliers,
-        hasChanges
-    };
-}
-
-// Operation queue for offline/failed syncs
-function queueOperation(type, data) {
-    pendingOperations.push({
-        type,
-        data,
-        timestamp: Date.now()
-    });
-
-    // Retry after delay
-    setTimeout(processPendingOperations, 5000);
-}
-
-async function processPendingOperations() {
-    if (pendingOperations.length === 0 || syncInProgress) return;
-
-    console.log(`Processing ${pendingOperations.length} pending operations`);
-
-    for (let i = pendingOperations.length - 1; i >= 0; i--) {
-        const operation = pendingOperations[i];
-
-        try {
-            if (operation.type === 'sync') {
-                await syncToFirebase();
-                pendingOperations.splice(i, 1);
-            }
-        } catch (error) {
-            console.error('Failed to process pending operation:', error);
-        }
-    }
-}
+// Operation queue functions removed - now using shared.js sync system
 
 // Visual sync status indicator
 function showSyncStatus(message, type) {
@@ -487,8 +182,9 @@ function closeExpenseModal() {
 // Dashboard functions
 function loadDashboard() {
     const expenseList = document.getElementById('expenseList');
+    const allExpenses = shared.getExpenses(); // Get expenses from shared module
     
-    if (expenses.length === 0) {
+    if (allExpenses.length === 0) {
         expenseList.innerHTML = `
             <div class="empty-state">
                 <p>No expenses recorded yet</p>
@@ -505,18 +201,18 @@ function loadDashboard() {
 
     let filteredExpenses, summaryTitle;
     if (currentFilter === 'today') {
-        filteredExpenses = expenses.filter(expense => expense.date === today);
+        filteredExpenses = allExpenses.filter(expense => expense.date === today);
         summaryTitle = "Today's Expenses";
     } else if (currentFilter === 'week') {
-        filteredExpenses = expenses.filter(expense =>
+        filteredExpenses = allExpenses.filter(expense =>
             expense.date >= thisWeek.start && expense.date <= thisWeek.end
         );
         summaryTitle = "This Week's Expenses";
     } else if (currentFilter === 'month') {
-        filteredExpenses = expenses.filter(expense => expense.date.startsWith(thisMonth));
+        filteredExpenses = allExpenses.filter(expense => expense.date.startsWith(thisMonth));
         summaryTitle = "This Month's Expenses";
     } else {
-        filteredExpenses = expenses; // all expenses
+        filteredExpenses = allExpenses; // all expenses
         summaryTitle = "All Expenses";
     }
 
@@ -525,15 +221,15 @@ function loadDashboard() {
     // Sort expenses by date (newest first) and filter based on current filter
     let expensesToShow;
     if (currentFilter === 'today') {
-        expensesToShow = expenses.filter(expense => expense.date === today);
+        expensesToShow = allExpenses.filter(expense => expense.date === today);
     } else if (currentFilter === 'week') {
-        expensesToShow = expenses.filter(expense =>
+        expensesToShow = allExpenses.filter(expense =>
             expense.date >= thisWeek.start && expense.date <= thisWeek.end
         );
     } else if (currentFilter === 'month') {
-        expensesToShow = expenses.filter(expense => expense.date.startsWith(thisMonth));
+        expensesToShow = allExpenses.filter(expense => expense.date.startsWith(thisMonth));
     } else {
-        expensesToShow = expenses; // all expenses
+        expensesToShow = allExpenses; // all expenses
     }
 
     const sortedExpenses = [...expensesToShow].sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -615,7 +311,8 @@ function formatDate(dateString) {
 }
 
 function viewExpense(expenseId) {
-    const expense = expenses.find(e => e.id === expenseId);
+    const allExpenses = shared.getExpenses();
+    const expense = allExpenses.find(e => e.id === expenseId);
     if (!expense) {
         showToast('Expense not found');
         return;
@@ -1087,6 +784,7 @@ function createAutocomplete(inputElement, getMatches, onSelect, showOnFocus = fa
 function getItemMatches(query, currentSupplier = '') {
     // Get all unique items from expenses
     const allItems = new Map();
+    const expenses = shared.getExpenses();
 
     expenses.forEach(expense => {
         expense.items.forEach(item => {
@@ -1144,6 +842,7 @@ function getItemMatches(query, currentSupplier = '') {
 function getPaidByMatches(query) {
     // Get all unique payers from expenses
     const allPayers = new Map();
+    const expenses = shared.getExpenses();
 
     expenses.forEach(expense => {
         const payer = expense.paidBy.trim();
@@ -1215,7 +914,8 @@ function setupSupplierAutocomplete() {
     createAutocomplete(
         supplierInput,
         (query) => {
-            const allSuppliers = suppliers.map(supplier => {
+            const allSuppliers = shared.getSuppliers();
+            const suppliersList = allSuppliers.map(supplier => {
                 const name = supplier.name.toLowerCase();
                 const businessName = (supplier.businessName || '').toLowerCase();
                 let priority = 999;
@@ -1264,7 +964,8 @@ function setupItemInputAutocomplete(nameInput) {
 }
 
 function selectSupplier(supplierId) {
-    const supplier = suppliers.find(s => s.id === supplierId);
+    const allSuppliers = shared.getSuppliers();
+    const supplier = allSuppliers.find(s => s.id === supplierId);
     if (supplier) {
         const supplierInput = document.getElementById('supplierName');
         const dropdown = supplierInput.parentElement.querySelector('.autocomplete-dropdown');
@@ -1514,6 +1215,7 @@ function handleFormSubmission(e) {
         tin: getElementValue('tin'),
         address: getElementValue('address'),
         invoiceNumber: getElementValue('invoiceNumber'),
+        expenseCategory: getElementValue('expenseCategory', 'General'),
         items,
         totalAmount,
         vatExemptAmount: parseFloat(getElementValue('vatExemptAmount')) || 0,
@@ -1522,12 +1224,13 @@ function handleFormSubmission(e) {
         notes: getElementValue('notes'),
         receiptImage: window.currentReceiptData || null,
         createdAt: isEditing ?
-            (expenses.find(e => e.id === window.editingExpenseId)?.createdAt || new Date().toISOString()) :
+            (shared.getExpenses().find(e => e.id === window.editingExpenseId)?.createdAt || new Date().toISOString()) :
             new Date().toISOString()
     };
 
     // Calculate VAT breakdown if VAT computation is enabled
-    const supplier = suppliers.find(s => s.name.toLowerCase() === expense.supplierName.toLowerCase());
+    const allSuppliers = shared.getSuppliers();
+    const supplier = allSuppliers.find(s => s.name.toLowerCase() === expense.supplierName.toLowerCase());
     const vatComputationEnabled = document.getElementById('vatComputationEnabled')?.checked || false;
 
     if (vatComputationEnabled && (supplier?.isVatRegistered || !supplier)) {
@@ -1542,30 +1245,27 @@ function handleFormSubmission(e) {
     }
 
     if (isEditing) {
-        // Update existing expense
-        const index = expenses.findIndex(e => e.id === window.editingExpenseId);
-        if (index > -1) {
-            expense.updatedAt = new Date().toISOString(); // Add update timestamp
-            expenses[index] = expense;
-            saveToLocalStorage(); // Add this line
+        // Update existing expense using shared function
+        const success = shared.updateExpense(window.editingExpenseId, expense);
+        if (success) {
             showToast('Expense updated successfully!');
+        } else {
+            showToast('Failed to update expense');
+            return;
         }
 
         // Clear editing state
         delete window.editingExpenseId;
         document.querySelector('.modal-title').textContent = 'Add Expense';
     } else {
-        // Create new expense
-        expenses.push(expense);
+        // Create new expense using shared function
+        shared.addExpense(expense);
         showToast('Expense saved successfully!');
     }
 
-    // Save to localStorage and sync
-    saveToLocalStorage();
-
     // Check if supplier is new and show add supplier modal
     const supplierName = expense.supplierName.trim();
-    const existingSupplier = suppliers.find(s =>
+    const existingSupplier = allSuppliers.find(s =>
         s.name.toLowerCase() === supplierName.toLowerCase()
     );
 
@@ -1602,7 +1302,8 @@ function saveSupplierIfNew(expense) {
     if (!supplierName) return;
 
     // Check if supplier already exists
-    const existingSupplier = suppliers.find(s =>
+    const allSuppliers = shared.getSuppliers();
+    const existingSupplier = allSuppliers.find(s =>
         s.name.toLowerCase() === supplierName.toLowerCase() ||
         (businessName && s.businessName.toLowerCase() === businessName.toLowerCase())
     );
@@ -1618,7 +1319,7 @@ function saveSupplierIfNew(expense) {
             createdAt: new Date().toISOString()
         };
 
-        suppliers.push(newSupplier);
+        shared.addSupplier(newSupplier);
         
     }
 }
@@ -1710,7 +1411,7 @@ function addSampleData() {
     ];
 
     expenses = sampleExpenses;
-    saveToLocalStorage();
+    // saveToLocalStorage() call removed - now handled by shared.js
 
     // Also create sample suppliers
     const sampleSuppliers = [
@@ -1749,7 +1450,7 @@ function addSampleData() {
     ];
 
     suppliers = sampleSuppliers;
-    saveToLocalStorage();
+    // saveToLocalStorage() call removed - now handled by shared.js
 }
 
 // Utility functions
@@ -1770,7 +1471,7 @@ function showToast(message) {
 function resetData() {
     expenses = [];
     suppliers = [];
-    saveToLocalStorage();
+    // saveToLocalStorage() call removed - now handled by shared.js
     loadDashboard();
     showToast('Data cleared!');
 }
@@ -1865,7 +1566,8 @@ function findSimilarExpense(newExpense, tolerancePercent = 0.05) {
     const newAmount = newExpense.totalAmount;
     const tolerance = newAmount * tolerancePercent;
 
-    return expenses.find(existingExpense => {
+    const allExpenses = shared.getExpenses();
+    return allExpenses.find(existingExpense => {
         // Check if dates match
         if (existingExpense.date !== newDate) return false;
 
@@ -2066,12 +1768,12 @@ function parseAndImportCSV(csvText) {
         });
 
         // Add all new expenses at once
-        expenses.push(...expensesToAdd);
+        expensesToAdd.forEach(expense => shared.addExpense(expense));
 
         // Extract and save new suppliers from all processed expenses
         importedExpenses.forEach(expense => saveSupplierIfNew(expense));
 
-        saveToLocalStorage();
+        // saveToLocalStorage() call removed - now handled by shared.js
 
         // Show detailed import results
         let message = `Import completed! `;
@@ -2215,7 +1917,7 @@ function parseExpenseFromCSV(headers, values) {
 
     console.log('Mapped data:', data);
 
-    // Detect format type - check for accounting-specific patterns
+    // Detect format type - check for different CSV formats
     const hasAccountingColumns = headers.some(h =>
         h.toLowerCase().includes('particulars') ||
         h.toLowerCase().includes('vatable') ||
@@ -2223,18 +1925,29 @@ function parseExpenseFromCSV(headers, values) {
         h.toLowerCase().includes('grosstaxable')
     );
 
+    const hasMatchaneseFormat = headers.some(h =>
+        h.toLowerCase().includes('item') &&
+        headers.some(h2 => h2.toLowerCase().includes('supplier')) &&
+        headers.some(h3 => h3.toLowerCase().includes('paid via')) &&
+        headers.some(h4 => h4.toLowerCase().includes('category'))
+    );
+
     const hasStandardColumns = headers.some(h =>
         h.toLowerCase().includes('item') &&
         headers.some(h2 => h2.toLowerCase().includes('supplier'))
     );
 
-    // Prioritize accounting format if it has VAT-related columns
-    const isAccountingFormat = hasAccountingColumns && !hasStandardColumns;
+    console.log('Format detection:', {
+        hasAccountingColumns,
+        hasMatchaneseFormat,
+        hasStandardColumns,
+        headers
+    });
 
-    console.log('Is accounting format:', isAccountingFormat);
-    console.log('Headers for detection:', headers);
-
-    if (isAccountingFormat) {
+    // Prioritize formats in order: Matchanese > Accounting > Standard
+    if (hasMatchaneseFormat) {
+        return parseMatchaneseFormatCSV(data, headers, values);
+    } else if (hasAccountingColumns && !hasStandardColumns) {
         return parseAccountingFormatCSV(data, headers, values);
     } else {
         return parseStandardFormatCSV(data);
@@ -2334,7 +2047,8 @@ function parseAccountingFormatCSV(data, headers, values) {
     }));
 
     // Check if supplier already exists
-    const existingSupplier = suppliers.find(s =>
+    const allSuppliers = shared.getSuppliers();
+    const existingSupplier = allSuppliers.find(s =>
         s.name.toLowerCase() === supplierName.toLowerCase() ||
         (s.tin && tin && s.tin === tin)
     );
@@ -2352,6 +2066,7 @@ function parseAccountingFormatCSV(data, headers, values) {
         tin: tin,
         address: address,
         invoiceNumber: '',
+        expenseCategory: 'General', // Default category for CSV imports
         items: items,
         totalAmount: amount,
         vatExemptAmount: 0,
@@ -2366,6 +2081,113 @@ function parseAccountingFormatCSV(data, headers, values) {
     };
 
     console.log('Created expense:', expense);
+    return expense;
+}
+
+function parseMatchaneseFormatCSV(data, headers, values) {
+    console.log('Parsing Matchanese format with values:', values);
+
+    // Skip completely empty rows
+    if (values.every(val => !val || val.trim() === '')) {
+        console.log('Skipping empty row');
+        return null;
+    }
+
+    // Parse date - handle "September 23, 2025" format
+    const dateStr = data.date || '';
+    let parsedDate;
+
+    try {
+        // Handle "September 23, 2025" format
+        parsedDate = new Date(dateStr);
+        if (isNaN(parsedDate.getTime())) {
+            console.warn('Invalid date format:', dateStr);
+            parsedDate = new Date();
+        }
+    } catch (error) {
+        console.warn('Date parsing error:', error);
+        parsedDate = new Date();
+    }
+
+    // Parse amount - remove peso sign, commas, and any other currency symbols
+    const amountStr = (data.amount || '').replace(/[₱,â‚±]/g, '');
+    const amount = parseFloat(amountStr) || 0;
+
+    if (amount === 0) {
+        console.warn('Invalid amount:', data.amount);
+        return null;
+    }
+
+    // Map payment method from "Paid Via" column
+    const paidVia = (data.paidvia || 'cash').toLowerCase().replace(/[^a-z]/g, '');
+    const paymentMethodMap = {
+        'cash': 'Cash',
+        'noncash': 'Credit Card',
+        'gcash': 'GCash',
+        'grab': 'GrabPay',
+        'credit': 'Credit Card',
+        'debit': 'Debit Card',
+        'bank': 'Bank Transfer',
+        'online': 'Bank Transfer'
+    };
+    const paymentMethod = paymentMethodMap[paidVia] || 'Cash';
+
+    // Parse items from "Item" column
+    let itemsText = data.item || '';
+    if (!itemsText.trim()) {
+        itemsText = 'Various Items';
+    }
+    
+    // Split items by comma and clean them up
+    const itemNames = itemsText.split(',')
+        .map(item => item.trim())
+        .filter(item => item.length > 0);
+
+    // Create items array - distribute total amount evenly across items
+    const itemCount = itemNames.length;
+    const pricePerItem = itemCount > 0 ? amount / itemCount : amount;
+
+    const items = itemNames.map(itemName => ({
+        name: itemName,
+        quantity: 1,
+        price: pricePerItem,
+        total: pricePerItem
+    }));
+
+    // Fallback if no valid items found
+    if (items.length === 0) {
+        items.push({
+            name: 'Imported Item',
+            quantity: 1,
+            price: amount,
+            total: amount
+        });
+    }
+
+    // Create expense object - always set branch to "Podium" as specified
+    const expense = {
+        id: generateId(),
+        date: parsedDate.toISOString().split('T')[0],
+        branch: 'Podium', // Always Podium branch as specified
+        supplierName: data.supplier || 'Unknown Supplier',
+        businessName: data.supplier || '', // Use supplier name as business name
+        tin: data.tin || '',
+        address: data.address || '',
+        invoiceNumber: data.invoiceno || '',
+        items: items,
+        totalAmount: amount,
+        vatExemptAmount: 0,
+        vatableSale: 0,
+        vatAmount: 0,
+        isVatRegistered: false,
+        paymentMethod: paymentMethod,
+        paidBy: data.purchasee || 'Store',
+        notes: 'Imported from Matchanese Finance Tracking CSV',
+        receiptImage: null,
+        createdAt: new Date().toISOString()
+    };
+
+    console.log('Created Matchanese expense:', expense);
     return expense;
 }
 
@@ -2537,8 +2359,10 @@ function switchTab(tab) {
 // Load suppliers list
 function loadSuppliers() {
     const supplierList = document.getElementById('supplierList');
+    const allSuppliers = shared.getSuppliers();
+    const expenses = shared.getExpenses();
 
-    if (suppliers.length === 0) {
+    if (allSuppliers.length === 0) {
         supplierList.innerHTML = `
             <div class="empty-state">
                 <p>No suppliers found</p>
@@ -2549,8 +2373,8 @@ function loadSuppliers() {
     }
 
     // Calculate supplier statistics
-    const supplierStats = suppliers.map(supplier => {
-        const supplierExpenses = expenses.filter(expense =>
+    const supplierStats = allSuppliers.map(supplier => {
+        const supplierExpenses = allExpenses.filter(expense =>
             expense.supplierName.toLowerCase() === supplier.name.toLowerCase()
         );
 
@@ -2603,7 +2427,8 @@ function loadSuppliers() {
 }
 
 function viewSupplier(supplierId) {
-    const supplier = suppliers.find(s => s.id === supplierId);
+    const allSuppliers = shared.getSuppliers();
+    const supplier = allSuppliers.find(s => s.id === supplierId);
     if (!supplier) {
         showToast('Supplier not found');
         return;
@@ -2617,7 +2442,8 @@ function showSupplierDetailModal(supplier) {
     const content = document.getElementById('supplierDetailContent');
 
     // Get all expenses for this supplier
-    const supplierExpenses = expenses.filter(expense =>
+    const allExpenses = shared.getExpenses();
+    const supplierExpenses = allExpenses.filter(expense =>
         expense.supplierName.toLowerCase() === supplier.name.toLowerCase()
     ).sort((a, b) => new Date(b.date) - new Date(a.date)); // Sort by date, newest first
 
@@ -2820,11 +2646,12 @@ function showSummaryOptions() {
     const thisMonth = new Date().toISOString().slice(0, 7);
     const thisWeek = getThisWeekRange();
 
-    const todayExpenses = expenses.filter(expense => expense.date === today);
-    const thisWeekExpenses = expenses.filter(expense =>
+    const allExpenses = shared.getExpenses();
+    const todayExpenses = allExpenses.filter(expense => expense.date === today);
+    const thisWeekExpenses = allExpenses.filter(expense =>
         expense.date >= thisWeek.start && expense.date <= thisWeek.end
     );
-    const thisMonthExpenses = expenses.filter(expense =>
+    const thisMonthExpenses = allExpenses.filter(expense =>
         expense.date.startsWith(thisMonth)
     );
 
@@ -2958,7 +2785,8 @@ let confirmationCallback = null;
 function editExpense(expenseId, event) {
     event.stopPropagation();
 
-    const expense = expenses.find(e => e.id === expenseId);
+    const allExpenses = shared.getExpenses();
+    const expense = allExpenses.find(e => e.id === expenseId);
     if (!expense) {
         showToast('Expense not found');
         return;
@@ -2985,7 +2813,8 @@ function populateExpenseForm(expense) {
     document.getElementById('totalAmountInput').value = expense.totalAmount.toFixed(2);
 
     // Handle VAT information if supplier is VAT registered
-    const supplier = suppliers.find(s => s.name.toLowerCase() === expense.supplierName.toLowerCase());
+    const allSuppliers = shared.getSuppliers();
+    const supplier = allSuppliers.find(s => s.name.toLowerCase() === expense.supplierName.toLowerCase());
     if (supplier && supplier.isVatRegistered) {
         const vatSection = document.getElementById('vatSection');
         const vatExemptInput = document.getElementById('vatExemptAmount');
@@ -3044,7 +2873,8 @@ function populateExpenseForm(expense) {
 function deleteExpense(expenseId, event) {
     event.stopPropagation();
 
-    const expense = expenses.find(e => e.id === expenseId);
+    const allExpenses = shared.getExpenses();
+    const expense = allExpenses.find(e => e.id === expenseId);
     if (!expense) {
         showToast('Expense not found');
         return;
@@ -3056,14 +2886,13 @@ function deleteExpense(expenseId, event) {
         `Are you sure you want to delete the expense for "${expense.supplierName}"? This action cannot be undone.`,
         'Delete',
         () => {
-            // Remove expense from array
-            const index = expenses.findIndex(e => e.id === expenseId);
-            if (index > -1) {
-                expenses.splice(index, 1);
-                saveToLocalStorage(); 
-                
+            // Remove expense using shared function
+            const success = shared.deleteExpense(expenseId);
+            if (success) {
                 loadDashboard();
                 showToast('Expense deleted successfully');
+            } else {
+                showToast('Failed to delete expense');
             }
         }
     );
@@ -3154,7 +2983,8 @@ function showAddSupplierModal(supplierName = '') {
 }
 
 function showEditSupplierModal(supplierId) {
-    const supplier = suppliers.find(s => s.id === supplierId);
+    const allSuppliers = shared.getSuppliers();
+    const supplier = allSuppliers.find(s => s.id === supplierId);
     if (!supplier) {
         showToast('Supplier not found');
         return;
@@ -3218,7 +3048,8 @@ function handleSupplierFormSubmission(e) {
     }
 
     // Check for duplicates (exclude current supplier when editing)
-    const existingSupplier = suppliers.find(s =>
+    const allSuppliers = shared.getSuppliers();
+    const existingSupplier = allSuppliers.find(s =>
         s.name.toLowerCase() === supplierName.toLowerCase() &&
         s.id !== isEditing
     );
@@ -3236,7 +3067,7 @@ function handleSupplierFormSubmission(e) {
         address: address,
         isVatRegistered: isVatRegistered,
         createdAt: isEditing ?
-            (suppliers.find(s => s.id === isEditing)?.createdAt || new Date().toISOString()) :
+            (allSuppliers.find(s => s.id === isEditing)?.createdAt || new Date().toISOString()) :
             new Date().toISOString()
     };
 
@@ -3245,11 +3076,12 @@ function handleSupplierFormSubmission(e) {
     // Update all expenses from this supplier when editing
     if (isEditing) {
         // Get the old supplier data BEFORE updating it
-        const oldSupplier = suppliers.find(s => s.id === isEditing);
+        const oldSupplier = allSuppliers.find(s => s.id === isEditing);
         const oldSupplierName = oldSupplier ? oldSupplier.name : '';
 
         // Then update all expenses that reference the old supplier name
-        expenses.forEach(expense => {
+        const allExpenses = shared.getExpenses();
+        allExpenses.forEach(expense => {
             // Match by old supplier name first, then update to new name
             if (expense.supplierName.toLowerCase() === oldSupplierName.toLowerCase()) {
                 // Update supplier name in expense
@@ -3274,17 +3106,15 @@ function handleSupplierFormSubmission(e) {
         });
 
         // Update the supplier AFTER updating expenses
-        const index = suppliers.findIndex(s => s.id === isEditing);
-        if (index > -1) {
-            supplier.updatedAt = new Date().toISOString();
-            suppliers[index] = supplier;
-            saveToLocalStorage();
+        const success = shared.updateSupplier(isEditing, supplier);
+        if (success) {
             showToast('Supplier updated successfully!');
+        } else {
+            showToast('Failed to update supplier');
         }
     } else {
         // Add new supplier
-        suppliers.push(supplier);
-        saveToLocalStorage();
+        shared.addSupplier(supplier);
         showToast('Supplier added successfully!');
     }
 
@@ -3316,8 +3146,7 @@ function skipSupplierDetails() {
             createdAt: new Date().toISOString()
         };
 
-        suppliers.push(basicSupplier);
-        saveToLocalStorage();
+        shared.addSupplier(basicSupplier);
     }
 
     closeSupplierModal();
@@ -3345,7 +3174,8 @@ function clearStorage() {
 }
 
 function showMergeSupplierModal(targetSupplierId) {
-    const targetSupplier = suppliers.find(s => s.id === targetSupplierId);
+    const allSuppliers = shared.getSuppliers();
+    const targetSupplier = allSuppliers.find(s => s.id === targetSupplierId);
     if (!targetSupplier) {
         showToast('Supplier not found');
         return;
@@ -3358,7 +3188,7 @@ function showMergeSupplierModal(targetSupplierId) {
     title.textContent = `Merge Suppliers into ${targetSupplier.name}`;
 
     // Get other suppliers (excluding the target)
-    const otherSuppliers = suppliers.filter(s => s.id !== targetSupplierId);
+    const otherSuppliers = allSuppliers.filter(s => s.id !== targetSupplierId);
 
     if (otherSuppliers.length === 0) {
         showToast('No other suppliers available to merge');
@@ -3379,7 +3209,8 @@ function showMergeSupplierModal(targetSupplierId) {
     
     <div class="merge-supplier-list" id="mergeSupplierList">
         ${otherSuppliers.map(supplier => {
-        const supplierExpenseCount = expenses.filter(e =>
+        const allExpenses = shared.getExpenses();
+        const supplierExpenseCount = allExpenses.filter(e =>
             e.supplierName.toLowerCase() === supplier.name.toLowerCase()
         ).length;
 
@@ -3464,7 +3295,8 @@ function closeMergeSupplierModal() {
 }
 
 function executeMerge(targetSupplierId) {
-    const targetSupplier = suppliers.find(s => s.id === targetSupplierId);
+    const allSuppliers = shared.getSuppliers();
+    const targetSupplier = allSuppliers.find(s => s.id === targetSupplierId);
     if (!targetSupplier) {
         showToast('Target supplier not found');
         return;
@@ -3479,7 +3311,7 @@ function executeMerge(targetSupplierId) {
         return;
     }
 
-    const suppliersToMerge = suppliers.filter(s => supplierIdsToMerge.includes(s.id));
+    const suppliersToMerge = allSuppliers.filter(s => supplierIdsToMerge.includes(s.id));
     const supplierNamesToMerge = suppliersToMerge.map(s => s.name);
 
     // Show confirmation
@@ -3511,12 +3343,11 @@ function performSupplierMerge(targetSupplier, suppliersToMerge) {
         });
     });
 
-    // Remove the merged suppliers from the suppliers array
+    // Remove the merged suppliers using shared.js
     const supplierIdsToRemove = suppliersToMerge.map(s => s.id);
-    suppliers = suppliers.filter(s => !supplierIdsToRemove.includes(s.id));
-
-    // Save to localStorage
-    saveToLocalStorage();
+    supplierIdsToRemove.forEach(supplierId => {
+        shared.deleteSupplier(supplierId);
+    });
 
     // Close modals and refresh
     closeMergeSupplierModal();
@@ -3541,14 +3372,16 @@ function mergeSupplierFromDetail(supplierId) {
 }
 
 function deleteSupplierFromDetail(supplierId) {
-    const supplier = suppliers.find(s => s.id === supplierId);
+    const allSuppliers = shared.getSuppliers();
+    const supplier = allSuppliers.find(s => s.id === supplierId);
     if (!supplier) {
         showToast('Supplier not found');
         return;
     }
 
     // Check if supplier has any expenses
-    const supplierExpenses = expenses.filter(expense =>
+    const allExpenses = shared.getExpenses();
+    const supplierExpenses = allExpenses.filter(expense =>
         expense.supplierName.toLowerCase() === supplier.name.toLowerCase()
     );
 
@@ -3571,11 +3404,8 @@ function deleteSupplierFromDetail(supplierId) {
         'Delete',
         () => {
             // Remove supplier from array
-            const index = suppliers.findIndex(s => s.id === supplierId);
-            if (index > -1) {
-                suppliers.splice(index, 1);
-                saveToLocalStorage();
-
+            const success = shared.deleteSupplier(supplierId);
+            if (success) {
                 // Close detail modal and refresh
                 closeSupplierDetailModal();
                 showToast('Supplier deleted successfully');
@@ -3584,42 +3414,18 @@ function deleteSupplierFromDetail(supplierId) {
                 if (document.getElementById('suppliersPage').style.display !== 'none') {
                     loadSuppliers();
                 }
+            } else {
+                showToast('Failed to delete supplier');
             }
         }
     );
 }
 
-function saveToLocalStorage() {
-    try {
-        localStorage.setItem('expenseTracker_expenses', JSON.stringify(expenses));
-        localStorage.setItem('expenseTracker_suppliers', JSON.stringify(suppliers));
-        console.log('Data saved to localStorage');
-
-        // Mark that we have pending changes
-        hasPendingChanges = true;
-
-        // Clear existing timeout if there is one
-        if (syncTimeout) {
-            clearTimeout(syncTimeout);
-        }
-
-        // Set new timeout for debounced sync
-        syncTimeout = setTimeout(() => {
-            if (hasPendingChanges) {
-                syncToFirebase();
-                hasPendingChanges = false;
-            }
-            syncTimeout = null;
-        }, SYNC_DEBOUNCE_DELAY);
-
-        console.log('Sync scheduled for 3 seconds from now');
-    } catch (error) {
-        console.error('Failed to save to localStorage:', error);
-    }
-}
+// saveToLocalStorage function removed - now using shared.js saveToLocalStorage()
 
 function viewSupplierFromExpense(supplierName) {
-    const supplier = suppliers.find(s =>
+    const allSuppliers = shared.getSuppliers();
+    const supplier = allSuppliers.find(s =>
         s.name.toLowerCase() === supplierName.toLowerCase()
     );
 

@@ -12,8 +12,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"
         integrity="sha512-ElRFoEQdI5Ht6kZvyzXhYG9NqjtkmlkfYk0wr6wHxU9JEHakS7UJZNeml5ALk+8IKlU6jDgMabC3vkumRokgJA=="
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script type="module" src="./js/admin.js"></script>
-    <link rel="stylesheet" href="css/admin.css">
+    <link rel="stylesheet" href="css/admin.css?v=1006">
 </head>
 
 <body>
@@ -24,16 +23,6 @@
                 <h1 class="app-title">Expense Admin</h1>
             </div>
             <div class="header-actions">
-                <div class="branch-selector">
-                    <span class="branch-label">Branch:</span>
-                    <select class="branch-dropdown" id="branchSelector">
-                        <option value="all">All Branches</option>
-                        <option value="SM North">SM North</option>
-                        <option value="Podium">Podium</option>
-                        <option value="BGC">BGC</option>
-                        <option value="Makati">Makati</option>
-                    </select>
-                </div>
                 <button class="mobile-app-btn" onclick="window.open('index.html', '_blank')">
                     📱 Mobile App
                 </button>
@@ -45,61 +34,94 @@
             <!-- Cards will be populated by JS -->
         </div>
 
-        <!-- Main Controls -->
-        <div class="main-controls">
+        <!-- Table Type Selector (Expenses/Suppliers/Analytics) - Moved Above -->
+        <div class="table-type-controls" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; padding: 1rem; background: white; border-radius: 10px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);">
             <div class="view-selector">
-                <button class="view-btn active" data-view="expenses">Expenses</button>
-                <button class="view-btn" data-view="suppliers">Suppliers</button>
-                <button class="view-btn" data-view="analytics">Analytics</button>
+                <button class="view-btn active" data-table="expenses">Expenses</button>
+                <button class="view-btn" data-table="suppliers">Suppliers</button>
+                <button class="view-btn" data-table="analytics">Analytics</button>
             </div>
-
-            <div class="date-shortcuts" id="dateShortcuts">
-                <button class="date-shortcut-btn" data-range="today">Today</button>
-                <button class="date-shortcut-btn" data-range="week">Last 7 Days</button>
-                <button class="date-shortcut-btn" data-range="month">This Month</button>
-                <button class="date-shortcut-btn" data-range="year">This Year</button>
-                <button class="date-shortcut-btn active" data-range="all">All Data</button>
-            </div>
-
-            <input type="text" id="dateRange" placeholder="Select date range" />
         </div>
 
-        <!-- Table Controls -->
-        <div class="table-controls">
-            <div class="table-actions">
-                <button class="action-btn primary" id="addExpenseBtn">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="12" y1="5" x2="12" y2="19"></line>
-                        <line x1="5" y1="12" x2="19" y2="12"></line>
-                    </svg>
-                    Add Expense
-                </button>
-                <button class="action-btn secondary" id="exportBtn">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                        <polyline points="7,10 12,15 17,10"></polyline>
-                        <line x1="12" y1="15" x2="12" y2="3"></line>
-                    </svg>
-                    Export CSV
-                </button>
-                <button class="action-btn secondary" id="importBtn">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                        <polyline points="17,8 12,3 7,8"></polyline>
-                        <line x1="12" y1="3" x2="12" y2="15"></line>
-                    </svg>
-                    Import CSV
-                </button>
+        <!-- Main Controls - All Filters and Actions -->
+        <div class="main-controls">
+            <!-- Filter Controls Row 1 -->
+            <div class="filter-row">
+                <div class="left-filters">
+                    <div class="branch-selector">
+                        <span class="branch-label">Branch:</span>
+                        <select class="branch-dropdown" id="branchSelector">
+                            <option value="all">All Branches</option>
+                            <option value="SM North">SM North</option>
+                            <option value="Podium">Podium</option>
+                            <option value="BGC">BGC</option>
+                            <option value="Makati">Makati</option>
+                        </select>
+                    </div>
+
+                    <div class="category-filter-group">
+                        <span class="category-label">Category:</span>
+                        <select class="category-dropdown" id="categorySelector">
+                            <option value="all">All Categories</option>
+                            <option value="General">General</option>
+                            <option value="Matcha">Matcha</option>
+                            <option value="Suppliers">Suppliers</option>
+                            <option value="Leasing">Leasing</option>
+                            <option value="Salaries">Salaries</option>
+                            <option value="Marketing">Marketing</option>
+                            <option value="Maintenance">Maintenance</option>
+                            <option value="Equipment">Equipment</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="date-filter-group">
+                    <div class="date-shortcuts" id="dateShortcuts">
+                        <!-- Dynamic shortcuts populated by JS -->
+                    </div>
+
+                    <select id="monthDropdown" class="month-dropdown">
+                        <option value="">Select Month</option>
+                    </select>
+
+                    <input type="text" id="dateRange" placeholder="Select date range" />
+                </div>
             </div>
 
-            <div class="table-search">
-                <input type="text" id="searchInput" placeholder="Search expenses, suppliers, items..." />
-                <button class="filter-btn" id="filterBtn">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polygon points="22,3 2,3 10,12.46 10,19 14,21 14,12.46"></polygon>
-                    </svg>
-                    Filter
-                </button>
+            <!-- Action Buttons Row -->
+            <div class="action-row">
+                <div class="table-actions">
+                    <button class="action-btn primary" id="addExpenseBtn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        Add Expense
+                    </button>
+                    <button class="action-btn secondary" id="exportBtn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7,10 12,15 17,10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        Export CSV
+                    </button>
+                    <button class="action-btn secondary" id="importBtn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17,8 12,3 7,8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        Import CSV
+                    </button>
+                    <button class="action-btn secondary" id="bulkEditBtn" onclick="showBulkEditModal()" title="Bulk edit selected expenses" style="display: none;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                            <path d="m18.5 2.5 a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z"></path>
+                        </svg>
+                        Bulk Edit
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -109,10 +131,11 @@
                 <table class="data-table">
                     <thead>
                         <tr id="expenseTableHeaders">
-                            <th><input type="checkbox" id="selectAllExpenses"></th>
+                            <th><input type="checkbox" id="selectAllExpenses" onchange="toggleSelectAll()"></th>
                             <th data-sort="date">Date</th>
                             <th data-sort="supplier">Supplier</th>
                             <th>Items</th>
+                            <th data-sort="category">Category</th>
                             <th data-sort="amount">Amount</th>
                             <th data-sort="branch">Branch</th>
                             <th data-sort="payment">Payment</th>
@@ -198,6 +221,12 @@
 
     <!-- Toast for notifications -->
     <div id="toast" class="toast"></div>
+
+
+    <!-- Load admin script at the bottom to ensure DOM is ready -->
+    <script type="module" src="./js/admin.js?v=1007"></script>
+
 </body>
+
 
 </html>

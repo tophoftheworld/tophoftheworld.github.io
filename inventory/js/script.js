@@ -1,11 +1,12 @@
 import { db } from './firebase-inventory.js';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, where, setDoc } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, where, setDoc, getDoc } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
 
 // Local storage keys
 const STORAGE_KEYS = {
-    INVENTORY: 'inventory-items',
+    INVENTORY: 'inventory/_config/items',
     QUANTITIES: 'inventory-quantities',
-    LAST_SYNC: 'inventory-last_sync'
+    LAST_SYNC: 'inventory-last_sync',
+    CATEGORY_ORDERS: 'inventory-category-orders'
 };
 
 // Global state
@@ -13,10 +14,46 @@ let inventoryItems = [];
 let quantities = {};
 let currentMode = 'opening';
 let isOnline = navigator.onLine;
-let currentDate = new Date();
+let currentDate = new Date(); // Initialize with current date
 let isReorderMode = false; // Add this
 let customCategories = []; // Add this
 let editingItemId = null; // Add this
+let categoryOrderMap = {}; // Loaded from categories collection
+let isDesktop = false; // Track if we're on desktop/tablet
+
+// Helper function to format numbers with commas
+function formatNumberWithCommas(num) {
+    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+// Function to detect screen size and apply appropriate class
+function updateScreenSize() {
+    const width = window.innerWidth;
+    isDesktop = width >= 600;
+    
+    // Remove all layout classes first
+    document.body.classList.remove('desktop-layout', 'mobile-layout');
+    
+    // Apply the correct class
+    if (isDesktop) {
+        document.body.classList.add('desktop-layout');
+        console.log(`✅ Applied desktop-layout class. Width: ${width}px`);
+    } else {
+        document.body.classList.add('mobile-layout');
+        console.log(`✅ Applied mobile-layout class. Width: ${width}px`);
+    }
+    
+    // Debug: Show current body classes
+    console.log('Body classes:', document.body.className);
+    
+    // Debug: Check if control buttons exist and their flex direction
+    const controlButtons = document.querySelectorAll('.control-buttons');
+    if (controlButtons.length > 0) {
+        const firstButton = controlButtons[0];
+        const computedStyle = window.getComputedStyle(firstButton);
+        console.log('First control-buttons flex-direction:', computedStyle.flexDirection);
+    }
+}
 
 // Quantity control functions
 let holdTimer = null;
@@ -30,15 +67,158 @@ let allBranches = []; // Will be loaded from Firebase
 let syncTimeouts = new Map(); // Store timeout IDs per item
 const SYNC_DELAY = 2000; // 2 seconds delay
 
+// Cache functions for instant loading
+function loadInventoryItemsFromCache() {
+  try {
+    const cached = localStorage.getItem(`${STORAGE_KEYS.INVENTORY}-${currentBranch}`);
+    if (!cached) {
+      console.log('❌ No cached inventory items found');
+      return null;
+    }
+    
+    const parseStart = performance.now();
+    const cacheData = JSON.parse(cached);
+    const parseTime = performance.now() - parseStart;
+    
+    // Ensure cacheData is an array
+    if (!Array.isArray(cacheData)) {
+      console.warn('Cached data is not an array, returning null');
+      return null;
+    }
+    
+    console.log('📦 Loading inventory items from cache (parse:', parseTime.toFixed(2), 'ms)');
+    console.log('📦 Cached inventory items count:', cacheData.length);
+    return cacheData;
+  } catch (error) {
+    console.error('Error loading cached inventory items:', error);
+    return null;
+  }
+}
+
+function cacheInventoryItems(items) {
+  try {
+    localStorage.setItem(`${STORAGE_KEYS.INVENTORY}-${currentBranch}`, JSON.stringify(items));
+    console.log('📦 Inventory items cached:', items.length, 'items');
+  } catch (error) {
+    console.error('Error caching inventory items:', error);
+  }
+}
+
+// Cache functions for category orders
+function loadCategoryOrdersFromCache() {
+  try {
+    const cached = localStorage.getItem(STORAGE_KEYS.CATEGORY_ORDERS);
+    if (!cached) {
+      console.log('❌ No cached category orders found');
+      return null;
+    }
+    
+    const parseStart = performance.now();
+    const cacheData = JSON.parse(cached);
+    const parseTime = performance.now() - parseStart;
+    
+    console.log('📦 Loading category orders from cache (parse:', parseTime.toFixed(2), 'ms)');
+    console.log('📦 Cached category orders:', Object.keys(cacheData).length, 'categories');
+    return cacheData;
+  } catch (error) {
+    console.error('Error loading cached category orders:', error);
+    return null;
+  }
+}
+
+function cacheCategoryOrders(orders) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.CATEGORY_ORDERS, JSON.stringify(orders));
+    console.log('📦 Category orders cached:', Object.keys(orders).length, 'categories');
+  } catch (error) {
+    console.error('Error caching category orders:', error);
+  }
+}
+
+
+// Background sync for inventory items
+async function syncInventoryItemsFromFirebaseInBackground() {
+  try {
+    console.log('Background sync: Loading inventory items from Firebase');
+    
+    const snapshot = await getDocs(collection(db, 'inventory', '_config', 'items'));
+    const freshItems = [];
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      // Filter by enabledBranches
+      // If enabledBranches field doesn't exist (legacy), include the item
+      // If enabledBranches is empty array [], exclude the item (disabled for all)
+      // If enabledBranches has values, check if current branch is included
+      const enabled = data.enabledBranches === undefined
+        ? true  // Legacy items without enabledBranches field
+        : data.enabledBranches.includes(currentBranch);  // Check if branch is in array
+      if (!enabled) return;
+
+      freshItems.push({ 
+        id: doc.id, 
+        ...data,
+        // Ensure description is available as subtitle for backward compatibility
+        subtitle: data.subtitle || data.description || '',
+        // categoryOrder now driven by categories collection
+        order: data.order || data.displayOrder || 0
+      });
+    });
+    
+    // Check if data has changed
+    const currentItemsJson = JSON.stringify(inventoryItems.map(item => ({ id: item.id, name: item.name, category: item.category })));
+    const freshItemsJson = JSON.stringify(freshItems.map(item => ({ id: item.id, name: item.name, category: item.category })));
+    
+    if (currentItemsJson !== freshItemsJson) {
+      console.log('🔄 Background sync: Inventory items have changed, updating');
+      inventoryItems = freshItems;
+      
+      // Cache the fresh data
+      cacheInventoryItems(inventoryItems);
+      
+      // Re-render inventory
+      renderInventory();
+      
+      showSyncIndicator('Inventory updated', 'success');
+    } else {
+      console.log('Background sync: Inventory items are up to date');
+    }
+  } catch (error) {
+    console.error('Error syncing inventory items:', error);
+  }
+}
+
+// Simple connectivity check
+async function testFirebaseConnection() {
+    try {
+        // Small, read-only query
+        await getDocs(collection(db, 'inventory', '_config', 'items'));
+        return true;
+    } catch (e) {
+        console.warn('Firebase connectivity test failed:', e);
+        return false;
+    }
+}
+
 document.addEventListener('DOMContentLoaded', async function () {
     console.log('DOM loaded, checking branchSelect...');
     const branchSelect = document.getElementById('branchSelect');
     console.log('branchSelect found:', !!branchSelect);
 
-    await initializeApp();
+    // Initialize screen size detection
+    updateScreenSize();
+    window.addEventListener('resize', updateScreenSize);
+
+    // Initialize date display immediately
+    updateDateDisplay();
+
+    // Setup event listeners immediately for responsive UI
     setupEventListeners();
+    
+    // Load cached data instantly for immediate display
     loadLocalData();
-    syncWithFirebase();
+    
+    // Initialize app in background (non-blocking)
+    initializeApp();
 
     // Force update dropdown after everything loads
     setTimeout(() => {
@@ -48,34 +228,41 @@ document.addEventListener('DOMContentLoaded', async function () {
 });
 
 async function initializeApp() {
+    console.log('🔧 Initializing app in background...');
+    
     // Check online status
     window.addEventListener('online', () => {
         isOnline = true;
+        console.log('🌐 Back online - syncing with Firebase');
         syncWithFirebase();
     });
 
     window.addEventListener('offline', () => {
         isOnline = false;
+        console.log('📴 Gone offline');
         showSyncIndicator('Offline', 'error');
     });
 
     try {
-        // Test Firebase connection first on iPhone
+        // Test Firebase connection first (but don't block if it fails)
         if (isOnline) {
             const connectionOK = await testFirebaseConnection();
             if (!connectionOK) {
+                console.log('⚠️ Firebase connection failed, using offline mode');
                 showSyncIndicator('Using offline mode', 'info');
-                loadLocalData();
-                return;
+                return; // Don't call loadLocalData() here - it's already been called
             }
         }
 
-        // Load branches from Firebase first
+        // Load branches from Firebase (non-blocking)
         await loadBranchesFromFirebase();
+
+        // Load category order mapping
+        await loadCategoryOrders();
 
         // Initialize branch dropdown
         updateBranchDropdown();
-        console.log('Called updateBranchDropdown from initializeApp');
+        console.log('✅ Branch dropdown updated');
 
         // Set the dropdown to the saved branch
         const branchSelect = document.getElementById('branchSelect');
@@ -94,19 +281,53 @@ async function initializeApp() {
             }
         }
 
-        // Load local data first for immediate display
-        loadLocalData();
-
-        // Then sync with Firebase
+        // Sync with Firebase in background (non-blocking)
         if (isOnline) {
-            await syncWithFirebase();
+            console.log('🔄 Starting background Firebase sync from initializeApp');
+            syncWithFirebase();
         }
 
     } catch (error) {
+        console.error('❌ App initialization error:', error);
         showSyncIndicator(`Init failed: ${error.message}`, 'error');
-        loadLocalData();
+        // Don't call loadLocalData() here - it's already been called in DOMContentLoaded
+    }
+    
+    console.log('✅ App initialization complete');
+}
+// Load categories order mapping from Firebase
+async function loadCategoryOrders() {
+    try {
+        const snapshot = await getDocs(collection(db, 'inventory', '_config', 'categories'));
+        const mapping = {};
+        snapshot.forEach(docSnap => {
+            const data = docSnap.data();
+            if (data && typeof data.order === 'number') {
+                mapping[data.name] = data.order;
+            }
+        });
+        categoryOrderMap = mapping;
+        
+        // Cache the category orders for instant loading next time
+        cacheCategoryOrders(categoryOrderMap);
+        
+        // console.log('Loaded categoryOrderMap:', categoryOrderMap);
+    } catch (err) {
+        console.warn('Failed to load categories; using default order', err);
+        // Fallback default ordering if categories collection is missing
+        categoryOrderMap = {
+            'Base Ingredients': 0,
+            'Packaging & Consumables': 1,
+            'Liquid Ingredients': 2,
+            'Dry Ingredients': 3,
+            'Desserts': 4
+        };
+        
+        // Cache the fallback order as well
+        cacheCategoryOrders(categoryOrderMap);
     }
 }
+
 
 // Global variables for compact header
 let compactInfoRow = null;
@@ -146,33 +367,14 @@ function setupEventListeners() {
             if (newMode === currentMode) return;
 
             showModeSwitchConfirmation(newMode);
-
-            // // Remove active from all buttons
-            // document.querySelectorAll('.toggle-btn').forEach(btn => {
-            //     btn.classList.remove('active');
-            // });
-
-            // // Add active to clicked button
-            // this.classList.add('active');
-
-            // // Animate the switch
-            // animateInventorySwitch(newMode);
         });
     });
-    
 
     // Add item button and modal
-    // const addItemBtn = document.getElementById('addItemBtn');
     const modalOverlay = document.getElementById('modalOverlay');
     const modalClose = document.getElementById('modalClose');
     const cancelBtn = document.getElementById('cancelBtn');
     const addItemForm = document.getElementById('addItemForm');
-
-    // Add category button
-    // const addCategoryBtn = document.getElementById('addCategoryBtn');
-    // if (addCategoryBtn) {
-    //     addCategoryBtn.addEventListener('click', () => openAddCategoryModal());
-    // }
 
     // Add category modal
     const addCategoryModalOverlay = document.getElementById('addCategoryModalOverlay');
@@ -180,34 +382,40 @@ function setupEventListeners() {
     const addCategoryCancelBtn = document.getElementById('addCategoryCancelBtn');
     const addCategoryConfirmBtn = document.getElementById('addCategoryConfirmBtn');
 
-    addCategoryModalClose.addEventListener('click', () => closeAddCategoryModal());
-    addCategoryCancelBtn.addEventListener('click', () => closeAddCategoryModal());
-    addCategoryConfirmBtn.addEventListener('click', handleAddCategory);
-    addCategoryModalOverlay.addEventListener('click', (e) => {
-        if (e.target === addCategoryModalOverlay) closeAddCategoryModal();
-    });
+    if (addCategoryModalClose) addCategoryModalClose.addEventListener('click', () => closeAddCategoryModal());
+    if (addCategoryCancelBtn) addCategoryCancelBtn.addEventListener('click', () => closeAddCategoryModal());
+    if (addCategoryConfirmBtn) addCategoryConfirmBtn.addEventListener('click', handleAddCategory);
+    if (addCategoryModalOverlay) {
+        addCategoryModalOverlay.addEventListener('click', (e) => {
+            if (e.target === addCategoryModalOverlay) closeAddCategoryModal();
+        });
+    }
 
     function closeAddCategoryModal() {
-        document.getElementById('addCategoryModalOverlay').classList.remove('show');
-        document.getElementById('newCategoryName').value = '';
+        const overlay = document.getElementById('addCategoryModalOverlay');
+        if (overlay) overlay.classList.remove('show');
+        const input = document.getElementById('newCategoryName');
+        if (input) input.value = '';
     }
 
     function handleAddCategory() {
-        const categoryName = document.getElementById('newCategoryName').value.trim();
+        const input = document.getElementById('newCategoryName');
+        const categoryName = input ? input.value.trim() : '';
         if (categoryName) {
             addNewCategory(categoryName);
             closeAddCategoryModal();
         }
     }
 
-    // addItemBtn.addEventListener('click', () => openModal());
-    modalClose.addEventListener('click', () => closeModal());
-    cancelBtn.addEventListener('click', () => closeModal());
-    modalOverlay.addEventListener('click', (e) => {
-        if (e.target === modalOverlay) closeModal();
-    });
+    if (modalClose) modalClose.addEventListener('click', () => closeModal());
+    if (cancelBtn) cancelBtn.addEventListener('click', () => closeModal());
+    if (modalOverlay) {
+        modalOverlay.addEventListener('click', (e) => {
+            if (e.target === modalOverlay) closeModal();
+        });
+    }
 
-    addItemForm.addEventListener('submit', handleAddItem);
+    if (addItemForm) addItemForm.addEventListener('submit', handleAddItem);
 
     // Quantity controls (delegated events)
     document.addEventListener('mousedown', handleMouseDown);
@@ -226,13 +434,18 @@ function setupEventListeners() {
     const modeSwitchCancelBtn = document.getElementById('modeSwitchCancelBtn');
     const modeSwitchConfirmBtn = document.getElementById('modeSwitchConfirmBtn');
 
-    modeSwitchModalClose.addEventListener('click', cancelModeSwitch);
-    modeSwitchCancelBtn.addEventListener('click', cancelModeSwitch);
-    modeSwitchConfirmBtn.addEventListener('click', confirmModeSwitch);
-    modeSwitchModalOverlay.addEventListener('click', (e) => {
-        if (e.target === modeSwitchModalOverlay) cancelModeSwitch();
-    });
-    
+    if (modeSwitchModalClose) modeSwitchModalClose.addEventListener('click', cancelModeSwitch);
+    if (modeSwitchCancelBtn) modeSwitchCancelBtn.addEventListener('click', cancelModeSwitch);
+    if (modeSwitchConfirmBtn) modeSwitchConfirmBtn.addEventListener('click', confirmModeSwitch);
+    if (modeSwitchModalOverlay) {
+        modeSwitchModalOverlay.addEventListener('click', (e) => {
+            if (e.target === modeSwitchModalOverlay) cancelModeSwitch();
+        });
+    }
+
+    // Add Stocks functionality
+    setupAddStocksEventListeners();
+
     preventHeaderScroll();
     initializeDatePicker();
 
@@ -244,57 +457,66 @@ function setupEventListeners() {
     // Create compact info row element
     compactInfoRow = document.createElement('div');
     compactInfoRow.className = 'compact-info-row';
-    datePickerContainer.appendChild(compactInfoRow);
+    if (datePickerContainer) datePickerContainer.appendChild(compactInfoRow);
 
     // Initial update
     updateCompactInfo();
 
-    scrollableContent.addEventListener('scroll', () => {
-        const scrollTop = scrollableContent.scrollTop;
-        const isScrollingDown = scrollTop > lastScrollTop;
+    if (scrollableContent) {
+        scrollableContent.addEventListener('scroll', () => {
+            const scrollTop = scrollableContent.scrollTop;
+            const isScrollingDown = scrollTop > lastScrollTop;
 
-        if (scrollTop > 40 && isScrollingDown) {
-            // Make compact when scrolled down
-            if (!datePickerContainer.classList.contains('compact')) {
-                datePickerContainer.classList.add('compact');
-                document.querySelector('.header-container').classList.add('compact');
-                document.querySelector('.toggle-container').classList.add('compact');
-                updateCompactInfo();
+            if (scrollTop > 40 && isScrollingDown) {
+                // Make compact when scrolled down
+                if (datePickerContainer && !datePickerContainer.classList.contains('compact')) {
+                    datePickerContainer.classList.add('compact');
+                    const header = document.querySelector('.header-container');
+                    const toggle = document.querySelector('.toggle-container');
+                    if (header) header.classList.add('compact');
+                    if (toggle) toggle.classList.add('compact');
+                    updateCompactInfo();
+                }
+            } else if (scrollTop <= 15) {
+                // Return to normal when at top
+                if (datePickerContainer && datePickerContainer.classList.contains('compact')) {
+                    datePickerContainer.classList.remove('compact');
+                    const header = document.querySelector('.header-container');
+                    const toggle = document.querySelector('.toggle-container');
+                    if (header) header.classList.remove('compact');
+                    if (toggle) toggle.classList.remove('compact');
+                }
             }
-        } else if (scrollTop <= 15) {
-            // Return to normal when at top
-            if (datePickerContainer.classList.contains('compact')) {
-                datePickerContainer.classList.remove('compact');
-                document.querySelector('.header-container').classList.remove('compact');
-                document.querySelector('.toggle-container').classList.remove('compact');
-            }
-        }
 
-        lastScrollTop = scrollTop;
-    });
+            lastScrollTop = scrollTop;
+        });
+    }
 
     console.log('branchSelect element:', branchSelect);
     console.log('All select elements:', document.querySelectorAll('select'));
 
-    if (branchSelect) {
-        branchSelect.addEventListener('change', handleBranchChange);
+    const branchSelectEl = document.getElementById('branchSelect');
+    if (branchSelectEl) {
+        branchSelectEl.addEventListener('change', handleBranchChange);
         console.log('Added event listener to branchSelect');
     } else {
         console.log('branchSelect not found!');
     }
 
-    // Add popup modal
+    // Pop-up modal (guarded; currently hidden feature)
     const addPopupModalOverlay = document.getElementById('addPopupModalOverlay');
     const addPopupModalClose = document.getElementById('addPopupModalClose');
     const addPopupCancelBtn = document.getElementById('addPopupCancelBtn');
     const addPopupConfirmBtn = document.getElementById('addPopupConfirmBtn');
 
-    addPopupModalClose.addEventListener('click', () => closeAddPopupModal());
-    addPopupCancelBtn.addEventListener('click', () => closeAddPopupModal());
-    addPopupConfirmBtn.addEventListener('click', handleAddPopup);
-    addPopupModalOverlay.addEventListener('click', (e) => {
-        if (e.target === addPopupModalOverlay) closeAddPopupModal();
-    });
+    if (addPopupModalClose) addPopupModalClose.addEventListener('click', () => closeAddPopupModal());
+    if (addPopupCancelBtn) addPopupCancelBtn.addEventListener('click', () => closeAddPopupModal());
+    if (addPopupConfirmBtn) addPopupConfirmBtn.addEventListener('click', handleAddPopup);
+    if (addPopupModalOverlay) {
+        addPopupModalOverlay.addEventListener('click', (e) => {
+            if (e.target === addPopupModalOverlay) closeAddPopupModal();
+        });
+    }
 
     // Photo upload handling
     const itemPhoto = document.getElementById('itemPhoto');
@@ -302,8 +524,8 @@ function setupEventListeners() {
     const previewImage = document.getElementById('previewImage');
     const removePhoto = document.getElementById('removePhoto');
 
-    itemPhoto.addEventListener('change', handlePhotoSelect);
-    removePhoto.addEventListener('click', handlePhotoRemove);
+    if (itemPhoto) itemPhoto.addEventListener('change', handlePhotoSelect);
+    if (removePhoto) removePhoto.addEventListener('click', handlePhotoRemove);
 
     // Initialize admin features
     initializeAdminFeatures();
@@ -383,13 +605,7 @@ function convertImageToBase64(file, maxWidth = 200, maxHeight = 200) {
 function handleBranchChange(event) {
     const selectedValue = event.target.value;
 
-    if (selectedValue === 'new-popup') {
-        // Reset to current branch and open popup modal
-        event.target.value = currentBranch;
-        openAddPopupModal();
-        return;
-    }
-
+    // Pop-ups disabled: ignore any new-popup path
     if (selectedValue !== currentBranch) {
         currentBranch = selectedValue;
         // Save selected branch to localStorage
@@ -411,6 +627,8 @@ async function loadBranchesFromFirebase() {
         const firebaseBranches = [];
         snapshot.forEach(doc => {
             const data = { id: doc.id, ...doc.data() };
+            // Skip pop-ups for now
+            if (data.type === 'popup' || /^popup-/.test(data.key || '')) return;
             console.log('Found branch:', data);
             firebaseBranches.push(data);
         });
@@ -432,19 +650,6 @@ async function loadBranchesFromFirebase() {
         updateBranchDropdown();
         return allBranches;
     }
-
-    // Update dropdown immediately after loading
-    updateBranchDropdown();
-    
-    // Force the dropdown to show the current branch
-    setTimeout(() => {
-        const branchSelect = document.getElementById('branchSelect');
-        if (branchSelect) {
-            branchSelect.value = currentBranch;
-            console.log('Forced dropdown value to:', currentBranch);
-        }
-        updateBranchDropdown(); // Call again to be sure
-    }, 100);
 }
 
 async function saveBranchToFirebase(branchData) {
@@ -458,22 +663,9 @@ async function saveBranchToFirebase(branchData) {
 }
 
 function getBranchDisplayName(branchKey) {
-    // Check default branches first
+    // Only two branches visible for now
     if (branchKey === 'sm-north') return 'SM North';
     if (branchKey === 'podium') return 'Podium';
-
-    // Check Firebase branches
-    const branch = allBranches.find(b => b.key === branchKey);
-    if (branch) {
-        return `[Pop-up] ${branch.name}`;
-    }
-
-    // Fallback: if branch not found, try to extract name from key
-    if (branchKey.startsWith('popup-')) {
-        const name = branchKey.replace('popup-', '').replace(/-/g, ' ');
-        return `[Pop-up] ${name.charAt(0).toUpperCase() + name.slice(1)}`;
-    }
-
     return branchKey;
 }
 
@@ -481,17 +673,10 @@ function updateBranchDropdown() {
     const branchSelect = document.getElementById('branchSelect');
     if (!branchSelect) return;
 
-    const currentValue = branchSelect.value;
-
-    // DEBUG: Log what we have
-    console.log('Current branch:', currentBranch);
-    console.log('All branches:', allBranches);
-    console.log('Current value:', currentValue);
-
     // Clear existing options
     branchSelect.innerHTML = '';
 
-    // Add default branches
+    // Add fixed branches only
     const smOption = document.createElement('option');
     smOption.value = 'sm-north';
     smOption.textContent = 'SM North';
@@ -502,102 +687,38 @@ function updateBranchDropdown() {
     podiumOption.textContent = 'Podium';
     branchSelect.appendChild(podiumOption);
 
-    // Add branches from Firebase
-    console.log('Adding all branches:', allBranches);
-    if (allBranches && allBranches.length > 0) {
-        allBranches
-            .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
-            .forEach(branch => {
-                const option = document.createElement('option');
-                option.value = branch.key;
-                option.textContent = branch.key.startsWith('popup-') ? `[Pop-up] ${branch.name}` : branch.name;
-                branchSelect.appendChild(option);
-                console.log('Added branch option:', branch.key, branch.name);
-            });
-    }
-
-    // Add "New Pop-Up" option
-    const newOption = document.createElement('option');
-    newOption.value = 'new-popup';
-    newOption.textContent = '+ New Pop-Up';
-    branchSelect.appendChild(newOption);
-
     // Set the current branch value
     branchSelect.value = currentBranch;
 
-    // If the current branch isn't found in the dropdown, add it manually
+    // If the current branch isn't found in the dropdown, add it manually (edge case)
     if (branchSelect.value !== currentBranch) {
-        console.log('Current branch not found in dropdown:', currentBranch);
-        console.log('Available options:', Array.from(branchSelect.options).map(o => o.value));
-
-        // Force add the current branch if it's missing
         const option = document.createElement('option');
         option.value = currentBranch;
         option.textContent = getBranchDisplayName(currentBranch);
-        branchSelect.insertBefore(option, newOption);
+        branchSelect.appendChild(option);
         branchSelect.value = currentBranch;
-        console.log('Force added missing branch:', currentBranch);
     }
 }
 
 function openAddPopupModal() {
-    document.getElementById('addPopupModalOverlay').classList.add('show');
-    document.getElementById('newPopupName').focus();
+    const overlay = document.getElementById('addPopupModalOverlay');
+    if (overlay) {
+        overlay.classList.add('show');
+        const input = document.getElementById('newPopupName');
+        if (input) input.focus();
+    }
 }
 
 function closeAddPopupModal() {
-    document.getElementById('addPopupModalOverlay').classList.remove('show');
-    document.getElementById('newPopupName').value = '';
+    const overlay = document.getElementById('addPopupModalOverlay');
+    if (overlay) overlay.classList.remove('show');
+    const input = document.getElementById('newPopupName');
+    if (input) input.value = '';
 }
 
 async function handleAddPopup() {
-    const popupName = document.getElementById('newPopupName').value.trim();
-    if (!popupName) return;
-
-    // Create unique key
-    const popupKey = 'popup-' + popupName.toLowerCase().replace(/[^a-z0-9]/g, '-');
-
-    // Check if already exists
-    if (allBranches.find(b => b.key === popupKey)) {
-        showSyncIndicator('Pop-up already exists', 'error');
-        return;
-    }
-
-    try {
-        showSyncIndicator('Creating pop-up...', 'info');
-
-        // Save to Firebase
-        const branchData = {
-            key: popupKey,
-            name: popupName,
-            type: 'popup',
-            createdAt: new Date().toISOString(),
-            createdBy: 'inventory-app', // You can change this to user ID if you have auth
-            status: 'active'
-        };
-
-        const newBranch = await saveBranchToFirebase(branchData);
-        allBranches.push(newBranch);
-        localStorage.setItem('branches-cache', JSON.stringify(allBranches));
-
-        // Update dropdown
-        updateBranchDropdown();
-
-        // Switch to new popup
-        document.getElementById('branchSelect').value = popupKey;
-        currentBranch = popupKey;
-        localStorage.setItem('selected-branch', currentBranch);
-
-        // Load empty inventory for new branch
-        loadBranchInventory();
-
-        closeAddPopupModal();
-        showSyncIndicator(`${popupName} pop-up created`, 'success');
-
-    } catch (error) {
-        console.error('Error creating popup:', error);
-        showSyncIndicator('Failed to create pop-up', 'error');
-    }
+    // Disabled path for now
+    showSyncIndicator('Pop-ups are disabled in this version', 'info');
 }
 
 function loadBranchInventory() {
@@ -606,36 +727,76 @@ function loadBranchInventory() {
 }
 
 async function syncWithFirebase() {
-    if (!isOnline) return;
+    if (!isOnline) {
+        console.log('📴 Offline - skipping Firebase sync');
+        return;
+    }
 
     try {
-        showSyncIndicator('Loading inventory...', 'info');
+        console.log('🔄 Starting Firebase sync (background operation)...');
+        showSyncIndicator('Syncing with server...', 'info');
 
         // Query items for current branch only
-        const q = query(
-            collection(db, 'inventory-items'),
-            where('branch', '==', currentBranch)
-        );
-
-        const snapshot = await getDocs(q);
+        const snapshot = await getDocs(collection(db, 'inventory', '_config', 'items'));
         const firebaseItems = [];
         snapshot.forEach(doc => {
-            firebaseItems.push({ id: doc.id, ...doc.data() });
+            const data = doc.data();
+            // Filter by enabledBranches
+            // If enabledBranches field doesn't exist (legacy), include the item
+            // If enabledBranches is empty array [], exclude the item (disabled for all)
+            // If enabledBranches has values, check if current branch is included
+            const enabled = data.enabledBranches === undefined
+              ? true  // Legacy items without enabledBranches field
+              : data.enabledBranches.includes(currentBranch);  // Check if branch is in array
+            if (!enabled) return;
+
+            firebaseItems.push({ 
+                id: doc.id, 
+                ...data,
+                // Ensure description is available as subtitle for backward compatibility
+                subtitle: data.subtitle || data.description || '',
+                // categoryOrder removed; use categories mapping during render
+                order: data.order || data.displayOrder || 0,
+                // Migrate defaultRestockLevel to restockAmount for consistency
+                restockAmount: data.restockAmount || data.defaultRestockLevel || 0
+            });
+            
         });
 
-        inventoryItems = firebaseItems;
-        localStorage.setItem(`${STORAGE_KEYS.INVENTORY}-${currentBranch}`, JSON.stringify(inventoryItems));
+        // Check if data has actually changed before updating
+        const currentItemsJson = JSON.stringify(inventoryItems.map(item => ({ id: item.id, name: item.name, category: item.category })));
+        const freshItemsJson = JSON.stringify(firebaseItems.map(item => ({ id: item.id, name: item.name, category: item.category })));
+        
+        if (currentItemsJson !== freshItemsJson) {
+            console.log('🔄 Firebase data has changed, updating inventory');
+            inventoryItems = firebaseItems;
+            
+            // Cache the fresh data
+            cacheInventoryItems(inventoryItems);
+            
+            console.log('✅ Updated inventory items:', inventoryItems.map(item => ({ 
+              name: item.name, 
+              category: item.category, 
+              categoryOrder: item.categoryOrder, 
+              order: item.order 
+            })));
+            
 
-        renderInventory();
+            renderInventory();
+            showSyncIndicator(`Updated ${firebaseItems.length} items`, 'success');
+        } else {
+            console.log('✅ Firebase data is up to date');
+            showSyncIndicator('Data is up to date', 'success');
+        }
+        
         await loadQuantitiesFromFirebase();
-        showSyncIndicator(`Loaded ${firebaseItems.length} items`, 'success');
 
     } catch (error) {
-        console.error('Sync error:', error);
-        showSyncIndicator(`Failed to load: ${error.message}`, 'error');
+        console.error('❌ Firebase sync error:', error);
+        showSyncIndicator(`Sync failed: ${error.message}`, 'error');
 
-        // Try to load from local storage as fallback
-        loadLocalData();
+        // Don't call loadLocalData() here as it would interfere with the current display
+        // The local data should already be loaded and displayed
     }
 }
 
@@ -649,42 +810,51 @@ async function loadQuantitiesFromFirebase() {
         }
 
         const dateKey = getDateKey();
-        const q = query(
-            collection(db, 'inventory-quantities'),
-            where('branch', '==', currentBranch),
-            where('date', '==', dateKey)
-        );
-
-        const snapshot = await getDocs(q);
+        
+        // Get daily document from branch subcollection
+        const docRef = doc(db, 'inventory-quantities', currentBranch, 'daily-quantities', dateKey);
+        const docSnap = await getDoc(docRef);
 
         // Get current quantities to merge with
         const currentQuantities = getCurrentDateQuantities();
 
-        snapshot.forEach(docSnapshot => {
-            const data = docSnapshot.data();
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            const firebaseQuantities = data.quantities || {};
 
-            // Initialize item if it doesn't exist
-            if (!currentQuantities[data.itemId]) {
-                currentQuantities[data.itemId] = {
-                    opening: { value: 0, checked: false },
-                    closing: { value: 0, checked: false }
-                };
-            }
+            // Merge Firebase quantities with current quantities
+            Object.keys(firebaseQuantities).forEach(itemId => {
+                // Initialize item if it doesn't exist
+                if (!currentQuantities[itemId]) {
+                    currentQuantities[itemId] = {
+                        opening: { value: 0, checked: false },
+                        closing: { value: 0, checked: false },
+                        added: { value: 0, checked: false }
+                    };
+                }
 
-            // Update the specific mode
-            currentQuantities[data.itemId][data.mode] = {
-                value: data.value,
-                checked: true,
-                timestamp: data.timestamp
-            };
-        });
+                // Ensure added field exists
+                if (!currentQuantities[itemId].added) {
+                    currentQuantities[itemId].added = { value: 0, checked: false };
+                }
+
+                // Update from Firebase data
+                if (firebaseQuantities[itemId].opening) {
+                    currentQuantities[itemId].opening = firebaseQuantities[itemId].opening;
+                }
+                if (firebaseQuantities[itemId].closing) {
+                    currentQuantities[itemId].closing = firebaseQuantities[itemId].closing;
+                }
+                if (firebaseQuantities[itemId].added) {
+                    currentQuantities[itemId].added = firebaseQuantities[itemId].added;
+                }
+            });
+
+            showSyncIndicator(`Synced quantities for ${dateKey}`, 'info');
+        }
 
         saveQuantitiesToLocal();
         renderInventory();
-
-        if (snapshot.size > 0) {
-            showSyncIndicator(`Synced ${snapshot.size} quantities`, 'info');
-        }
 
     } catch (error) {
         console.error('Error loading quantities from Firebase:', error);
@@ -695,10 +865,10 @@ async function loadQuantitiesFromFirebase() {
 async function debugBranchAccess() {
     console.log('Current branch:', currentBranch);
     console.log('All branches:', allBranches);
-    console.log('Collection name:', 'inventory-items');
+    console.log('Collection name:', 'inventory/_config/items');
 
     try {
-        const testCollection = collection(db, 'inventory-items');
+        const testCollection = collection(db, 'inventory', '_config', 'items');
         const testSnapshot = await getDocs(testCollection);
         console.log('Collection access test successful, docs:', testSnapshot.size);
     } catch (error) {
@@ -764,21 +934,76 @@ function cancelModeSwitch() {
 }
 
 function loadLocalData() {
-    // Load inventory items for current branch
-    const savedItems = localStorage.getItem(`${STORAGE_KEYS.INVENTORY}-${currentBranch}`);
-    if (savedItems) {
-        inventoryItems = JSON.parse(savedItems);
+    // Load category orders from cache first for proper ordering
+    const cachedCategoryOrders = loadCategoryOrdersFromCache();
+    if (cachedCategoryOrders) {
+        categoryOrderMap = cachedCategoryOrders;
+        console.log('Loading cached category orders instantly');
+    } else {
+        // Use fallback default ordering if no cache
+        categoryOrderMap = {
+            'Base Ingredients': 0,
+            'Packaging & Consumables': 1,
+            'Liquid Ingredients': 2,
+            'Dry Ingredients': 3,
+            'Desserts': 4
+        };
+        console.log('Using fallback category order');
+    }
+
+    // Try to load from cache first for instant display
+    const cachedItems = loadInventoryItemsFromCache();
+    if (cachedItems && Array.isArray(cachedItems)) {
+        console.log('Loading cached inventory items instantly');
+        inventoryItems = cachedItems;
+        
+        // Render inventory immediately with proper category ordering
+        renderInventory();
+        
+        // Then sync with Firebase in background
+        syncInventoryItemsFromFirebaseInBackground();
+    } else {
+        // No cache available, load from localStorage as fallback
+        const savedItems = localStorage.getItem(`${STORAGE_KEYS.INVENTORY}-${currentBranch}`);
+        if (savedItems) {
+            try {
+                const parsedItems = JSON.parse(savedItems);
+                // Ensure parsedItems is an array
+                if (Array.isArray(parsedItems)) {
+                    // Ensure categoryOrder is preserved
+                    inventoryItems = parsedItems.map(item => ({
+                        ...item,
+                        categoryOrder: item.categoryOrder || 0,
+                        order: item.order || item.displayOrder || 0
+                    }));
+                } else {
+                    console.warn('Invalid inventory items format in localStorage, initializing empty array');
+                    inventoryItems = [];
+                }
+            } catch (error) {
+                console.error('Error parsing inventory items from localStorage:', error);
+                inventoryItems = [];
+            }
+        } else {
+            // No data at all, initialize empty array
+            inventoryItems = [];
+        }
+
+        // Render with local data first
+        renderInventory();
     }
 
     // Load quantities for current branch
     const savedQuantities = localStorage.getItem(`${STORAGE_KEYS.QUANTITIES}-${currentBranch}`);
     if (savedQuantities) {
-        quantities = JSON.parse(savedQuantities);
-        migrateQuantityData();
+        try {
+            quantities = JSON.parse(savedQuantities);
+            migrateQuantityData();
+        } catch (error) {
+            console.error('Error parsing quantities from localStorage:', error);
+            quantities = {};
+        }
     }
-
-    // Render with local data first
-    renderInventory();
 }
 
 async function syncWithFirebaseBranch(collectionName) {
@@ -804,6 +1029,12 @@ function arraysEqual(a, b) {
 function renderInventory() {
     const inventoryList = document.querySelector('.inventory-list');
 
+    // Ensure inventoryItems is always an array
+    if (!Array.isArray(inventoryItems)) {
+        console.warn('inventoryItems is not an array, initializing empty array');
+        inventoryItems = [];
+    }
+
     if (inventoryItems.length === 0) {
         inventoryList.innerHTML = `
             <div style="text-align: center; padding: 40px 20px; color: #888;">
@@ -824,11 +1055,11 @@ function renderInventory() {
         return groups;
     }, {});
 
-    // Sort categories by the minimum order of items within each category
+    // Sort categories using categoryOrderMap (from categories collection)
     const sortedCategories = Object.keys(itemsByCategory).sort((a, b) => {
-        const minOrderA = Math.min(...itemsByCategory[a].map(item => item.order || 0));
-        const minOrderB = Math.min(...itemsByCategory[b].map(item => item.order || 0));
-        return minOrderA - minOrderB;
+        const orderA = (categoryOrderMap && typeof categoryOrderMap[a] === 'number') ? categoryOrderMap[a] : 999;
+        const orderB = (categoryOrderMap && typeof categoryOrderMap[b] === 'number') ? categoryOrderMap[b] : 999;
+        return orderA - orderB;
     });
 
     inventoryList.innerHTML = sortedCategories.map(category => {
@@ -841,7 +1072,8 @@ function renderInventory() {
             const dateQuantities = getCurrentDateQuantities();
             const itemQuantities = dateQuantities[item.id] || {
                 opening: { value: 0, checked: false },
-                closing: { value: 0, checked: false }
+                closing: { value: 0, checked: false },
+                added: { value: 0, checked: false }
             };
 
             let displayValue, isGreyedOut;
@@ -860,8 +1092,10 @@ function renderInventory() {
                     displayValue = itemQuantities.closing.value;
                     isGreyedOut = false;
                 } else {
-                    // Show current day's opening value
-                    displayValue = itemQuantities.opening?.value || 0;
+                    // Show current day's opening + added value as suggestion
+                    const openingValue = itemQuantities.opening?.value || 0;
+                    const addedValue = itemQuantities.added?.value || 0;
+                    displayValue = openingValue + addedValue;
                     isGreyedOut = true;
                 }
             }
@@ -875,11 +1109,11 @@ function renderInventory() {
                 <div class="item-image">${imageHtml}</div>
                 <div class="item-info">
                     <div class="item-name">${item.name}</div>
-                    <div class="item-subtitle">${item.subtitle || ''}</div>
+                    <div class="item-subtitle">${item.subtitle || item.description || ''}</div>
                 </div>
                 <div class="item-controls">
                     <div class="quantity-display">
-                        <span class="quantity-number ${isGreyedOut ? 'greyed-out' : ''}" data-item="${item.id}">${displayValue}</span>
+                        <span class="quantity-number ${isGreyedOut ? 'greyed-out' : ''}" data-item="${item.id}">${formatNumberWithCommas(displayValue)}</span>
                         <span class="quantity-unit">${item.unit}</span>
                     </div>
                     <div class="control-buttons">
@@ -1023,19 +1257,37 @@ async function syncQuantityToFirebase(itemId, mode) {
         // Only sync if it's been checked (user has set a value)
         if (!quantityData.checked) return;
 
-        const docId = `${currentBranch}-${dateKey}-${itemId}`;
-        const quantityDoc = {
+        // Get daily document from branch subcollection
+        const docRef = doc(db, 'inventory-quantities', currentBranch, 'daily-quantities', dateKey);
+        
+        // Get current document or create new structure
+        const docSnap = await getDoc(docRef);
+        const currentData = docSnap.exists() ? docSnap.data() : {
             branch: currentBranch,
             date: dateKey,
-            itemId: itemId,
-            mode: mode,
-            value: quantityData.value,
-            timestamp: new Date().toISOString(),
+            quantities: {},
             lastUpdated: new Date().toISOString()
         };
 
-        // Use set with merge to update or create
-        await setDoc(doc(db, 'inventory-quantities', docId), quantityDoc, { merge: true });
+        // Update the specific item/mode
+        if (!currentData.quantities[itemId]) {
+        currentData.quantities[itemId] = {
+            opening: { value: 0, checked: false },
+            closing: { value: 0, checked: false },
+            added: { value: 0, checked: false }
+        };
+        }
+
+        currentData.quantities[itemId][mode] = {
+            value: quantityData.value,
+            checked: quantityData.checked,
+            timestamp: new Date().toISOString()
+        };
+
+        currentData.lastUpdated = new Date().toISOString();
+
+        // Save the updated daily document
+        await setDoc(docRef, currentData);
 
     } catch (error) {
         console.error('Error syncing quantity:', error);
@@ -1059,7 +1311,7 @@ async function handleAddItem(e) {
         subtitle: document.getElementById('itemSubtitle').value.trim(),
         unit: document.getElementById('itemUnit').value,
         category: selectedCategory,
-        restock_amount: parseInt(document.getElementById('restockAmount').value) || 0,
+        restockAmount: parseInt(document.getElementById('restockAmount').value) || 0,
         branch: currentBranch  // Add this line
     };
 
@@ -1086,7 +1338,7 @@ async function handleAddItem(e) {
         itemData.createdAt = new Date().toISOString();
     }
 
-    const collectionName = 'inventory-items';
+    const collectionName = 'inventory/_config/items';
 
     try {
         if (editingItemId) {
@@ -1095,7 +1347,7 @@ async function handleAddItem(e) {
 
             try {
                 // Update in Firebase
-                const itemDoc = doc(db, 'inventory-items', editingItemId);
+                const itemDoc = doc(db, 'inventory', '_config', 'items', editingItemId);
                 await updateDoc(itemDoc, itemData);
 
                 // Update local array
@@ -1117,7 +1369,7 @@ async function handleAddItem(e) {
             // Adding new item
             showSyncIndicator('Adding item...', 'info');
 
-            const docRef = await addDoc(collection(db, 'inventory-items'), itemData);
+            const docRef = await addDoc(collection(db, 'inventory', '_config', 'items'), itemData);
             const newItem = { id: docRef.id, ...itemData };
             inventoryItems.push(newItem);
 
@@ -1147,7 +1399,8 @@ function adjustQuantity(itemId, delta) {
     if (!dateQuantities[itemId]) {
         dateQuantities[itemId] = {
             opening: { value: 0, checked: false },
-            closing: { value: 0, checked: false }
+            closing: { value: 0, checked: false },
+            added: { value: 0, checked: false }
         };
     }
 
@@ -1159,7 +1412,10 @@ function adjustQuantity(itemId, delta) {
             const prevDay = getPreviousDayQuantities();
             currentData.value = prevDay[itemId]?.closing?.value || 0;
         } else {
-            currentData.value = dateQuantities[itemId].opening?.value || 0;
+            // For closing mode, suggest opening + added amounts
+            const openingValue = dateQuantities[itemId].opening?.value || 0;
+            const addedValue = dateQuantities[itemId].added?.value || 0;
+            currentData.value = openingValue + addedValue;
         }
         currentData.checked = true;
     }
@@ -1169,7 +1425,7 @@ function adjustQuantity(itemId, delta) {
 
     const quantityElement = document.querySelector(`[data-item="${itemId}"].quantity-number`);
     if (quantityElement) {
-        quantityElement.textContent = currentData.value;
+        quantityElement.textContent = formatNumberWithCommas(currentData.value);
         quantityElement.classList.remove('greyed-out');
         animateQuantityChange(quantityElement);
     }
@@ -1186,6 +1442,7 @@ function animateQuantityChange(element) {
         element.style.transform = 'scale(1)';
     }, 100);
 }
+
 
 function getHoldIncrementAmount(currentValue) {
     if (currentValue < 10) return 1;
@@ -1243,13 +1500,14 @@ function handleTouchStart(event) {
 }
 
 function handleQuantityEdit(event) {
-    if (event.target.classList.contains('quantity-number')) {
+    if (event.target.classList.contains('quantity-number') && !event.target.closest('.stock-item-card')) {
         const span = event.target;
         const input = document.createElement('input');
         input.type = 'tel';
-        input.inputMode = 'numeric';
-        input.pattern = '[0-9]*';
-        input.value = span.textContent;
+        input.inputMode = 'decimal';
+        input.pattern = '-?[0-9]*\\.?[0-9]*';
+        // Remove commas for editing (show raw number)
+        input.value = span.textContent.replace(/,/g, '');
         input.className = 'quantity-input-edit';
 
         span.replaceWith(input);
@@ -1266,7 +1524,7 @@ function handleQuantityEdit(event) {
             const newSpan = document.createElement('span');
             newSpan.className = 'quantity-number';
             newSpan.setAttribute('data-item', span.getAttribute('data-item'));
-            newSpan.textContent = input.value;
+            newSpan.textContent = formatNumberWithCommas(parseInt(input.value) || 0);
             input.replaceWith(newSpan);
 
             const itemId = newSpan.getAttribute('data-item');
@@ -1314,18 +1572,24 @@ function openModal() {
     // Update category dropdown with current categories
     updateCategoryDropdown();
 
-    document.getElementById('modalOverlay').classList.add('show');
-    document.getElementById('itemName').focus();
+    const modalOverlay = document.getElementById('modalOverlay');
+    if (modalOverlay) modalOverlay.classList.add('show');
+    const itemNameInput = document.getElementById('itemName');
+    if (itemNameInput) itemNameInput.focus();
 }
 
 function closeModal() {
-    document.getElementById('modalOverlay').classList.remove('show');
-    document.getElementById('addItemForm').reset();
+    const modalOverlay = document.getElementById('modalOverlay');
+    if (modalOverlay) modalOverlay.classList.remove('show');
+    const addItemForm = document.getElementById('addItemForm');
+    if (addItemForm) addItemForm.reset();
 
     // Reset edit state
     editingItemId = null;
-    document.querySelector('#modalOverlay .modal-header h3').textContent = 'Add New Item';
-    document.querySelector('#modalOverlay .btn-add').textContent = 'Add Item';
+    const modalHeader = document.querySelector('#modalOverlay .modal-header h3');
+    if (modalHeader) modalHeader.textContent = 'Add New Item';
+    const addItemBtn = document.querySelector('#modalOverlay .btn-add');
+    if (addItemBtn) addItemBtn.textContent = 'Add Item';
 
     // Reset photo preview
     handlePhotoRemove();
@@ -1373,7 +1637,7 @@ async function addSampleData() {
 
     for (const item of sampleItems) {
         try {
-            await addDoc(collection(db, "inventory-items"), {
+            await addDoc(collection(db, "inventory", "_config", "items"), {
                 ...item,
                 branch: currentBranch,  // Add this line
                 createdAt: new Date().toISOString()
@@ -1415,7 +1679,7 @@ function initializeDatePicker() {
     updateDateDisplay();
 
     // Previous date button
-    prevBtn.addEventListener('click', () => {
+    if (prevBtn) prevBtn.addEventListener('click', () => {
         currentDate.setDate(currentDate.getDate() - 1);
         updateDateDisplay();
         
@@ -1424,7 +1688,7 @@ function initializeDatePicker() {
     });
 
     // Next date button
-    nextBtn.addEventListener('click', () => {
+    if (nextBtn) nextBtn.addEventListener('click', () => {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
@@ -1439,7 +1703,7 @@ function initializeDatePicker() {
     });
 
     // Click on date to open calendar picker
-    dateDisplay.addEventListener('click', () => {
+    if (dateDisplay) dateDisplay.addEventListener('click', () => {
         openDateModal();
     });
 }
@@ -1483,13 +1747,13 @@ function openDateModal() {
         const month = viewDate.getMonth();
 
         // Update header
-        modalMonthYear.textContent = viewDate.toLocaleDateString('en-US', {
+        if (modalMonthYear) modalMonthYear.textContent = viewDate.toLocaleDateString('en-US', {
             month: 'long',
             year: 'numeric'
         });
 
         // Clear grid
-        dateGrid.innerHTML = '';
+        if (dateGrid) dateGrid.innerHTML = '';
 
         // Get first day of month and number of days
         const firstDay = new Date(year, month, 1);
@@ -1503,7 +1767,7 @@ function openDateModal() {
             cell.className = 'date-cell other-month';
             const prevMonthDay = new Date(year, month, 0 - (startingDayOfWeek - 1 - i));
             cell.textContent = prevMonthDay.getDate();
-            dateGrid.appendChild(cell);
+            if (dateGrid) dateGrid.appendChild(cell);
         }
 
         // Add days of current month
@@ -1539,38 +1803,45 @@ function openDateModal() {
                 });
             }
 
-            dateGrid.appendChild(cell);
+            if (dateGrid) dateGrid.appendChild(cell);
         }
     }
 
     function closeModal() {
-        modal.classList.remove('show');
+        const modal = document.getElementById('dateModalOverlay');
+        if (modal) modal.classList.remove('show');
     }
 
     // Modal controls
-    document.getElementById('modalPrevMonth').onclick = () => {
+    const modalPrevMonth = document.getElementById('modalPrevMonth');
+    const modalNextMonth = document.getElementById('modalNextMonth');
+    const dateCancelBtn = document.getElementById('dateCancelBtn');
+    const todayBtn = document.getElementById('todayBtn');
+
+    if (modalPrevMonth) modalPrevMonth.onclick = () => {
         viewDate.setMonth(viewDate.getMonth() - 1);
         renderCalendar();
     };
 
-    document.getElementById('modalNextMonth').onclick = () => {
+    if (modalNextMonth) modalNextMonth.onclick = () => {
         viewDate.setMonth(viewDate.getMonth() + 1);
         renderCalendar();
     };
 
-    document.getElementById('dateCancelBtn').onclick = closeModal;
-    document.getElementById('todayBtn').onclick = () => {
+    if (dateCancelBtn) dateCancelBtn.onclick = closeModal;
+    if (todayBtn) todayBtn.onclick = () => {
         currentDate = new Date();
         updateDateDisplay();
         closeModal();
     };
 
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) closeModal();
+    const modalOverlay = document.getElementById('dateModalOverlay');
+    if (modalOverlay) modalOverlay.addEventListener('click', (e) => {
+        if (e.target === modalOverlay) closeModal();
     });
 
     // Show modal and render calendar
-    modal.classList.add('show');
+    if (modal) modal.classList.add('show');
     renderCalendar();
 }
 
@@ -1587,7 +1858,8 @@ function getCurrentDateQuantities() {
         inventoryItems.forEach(item => {
             quantities[dateKey][item.id] = {
                 opening: { value: 0, checked: false },
-                closing: { value: 0, checked: false }
+                closing: { value: 0, checked: false },
+                added: { value: 0, checked: false }
             };
         });
     } else {
@@ -1604,7 +1876,8 @@ function getCurrentDateQuantities() {
                 if (typeof itemData.opening === 'number') {
                     quantities[dateKey][item.id] = {
                         opening: { value: itemData.opening, checked: true },
-                        closing: { value: itemData.closing, checked: true }
+                        closing: { value: itemData.closing, checked: true },
+                        added: { value: itemData.added || 0, checked: false }
                     };
                 }
             }
@@ -1621,7 +1894,8 @@ function loadQuantitiesForDate(date) {
         inventoryItems.forEach(item => {
             quantities[dateKey][item.id] = {
                 opening: { value: 0, checked: false },
-                closing: { value: 0, checked: false }
+                closing: { value: 0, checked: false },
+                added: { value: 0, checked: false }
             };
         });
     }
@@ -1659,32 +1933,42 @@ async function syncModeCompletion(mode) {
         const dateKey = getDateKey();
         const timestamp = new Date().toISOString();
 
-        // Get all items that have been checked for this mode
-        const quantities = getCurrentDateQuantities();
-        const syncPromises = [];
+        // Get daily document from branch subcollection
+        const docRef = doc(db, 'inventory-quantities', currentBranch, 'daily-quantities', dateKey);
+        
+        // Get current document or create new structure
+        const docSnap = await getDoc(docRef);
+        const currentData = docSnap.exists() ? docSnap.data() : {
+            branch: currentBranch,
+            date: dateKey,
+            quantities: {},
+            lastUpdated: timestamp
+        };
 
-        Object.keys(quantities).forEach(itemId => {
-            const quantityData = quantities[itemId][mode];
+        // Update all quantities for this mode
+        const dateQuantities = getCurrentDateQuantities();
+        Object.keys(dateQuantities).forEach(itemId => {
+            const quantityData = dateQuantities[itemId][mode];
             if (quantityData.checked) {
-                const docId = `${currentBranch}-${dateKey}-${itemId}`;
-                const quantityDoc = {
-                    branch: currentBranch,
-                    date: dateKey,
-                    itemId: itemId,
-                    mode: mode,
-                    value: quantityData.value,
-                    timestamp: timestamp,
-                    lastUpdated: timestamp,
-                    submittedAt: timestamp
-                };
+                if (!currentData.quantities[itemId]) {
+        currentData.quantities[itemId] = {
+            opening: { value: 0, checked: false },
+            closing: { value: 0, checked: false },
+            added: { value: 0, checked: false }
+        };
+                }
 
-                syncPromises.push(
-                    setDoc(doc(db, 'inventory-quantities', docId), quantityDoc, { merge: true })
-                );
+                currentData.quantities[itemId][mode] = {
+                    value: quantityData.value,
+                    checked: true,
+                    timestamp: timestamp
+                };
             }
         });
 
-        await Promise.all(syncPromises);
+        currentData.lastUpdated = timestamp;
+        await setDoc(docRef, currentData);
+
         showSyncIndicator(`${mode} inventory submitted`, 'success');
 
     } catch (error) {
@@ -1728,7 +2012,8 @@ function initializeAdminFeatures() {
 
     if (window.innerWidth < 768) return;
 
-    document.addEventListener('click', handleItemEdit);
+    // Disabled for user app - item editing should only be in admin.html
+    // document.addEventListener('click', handleItemEdit);
 
     const exportBtn = document.getElementById('exportBtn');
     const importBtn = document.getElementById('importBtn');
@@ -1747,17 +2032,19 @@ function initializeAdminFeatures() {
     if (jsonFileInput) {
         jsonFileInput.addEventListener('change', handleJSONImport);
     }
+
+
 }
 
 function exportInventoryToJSON() {
     try {
-        // Create export data with restock_amount instead of order fields
+        // Create export data with restockAmount instead of order fields
         const exportData = inventoryItems.map(item => ({
             name: item.name,
-            subtitle: item.subtitle || '',
+            subtitle: item.subtitle || item.description || '',
             unit: item.unit,
             category: item.category || 'Other',
-            restock_amount: item.restock_amount || 0
+            restockAmount: item.restockAmount || 0
         }));
 
         // Create and download file
@@ -1806,16 +2093,16 @@ async function handleJSONImport(event) {
             return;
         }
 
-        const collectionName = 'inventory-items';
+        const collectionName = 'inventory/_config/items';
 
         // Delete all existing items from Firebase for this branch
         const deleteQuery = query(
-            collection(db, 'inventory-items'),
+            collection(db, 'inventory', '_config', 'items'),
             where('branch', '==', currentBranch)
         );
         const deleteSnapshot = await getDocs(deleteQuery);
         const deletePromises = deleteSnapshot.docs.map(async (docSnapshot) => {
-            return deleteDoc(doc(db, 'inventory-items', docSnapshot.id));
+            return deleteDoc(doc(db, 'inventory', '_config', 'items', docSnapshot.id));
         });
         await Promise.all(deletePromises);
 
@@ -1826,7 +2113,7 @@ async function handleJSONImport(event) {
                 subtitle: (item.subtitle || '').trim(),
                 unit: item.unit,
                 category: item.category || 'Other',
-                restock_amount: item.restock_amount || 0,
+                restockAmount: item.restockAmount || 0,
                 order: index,
                 branch: currentBranch,  // Add this line
                 createdAt: new Date().toISOString()
@@ -1866,33 +2153,41 @@ function openEditModal(item) {
     editingItemId = item.id;
 
     // Populate form with existing data
-    document.getElementById('itemName').value = item.name;
-    document.getElementById('itemSubtitle').value = item.subtitle || '';
-    document.getElementById('itemUnit').value = item.unit;
-    document.getElementById('initialQuantity').value = 0;
+    const itemNameInput = document.getElementById('itemName');
+    const itemSubtitleInput = document.getElementById('itemSubtitle');
+    const itemUnitInput = document.getElementById('itemUnit');
+    const initialQuantityInput = document.getElementById('initialQuantity');
+
+    if (itemNameInput) itemNameInput.value = item.name;
+    if (itemSubtitleInput) itemSubtitleInput.value = item.subtitle || '';
+    if (itemUnitInput) itemUnitInput.value = item.unit;
+    if (initialQuantityInput) initialQuantityInput.value = 0;
 
     // Update category dropdown with current categories
     updateCategoryDropdown();
 
     // Set the selected value
-    document.getElementById('itemCategory').value = item.category;
+    const itemCategorySelect = document.getElementById('itemCategory');
+    if (itemCategorySelect) itemCategorySelect.value = item.category;
 
     // Change modal title
-    document.querySelector('#modalOverlay .modal-header h3').textContent = 'Edit Item';
-    document.querySelector('#modalOverlay .btn-add').textContent = 'Save Changes';
+    const modalHeader = document.querySelector('#modalOverlay .modal-header h3');
+    if (modalHeader) modalHeader.textContent = 'Edit Item';
+    const addItemBtn = document.querySelector('#modalOverlay .btn-add');
+    if (addItemBtn) addItemBtn.textContent = 'Save Changes';
 
-    document.getElementById('modalOverlay').classList.add('show');
-    document.getElementById('itemName').focus();
-    document.getElementById('restockAmount').value = item.restock_amount || 0;
+    const modalOverlay = document.getElementById('modalOverlay');
+    if (modalOverlay) modalOverlay.classList.add('show');
+    const itemNameInputEdit = document.getElementById('itemName');
+    if (itemNameInputEdit) itemNameInputEdit.focus();
+    const restockAmountInput = document.getElementById('restockAmount');
+    if (restockAmountInput) restockAmountInput.value = item.restockAmount || 0;
 
     // Handle existing photo
-    if (item.photo) {
-        document.getElementById('previewImage').src = item.photo;
-        document.getElementById('photoPreview').style.display = 'block';
-    } else {
-        document.getElementById('photoPreview').style.display = 'none';
-        document.getElementById('previewImage').src = '';
-    }
+    const previewImage = document.getElementById('previewImage');
+    const photoPreview = document.getElementById('photoPreview');
+    if (previewImage) previewImage.src = item.photo || '';
+    if (photoPreview) photoPreview.style.display = item.photo ? 'block' : 'none';
 }
 
 function handleCategoryEdit(e) {
@@ -1977,11 +2272,22 @@ async function updateCategoryName(oldName, newName) {
 
         for (const item of itemsToUpdate) {
             item.category = newName;
-
-            // Update in Firebase
-            const itemRef = doc(db, "inventory-items", item.id);
+            const itemRef = doc(db, "inventory", "_config", "items", item.id);
             await updateDoc(itemRef, { category: newName });
         }
+
+        // Also rename category doc and preserve order
+        const oldId = oldName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+        const newId = newName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+        const existing = categoryOrderMap[oldName];
+        await setDoc(doc(db, 'inventory', '_config', 'categories', newId), { name: newName, order: (typeof existing === 'number' ? existing : 999) });
+        // Optionally delete old doc
+        try { await deleteDoc(doc(db, 'inventory', '_config', 'categories', oldId)); } catch {}
+        delete categoryOrderMap[oldName];
+        categoryOrderMap[newName] = (typeof existing === 'number' ? existing : 999);
+
+        // Cache the updated category order mapping
+        cacheCategoryOrders(categoryOrderMap);
 
         saveItemsToLocal();
         showSyncIndicator('Category updated', 'success');
@@ -1993,36 +2299,32 @@ async function updateCategoryName(oldName, newName) {
 }
 
 async function saveCategoryOrder() {
-    // Update category order based on DOM order
+        // Update category order based on DOM order (store locally only; items no longer store categoryOrder)
     const categoryElements = document.querySelectorAll('.category-section');
     let categoryOrder = 0;
 
     for (const categoryElement of categoryElements) {
         const categoryName = categoryElement.getAttribute('data-category');
-        const itemsInCategory = inventoryItems.filter(item => item.category === categoryName);
-
-        // Update order for all items in this category
-        itemsInCategory.forEach(item => {
-            item.categoryOrder = categoryOrder;
-        });
+            // Update mapping instead of per-item field
+            categoryOrderMap[categoryName] = categoryOrder;
 
         categoryOrder++;
     }
+
+    // Cache the updated category order mapping immediately
+    cacheCategoryOrders(categoryOrderMap);
 
     saveItemsToLocal();
 
     try {
         showSyncIndicator('Saving category order...', 'info');
 
-        // Update Firebase
-        const updatePromises = inventoryItems.map(async (item) => {
-            const itemRef = doc(db, "inventory-items", item.id);
-            return updateDoc(itemRef, {
-                categoryOrder: item.categoryOrder || 0
-            });
+        // Persist category order mapping to categories collection
+        const promises = Object.entries(categoryOrderMap).map(async ([name, order]) => {
+            const id = name.toLowerCase().replace(/[^a-z0-9]/g, '-');
+            return setDoc(doc(db, 'inventory', '_config', 'categories', id), { name, order });
         });
-
-        await Promise.all(updatePromises);
+        await Promise.all(promises);
         showSyncIndicator('Category order saved', 'success');
 
     } catch (error) {
@@ -2039,7 +2341,7 @@ async function syncItemsWithFirebase() {
     // Sync updated items back to Firebase
     try {
         const updatePromises = inventoryItems.map(async (item) => {
-            const itemRef = doc(db, "inventory-items", item.id);
+            const itemRef = doc(db, "inventory", "_config", "items", item.id);
             return updateDoc(itemRef, {
                 category: item.category,
                 categoryOrder: item.categoryOrder || 0
@@ -2053,8 +2355,10 @@ async function syncItemsWithFirebase() {
 }
 
 function openAddCategoryModal() {
-    document.getElementById('addCategoryModalOverlay').classList.add('show');
-    document.getElementById('newCategoryName').focus();
+    const overlay = document.getElementById('addCategoryModalOverlay');
+    if (overlay) overlay.classList.add('show');
+    const input = document.getElementById('newCategoryName');
+    if (input) input.focus();
 }
 
 async function addNewCategory(categoryName) {
@@ -2076,7 +2380,7 @@ async function addNewCategory(categoryName) {
             createdAt: new Date().toISOString()
         };
 
-        const docRef = await addDoc(collection(db, "inventory-items"), newItem);
+        const docRef = await addDoc(collection(db, "inventory", "_config", "items"), newItem);
         const itemWithId = { id: docRef.id, ...newItem };
         inventoryItems.push(itemWithId);
 
@@ -2130,6 +2434,668 @@ function eraseDataForToday() {
     showSyncIndicator('Today\'s data erased', 'info');
 }
 
+// Debug functions for testing cache performance
+window.testCacheSpeed = function() {
+  const start = performance.now();
+  const cachedItems = loadInventoryItemsFromCache();
+  const end = performance.now();
+  
+  console.log(`⚡ Cache load time: ${(end - start).toFixed(2)}ms`);
+  console.log(`📦 Items loaded: ${cachedItems ? cachedItems.length : 0}`);
+  
+  return { time: end - start, itemsCount: cachedItems ? cachedItems.length : 0 };
+};
+
+window.clearInventoryCache = function() {
+  localStorage.removeItem(`${STORAGE_KEYS.INVENTORY}-${currentBranch}`);
+  console.log('🗑️ Inventory cache cleared');
+};
+
+window.forceInstantLoad = function() {
+  console.log('🚀 Force instant load...');
+  const start = performance.now();
+  
+  // Load cached data directly
+  const cachedItems = loadInventoryItemsFromCache();
+  
+  if (cachedItems) {
+    inventoryItems = cachedItems;
+    renderInventory();
+    
+    const end = performance.now();
+    console.log(`⚡ Force load completed in: ${(end - start).toFixed(2)}ms`);
+    showSyncIndicator('Force loaded from cache', 'success');
+  } else {
+    console.log('❌ No cached data available');
+  }
+};
+
+// New debug function to test the loading flow
+window.testLoadingFlow = function() {
+  console.log('🧪 Testing loading flow...');
+  console.log('Current branch:', currentBranch);
+  console.log('Is online:', isOnline);
+  console.log('Current inventory items count:', inventoryItems.length);
+  
+  // Test localStorage (this is the "cache")
+  const savedItems = localStorage.getItem(`${STORAGE_KEYS.INVENTORY}-${currentBranch}`);
+  console.log('localStorage test:', savedItems ? 'Data exists' : 'No data');
+  
+  // Test quantities
+  const savedQuantities = localStorage.getItem(`${STORAGE_KEYS.QUANTITIES}-${currentBranch}`);
+  console.log('Quantities test:', savedQuantities ? 'Data exists' : 'No data');
+  
+  // Test the cache function (which is just a wrapper around localStorage)
+  const cachedItems = loadInventoryItemsFromCache();
+  console.log('Cache function test:', cachedItems ? `${cachedItems.length} items` : 'No cache');
+  
+  return {
+    branch: currentBranch,
+    online: isOnline,
+    itemsCount: inventoryItems.length,
+    hasLocalStorage: !!savedItems,
+    hasQuantities: !!savedQuantities,
+    cacheFunctionWorks: !!cachedItems
+  };
+};
+
+// Add Stocks functionality
+let stockItems = [];
+
+function setupAddStocksEventListeners() {
+    // Plus button to open Add Stocks page
+    const addItemPlusBtn = document.getElementById('addItemPlusBtn');
+    if (addItemPlusBtn) {
+        addItemPlusBtn.addEventListener('click', openAddStocksPage);
+    }
+
+    // Hamburger button to open Running Low page
+    const hamburgerBtn = document.getElementById('hamburgerBtn');
+    if (hamburgerBtn) {
+        hamburgerBtn.addEventListener('click', openRunningLowPage);
+    }
+
+    // Back button to close Add Stocks page
+    const addStocksBackBtn = document.getElementById('addStocksBackBtn');
+    if (addStocksBackBtn) {
+        addStocksBackBtn.addEventListener('click', closeAddStocksPage);
+    }
+
+    // Back button to close Running Low page
+    const runningLowBackBtn = document.getElementById('runningLowBackBtn');
+    if (runningLowBackBtn) {
+        runningLowBackBtn.addEventListener('click', closeRunningLowPage);
+    }
+
+    // Add stock item button
+    const addStockItemBtn = document.getElementById('addStockItemBtn');
+    if (addStockItemBtn) {
+        addStockItemBtn.addEventListener('click', openItemSelectionModal);
+    }
+
+    // Save stocks button
+    const saveStocksBtn = document.getElementById('saveStocksBtn');
+    if (saveStocksBtn) {
+        saveStocksBtn.addEventListener('click', async () => {
+            await saveStockAdditions();
+            closeAddStocksPage();
+        });
+    }
+
+    // Item selection modal
+    const itemSelectionModalOverlay = document.getElementById('itemSelectionModalOverlay');
+    const itemSelectionModalClose = document.getElementById('itemSelectionModalClose');
+    
+    if (itemSelectionModalClose) {
+        itemSelectionModalClose.addEventListener('click', closeItemSelectionModal);
+    }
+    
+    if (itemSelectionModalOverlay) {
+        itemSelectionModalOverlay.addEventListener('click', (e) => {
+            if (e.target === itemSelectionModalOverlay) closeItemSelectionModal();
+        });
+    }
+
+    // Handle item selection
+    document.addEventListener('click', (e) => {
+        if (e.target.closest('.selection-item-card')) {
+            const card = e.target.closest('.selection-item-card');
+            const itemId = card.dataset.itemId;
+            if (itemId) {
+                addItemToStock(itemId);
+                closeItemSelectionModal();
+            }
+        }
+    });
+
+    // Handle stock quantity input changes
+    document.addEventListener('input', (e) => {
+        if (e.target.classList.contains('quantity-number') && e.target.dataset.itemId && e.target.closest('.stock-item-card')) {
+            const itemId = e.target.dataset.itemId;
+            const quantity = parseFloat(e.target.value) || 0;
+            updateStockQuantity(itemId, quantity);
+        }
+    });
+}
+
+async function openAddStocksPage() {
+    const addStocksPage = document.getElementById('addStocksPage');
+    if (addStocksPage) {
+        addStocksPage.classList.add('show');
+        
+        // Load latest data from Firebase before displaying
+        if (isOnline) {
+            showSyncIndicator('Loading latest data...', 'info');
+            await loadQuantitiesFromFirebase();
+        }
+        
+        loadExistingStockItems();
+    }
+}
+
+function loadExistingStockItems() {
+    const dateQuantities = getCurrentDateQuantities();
+    stockItems = [];
+    
+    // Load existing added quantities into stockItems (both positive and negative)
+    Object.keys(dateQuantities).forEach(itemId => {
+        const itemData = dateQuantities[itemId];
+        if (itemData.added && itemData.added.value !== 0 && itemData.added.checked) {
+            const inventoryItem = inventoryItems.find(item => item.id === itemId);
+            if (inventoryItem) {
+                stockItems.push({
+                    id: inventoryItem.id,
+                    name: inventoryItem.name,
+                    subtitle: inventoryItem.subtitle,
+                    photo: inventoryItem.photo,
+                    unit: inventoryItem.unit,
+                    quantity: itemData.added.value
+                });
+            }
+        }
+    });
+    
+    renderStockItems();
+}
+
+function closeAddStocksPage() {
+    const addStocksPage = document.getElementById('addStocksPage');
+    if (addStocksPage) {
+        addStocksPage.classList.remove('show');
+    }
+}
+
+async function openRunningLowPage() {
+    const runningLowPage = document.getElementById('runningLowPage');
+    
+    if (runningLowPage) {
+        runningLowPage.classList.add('show');
+        
+        // Load latest data from Firebase before displaying
+        if (isOnline) {
+            showSyncIndicator('Loading latest data...', 'info');
+            await loadQuantitiesFromFirebase();
+        }
+        
+        loadRunningLowItems();
+    } else {
+        console.error('❌ Running low page element not found!');
+    }
+}
+
+function closeRunningLowPage() {
+    const runningLowPage = document.getElementById('runningLowPage');
+    if (runningLowPage) {
+        runningLowPage.classList.remove('show');
+    }
+}
+
+function loadRunningLowItems() {
+    const runningLowList = document.getElementById('runningLowList');
+    const noRunningLowMessage = document.getElementById('noRunningLowMessage');
+    
+    if (!runningLowList || !noRunningLowMessage) return;
+    
+    // Clear existing content
+    runningLowList.innerHTML = '';
+    
+    const runningLowItems = [];
+    const dateKey = getDateKey(currentDate);
+    
+    // Get current date quantities
+    const dateQuantities = getCurrentDateQuantities();
+    
+    console.log('=== RUNNING LOW DEBUG ===');
+    console.log('Current date:', currentDate.toDateString());
+    console.log('Current branch:', currentBranch);
+    console.log('Total inventory items:', inventoryItems.length);
+    console.log('Date quantities keys:', Object.keys(dateQuantities));
+    
+    // Calculate current quantities and find running low items
+    inventoryItems.forEach(item => {
+        const itemData = dateQuantities[item.id];
+        if (!itemData) {
+            console.log(`❌ ${item.name}: No quantity data`);
+            return;
+        }
+        
+        const openingQty = itemData.opening?.checked ? itemData.opening.value : null;
+        const closingQty = itemData.closing?.checked ? itemData.closing.value : null;
+        const addedStocks = itemData.added?.checked ? itemData.added.value : 0;
+        
+        // Determine current quantity based on available data
+        let currentQty = 0;
+        if (closingQty !== null) {
+            // If closing is recorded (including 0), use closing quantity
+            currentQty = closingQty;
+        } else if (openingQty !== null) {
+            // If there's opening data (including 0), use opening + added stocks
+            currentQty = openingQty + addedStocks;
+        } else {
+            // No data available, skip this item
+            return;
+        }
+        
+        const restockAmount = item.restockAmount || 0;
+        const isRunningLow = currentQty <= restockAmount;
+        const isDepleted = currentQty <= 0;
+        
+        // Check if item is running low (current quantity <= restock amount) OR depleted (current quantity <= 0)
+        if (isRunningLow) {
+            runningLowItems.push({
+                ...item,
+                currentQty: currentQty,
+                restockAmount: restockAmount,
+                isDepleted: isDepleted
+            });
+        }
+    });
+    
+    
+    // Sort by current quantity (lowest first)
+    runningLowItems.sort((a, b) => a.currentQty - b.currentQty);
+    
+    if (runningLowItems.length === 0) {
+        runningLowList.style.display = 'none';
+        noRunningLowMessage.style.display = 'flex';
+    } else {
+        runningLowList.style.display = 'flex';
+        noRunningLowMessage.style.display = 'none';
+        
+        runningLowItems.forEach(item => {
+            const itemCard = createRunningLowItemCard(item);
+            runningLowList.appendChild(itemCard);
+        });
+    }
+}
+
+function createRunningLowItemCard(item) {
+    const card = document.createElement('div');
+    card.className = `running-low-item-card ${item.isDepleted ? 'depleted' : 'low'}`;
+    
+    const imageHtml = item.photo ? 
+        `<img src="${item.photo}" alt="${item.name}">` : 
+        `<span>No Image</span>`;
+    
+    card.innerHTML = `
+        <div class="running-low-item-image">
+            ${imageHtml}
+        </div>
+        <div class="running-low-item-info">
+            <div class="running-low-item-name">${item.name}</div>
+            ${(item.subtitle || item.description) ? `<div class="running-low-item-subtitle">${item.subtitle || item.description}</div>` : ''}
+        </div>
+        <div class="running-low-item-quantity">
+            <div class="running-low-quantity-number">${formatNumberWithCommas(item.currentQty)}</div>
+            <div class="running-low-quantity-unit">${item.unit}</div>
+        </div>
+    `;
+    
+    return card;
+}
+
+function openItemSelectionModal() {
+    const modal = document.getElementById('itemSelectionModalOverlay');
+    if (modal) {
+        populateItemSelectionList();
+        modal.classList.add('show');
+    }
+}
+
+function closeItemSelectionModal() {
+    const modal = document.getElementById('itemSelectionModalOverlay');
+    if (modal) {
+        modal.classList.remove('show');
+    }
+}
+
+function populateItemSelectionList() {
+    const list = document.getElementById('itemSelectionList');
+    if (!list) return;
+
+    list.innerHTML = '';
+
+    // Group items by category
+    const categories = {};
+    inventoryItems.forEach(item => {
+        if (!categories[item.category]) {
+            categories[item.category] = [];
+        }
+        categories[item.category].push(item);
+    });
+
+    // Sort categories using categoryOrderMap (same as main inventory)
+    const sortedCategories = Object.keys(categories).sort((a, b) => {
+        const orderA = (categoryOrderMap && typeof categoryOrderMap[a] === 'number') ? categoryOrderMap[a] : 999;
+        const orderB = (categoryOrderMap && typeof categoryOrderMap[b] === 'number') ? categoryOrderMap[b] : 999;
+        return orderA - orderB;
+    });
+
+    // Render categories and items
+    sortedCategories.forEach(categoryName => {
+        const categoryItems = categories[categoryName];
+        
+        // Sort items by their order field (same as main inventory)
+        categoryItems.sort((a, b) => (a.order || 0) - (b.order || 0));
+        
+        // Category header
+        const categoryHeader = document.createElement('div');
+        categoryHeader.className = 'category-header';
+        categoryHeader.textContent = categoryName;
+        list.appendChild(categoryHeader);
+
+        // Category items
+        categoryItems.forEach(item => {
+            const itemCard = document.createElement('div');
+            itemCard.className = 'selection-item-card';
+            itemCard.dataset.itemId = item.id;
+            
+            itemCard.innerHTML = `
+                <div class="selection-item-image">
+                    ${item.photo ? `<img src="${item.photo}" alt="${item.name}">` : 'No Image'}
+                </div>
+                <div class="selection-item-info">
+                    <div class="selection-item-name">${item.name}</div>
+                    ${(item.subtitle || item.description) ? `<div class="selection-item-subtitle">${item.subtitle || item.description}</div>` : ''}
+                </div>
+            `;
+            
+            list.appendChild(itemCard);
+        });
+    });
+}
+
+function addItemToStock(itemId) {
+    const item = inventoryItems.find(i => i.id === itemId);
+    if (!item) return;
+
+    // Check if item already exists in stock
+    const existingStockItem = stockItems.find(s => s.id === itemId);
+    if (existingStockItem) {
+        // Increase quantity by 1
+        existingStockItem.quantity += 1;
+    } else {
+        // Add new item to stock
+        stockItems.push({
+            id: item.id,
+            name: item.name,
+            subtitle: item.subtitle,
+            photo: item.photo,
+            unit: item.unit,
+            quantity: 1
+        });
+    }
+
+    renderStockItems();
+}
+
+function updateStockQuantity(itemId, quantity) {
+    const stockItem = stockItems.find(s => s.id === itemId);
+    if (stockItem) {
+        stockItem.quantity = quantity;
+        // Don't re-render on every keystroke - just update the value
+        // renderStockItems(); // This was causing focus loss
+    }
+}
+
+async function saveStockAdditions() {
+    const dateQuantities = getCurrentDateQuantities();
+    const itemsToSync = new Set(); // Track all items that need Firebase sync
+    
+    // First, reset all added quantities to 0 and mark for sync
+    Object.keys(dateQuantities).forEach(itemId => {
+        if (dateQuantities[itemId].added) {
+            dateQuantities[itemId].added.value = 0;
+            dateQuantities[itemId].added.checked = false;
+            itemsToSync.add(itemId); // Mark for Firebase sync
+        }
+    });
+    
+    // Then set the quantities for items in stockItems
+    stockItems.forEach(stockItem => {
+        if (!dateQuantities[stockItem.id]) {
+            dateQuantities[stockItem.id] = {
+                opening: { value: 0, checked: false },
+                closing: { value: 0, checked: false },
+                added: { value: 0, checked: false }
+            };
+        }
+        
+        // Ensure added field exists
+        if (!dateQuantities[stockItem.id].added) {
+            dateQuantities[stockItem.id].added = { value: 0, checked: false };
+        }
+        
+        // Set the added quantity (even if 0)
+        dateQuantities[stockItem.id].added.value = stockItem.quantity;
+        // Always mark as checked when we explicitly set a value (even if 0)
+        dateQuantities[stockItem.id].added.checked = true;
+        itemsToSync.add(stockItem.id); // Mark for Firebase sync
+    });
+
+    // Save to local storage
+    saveQuantitiesToLocal();
+    
+    // Sync ALL items to Firebase (including zero values)
+    console.log('Items to sync to Firebase:', Array.from(itemsToSync));
+    for (const itemId of itemsToSync) {
+        const itemData = dateQuantities[itemId];
+        console.log(`Syncing item ${itemId} with added quantity:`, itemData?.added?.value);
+        await syncQuantityToFirebase(itemId, 'added');
+    }
+    
+    // Refresh the main inventory display to update closing suggestions
+    renderInventory();
+    
+    showSyncIndicator('Stock additions saved', 'success');
+}
+
+function renderStockItems() {
+    const stocksList = document.getElementById('stocksList');
+    const saveStocksBtn = document.getElementById('saveStocksBtn');
+    if (!stocksList) return;
+
+    if (stockItems.length === 0) {
+        stocksList.innerHTML = '<div style="text-align: center; color: #999; padding: 40px 20px;">No items added yet</div>';
+        if (saveStocksBtn) saveStocksBtn.style.display = 'none';
+        return;
+    }
+
+    stocksList.innerHTML = stockItems.map(stockItem => `
+        <div class="stock-item-card">
+            <div class="stock-item-image">
+                ${stockItem.photo ? `<img src="${stockItem.photo}" alt="${stockItem.name}">` : 'No Image'}
+            </div>
+            <div class="stock-item-info">
+                <div class="stock-item-name">${stockItem.name}</div>
+                ${(stockItem.subtitle || stockItem.description) ? `<div class="stock-item-subtitle">${stockItem.subtitle || stockItem.description}</div>` : ''}
+            </div>
+            <div class="stock-item-quantity">
+                <input type="text" 
+                       class="quantity-number" 
+                       data-item-id="${stockItem.id}"
+                       value="${stockItem.quantity}" 
+                       inputmode="decimal"
+                       pattern="-?[0-9]*\\.?[0-9]*">
+                <div class="stock-quantity-unit">${stockItem.unit}</div>
+            </div>
+        </div>
+    `).join('');
+
+    // Add event listeners to the newly created inputs
+    stocksList.querySelectorAll('.quantity-number[data-item-id]').forEach(input => {
+        input.addEventListener('input', (e) => {
+            const itemId = e.target.dataset.itemId;
+            const quantity = parseFloat(e.target.value) || 0;
+            console.log('Stock quantity changed:', itemId, quantity);
+            updateStockQuantity(itemId, quantity);
+        });
+    });
+
+    // Show save button when items are added
+    if (saveStocksBtn) saveStocksBtn.style.display = 'flex';
+}
+
 // For console access - remove this in production
 window.eraseToday = eraseDataForToday;
+window.debugStock = {
+    getStockItems: () => stockItems,
+    getCurrentQuantities: () => getCurrentDateQuantities(),
+    getConsumption: (itemId) => {
+        const quantities = getCurrentDateQuantities();
+        const item = quantities[itemId];
+        if (!item) return 0;
+        const opening = item.opening?.value || 0;
+        const added = item.added?.value || 0;
+        const closing = item.closing?.value || 0;
+        return opening + added - closing;
+    }
+};
+
+// Branch data debugging functions
+window.debugBranches = {
+    // Test branch data isolation
+    testBranchIsolation: async function() {
+        console.log('🔍 Testing Branch Data Isolation...');
+        console.log('Current branch:', currentBranch);
+        
+        // Test 1: Check localStorage data
+        console.log('\n📱 LocalStorage Data:');
+        const smNorthItems = localStorage.getItem(`${STORAGE_KEYS.INVENTORY}-sm-north`);
+        const podiumItems = localStorage.getItem(`${STORAGE_KEYS.INVENTORY}-podium`);
+        const smNorthQuantities = localStorage.getItem(`${STORAGE_KEYS.QUANTITIES}-sm-north`);
+        const podiumQuantities = localStorage.getItem(`${STORAGE_KEYS.QUANTITIES}-podium`);
+        
+        console.log('SM North items:', smNorthItems ? JSON.parse(smNorthItems).length : 0, 'items');
+        console.log('Podium items:', podiumItems ? JSON.parse(podiumItems).length : 0, 'items');
+        console.log('SM North quantities:', smNorthQuantities ? Object.keys(JSON.parse(smNorthQuantities)).length : 0, 'dates');
+        console.log('Podium quantities:', podiumQuantities ? Object.keys(JSON.parse(podiumQuantities)).length : 0, 'dates');
+        
+        // Test 2: Check Firebase data
+        console.log('\n🔥 Firebase Data:');
+        try {
+            const smNorthQuery = query(collection(db, 'inventory', '_config', 'items'), where('branch', '==', 'sm-north'));
+            const podiumQuery = query(collection(db, 'inventory', '_config', 'items'), where('branch', '==', 'podium'));
+            
+            const [smNorthSnapshot, podiumSnapshot] = await Promise.all([
+                getDocs(smNorthQuery),
+                getDocs(podiumQuery)
+            ]);
+            
+            console.log('SM North Firebase items:', smNorthSnapshot.docs.length);
+            console.log('Podium Firebase items:', podiumSnapshot.docs.length);
+            
+            // Test 3: Check quantities data
+            const today = getDateKey();
+            const smNorthQuantitiesRef = doc(db, 'inventory-quantities', 'sm-north', 'daily-quantities', today);
+            const podiumQuantitiesRef = doc(db, 'inventory-quantities', 'podium', 'daily-quantities', today);
+            
+            const [smNorthQuantitiesSnap, podiumQuantitiesSnap] = await Promise.all([
+                getDoc(smNorthQuantitiesRef),
+                getDoc(podiumQuantitiesRef)
+            ]);
+            
+            console.log('SM North quantities today:', smNorthQuantitiesSnap.exists() ? Object.keys(smNorthQuantitiesSnap.data().quantities || {}).length : 0, 'items');
+            console.log('Podium quantities today:', podiumQuantitiesSnap.exists() ? Object.keys(podiumQuantitiesSnap.data().quantities || {}).length : 0, 'items');
+            
+        } catch (error) {
+            console.error('Error checking Firebase data:', error);
+        }
+        
+        // Test 4: Check current app state
+        console.log('\n📊 Current App State:');
+        console.log('Current branch:', currentBranch);
+        console.log('Loaded inventory items:', inventoryItems.length);
+        console.log('Current quantities keys:', Object.keys(quantities).length);
+        
+        return {
+            currentBranch,
+            inventoryItemsCount: inventoryItems.length,
+            quantitiesCount: Object.keys(quantities).length
+        };
+    },
+    
+    // Switch branch and test
+    testBranchSwitch: async function(branchName) {
+        console.log(`🔄 Testing branch switch to: ${branchName}`);
+        const oldBranch = currentBranch;
+        
+        // Switch branch
+        currentBranch = branchName;
+        localStorage.setItem('selected-branch', currentBranch);
+        
+        // Update dropdown
+        const branchSelect = document.getElementById('branchSelect');
+        if (branchSelect) {
+            branchSelect.value = currentBranch;
+        }
+        
+        // Reload data
+        await loadBranchInventory();
+        
+        console.log(`✅ Switched from ${oldBranch} to ${currentBranch}`);
+        console.log('New inventory items:', inventoryItems.length);
+        console.log('New quantities keys:', Object.keys(quantities).length);
+        
+        return {
+            oldBranch,
+            newBranch: currentBranch,
+            inventoryItemsCount: inventoryItems.length,
+            quantitiesCount: Object.keys(quantities).length
+        };
+    },
+    
+    // Clear all data for a branch
+    clearBranchData: async function(branchName) {
+        console.log(`🗑️ Clearing all data for branch: ${branchName}`);
+        
+        // Clear localStorage
+        localStorage.removeItem(`${STORAGE_KEYS.INVENTORY}-${branchName}`);
+        localStorage.removeItem(`${STORAGE_KEYS.QUANTITIES}-${branchName}`);
+        
+        // Clear Firebase items
+        try {
+            const itemsQuery = query(collection(db, 'inventory', '_config', 'items'), where('branch', '==', branchName));
+            const itemsSnapshot = await getDocs(itemsQuery);
+            const deletePromises = itemsSnapshot.docs.map(doc => deleteDoc(doc.ref));
+            await Promise.all(deletePromises);
+            console.log(`✅ Deleted ${itemsSnapshot.docs.length} items from Firebase`);
+        } catch (error) {
+            console.error('Error deleting Firebase items:', error);
+        }
+        
+        // Clear Firebase quantities (all dates)
+        try {
+            const quantitiesCollection = collection(db, 'inventory-quantities', branchName, 'daily-quantities');
+            const quantitiesSnapshot = await getDocs(quantitiesCollection);
+            const deletePromises = quantitiesSnapshot.docs.map(doc => deleteDoc(doc.ref));
+            await Promise.all(deletePromises);
+            console.log(`✅ Deleted ${quantitiesSnapshot.docs.length} quantity documents from Firebase`);
+        } catch (error) {
+            console.error('Error deleting Firebase quantities:', error);
+        }
+        
+        console.log(`✅ All data cleared for branch: ${branchName}`);
+    }
+};
 

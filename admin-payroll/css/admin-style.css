@@ -524,6 +524,106 @@ button:hover {
     width: 70px;
 }
 
+/* Employee action buttons container */
+.employee-action-buttons {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin: 1rem 0;
+}
+
+.employee-action-buttons .edit-btn {
+    margin: 0;
+    padding: 0.5rem 1rem;
+    background-color: #2b9348;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: background-color 0.2s;
+}
+
+.employee-action-buttons .edit-btn:hover {
+    background-color: #1e7e34;
+}
+
+/* Import/Export container styling */
+.import-export-container {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin: 1rem 0;
+}
+
+.import-export-container .edit-btn {
+    background-color: #007bff;
+}
+
+.import-export-container .edit-btn:hover {
+    background-color: #0056b3;
+}
+
+.import-export-container .export-person-btn {
+    background-color: #28a745;
+}
+
+.import-export-container .export-person-btn:hover {
+    background-color: #1e7e34;
+}
+
+.import-export-container .import-person-btn {
+    background-color: #ffc107;
+    color: #212529;
+}
+
+.import-export-container .import-person-btn:hover {
+    background-color: #e0a800;
+}
+
+/* Modal button styling */
+.btn {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    margin-right: 0.5rem;
+    transition: background-color 0.2s;
+}
+
+.btn-primary {
+    background-color: #007bff;
+    color: white;
+}
+
+.btn-primary:hover {
+    background-color: #0056b3;
+}
+
+.btn-secondary {
+    background-color: #6c757d;
+    color: white;
+}
+
+.btn-secondary:hover {
+    background-color: #545b62;
+}
+
+.btn-info {
+    background-color: #17a2b8;
+    color: white;
+}
+
+.btn-info:hover {
+    background-color: #138496;
+}
+
 .action-cell {
     vertical-align: middle;
     text-align: center;
@@ -1221,6 +1321,31 @@ button:hover {
     margin-bottom: 1rem;
 }
 
+/* Payment Type Options */
+.payment-type-options {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.radio-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.radio-item input[type="radio"] {
+    width: auto;
+    margin: 0;
+}
+
+.radio-item label {
+    margin: 0;
+    font-weight: 400;
+    cursor: pointer;
+}
+
 /* Checkbox Items */
 .checkbox-item {
     display: flex;
@@ -1239,6 +1364,27 @@ button:hover {
     font-weight: normal;
     cursor: pointer;
     flex: 1;
+}
+
+/* Input with Prefix */
+.input-with-prefix {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+.input-with-prefix .prefix {
+    position: absolute;
+    left: 12px;
+    color: #666;
+    font-weight: 500;
+    z-index: 1;
+}
+
+.input-with-prefix input {
+    padding-left: 30px;
+    width: 100%;
 }
 
 /* Compact Input with Prefix */
@@ -1260,6 +1406,15 @@ button:hover {
 .input-with-prefix.compact input {
     padding-left: 30px;
     width: 100%;
+}
+
+/* Form Hints */
+.form-hint {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.875rem;
+    color: #666;
+    font-style: italic;
 }
 
 /* Shift Type Select */
@@ -1310,4 +1465,154 @@ button:hover {
     .input-with-prefix.compact {
         width: 100%;
     }
+}
+
+.positive-amount {
+    color: #28a745;
+    font-weight: 500;
+}
+
+.payable-amount {
+    color: #dc3545;
+    font-weight: 500;
+}
+
+.paid-amount {
+    color: #28a745;
+    font-weight: 500;
+}
+
+
+.negative-amount {
+    color: #dc3545;
+    font-weight: 500;
+}
+
+/* Date picker styling to match UI theme */
+input[type="date"]::-webkit-calendar-picker-indicator {
+    background-color: #4a90e2;
+    border-radius: 4px;
+    padding: 4px;
+    cursor: pointer;
+    filter: brightness(1.1);
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+    background-color: #357abd;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:active {
+    background-color: #2d5a8b;
+}
+
+/* Firefox date picker styling */
+input[type="date"]::-moz-calendar-picker-indicator {
+    background-color: #4a90e2;
+    border-radius: 4px;
+    padding: 4px;
+    cursor: pointer;
+}
+
+input[type="date"]::-moz-calendar-picker-indicator:hover {
+    background-color: #357abd;
+}
+
+/* Custom date input styling */
+input[type="date"] {
+    background-color: #ffffff;
+    border: 2px solid #e1e5e9;
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 14px;
+    color: #333;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    min-height: 48px;
+    width: 100%;
+    font-family: 'Inter', sans-serif;
+}
+
+input[type="date"]:focus {
+    border-color: #4a90e2;
+    box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1);
+    outline: none;
+}
+
+input[type="date"]:hover {
+    border-color: #4a90e2;
+}
+
+/* Date picker popup styling */
+input[type="date"]::-webkit-datetime-edit {
+    color: #333;
+    font-weight: 500;
+}
+
+input[type="date"]::-webkit-datetime-edit-fields-wrapper {
+    padding: 0;
+}
+
+input[type="date"]::-webkit-datetime-edit-text {
+    color: #666;
+    padding: 0 2px;
+}
+
+input[type="date"]::-webkit-datetime-edit-month-field,
+input[type="date"]::-webkit-datetime-edit-day-field,
+input[type="date"]::-webkit-datetime-edit-year-field {
+    color: #333;
+    font-weight: 500;
+}
+
+/* Time input placeholder styling */
+input[type="time"]::placeholder {
+    color: #999;
+    font-style: italic;
+    font-size: 13px;
+}
+
+input[type="time"]:focus::placeholder {
+    color: #ccc;
+}
+
+/* Toast Notification Styles */
+.toast-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 1000;
+    pointer-events: none;
+}
+
+.toast {
+    background: #2b9348;
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    transform: translateX(100%);
+    transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out;
+    opacity: 0;
+    max-width: 300px;
+    font-size: 14px;
+    font-weight: 500;
+    pointer-events: auto;
+}
+
+.toast.show {
+    transform: translateX(0);
+    opacity: 1;
+}
+
+.toast.error {
+    background: #dc2626;
+}
+
+.toast.warning {
+    background: #f59e0b;
+}
+
+.toast.info {
+    background: #3b82f6;
 }

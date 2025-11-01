@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>QR Codes - Shizu Matcha Bar</title>
+    <meta charset="utf-8">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 10px;
+            background: white;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0 0 3px 0;
+            margin-top: 0;
+        }
+        .qr-card {
+            text-align: center;
+            padding: 8px;
+            border: 1px solid #000;
+            background: white;
+            min-height: 100px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .merchant-name {
+            font-weight: bold;
+            font-size: 10px;
+            margin-bottom: 2px;
+        }
+        .qr-container {
+            margin: 0 auto;
+        }
+        @media print {
+            body { margin: 0; }
+            .qr-card { break-inside: avoid; }
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    
+    <!-- Firebase SDK -->
+    <script type="module">
+        // Import the functions you need from the SDKs you need
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
+        import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
+
+        // Your web app's Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyCjXM75RSdlSmEKIgPC6DUGdmERG6P7_-8",
+            authDomain: "manila-matcha-fest.firebaseapp.com",
+            projectId: "manila-matcha-fest",
+            storageBucket: "manila-matcha-fest.firebasestorage.app",
+            messagingSenderId: "110163876581",
+            appId: "1:110163876581:web:7d28c7758ddd30eac1520c",
+            measurementId: "G-89F877CS05"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        
+        // Make Firebase available globally
+        window.firebase = { app, db };
+    </script>
+</head>
+<body>
+    <div class="container">
+
+        <div class="grid" id="qrGrid">
+            <!-- QR codes will be generated here -->
+        </div>
+    </div>
+    
+    <script>
+        // Wait for Firebase to be initialized
+        function waitForFirebase() {
+            return new Promise((resolve) => {
+                if (window.firebase && window.firebase.db) {
+                    resolve();
+                } else {
+                    const checkInterval = setInterval(() => {
+                        if (window.firebase && window.firebase.db) {
+                            clearInterval(checkInterval);
+                            resolve();
+                        }
+                    }, 100);
+                    
+                    // Timeout after 5 seconds
+                    setTimeout(() => {
+                        clearInterval(checkInterval);
+                        console.error('Firebase initialization timeout');
+                        resolve();
+                    }, 5000);
+                }
+            });
+        }
+        
+        // Get merchants data from URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const merchantsData = urlParams.get('data');
+        const merchants = merchantsData ? JSON.parse(decodeURIComponent(merchantsData)) : [];
+        
+        console.log('Merchants data received:', merchants);
+        
+        // Update page title with merchant name
+        if (merchants && merchants.type === 'batch' && merchants.merchant) {
+            document.title = `QR Codes - ${merchants.merchant.name}`;
+        }
+        
+        // Function to wait for QR codes to be generated
+        function waitForQRCodes() {
+            return new Promise((resolve) => {
+                const checkInterval = setInterval(() => {
+                    const qrElements = document.querySelectorAll('.qr-container img');
+                    const expectedCount = merchants && merchants.type === 'batch' ? merchants.count : 
+                                        (merchants && Array.isArray(merchants) ? merchants.length : 0);
+                    
+                    console.log(`QR codes generated: ${qrElements.length}/${expectedCount}`);
+                    
+                    if (qrElements.length >= expectedCount) {
+                        clearInterval(checkInterval);
+                        console.log('All QR codes generated, ready to print');
+                        resolve();
+                    }
+                }, 100);
+                
+                // Timeout after 10 seconds
+                setTimeout(() => {
+                    clearInterval(checkInterval);
+                    console.log('Timeout waiting for QR codes');
+                    resolve();
+                }, 10000);
+            });
+        }
+        
+        // Token generation functions
+        function brandLetter(brandId) {
+            const n = parseInt(brandId.replace(/\D+/g, ''), 10);
+            const idx = Math.max(1, Math.min(12, n)) - 1;
+            return String.fromCharCode('A'.charCodeAt(0) + idx);
+        }
+        
+        const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+        function bytesToBase58(bytes) {
+            let x = 0n;
+            for (const b of bytes) x = (x << 8n) + BigInt(b);
+            let s = "";
+            while (x > 0n) { s = B58[Number(x % 58n)] + s; x /= 58n; }
+            let zeros = 0; for (const b of bytes) { if (b === 0) zeros++; else break; }
+            return "1".repeat(zeros) + s || "1";
+        }
+        
+        function randomBase58_12() {
+            const u = (crypto && crypto.getRandomValues) ? crypto.getRandomValues(new Uint8Array(12))
+                : new Uint8Array(12).map(() => Math.floor(Math.random() * 256));
+            return bytesToBase58(u);
+        }
+        
+        function genCompactToken(brandId) {
+            return brandLetter(brandId) + randomBase58_12();
+        }
+        
+        // Firebase QR creation function
+        async function createQRInFirebase(merchantId, merchantName, token, type = 'test') {
+            try {
+                const { addDoc, collection } = await import("https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js");
+                
+                const qrData = {
+                    qrId: 'qr_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+                    merchantId: merchantId,
+                    merchantName: merchantName,
+                    token: token,
+                    status: 'unused',
+                    type: type,
+                    createdAt: new Date()
+                };
+                
+                const docRef = await addDoc(collection(window.firebase.db, 'qrcodes'), qrData);
+                console.log('Test QR created in Firebase:', docRef.id, 'for', merchantName);
+                return docRef.id;
+            } catch (error) {
+                console.error('Error creating test QR in Firebase:', error);
+                throw error;
+            }
+        }
+        
+        // Function to fetch QR codes from Firebase
+        async function fetchQRCodesFromFirebase(merchantId, type, count = null) {
+            try {
+                const { collection, query, where, getDocs, orderBy, limit } = await import("https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js");
+                
+                console.log(`Searching for QR codes with merchantId: "${merchantId}", type: "${type}"`);
+                
+                let qrQuery = query(
+                    collection(window.firebase.db, 'qrcodes'),
+                    where('merchantId', '==', merchantId),
+                    where('type', '==', type)
+                );
+                
+                if (count) {
+                    qrQuery = query(qrQuery, limit(count));
+                }
+                
+                const querySnapshot = await getDocs(qrQuery);
+                const qrCodes = [];
+                
+                querySnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    console.log(`Found QR code: ${doc.id}, merchantId: "${data.merchantId}", token: "${data.token}"`);
+                    qrCodes.push({
+                        id: doc.id,
+                        ...data
+                    });
+                });
+                
+                console.log(`Fetched ${qrCodes.length} QR codes from Firebase for ${merchantId}, type: ${type}`);
+                
+                // If no results, let's also check what's in the database
+                if (qrCodes.length === 0) {
+                    console.log('No QR codes found, checking all QR codes in database...');
+                    const allQrQuery = query(collection(window.firebase.db, 'qrcodes'), limit(10));
+                    const allSnapshot = await getDocs(allQrQuery);
+                    allSnapshot.forEach((doc) => {
+                        const data = doc.data();
+                        console.log(`Database has: ${doc.id}, merchantId: "${data.merchantId}", type: "${data.type}", token: "${data.token}"`);
+                    });
+                }
+                
+                return qrCodes;
+            } catch (error) {
+                console.error('Error fetching QR codes from Firebase:', error);
+                return [];
+            }
+        }
+
+        // Main QR generation function
+        async function generateQRCodes() {
+            if (merchants && Array.isArray(merchants)) {
+                // Test mode: Generate QR codes for all merchants
+                for (let index = 0; index < merchants.length; index++) {
+                    const merchant = merchants[index];
+                    
+                    // Fetch existing QR codes from Firebase
+                    const qrCodes = await fetchQRCodesFromFirebase(merchant.id, 'test', 1);
+                    let token;
+                    
+                    if (qrCodes.length > 0) {
+                        // Use existing token from Firebase
+                        token = qrCodes[0].token;
+                        console.log(`Using existing token for ${merchant.name}: ${token}`);
+                    } else {
+                        // Fallback: generate new token if none exists
+                        token = genCompactToken(merchant.id);
+                        console.log(`Generated new token for ${merchant.name}: ${token}`);
+                    }
+                    
+                    const cardDiv = document.createElement('div');
+                    cardDiv.className = 'qr-card';
+                    cardDiv.innerHTML = `
+                        <div class="merchant-name">${merchant.name}</div>
+                        <div class="qr-container" id="qr-${index}"></div>
+                    `;
+                    
+                    document.getElementById('qrGrid').appendChild(cardDiv);
+                    
+                    // Generate QR code
+                    const qrElement = document.getElementById(`qr-${index}`);
+                    console.log(`Generating QR code ${index} for ${merchant.name} with token: ${token}`);
+                    new QRCode(qrElement, {
+                        text: token,
+                        width: 97,
+                        height: 97,
+                        correctLevel: QRCode.CorrectLevel.L
+                    });
+                }
+            } else if (merchants && merchants.type === 'batch') {
+                // Batch mode: Generate multiple QR codes for one merchant
+                
+                // Change grid to 7 columns for batch mode
+                document.querySelector('.grid').style.gridTemplateColumns = 'repeat(7, 1fr)';
+                
+                // Fetch existing batch QR codes from Firebase
+                console.log(`Merchant data:`, merchants.merchant);
+                console.log(`Merchant ID: "${merchants.merchant.id}"`);
+                console.log(`Merchant Name: "${merchants.merchant.name}"`);
+                console.log(`Batch count: ${merchants.count}`);
+                
+                let qrCodes = [];
+                try {
+                    qrCodes = await fetchQRCodesFromFirebase(merchants.merchant.id, 'batch', merchants.count);
+                    console.log(`Fetched ${qrCodes.length} batch QR codes for ${merchants.merchant.name}`);
+                } catch (error) {
+                    console.error('Error in batch QR fetch:', error);
+                    console.log('Continuing with generated tokens...');
+                }
+                
+                // Generate QR codes using existing tokens from Firebase
+                for (let i = 0; i < merchants.count; i++) {
+                    let token;
+                    
+                    if (i < qrCodes.length) {
+                        // Use existing token from Firebase
+                        token = qrCodes[i].token;
+                        console.log(`Using existing batch token ${i}: ${token}`);
+                    } else {
+                        // Fallback: generate new token if not enough exist
+                        token = genCompactToken(merchants.merchant.id);
+                        console.log(`Generated new batch token ${i}: ${token}`);
+                    }
+                    
+                    const cardDiv = document.createElement('div');
+                    cardDiv.className = 'qr-card';
+                    cardDiv.innerHTML = `
+                        <div class="merchant-name">${merchants.merchant.name}</div>
+                        <div class="qr-container" id="qr-${i}"></div>
+                    `;
+                    
+                    document.getElementById('qrGrid').appendChild(cardDiv);
+                    
+                    // Generate QR code
+                    const qrElement = document.getElementById(`qr-${i}`);
+                    console.log(`Generating batch QR code ${i} for ${merchants.merchant.name} with token: ${token}`);
+                    new QRCode(qrElement, {
+                        text: token,
+                        width: 97,
+                        height: 97,
+                        correctLevel: QRCode.CorrectLevel.L
+                    });
+                }
+            }
+        }
+        
+        // Start QR generation after Firebase is ready
+        waitForFirebase().then(() => {
+            console.log('Starting QR generation...');
+            console.log('Firebase available:', !!window.firebase);
+            console.log('Firebase db available:', !!window.firebase?.db);
+            
+            generateQRCodes().then(() => {
+                console.log('All QR codes generated successfully');
+            }).catch((error) => {
+                console.error('Error generating QR codes:', error);
+                console.error('Error details:', error.message);
+                console.error('Error stack:', error.stack);
+            });
+        });
+    </script>
+</body>
+</html>

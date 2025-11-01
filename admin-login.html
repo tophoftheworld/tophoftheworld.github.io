@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Matchanese Admin Login</title>
+    <link rel="icon" href="icons/icon-64.png" type="image/png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // Suppress Tailwind CDN warning for development
+        window.tailwind = { config: {} };
+        
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        accent: '#2b9348'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .login-container {
+            background: linear-gradient(135deg, #2b9348 0%, #1e7e34 100%);
+        }
+        
+        .login-card {
+            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.95);
+        }
+        
+        .input-focus:focus {
+            border-color: #2b9348;
+            box-shadow: 0 0 0 3px rgba(43, 147, 72, 0.1);
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #2b9348 0%, #1e7e34 100%);
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(43, 147, 72, 0.3);
+        }
+        
+        .btn-primary:disabled {
+            background: #9ca3af;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .error-message {
+            animation: slideIn 0.3s ease;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .loading-spinner {
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="min-h-screen login-container flex items-center justify-center p-4">
+    <div class="login-card w-full max-w-md p-8 rounded-2xl shadow-2xl">
+        <!-- Logo -->
+        <div class="text-center mb-8">
+            <img 
+                src="shared/assets/images/matchanese-logo-full.png" 
+                alt="Matchanese" 
+                class="h-12 mx-auto mb-4"
+            />
+            <h1 class="text-2xl font-bold text-gray-800">Admin Dashboard</h1>
+        </div>
+
+        <!-- Login Form -->
+        <form id="loginForm" class="space-y-6">
+            <div>
+                <label for="username" class="block text-sm font-medium text-gray-700 mb-2">
+                    Employee Code
+                </label>
+                <input
+                    type="text"
+                    id="username"
+                    name="username"
+                    required
+                    class="w-full px-4 py-3 border border-gray-300 rounded-lg input-focus outline-none transition-all duration-200"
+                    placeholder="Enter your employee code"
+                    autocomplete="username"
+                />
+            </div>
+
+            <div>
+                <label for="password" class="block text-sm font-medium text-gray-700 mb-2">
+                    Password
+                </label>
+                <input
+                    type="password"
+                    id="password"
+                    name="password"
+                    required
+                    class="w-full px-4 py-3 border border-gray-300 rounded-lg input-focus outline-none transition-all duration-200"
+                    placeholder="Enter your password"
+                    autocomplete="current-password"
+                />
+            </div>
+
+            <!-- Error Message -->
+            <div id="errorMessage" class="hidden error-message">
+                <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+                    <div class="flex items-center">
+                        <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+                        </svg>
+                        <span id="errorText"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Login Button -->
+            <button
+                type="submit"
+                id="loginButton"
+                class="w-full btn-primary text-white py-3 px-4 rounded-lg font-semibold text-lg flex items-center justify-center"
+            >
+                <span id="loginButtonText">Sign In</span>
+                <svg id="loginSpinner" class="hidden w-5 h-5 ml-2 loading-spinner" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                </svg>
+            </button>
+        </form>
+
+
+        <!-- Footer -->
+        <div class="text-center mt-6 text-sm text-gray-500">
+            <p>&copy; 2025 Matchanese. All rights reserved.</p>
+        </div>
+    </div>
+
+    <!-- Firebase Auth Script -->
+    <script type="module">
+        import { signInUser, onAuthStateChanged, auth } from './js/firebase-auth-setup.js';
+
+        // DOM elements
+        const loginForm = document.getElementById('loginForm');
+        const usernameInput = document.getElementById('username');
+        const passwordInput = document.getElementById('password');
+        const loginButton = document.getElementById('loginButton');
+        const loginButtonText = document.getElementById('loginButtonText');
+        const loginSpinner = document.getElementById('loginSpinner');
+        const errorMessage = document.getElementById('errorMessage');
+        const errorText = document.getElementById('errorText');
+
+        // Check if user is already logged in
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                // User is already logged in, redirect to admin dashboard
+                window.location.href = 'admin.html';
+            }
+        });
+
+        // Handle form submission
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const username = usernameInput.value.trim();
+            const password = passwordInput.value;
+
+            // Show loading state
+            setLoadingState(true);
+            hideError();
+
+            try {
+                const result = await signInUser(username, password);
+                
+                if (result.success) {
+                    // Login successful, redirect to admin dashboard
+                    window.location.href = 'admin.html';
+                } else {
+                    // Login failed, show user-friendly error
+                    if (result.error.includes('invalid-credential')) {
+                        showError('Invalid employee code or password. Please check your credentials.');
+                    } else if (result.error.includes('user-not-found')) {
+                        showError('Employee code not found. Please check your credentials.');
+                    } else if (result.error.includes('wrong-password')) {
+                        showError('Incorrect password. Please try again.');
+                    } else {
+                        showError('Login failed. Please check your credentials and try again.');
+                    }
+                }
+            } catch (error) {
+                showError('Something went wrong. Please try again.');
+            } finally {
+                setLoadingState(false);
+            }
+        });
+
+        function setLoadingState(loading) {
+            loginButton.disabled = loading;
+            if (loading) {
+                loginButtonText.textContent = 'Signing In...';
+                loginSpinner.classList.remove('hidden');
+            } else {
+                loginButtonText.textContent = 'Sign In';
+                loginSpinner.classList.add('hidden');
+            }
+        }
+
+        function showError(message) {
+            errorText.textContent = message;
+            errorMessage.classList.remove('hidden');
+        }
+
+        function hideError() {
+            errorMessage.classList.add('hidden');
+        }
+
+        // Clear error when user starts typing
+        usernameInput.addEventListener('input', hideError);
+        passwordInput.addEventListener('input', hideError);
+    </script>
+</body>
+</html>

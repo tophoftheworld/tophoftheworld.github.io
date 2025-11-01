@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Matchanese Quarterly Reports</title>
+    <link rel="icon" href="data:,">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <script type="module" src="../js/firebase-setup.js"></script>
+    <style>
+        /* Mobile-specific overrides */
+        @media (max-width: 768px) {
+            body {
+                padding: 0.5rem !important;
+                margin: 0 !important;
+            }
+            
+            .container {
+                max-width: 100% !important;
+                margin: 0 !important;
+            }
+            
+            .admin-header {
+                margin-bottom: 0.5rem !important;
+                padding: 0.5rem !important;
+            }
+            
+            .app-title {
+                display: none !important;
+            }
+            
+            .summary-cards {
+                grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)) !important;
+                gap: 0.3rem !important;
+                margin-bottom: 0.5rem !important;
+            }
+            
+            .summary-card {
+                padding: 0.5rem !important;
+            }
+            
+            .card-title {
+                font-size: 0.7rem !important;
+                margin-bottom: 0.2rem !important;
+            }
+            
+            .card-value {
+                font-size: 0.9rem !important;
+            }
+            
+            .main-controls, .chart-controls {
+                padding: 0.4rem !important;
+                margin-bottom: 0.5rem !important;
+            }
+            
+            .quarterly-table {
+                font-size: 0.7rem !important;
+            }
+            
+            th, td {
+                padding: 0.3rem 0.25rem !important;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            body {
+                padding: 0.3rem !important;
+            }
+            
+            .summary-cards {
+                grid-template-columns: 1fr 1fr !important;
+                gap: 0.25rem !important;
+            }
+            
+            .summary-card {
+                padding: 0.4rem !important;
+            }
+            
+            .card-title {
+                font-size: 0.65rem !important;
+            }
+            
+            .card-value {
+                font-size: 0.8rem !important;
+            }
+        }
+
+        /* Quarterly Report Specific Styles */
+        .quarterly-table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            margin-bottom: 2rem;
+        }
+
+        .quarterly-table th,
+        .quarterly-table td {
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+            font-size: 0.9rem;
+        }
+
+        .quarterly-table th {
+            background-color: #2b9348 !important;
+            color: white !important;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .quarterly-table td {
+            background-color: white;
+        }
+
+        .quarterly-table .section-header {
+            background-color: #f0f9f2;
+            color: #2b9348;
+            font-weight: 600;
+            text-align: center;
+            border-left: 4px solid #2b9348;
+        }
+
+        .quarterly-table .section-header.cost {
+            background-color: #fff5f5;
+            color: #dc3545;
+            border-left: 4px solid #dc3545;
+        }
+
+        .quarterly-table .total-row {
+            background-color: #f0f9f2;
+            font-weight: 700;
+            color: #2b9348;
+        }
+
+        .quarterly-table .total-row.cost {
+            background-color: #fff5f5;
+            color: #dc3545;
+        }
+
+        .quarterly-table .currency {
+            text-align: right;
+            font-weight: 600;
+        }
+
+        .quarterly-table .total-row .currency {
+            font-weight: 700;
+        }
+
+        .quarterly-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        /* Quarter selector styling */
+        .quarter-selector {
+            display: flex;
+            gap: 0.25rem;
+            background: #f5f5f5;
+            padding: 0.25rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+
+        .quarter-btn {
+            padding: 0.6rem 1.2rem;
+            background: transparent;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: #666;
+            transition: all 0.2s;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .quarter-btn:hover {
+            color: #333;
+        }
+
+        .quarter-btn.active {
+            background: white;
+            color: #2b9348;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        .report-title {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 0.5rem;
+            text-align: center;
+        }
+
+        .report-subtitle {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #2b9348;
+            margin-bottom: 0.25rem;
+            text-align: center;
+        }
+
+        .report-period {
+            font-size: 1rem;
+            color: #666;
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="admin-header">
+            <div class="logo-section">
+                <img src="../img/matchanese-logo.png" class="logo" alt="Matchanese Logo">
+                <h1 class="app-title">Quarterly Reports</h1>
+            </div>
+        </div>
+
+        <!-- Filter Controls -->
+        <div class="filter-controls">
+            <div class="quarter-selector" id="quarterSelector">
+                <!-- Quarter buttons will be populated by JS -->
+            </div>
+            <div class="branch-selector">
+                <span class="branch-label">Branch:</span>
+                <select class="branch-dropdown" id="branchSelector">
+                    <option value="podium">Podium</option>
+                    <option value="sm-north">SM North</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="summary-cards" id="summaryCards">
+            <!-- Cards will be populated by JS -->
+        </div>
+
+        <!-- Quarterly Report Table -->
+        <div class="data-table-container">
+            <table class="quarterly-table" id="quarterlyTable">
+                <thead>
+                    <tr>
+                        <th style="width: 200px;">Item</th>
+                        <th id="month1Header">April 2025</th>
+                        <th id="month2Header">May 2025</th>
+                        <th id="month3Header">June 2025</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Sales Breakdown Section -->
+                    <tr class="total-row">
+                        <td>Total Sales</td>
+                        <td class="currency" id="totalSales1">₱0.00</td>
+                        <td class="currency" id="totalSales2">₱0.00</td>
+                        <td class="currency" id="totalSales3">₱0.00</td>
+                    </tr>
+                    <tr>
+                        <td>Cash</td>
+                        <td class="currency" id="cashSales1">₱0.00</td>
+                        <td class="currency" id="cashSales2">₱0.00</td>
+                        <td class="currency" id="cashSales3">₱0.00</td>
+                    </tr>
+                    <tr>
+                        <td>QR</td>
+                        <td class="currency" id="qrSales1">₱0.00</td>
+                        <td class="currency" id="qrSales2">₱0.00</td>
+                        <td class="currency" id="qrSales3">₱0.00</td>
+                    </tr>
+                    <tr>
+                        <td>Card</td>
+                        <td class="currency" id="cardSales1">₱0.00</td>
+                        <td class="currency" id="cardSales2">₱0.00</td>
+                        <td class="currency" id="cardSales3">₱0.00</td>
+                    </tr>
+                    <tr>
+                        <td>Grab</td>
+                        <td class="currency" id="grabSales1">₱0.00</td>
+                        <td class="currency" id="grabSales2">₱0.00</td>
+                        <td class="currency" id="grabSales3">₱0.00</td>
+                    </tr>
+
+                    <!-- Cost Breakdown Section -->
+                    <tr class="total-row cost">
+                        <td>Total Costs</td>
+                        <td class="currency" id="totalCosts1">₱0.00</td>
+                        <td class="currency" id="totalCosts2">₱0.00</td>
+                        <td class="currency" id="totalCosts3">₱0.00</td>
+                    </tr>
+                    <tr>
+                        <td>General</td>
+                        <td class="currency" id="generalCosts1">₱0.00</td>
+                        <td class="currency" id="generalCosts2">₱0.00</td>
+                        <td class="currency" id="generalCosts3">₱0.00</td>
+                    </tr>
+                    <tr>
+                        <td>Matcha</td>
+                        <td class="currency" id="matchaCosts1">₱0.00</td>
+                        <td class="currency" id="matchaCosts2">₱0.00</td>
+                        <td class="currency" id="matchaCosts3">₱0.00</td>
+                    </tr>
+                    <tr>
+                        <td>Suppliers</td>
+                        <td class="currency" id="supplierCosts1">₱0.00</td>
+                        <td class="currency" id="supplierCosts2">₱0.00</td>
+                        <td class="currency" id="supplierCosts3">₱0.00</td>
+                    </tr>
+                    <tr>
+                        <td>Leasing</td>
+                        <td class="currency" id="leasingCosts1">₱0.00</td>
+                        <td class="currency" id="leasingCosts2">₱0.00</td>
+                        <td class="currency" id="leasingCosts3">₱0.00</td>
+                    </tr>
+                    <tr>
+                        <td>Salaries</td>
+                        <td class="currency" id="salaryCosts1">₱0.00</td>
+                        <td class="currency" id="salaryCosts2">₱0.00</td>
+                        <td class="currency" id="salaryCosts3">₱0.00</td>
+                    </tr>
+                    <tr>
+                        <td>Marketing</td>
+                        <td class="currency" id="marketingCosts1">₱0.00</td>
+                        <td class="currency" id="marketingCosts2">₱0.00</td>
+                        <td class="currency" id="marketingCosts3">₱0.00</td>
+                    </tr>
+                    <tr>
+                        <td>Maintenance</td>
+                        <td class="currency" id="maintenanceCosts1">₱0.00</td>
+                        <td class="currency" id="maintenanceCosts2">₱0.00</td>
+                        <td class="currency" id="maintenanceCosts3">₱0.00</td>
+                    </tr>
+                    <tr>
+                        <td>Equipment</td>
+                        <td class="currency" id="equipmentCosts1">₱0.00</td>
+                        <td class="currency" id="equipmentCosts2">₱0.00</td>
+                        <td class="currency" id="equipmentCosts3">₱0.00</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script type="module" src="js/report-script.js"></script>
+</body>
+
+</html>

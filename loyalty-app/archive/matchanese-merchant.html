@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Matchanese Merchant Portal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        }
+        
+        .qr-container {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        
+        .qr-code {
+            display: flex;
+            justify-content: center;
+            margin: 20px 0;
+        }
+        
+        .print-section {
+            page-break-inside: avoid;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-6 py-8">
+        <!-- Header -->
+        <div class="mb-8 text-center">
+            <h1 class="text-3xl font-bold text-gray-900">Matchanese Loyalty QR Generator</h1>
+            <p class="text-gray-600 mt-2">Generate QR codes for customer loyalty stamps</p>
+        </div>
+
+        <!-- Generate QR Section -->
+        <div class="bg-white rounded-lg shadow p-6 mb-8">
+            <h2 class="text-xl font-semibold text-gray-900 mb-4">Generate New QR Code</h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Number of QR Codes</label>
+                    <input type="number" id="qrCount" min="1" max="100" value="10" 
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">QR Code Type</label>
+                    <select id="qrType" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500">
+                        <option value="drink">Drink Purchase</option>
+                        <option value="special">Special Promotion</option>
+                    </select>
+                </div>
+            </div>
+            
+            <button id="generateBtn" class="mt-4 bg-green-600 text-white px-6 py-2 rounded-md hover:bg-green-700 transition-colors">
+                Generate QR Codes
+            </button>
+        </div>
+
+        <!-- Generated QR Codes -->
+        <div id="qrCodesContainer" class="hidden">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-semibold text-gray-900">Generated QR Codes</h2>
+                <button id="printBtn" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors">
+                    Print All
+                </button>
+            </div>
+            
+            <div id="qrCodesGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- QR codes will be generated here -->
+            </div>
+        </div>
+
+        <!-- Stats Section -->
+        <div class="bg-white rounded-lg shadow p-6 mt-8">
+            <h2 class="text-xl font-semibold text-gray-900 mb-4">QR Code Statistics</h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="text-center">
+                    <div class="text-3xl font-bold text-blue-600" id="totalQrs">-</div>
+                    <div class="text-sm text-gray-600">Total QR Codes</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-3xl font-bold text-green-600" id="unusedQrs">-</div>
+                    <div class="text-sm text-gray-600">Unused QR Codes</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-3xl font-bold text-red-600" id="usedQrs">-</div>
+                    <div class="text-sm text-gray-600">Used QR Codes</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { db, collection, addDoc, getDocs, query, where } from './firebase-config.js';
+
+        // DOM elements
+        const generateBtn = document.getElementById('generateBtn');
+        const qrCount = document.getElementById('qrCount');
+        const qrType = document.getElementById('qrType');
+        const qrCodesContainer = document.getElementById('qrCodesContainer');
+        const qrCodesGrid = document.getElementById('qrCodesGrid');
+        const printBtn = document.getElementById('printBtn');
+        const totalQrs = document.getElementById('totalQrs');
+        const unusedQrs = document.getElementById('unusedQrs');
+        const usedQrs = document.getElementById('usedQrs');
+
+        // Generate QR codes
+        async function generateQRCodes() {
+            const count = parseInt(qrCount.value);
+            const type = qrType.value;
+            
+            if (count < 1 || count > 100) {
+                alert('Please enter a number between 1 and 100');
+                return;
+            }
+
+            generateBtn.disabled = true;
+            generateBtn.textContent = 'Generating...';
+
+            try {
+                const qrCodes = [];
+                
+                for (let i = 0; i < count; i++) {
+                    // Generate unique token
+                    const token = generateToken();
+                    
+                    // Save to Firebase
+                    const qrData = {
+                        token: token,
+                        type: type,
+                        status: 'unused',
+                        createdAt: new Date(),
+                        generatedBy: 'merchant'
+                    };
+                    
+                    const docRef = await addDoc(collection(db, 'qrcodes'), qrData);
+                    qrCodes.push({ ...qrData, id: docRef.id });
+                }
+
+                // Display QR codes
+                displayQRCodes(qrCodes);
+                
+                // Update stats
+                updateStats();
+                
+                showToast(`Successfully generated ${count} QR codes!`);
+                
+            } catch (error) {
+                console.error('Error generating QR codes:', error);
+                alert('Error generating QR codes. Please try again.');
+            } finally {
+                generateBtn.disabled = false;
+                generateBtn.textContent = 'Generate QR Codes';
+            }
+        }
+
+        // Generate unique token
+        function generateToken() {
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+            let result = '';
+            for (let i = 0; i < 8; i++) {
+                result += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            return result;
+        }
+
+        // Display QR codes
+        function displayQRCodes(qrCodes) {
+            qrCodesGrid.innerHTML = '';
+            
+            qrCodes.forEach((qrCode, index) => {
+                const qrContainer = document.createElement('div');
+                qrContainer.className = 'print-section qr-container';
+                
+                qrContainer.innerHTML = `
+                    <div class="text-center">
+                        <h3 class="font-semibold text-gray-900 mb-2">QR Code ${index + 1}</h3>
+                        <div class="qr-code" id="qr-${qrCode.id}"></div>
+                        <div class="text-sm text-gray-600 mt-2">Token: ${qrCode.token}</div>
+                        <div class="text-xs text-gray-500">Type: ${qrCode.type}</div>
+                    </div>
+                `;
+                
+                qrCodesGrid.appendChild(qrContainer);
+                
+                // Generate QR code
+                new QRCode(document.getElementById(`qr-${qrCode.id}`), {
+                    text: qrCode.token,
+                    width: 128,
+                    height: 128,
+                    colorDark: "#000000",
+                    colorLight: "#ffffff",
+                    correctLevel: QRCode.CorrectLevel.H
+                });
+            });
+            
+            qrCodesContainer.classList.remove('hidden');
+        }
+
+        // Update statistics
+        async function updateStats() {
+            try {
+                const qrRef = collection(db, 'qrcodes');
+                
+                // Get total QR codes
+                const totalSnapshot = await getDocs(qrRef);
+                const total = totalSnapshot.size;
+                
+                // Get unused QR codes
+                const unusedQuery = query(qrRef, where('status', '==', 'unused'));
+                const unusedSnapshot = await getDocs(unusedQuery);
+                const unused = unusedSnapshot.size;
+                
+                // Get used QR codes
+                const usedQuery = query(qrRef, where('status', '==', 'used'));
+                const usedSnapshot = await getDocs(usedQuery);
+                const used = usedSnapshot.size;
+                
+                totalQrs.textContent = total;
+                unusedQrs.textContent = unused;
+                usedQrs.textContent = used;
+                
+            } catch (error) {
+                console.error('Error updating stats:', error);
+            }
+        }
+
+        // Print QR codes
+        function printQRCodes() {
+            const printContent = qrCodesGrid.innerHTML;
+            const printWindow = window.open('', '_blank');
+            
+            printWindow.document.write(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Matchanese QR Codes</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; margin: 20px; }
+                        .qr-container { 
+                            display: inline-block; 
+                            margin: 10px; 
+                            padding: 15px; 
+                            border: 1px solid #ccc; 
+                            border-radius: 8px;
+                            page-break-inside: avoid;
+                        }
+                        .qr-code { text-align: center; }
+                        @media print {
+                            .qr-container { page-break-inside: avoid; }
+                        }
+                    </style>
+                </head>
+                <body>
+                    <h1>Matchanese Loyalty QR Codes</h1>
+                    <p>Generated on: ${new Date().toLocaleDateString()}</p>
+                    ${printContent}
+                </body>
+                </html>
+            `);
+            
+            printWindow.document.close();
+            printWindow.print();
+        }
+
+        // Show toast notification
+        function showToast(message) {
+            // Simple alert for now, can be enhanced with a proper toast
+            alert(message);
+        }
+
+        // Event listeners
+        generateBtn.addEventListener('click', generateQRCodes);
+        printBtn.addEventListener('click', printQRCodes);
+
+        // Initialize stats on page load
+        updateStats();
+    </script>
+</body>
+</html>

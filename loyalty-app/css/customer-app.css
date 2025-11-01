@@ -1,0 +1,91 @@
+/* Customer App Styles */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+.stamp-circle {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    border: none;
+    background: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+
+.stamp-circle.completed {
+    transform: scale(1.05);
+}
+
+.stamp-circle.current {
+    border: 2px solid #16a34a;
+}
+
+.stamp-circle img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+}
+
+.stamp-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+}
+
+.stamp-container {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.connection-line {
+    position: absolute;
+    left: 50%;
+    width: 2px;
+    background: #d1d5db;
+    z-index: 1;
+}
+
+.connection-line.completed {
+    background: #10b981;
+}
+
+.level-marker {
+    color: #374151;
+    font-weight: 600;
+    font-size: 12px;
+}
+
+.qr-modal {
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+}
+
+.qr-container {
+    background: white;
+    border-radius: 16px;
+    padding: 24px;
+    max-width: 320px;
+    width: 90%;
+}
+
+.toast {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #10b981;
+    color: white;
+    padding: 12px 24px;
+    border-radius: 8px;
+    z-index: 1000;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}

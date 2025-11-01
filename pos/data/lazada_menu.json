@@ -1,0 +1,90 @@
+{
+  "categories": [
+    {
+      "id": "matcha_lattes",
+      "name": "MATCHA LATTES"
+    },
+    {
+      "id": "matcha_lite",
+      "name": "MATCHA LITE"
+    },
+    {
+      "id": "hojicha",
+      "name": "HOJICHA"
+    }
+  ],
+  "items": [
+    {
+      "categoryId": "matcha_lattes",
+      "name": "signature matchanese latte",
+      "description": "Hand-whisked Ceremonial Matcha over Milk",
+      "price": 180,
+      "type": "Matcha Latte",
+      "shorthand": "SML"
+    },
+    {
+      "categoryId": "matcha_lattes",
+      "name": "matchanese seasalt latte",
+      "description": "Our Signature Matchanese Latte topped with Salted Cream",
+      "price": 200,
+      "type": "Matcha Latte",
+      "shorthand": "MSL"
+    },
+    {
+      "categoryId": "matcha_lattes",
+      "name": "spanish matchanese latte",
+      "description": "Our Signature Matchanese Latte with Sweetened Milk",
+      "price": 190,
+      "type": "Matcha Latte",
+      "shorthand": "SML"
+    },
+    {
+      "categoryId": "matcha_lattes",
+      "name": "strawberry matchanese latte",
+      "description": "Our Signature Matchanese Latte with Strawberry Puree",
+      "price": 195,
+      "type": "Matcha Latte",
+      "shorthand": "STML"
+    },
+    {
+      "categoryId": "matcha_lattes",
+      "name": "early grey matchanese latte",
+      "description": "Our Signature Matchanese Latte with Early Grey Syrup",
+      "price": 195,
+      "type": "Matcha Latte",
+      "shorthand": "EGML"
+    },
+    {
+      "categoryId": "matcha_lite",
+      "name": "matchanese tea",
+      "description": "Hand-whisked Ceremonial Matcha with Water",
+      "price": 150,
+      "type": "Matcha Tea",
+      "shorthand": "MT"
+    },
+    {
+      "categoryId": "matcha_lite",
+      "name": "matchanese dalandan",
+      "description": "Hand-whisked Ceremonial Matcha over Dalandan Juice",
+      "price": 175,
+      "type": "Matcha Tea",
+      "shorthand": "MD"
+    },
+    {
+      "categoryId": "matcha_lite",
+      "name": "matchanese coconut",
+      "description": "Hand-whisked Ceremonial Matcha over Coconut Juice",
+      "price": 175,
+      "type": "Matcha Tea",
+      "shorthand": "MC"
+    },
+    {
+      "categoryId": "hojicha",
+      "name": "hōjicha latte",
+      "description": "Hand-whisked Roasted Matcha over Milk",
+      "price": 180,
+      "type": "Hojicha",
+      "shorthand": "HL"
+    }
+  ]
+}

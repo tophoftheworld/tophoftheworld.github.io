@@ -1,0 +1,3423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
+    <title>Manila Matcha Fest — Stamp Rally</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@10..48,200;10..48,300;10..48,400;10..48,500;10..48,600;10..48,700;10..48,800&display=swap" rel="stylesheet">
+    
+    <!-- Firebase SDK -->
+    <script type="module">
+        // Import the functions you need from the SDKs you need
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
+        import { getFirestore, collection, getDocs, query, where, updateDoc, doc } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
+        import { getAuth, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js";
+
+        // Your web app's Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyCjXM75RSdlSmEKIgPC6DUGdmERG6P7_-8",
+            authDomain: "manila-matcha-fest.firebaseapp.com",
+            projectId: "manila-matcha-fest",
+            storageBucket: "manila-matcha-fest.firebasestorage.app",
+            messagingSenderId: "110163876581",
+            appId: "1:110163876581:web:7d28c7758ddd30eac1520c",
+            measurementId: "G-89F877CS05"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        
+        // Make Firebase available globally
+        window.firebase = { app, db, auth };
+    </script>
+    
+    <style>
+
+        
+        /* Prevent page scaling and zooming */
+        html, body {
+            touch-action: none;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            -khtml-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            -webkit-text-size-adjust: none;
+            -moz-text-size-adjust: none;
+            -ms-text-size-adjust: none;
+            text-size-adjust: none;
+        }
+        
+        /* Safari-specific scaling prevention - LIMITED to prevent video issues */
+        button, [role="button"], input, select, textarea {
+            -webkit-touch-action: manipulation;
+            touch-action: manipulation;
+        }
+        
+
+        
+        /* Hide the visual QR guide but keep scanning functionality */
+        #mmf_reader .qr-shaded-region,
+        #mmf_reader .qr-shaded-region__border {
+            display: none !important;
+        }
+        
+        /* Make camera view fill the entire available space */
+        #mmf_reader {
+            width: 100% !important;
+            height: 100% !important;
+            position: relative !important;
+            overflow: hidden !important;
+        }
+        
+        /* Ensure camera video fills the entire container */
+        #mmf_reader video {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover !important;
+        }
+        
+        /* Grid cell styling */
+        .merchant-cell {
+            position: relative;
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .merchant-cell:hover {
+            transform: scale(1.02);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+        
+        .merchant-cell:active {
+            transform: scale(0.98);
+        }
+        
+        /* Landing Page Styles */
+        .landing-page {
+            min-height: 100vh;
+            background-image: url('images/landingpage/bg.jpg');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            position: relative;
+            overflow: hidden;
+        }
+        
+
+        
+        .landing-content {
+            position: relative;
+            z-index: 2;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 1rem;
+            text-align: center;
+        }
+        
+        .landing-header {
+            margin-top: 3rem;
+        }
+        
+        .landing-logo {
+            width: 85%;
+            height: auto;
+            margin: 0 auto 1rem;
+            display: block;
+        }
+        
+        .landing-tagline {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-weight: 600;
+            font-size: 1rem;
+            color: white;
+            margin-bottom: 1rem;
+            line-height: 0.5rem;
+            letter-spacing: 0.25rem;
+        }
+        
+        .landing-title {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-weight: 700;
+            color: white;
+            margin-bottom: 1rem;
+        }
+        
+        .landing-title .manila {
+            font-size: 2rem;
+            font-weight: 600;
+            display: block;
+        }
+        
+        .landing-title .matcha {
+            font-size: 3rem;
+            font-weight: 700;
+            display: block;
+            margin: 0.25rem 0;
+        }
+        
+        .landing-title .fest {
+            font-size: 2rem;
+            font-weight: 600;
+            display: block;
+        }
+        
+        .landing-location {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-weight: 500;
+            font-size: 1rem;
+            color: white;
+            margin-bottom: 1rem;
+        }
+        
+        .landing-characters {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 1rem 0 0.5rem 0;
+        }
+        
+        .landing-characters img {
+            max-width: 70%;
+            height: auto;
+            max-height: 25vh;
+        }
+        
+        .landing-details {
+            margin-bottom: 0.5rem;
+        }
+        
+        .landing-dates {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-weight: 400;
+            font-size: 2vw;
+            color: white;
+            letter-spacing: 0.2rem;
+            /* margin-bottom: 0.125rem; */
+        }
+        
+        .landing-venue {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-weight: 700;
+            font-size: 1.25rem;
+            color: white;
+            line-height: 0.4;
+            letter-spacing: 0.2rem;
+            /* margin-bottom: 0.125rem; */
+        }
+        
+        .landing-area {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-weight: 400;
+            font-size: 1rem;
+            color: white;
+            line-height: 2;
+            opacity: 0.9;
+            letter-spacing: 0.3rem;
+        }
+        
+        .landing-signup {
+            margin-top: 2rem;
+            margin-bottom: 3rem;
+        }
+        
+        .signup-button {
+            background: white;
+            color: #15803d;
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-weight: 600;
+            font-size: 1rem;
+            padding: 0.75rem 2rem;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+        
+        .signup-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+        
+        .signup-button:active {
+            transform: translateY(0);
+        }
+        
+        /* Mobile Responsive */
+        @media (max-width: 768px) {
+            .landing-content {
+                padding: 1rem;
+            }
+            
+            .landing-title .manila {
+                font-size: 2rem;
+            }
+            
+            .landing-title .matcha {
+                font-size: 3rem;
+            }
+            
+            .landing-title .fest {
+                font-size: 2rem;
+            }
+            
+            .landing-tagline {
+                font-size: 4vw;
+                line-height: 1.2rem;
+            }
+            
+            .landing-location {
+                font-size: 1rem;
+            }
+            
+            .landing-dates {
+                font-size: 7vw;
+            }
+            
+            .landing-venue {
+                font-size: 5.5vw;
+            }
+            
+            .landing-area {
+                font-size: 4.5vw;
+            }
+            
+            .signup-button {
+                font-size: 1.125rem;
+                padding: 0.875rem 2.5rem;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .landing-title .manila {
+                font-size: 1.75rem;
+            }
+            
+            .landing-title .matcha {
+                font-size: 2.5rem;
+            }
+            
+            .landing-title .fest {
+                font-size: 1.75rem;
+            }
+            
+            .landing-characters img {
+                max-width: 90%;
+            }
+        }
+        
+        .merchant-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(
+                135deg,
+                rgba(0, 0, 0, 0.3) 0%,
+                rgba(0, 0, 0, 0.5) 50%,
+                rgba(0, 0, 0, 0.7) 100%
+            );
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 1rem;
+        }
+        
+        .merchant-logo {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 3px solid rgba(255, 255, 255, 0.8);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            margin-bottom: 0.5rem;
+        }
+        
+        .merchant-name {
+            color: white;
+            font-weight: 600;
+            text-align: center;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+            font-size: 0.875rem;
+            line-height: 1.25rem;
+        }
+        
+        /* Loading animation */
+        @keyframes shimmer {
+            0% { background-position: -200px 0; }
+            100% { background-position: calc(200px + 100%) 0; }
+        }
+        
+        .shimmer {
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200px 100%;
+            animation: shimmer 1.5s infinite;
+        }
+        
+        /* Responsive grid adjustments */
+        @media (max-width: 640px) {
+            .merchant-logo {
+                width: 45px;
+                height: 45px;
+            }
+            
+            .merchant-name {
+                font-size: 0.75rem;
+            }
+        }
+        
+
+        
+
+        
+
+    </style>
+</head>
+<body class="h-[100dvh] bg-gradient-to-b from-gray-100 to-gray-200 overflow-hidden">
+    <!-- Desktop Notice -->
+    <div id="desktopNotice" class="fixed inset-0 bg-white z-[100] flex items-center justify-center p-8 hidden">
+        <div class="max-w-md text-center space-y-8">
+            <img src="images/mmf-logo.png" alt="Manila Matcha Fest" class="h-32 mx-auto">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-900 mb-4">Please open on a mobile phone</h1>
+                <p class="text-gray-600">This app is designed for mobile devices and requires camera access for QR code scanning.</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Landing Page (shown when not logged in) -->
+    <div id="landingPage" class="landing-page hidden">
+        <div class="landing-content">
+                        <div class="landing-header">
+                <div class="landing-tagline">
+                    YOUR MATCHA FAVES,<br>
+                    ALL IN ONE PLACE
+                </div>
+                <img src="images/landingpage/mmf-logo.png" alt="Manila Matcha Fest" class="landing-logo">
+            </div>
+            
+            <div class="landing-characters">
+                <img src="images/landingpage/characaters.png" alt="Matcha Fest Characters" class="characters-image">
+            </div>
+            
+            <div class="landing-details">
+                <div class="landing-dates">
+                    AUGUST 22-31
+                </div>
+                <div class="landing-venue">
+                    SM MALL OF ASIA
+                </div>
+                <div class="landing-area">
+                    MAIN ATRIUM
+                </div>
+            </div>
+            
+            <div class="landing-signup">
+                <button id="landingSignupBtn" class="signup-button">
+                    SIGN UP
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Main App Content (shown when logged in) -->
+    <div id="mainApp" class="max-w-md mx-auto h-full flex flex-col p-4 pb-24 hidden">
+        <div class="flex-1 space-y-4">
+        <!-- Header -->
+                    <div class="text-center">
+                <img src="images/mmf-logo.png" alt="Manila Matcha Fest" class="h-20 mx-auto cursor-pointer" id="logoDebug" title="Tap 3x for debug reset">
+            </div>
+
+        <!-- Progress -->
+        <div class="flex items-center justify-between mb-4">
+            <div class="text-sm text-gray-600">Progress</div>
+            <div class="text-sm font-medium" id="progressText">0/12</div>
+        </div>
+        <div class="w-full h-2 rounded-full bg-gray-200 overflow-hidden mb-8">
+            <div class="h-full bg-green-500" id="progressBar" style="width: 0%"></div>
+        </div>
+
+        <!-- Grid 3 × 4 (landscape) -->
+        <div class="flex-1 flex flex-col justify-between py-4">
+            <div class="grid grid-cols-3 gap-4 px-2" id="stampGrid">
+                <!-- Stamps will be generated here -->
+            </div>
+        </div>
+
+
+
+        <!-- Scanner panel (clean and simple) -->
+        <div id="scannerPanel" class="fixed inset-0 bg-black z-50 hidden">
+            <!-- Camera view (full height, extends behind bottom panel) -->
+            <div class="relative h-full">
+                <!-- Back button -->
+                <button id="closeScannerBtn" class="absolute top-4 left-4 z-20 text-white bg-black bg-opacity-30 rounded-full p-3">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                        <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+                </svg>
+            </button>
+
+                <!-- App title -->
+                <div class="absolute top-4 left-1/2 transform -translate-x-1/2 z-20 text-white text-lg font-semibold">
+                    Manila Matcha Fest
+                </div>
+
+                <!-- Large logo overlay (shown for any scan result) -->
+                <div id="largeLogoOverlay" class="absolute inset-0 flex items-center justify-center z-10 hidden opacity-0 transition-opacity duration-300">
+                    <img id="largeLogo" src="" alt="" class="w-32 h-32 rounded-full object-cover">
+                </div>
+
+                <!-- Camera view -->
+                <div id="mmf_reader" class="w-full h-full flex items-center justify-center text-sm text-white opacity-60">
+                Loading…
+            </div>
+            
+
+        </div>
+
+            <!-- Info panel (bottom 20%) -->
+            <div class="absolute bottom-0 left-0 right-0 h-[20%] bg-white rounded-t-3xl shadow-lg z-10">
+                <div class="flex items-center justify-center h-full p-4">
+                    <!-- Instructions (shown when no QR detected) -->
+                    <div id="scanInstructions" class="text-center">
+                        <h2 class="text-lg font-semibold text-gray-900 mb-1">Scan Merchant QR Code</h2>
+                        <p class="text-sm text-gray-600">Point camera at the square QR code</p>
+                    </div>
+
+                    <!-- Validating message (shown when QR detected) -->
+                    <div id="validatingMessage" class="text-center hidden">
+                        <h2 class="text-lg font-semibold text-gray-900 mb-1">Validating QR Code</h2>
+                        <p class="text-sm text-gray-600">Please wait...</p>
+                    </div>
+
+                    <!-- Scanned merchant display (shown when QR detected) -->
+                    <div id="scannedMerchant" class="text-center hidden">
+                        <div class="flex items-center justify-center gap-3 mb-2">
+                            <img id="scannedLogo" src="" alt="" class="w-8 h-8 rounded-full object-cover">
+                            <span id="scannedName" class="font-medium text-gray-900"></span>
+                        </div>
+                        <p id="scannedStatus" class="text-sm text-gray-600"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+                 </div>
+         
+         <!-- Profile Page (overlay) -->
+         <div id="profilePage" class="fixed inset-0 bg-gradient-to-b from-gray-100 to-gray-200 z-30 hidden overflow-y-auto">
+             <div class="min-h-full flex flex-col p-4 pb-24">
+                 <!-- Header -->
+                 <div class="flex items-center justify-between mb-6">
+                     <h1 class="text-xl font-semibold text-gray-900">Profile</h1>
+                     <button id="logoutBtnSmall" class="text-gray-400 hover:text-red-600 transition-colors p-2 hidden" title="Logout">
+                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+                         </svg>
+                     </button>
+                 </div>
+                 
+                 <!-- Login Form (shown when not logged in) -->
+                 <div id="loginForm" class="flex-1 flex flex-col justify-center space-y-6 py-8">
+                     <div class="text-center">
+                         <img src="images/mmf-logo.png" alt="Manila Matcha Fest" class="h-16 mx-auto mb-4">
+                         <h2 class="text-lg font-medium text-gray-900 mb-2">Enter your email address</h2>
+                     </div>
+                     
+                     <div class="space-y-4">
+                         <div>
+                             <label for="emailInput" class="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+                             <input type="email" id="emailInput" placeholder="your@email.com" 
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-center text-lg">
+                         </div>
+                         
+                         <!-- Password input (hidden by default) -->
+                         <div id="passwordInputContainer" class="hidden">
+                             <label for="passwordInput" class="block text-sm font-medium text-gray-700 mb-2">Password</label>
+                             <div class="relative">
+                                 <input type="password" id="passwordInput" placeholder="Enter your password" 
+                                        class="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-center text-lg">
+                                 <button type="button" id="togglePassword" class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                                     </svg>
+                                 </button>
+                             </div>
+                         </div>
+                         
+                         <!-- Password confirmation (hidden by default) -->
+                         <div id="passwordConfirmContainer" class="hidden">
+                             <label for="passwordConfirm" class="block text-sm font-medium text-gray-700 mb-2">Confirm Password</label>
+                             <div class="relative">
+                                 <input type="password" id="passwordConfirm" placeholder="Confirm your password" 
+                                        class="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-center text-lg">
+                                 <button type="button" id="togglePasswordConfirm" class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                                     </svg>
+                                 </button>
+                             </div>
+                         </div>
+                         
+                         <!-- Registration fields (hidden by default) -->
+                         <div id="registrationFields" class="space-y-4 hidden">
+                             <div>
+                                 <label for="firstName" class="block text-sm font-medium text-gray-700 mb-2">First Name</label>
+                                 <input type="text" id="firstName" placeholder="Enter your first name" 
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-center text-lg">
+                             </div>
+                             <div>
+                                 <label for="lastName" class="block text-sm font-medium text-gray-700 mb-2">Last Name</label>
+                                 <input type="text" id="lastName" placeholder="Enter your last name" 
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-center text-lg">
+                             </div>
+                         </div>
+                         
+                         <button id="loginBtn" class="w-full bg-green-600 text-white py-3 px-4 rounded-lg hover:bg-green-700 transition-colors font-medium">
+                             Continue
+                         </button>
+                         
+                         <!-- Back button (hidden by default) -->
+                         <button id="backBtn" class="w-full bg-gray-500 text-white py-3 px-4 rounded-lg hover:bg-gray-600 transition-colors font-medium hidden mt-3">
+                             Back
+                         </button>
+                         
+                         
+                         
+                         <!-- Status message -->
+                         <div id="statusMessage" class="text-sm text-center hidden mt-4">
+                             <span id="statusText"></span>
+                         </div>
+                     </div>
+                 </div>
+                 
+                 <!-- Profile Info (shown when logged in) -->
+                 <div id="profileInfo" class="flex-1 flex flex-col justify-center space-y-6 hidden">
+                     <div class="text-center">
+                         <div class="relative w-20 h-20 mx-auto mb-4">
+                             <div id="profilePicture" class="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center cursor-pointer hover:bg-green-200 transition-colors">
+                                 <svg class="w-10 h-10 text-green-600" fill="currentColor" viewBox="0 0 24 24">
+                                     <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                                 </svg>
+                             </div>
+                             <div class="absolute -bottom-1 -right-1 bg-blue-500 text-white rounded-full p-1 cursor-pointer hover:bg-blue-600 transition-colors" title="Change photo">
+                                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path>
+                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                 </svg>
+                             </div>
+                         </div>
+                         <h2 class="text-lg font-medium text-gray-900 mb-2" id="profileWelcome">Welcome!</h2>
+                         <p class="text-sm text-gray-600">You're logged in with</p>
+                     </div>
+                     
+                     <!-- Registration completion notice -->
+                     <div id="registrationNotice" class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 hidden">
+                         <div class="flex items-center">
+                             <svg class="w-5 h-5 text-yellow-600 mr-2" fill="currentColor" viewBox="0 0 24 24">
+                                 <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                             </svg>
+                             <div>
+                                 <h3 class="text-sm font-medium text-yellow-800">Complete Your Profile</h3>
+                                 <p class="text-sm text-yellow-700">Please add your first and last name to start collecting stamps.</p>
+                             </div>
+                         </div>
+                     </div>
+                     
+                     <div class="space-y-4">
+                         <div class="bg-gray-50 rounded-lg p-4">
+                             <div class="text-sm text-gray-600 mb-1">Email Address</div>
+                             <div id="profileEmail" class="font-medium text-gray-900 text-lg select-none" style="-webkit-touch-callout: none; -webkit-user-select: none; -khtml-user-select: none; -moz-user-select: none; -ms-user-select: none; user-select: none;"></div>
+                         </div>
+                         
+                         <div class="bg-gray-50 rounded-lg p-4">
+                             <div class="text-sm text-gray-600 mb-1">Stamps Collected</div>
+                             <div id="profileStamps" class="font-medium text-gray-900 text-lg">0/12</div>
+                         </div>
+                         
+                         <!-- Logout button hidden - moved to header -->
+                         <button id="logoutBtn" class="hidden">
+                             Logout
+                         </button>
+                     </div>
+                 </div>
+             </div>
+         </div>
+         
+         <!-- Merchants Page (overlay) -->
+         <div id="merchantsPage" class="fixed inset-0 bg-gradient-to-b from-gray-100 to-gray-200 z-30 hidden">
+             <!-- Black background for bottom bar on merchants page -->
+             <div class="fixed bottom-0 left-0 right-0 h-20 bg-black z-35"></div>
+             <!-- Full-page 12-cell grid with bottom bar consideration -->
+             <div class="grid grid-cols-3 h-full pb-20">
+                 <!-- Merchant Cell 1: Matchanese -->
+                 <div class="merchant-cell shimmer" data-merchant="B01" data-name="Matchanese">
+                     <div class="merchant-overlay">
+                         <img src="images/matchanese.png" alt="Matchanese" class="merchant-logo">
+                         <div class="merchant-name">Matchanese</div>
+                     </div>
+                 </div>
+                 
+                 <!-- Merchant Cell 2: Shizu Matcha Bar -->
+                 <div class="merchant-cell shimmer" data-merchant="B02" data-name="Shizu Matcha Bar">
+                     <div class="merchant-overlay">
+                         <img src="images/shizu.png" alt="Shizu Matcha Bar" class="merchant-logo">
+                         <div class="merchant-name">Shizu Matcha Bar</div>
+                     </div>
+                 </div>
+                 
+                 <!-- Merchant Cell 3: Oh Hey There -->
+                 <div class="merchant-cell shimmer" data-merchant="B03" data-name="Oh Hey There">
+                     <div class="merchant-overlay">
+                         <img src="images/ohheythere.png" alt="Oh Hey There" class="merchant-logo">
+                         <div class="merchant-name">Oh Hey There</div>
+                     </div>
+                 </div>
+                 
+                 <!-- Merchant Cell 4: Day Off Space -->
+                 <div class="merchant-cell shimmer" data-merchant="B04" data-name="Day Off Space">
+                     <div class="merchant-overlay">
+                         <img src="images/dayoff.png" alt="Day Off Space" class="merchant-logo">
+                         <div class="merchant-name">Day Off Space</div>
+                     </div>
+                 </div>
+                 
+                 <!-- Merchant Cell 5: Aichi Cafe -->
+                 <div class="merchant-cell shimmer" data-merchant="B05" data-name="Aichi Cafe">
+                     <div class="merchant-overlay">
+                         <img src="images/aichi.png" alt="Aichi Cafe" class="merchant-logo">
+                         <div class="merchant-name">Aichi Cafe</div>
+                     </div>
+                 </div>
+                 
+                 <!-- Merchant Cell 6: Take Five Slow Bar -->
+                 <div class="merchant-cell shimmer" data-merchant="B06" data-name="Take Five Slow Bar">
+                     <div class="merchant-overlay">
+                         <img src="images/takefive.png" alt="Take Five Slow Bar" class="merchant-logo">
+                         <div class="merchant-name">Take Five Slow Bar</div>
+                     </div>
+                 </div>
+                 
+                 <!-- Merchant Cell 7: Matcha Mama -->
+                 <div class="merchant-cell shimmer" data-merchant="B07" data-name="Matcha Mama">
+                     <div class="merchant-overlay">
+                         <img src="images/matchamama.png" alt="Matcha Mama" class="merchant-logo">
+                         <div class="merchant-name">Matcha Mama</div>
+                     </div>
+                 </div>
+                 
+                 <!-- Merchant Cell 8: Ujisan -->
+                 <div class="merchant-cell shimmer" data-merchant="B08" data-name="Ujisan">
+                     <div class="merchant-overlay">
+                         <img src="images/ujisan.png" alt="Ujisan" class="merchant-logo">
+                         <div class="merchant-name">Ujisan</div>
+                     </div>
+                 </div>
+                 
+                 <!-- Merchant Cell 9: Matcha Tokyo -->
+                 <div class="merchant-cell shimmer" data-merchant="B09" data-name="Matcha Tokyo">
+                     <div class="merchant-overlay">
+                         <img src="images/matchatokyo.png" alt="Matcha Tokyo" class="merchant-logo">
+                         <div class="merchant-name">Matcha Tokyo</div>
+                     </div>
+                 </div>
+                 
+                 <!-- Merchant Cell 10: Chotto Matcha -->
+                 <div class="merchant-cell shimmer" data-merchant="B10" data-name="Chotto Matcha">
+                     <div class="merchant-overlay">
+                         <img src="images/chotto.png" alt="Chotto Matcha" class="merchant-logo">
+                         <div class="merchant-name">Chotto Matcha</div>
+                     </div>
+                 </div>
+                 
+                 <!-- Merchant Cell 11: The Matcha Co. -->
+                 <div class="merchant-cell shimmer" data-merchant="B11" data-name="The Matcha Co.">
+                     <div class="merchant-overlay">
+                         <img src="images/thematchaco.png" alt="The Matcha Co." class="merchant-logo">
+                         <div class="merchant-name">The Matcha Co.</div>
+                     </div>
+                 </div>
+                 
+                 <!-- Merchant Cell 12: Melc Patisserie -->
+                 <div class="merchant-cell shimmer" data-merchant="B12" data-name="Melc Patisserie">
+                     <div class="merchant-overlay">
+                         <img src="images/melc.png" alt="Melc Patisserie" class="merchant-logo">
+                         <div class="merchant-name">Melc Patisserie</div>
+                     </div>
+                 </div>
+             </div>
+         </div>
+         
+         <!-- Merchant Info Modal -->
+         <div id="merchantModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+             <div class="bg-white rounded-2xl p-6 mx-8 max-w-md w-full max-h-[90vh] overflow-y-auto">
+                 <div class="flex items-center justify-between mb-4">
+                     <h2 id="modalMerchantName" class="text-xl font-semibold text-gray-900"></h2>
+                     <button id="closeModalBtn" class="text-gray-400 hover:text-gray-600 transition-colors p-2">
+                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                         </svg>
+                     </button>
+                 </div>
+                 
+                 <!-- Photo Slideshow -->
+                 <div id="modalPhotoGallery" class="mb-6 relative">
+                     <!-- Slideshow container -->
+                     <div id="slideshowContainer" class="relative h-80 bg-gray-100 rounded-lg overflow-hidden">
+                         <!-- Current image -->
+                         <img id="currentSlide" src="" alt="" class="w-full h-full object-contain">
+                         <!-- Loading placeholder -->
+                         <div id="slideshowLoading" class="absolute inset-0 flex items-center justify-center">
+                             <div class="text-gray-500">Loading photos...</div>
+                         </div>
+                         <!-- No photos message -->
+                         <div id="noPhotosMessage" class="absolute inset-0 flex items-center justify-center hidden">
+                             <div class="text-gray-500">No photos available</div>
+                         </div>
+                     </div>
+                     
+                     <!-- Navigation arrows -->
+                     <button id="prevSlide" class="absolute left-2 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-50 text-white rounded-full p-2 hover:bg-opacity-75 transition-opacity hidden">
+                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                         </svg>
+                     </button>
+                     <button id="nextSlide" class="absolute right-2 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-50 text-white rounded-full p-2 hover:bg-opacity-75 transition-opacity hidden">
+                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                         </svg>
+                     </button>
+                     
+                     <!-- Slide indicators -->
+                     <div id="slideIndicators" class="flex justify-center mt-3 space-x-2">
+                         <!-- Indicators will be added dynamically -->
+                     </div>
+                 </div>
+                 
+                 <!-- Merchant Description -->
+                 <div class="mb-6">
+                     <p id="modalMerchantDescription" class="text-gray-600 text-sm leading-relaxed">
+                         Visit this merchant to collect your stamp and enjoy their amazing matcha offerings!
+                     </p>
+                 </div>
+                 
+                 <!-- Instagram Link -->
+                 <div class="text-center">
+                     <a id="modalInstagramLink" href="#" target="_blank" class="inline-flex items-center px-4 py-3 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:from-purple-600 hover:to-pink-600 transition-colors font-medium">
+                         <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24">
+                             <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+                         </svg>
+                         <span id="instagramButtonText">Follow on Instagram</span>
+                     </a>
+                 </div>
+             </div>
+         </div>
+         
+         <!-- Rewards Page (overlay) -->
+         <div id="rewardsPage" class="fixed inset-0 bg-gradient-to-b from-gray-100 to-gray-200 z-30 hidden">
+             <div class="h-full flex flex-col p-4 pb-24">
+                 <!-- Header -->
+                 <div class="flex items-center justify-between mb-6">
+                     <h1 class="text-xl font-semibold text-gray-900">Rewards</h1>
+                     <button id="closeRewardsBtn" class="text-gray-400 hover:text-gray-600 transition-colors p-2">
+                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                         </svg>
+                     </button>
+                 </div>
+                 
+                 <!-- Empty page content -->
+                 <div class="flex-1 flex flex-col items-center justify-center space-y-4">
+                     <div class="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center">
+                         <svg class="w-8 h-8 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
+                             <path d="M12 2L15.09 8.26L22 9L16.5 13.74L18.18 20.02L12 16.77L5.82 20.02L7.5 13.74L2 9L8.91 8.26L12 2Z"/>
+                         </svg>
+                     </div>
+                     <h2 class="text-lg font-medium text-gray-900">Rewards & Prizes</h2>
+                     <p class="text-sm text-gray-600 text-center">Coming soon! This page will show rewards and prizes you can earn by collecting stamps.</p>
+                 </div>
+             </div>
+         </div>
+         
+         <!-- Hidden file input for profile picture -->
+         <input type="file" id="profilePictureInput" accept="image/*" class="hidden">
+         
+         <!-- Toast Notification -->
+         <div id="toast" class="fixed top-4 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-4 py-2 rounded-lg shadow-lg z-50 hidden">
+             <span id="toastMessage"></span>
+        </div>
+        
+        <!-- Bottom navigation bar with carved groove for scan button -->
+         <div class="bottom-nav fixed bottom-0 left-0 right-0 h-20 bg-white rounded-t-3xl shadow-lg z-40" style="padding-bottom: env(safe-area-inset-bottom);">
+             <!-- Tab 1: Home/Stamps -->
+             <div class="absolute left-[12%] top-1/2 transform -translate-x-1/2 -translate-y-1/2">
+                 <button id="navHomeBtn" class="flex flex-col items-center space-y-1 text-green-600">
+                     <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                         <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
+                     </svg>
+                     <span class="text-xs font-medium">Home</span>
+                 </button>
+             </div>
+             
+             <!-- Tab 2: Merchants -->
+             <div class="absolute left-[30%] top-1/2 transform -translate-x-1/2 -translate-y-1/2">
+                 <button id="navMerchantsBtn" class="flex flex-col items-center space-y-1 text-gray-400">
+                     <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                         <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                     </svg>
+                     <span class="text-xs font-medium">Merchants</span>
+                 </button>
+             </div>
+             
+            <!-- Carved groove effect -->
+            <div class="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-1/4">
+                <div class="w-20 h-20 rounded-full bg-gradient-to-b from-gray-100 to-gray-200 shadow-inner">
+                     <button id="scanBtn" class="w-full h-full rounded-full bg-green-600 text-white transition active:scale-[0.95] hover:bg-green-700 flex items-center justify-center shadow-lg disabled:bg-gray-400 disabled:cursor-not-allowed disabled:active:scale-100 disabled:pointer-events-auto">
+                        <img src="images/scan-icon.png" alt="Scan" class="w-7 h-7">
+                    </button>
+                </div>
+            </div>
+            
+             <!-- Tab 3: Rewards -->
+             <div class="absolute left-[70%] top-1/2 transform -translate-x-1/2 -translate-y-1/2">
+                 <button id="navRewardsBtn" class="flex flex-col items-center space-y-1 text-gray-400">
+                     <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                         <path d="M12 2L15.09 8.26L22 9L16.5 13.74L18.18 20.02L12 16.77L5.82 20.02L7.5 13.74L2 9L8.91 8.26L12 2Z"/>
+                     </svg>
+                     <span class="text-xs font-medium">Rewards</span>
+                 </button>
+             </div>
+             
+             <!-- Tab 4: Profile -->
+             <div class="absolute left-[88%] top-1/2 transform -translate-x-1/2 -translate-y-1/2">
+                 <button id="navProfileBtn" class="flex flex-col items-center space-y-1 text-gray-400">
+                     <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                         <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                     </svg>
+                     <span class="text-xs font-medium">Profile</span>
+                 </button>
+             </div>
+        </div>
+    </div>
+    </div> <!-- End of mainApp -->
+
+        <script>
+         // User management
+         let currentUser = null;
+         let isCheckingUser = false;
+         let registrationStep = 'email'; // 'email', 'password', 'name'
+         let tempPassword = ''; // Store password temporarily during registration
+         
+                 // Check if user is coming from password reset link
+        async function checkEmailLink() {
+            console.log('=== CHECKING PASSWORD RESET LINK ===');
+            console.log('Current URL:', window.location.href);
+            
+            if (window.firebase && window.firebase.auth) {
+                console.log('Firebase auth available');
+                
+                try {
+                    const { isSignInWithEmailLink, signInWithEmailLink } = await import("https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js");
+                    
+                    const isEmailLink = isSignInWithEmailLink(window.firebase.auth, window.location.href);
+                    console.log('Is password reset link?', isEmailLink);
+                    
+                    if (isEmailLink) {
+                        console.log('Password reset link detected, processing sign in...');
+                        
+                        // User clicked password reset link, complete sign in
+                        let email = window.localStorage.getItem('emailForSignIn');
+                        console.log('Email from localStorage:', email);
+                        
+                        if (!email) {
+                            // If email is not in localStorage, redirect to login page with better UX
+                            console.log('No email in localStorage, redirecting to login');
+                            showProfilePage();
+                            showStatusMessage('Please enter your email address to complete sign in.', 'info');
+                            return;
+                        }
+                        
+                        try {
+                            console.log('Attempting to sign in with password reset link...');
+                            const result = await signInWithEmailLink(window.firebase.auth, email, window.location.href);
+                            console.log('Successfully signed in with password reset link:', result);
+                            
+                            // Check if user needs to complete registration
+                            const userExists = await checkUserExists(email);
+                            
+                            if (userExists) {
+                                // User exists - complete login
+                                currentUser = { 
+                                    email: email,
+                                    uid: result.user.uid 
+                                };
+                                
+                                // Load user data from Firebase to get name
+                                await loadUserDataFromFirebase(email);
+                                
+                                saveUser();
+                                updateProfileDisplay();
+                                await loadUserStampsFromFirebase(email);
+                                hideProfilePage();
+                                showToast('Successfully logged in!');
+                                
+                                // Force update scan button state after login
+                                updateScanButtonState();
+                            } else {
+                                // New user - show registration form
+                                currentUser = { 
+                                    email: email,
+                                    uid: result.user.uid 
+                                };
+                                saveUser();
+                                showProfilePage();
+                                showRegistrationFields();
+                                showStatusMessage('Welcome! Please complete your registration with your name.', 'info');
+                            }
+                           
+                            // Clean up URL and localStorage
+                            window.localStorage.removeItem('emailForSignIn');
+                            window.history.replaceState({}, document.title, window.location.pathname);
+                            
+                            console.log('=== PASSWORD RESET SIGN IN COMPLETE ===');
+                        } catch (error) {
+                            console.error('Error signing in with password reset link:', error);
+                            
+                            // If authentication fails, clear the URL and show error
+                            window.history.replaceState({}, document.title, window.location.pathname);
+                            showProfilePage();
+                            showStatusMessage('Authentication failed. Please try logging in again.', 'error');
+                        }
+                    } else {
+                        console.log('Not a password reset link, continuing normally');
+                    }
+                } catch (error) {
+                    console.error('Error checking password reset link:', error);
+                }
+            } else {
+                console.log('Firebase auth not available yet');
+            }
+        }
+         
+         // Load user from localStorage
+        async function loadUser() {
+            const savedUser = localStorage.getItem('mmf_user');
+            if (savedUser) {
+                currentUser = JSON.parse(savedUser);
+                
+                // User is logged in, show main app
+                showMainApp();
+                
+                // Always ensure home page is shown by default
+                showHomePage();
+                updateProfileDisplay();
+                
+                // Load stamps from localStorage first for fast display
+                loadStamps();
+                
+                // Then sync with Firebase in background
+                if (window.firebase && window.firebase.db) {
+                    console.log('Syncing stamps with Firebase for logged-in user:', currentUser.email);
+                    await syncStampsWithFirebase(currentUser.email);
+                                         // Also refresh user data from Firebase to get any updates
+                     console.log('Refreshing user data from Firebase on app start...');
+                     await loadUserDataFromFirebase(currentUser.email);
+                } else {
+                    console.log('Firebase not ready, waiting for it to load...');
+                    // Wait for Firebase to be ready
+                    const checkFirebase = setInterval(() => {
+                        if (window.firebase && window.firebase.db) {
+                            clearInterval(checkFirebase);
+                            console.log('Firebase now ready, syncing stamps and user data');
+                            syncStampsWithFirebase(currentUser.email);
+                            console.log('Refreshing user data from Firebase after Firebase became ready...');
+                            loadUserDataFromFirebase(currentUser.email);
+                        }
+                    }, 100);
+                }
+                
+                // Force update scan button state after loading user
+                updateScanButtonState();
+            } else {
+                // No user logged in, show landing page
+                console.log('No user logged in, showing landing page');
+                showLandingPage();
+            }
+        }
+        
+        // Show landing page
+        function showLandingPage() {
+            document.getElementById('landingPage').classList.remove('hidden');
+            document.getElementById('mainApp').classList.add('hidden');
+            // Hide bottom navigation on landing page
+            const bottomNav = document.querySelector('.bottom-nav');
+            if (bottomNav) {
+                bottomNav.classList.add('hidden');
+            }
+        }
+        
+        // Show main app
+        function showMainApp() {
+            document.getElementById('landingPage').classList.add('hidden');
+            document.getElementById('mainApp').classList.remove('hidden');
+            // Show bottom navigation when in main app
+            const bottomNav = document.querySelector('.bottom-nav');
+            if (bottomNav) {
+                bottomNav.classList.remove('hidden');
+            }
+        }
+         
+         // Save user to localStorage
+         function saveUser() {
+             if (currentUser) {
+                 localStorage.setItem('mmf_user', JSON.stringify(currentUser));
+             } else {
+                 localStorage.removeItem('mmf_user');
+             }
+         }
+         
+         // Update navigation based on current page
+         function updateNavigation() {
+             const navHomeBtn = document.getElementById('navHomeBtn');
+             const navMerchantsBtn = document.getElementById('navMerchantsBtn');
+             const navRewardsBtn = document.getElementById('navRewardsBtn');
+             const navProfileBtn = document.getElementById('navProfileBtn');
+             const profilePage = document.getElementById('profilePage');
+             const merchantsPage = document.getElementById('merchantsPage');
+             const rewardsPage = document.getElementById('rewardsPage');
+             
+             // Reset all buttons to gray
+             navHomeBtn.classList.remove('text-green-600');
+             navHomeBtn.classList.add('text-gray-400');
+             navMerchantsBtn.classList.remove('text-green-600');
+             navMerchantsBtn.classList.add('text-gray-400');
+             navRewardsBtn.classList.remove('text-green-600');
+             navRewardsBtn.classList.add('text-gray-400');
+             navProfileBtn.classList.remove('text-green-600');
+             navProfileBtn.classList.add('text-gray-400');
+             
+             // Highlight active button based on visible page
+             if (!profilePage.classList.contains('hidden')) {
+                 // On profile page
+                 navProfileBtn.classList.remove('text-gray-400');
+                 navProfileBtn.classList.add('text-green-600');
+             } else if (!merchantsPage.classList.contains('hidden')) {
+                 // On merchants page
+                 navMerchantsBtn.classList.remove('text-gray-400');
+                 navMerchantsBtn.classList.add('text-green-600');
+             } else if (!rewardsPage.classList.contains('hidden')) {
+                 // On rewards page
+                 navRewardsBtn.classList.remove('text-gray-400');
+                 navRewardsBtn.classList.add('text-green-600');
+             } else {
+                 // On home page (stamps)
+                 navHomeBtn.classList.remove('text-gray-400');
+                 navHomeBtn.classList.add('text-green-600');
+             }
+         }
+         
+         // Show toast notification
+         function showToast(message, duration = 3000) {
+             const toast = document.getElementById('toast');
+             const toastMessage = document.getElementById('toastMessage');
+             
+             toastMessage.textContent = message;
+             toast.classList.remove('hidden');
+             
+             setTimeout(() => {
+                 toast.classList.add('hidden');
+             }, duration);
+         }
+         
+
+         
+         // Show registration fields
+         function showRegistrationFields() {
+             const registrationFields = document.getElementById('registrationFields');
+             
+             registrationFields.classList.remove('hidden');
+             
+             // Clear name fields when showing registration fields
+             document.getElementById('firstName').value = '';
+             document.getElementById('lastName').value = '';
+             
+             // Focus on first name field after a short delay to ensure it's visible
+             setTimeout(() => {
+                 document.getElementById('firstName').focus();
+             }, 100);
+         }
+         
+         // Hide registration fields
+         function hideRegistrationFields() {
+             const registrationFields = document.getElementById('registrationFields');
+             
+             registrationFields.classList.add('hidden');
+             
+             // Clear registration fields
+             document.getElementById('firstName').value = '';
+             document.getElementById('lastName').value = '';
+         }
+         
+         // Hide email input
+         function hideEmailInput() {
+             const emailInput = document.getElementById('emailInput');
+             emailInput.readOnly = true;
+             emailInput.classList.add('bg-gray-100', 'cursor-not-allowed');
+         }
+         
+         // Show email input
+         function showEmailInput() {
+             const emailInput = document.getElementById('emailInput');
+             emailInput.readOnly = false;
+             emailInput.classList.remove('bg-gray-100', 'cursor-not-allowed');
+         }
+         
+         // Show back button
+         function showBackButton() {
+             const backBtn = document.getElementById('backBtn');
+             if (backBtn) {
+                 backBtn.classList.remove('hidden');
+                 backBtn.style.display = 'block'; // Force show
+                 console.log('Back button shown for step:', registrationStep);
+             } else {
+                 console.error('Back button element not found');
+             }
+         }
+         
+         // Hide back button
+         function hideBackButton() {
+             const backBtn = document.getElementById('backBtn');
+             if (backBtn) {
+                 backBtn.classList.add('hidden');
+                 backBtn.style.display = 'none'; // Force hide
+                 console.log('Back button hidden');
+             } else {
+                 console.error('Back button element not found');
+             }
+         }
+         
+         // Show status message
+         function showStatusMessage(message, type = 'info') {
+             const statusMessage = document.getElementById('statusMessage');
+             const statusText = document.getElementById('statusText');
+             
+             if (!statusMessage || !statusText) {
+                 console.error('Status message elements not found');
+                 return;
+             }
+             
+             statusText.textContent = message;
+             statusMessage.classList.remove('hidden');
+             
+             // Set color based on type
+             statusText.className = 'text-sm text-center';
+             if (type === 'error') {
+                 statusText.classList.add('text-red-600');
+             } else if (type === 'info') {
+                 statusText.classList.add('text-blue-600');
+             } else {
+                 statusText.classList.add('text-gray-600');
+             }
+         }
+         
+         // Hide status message
+         function hideStatusMessage() {
+             const statusMessage = document.getElementById('statusMessage');
+             statusMessage.classList.add('hidden');
+         }
+         
+         // Update scan button state
+         function updateScanButtonState() {
+             const scanBtn = document.getElementById('scanBtn');
+             
+             if (currentUser && currentUser.firstName && currentUser.lastName) {
+                 // User is logged in and has first and last name
+                 scanBtn.disabled = false;
+                 scanBtn.classList.remove('bg-gray-400');
+                 scanBtn.classList.add('bg-green-600', 'hover:bg-green-700');
+             } else {
+                 // User not logged in or missing name information
+                 scanBtn.disabled = true;
+                 scanBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
+                 scanBtn.classList.add('bg-gray-400');
+             }
+         }
+         
+         // Show password input for existing users
+         function showPasswordInput() {
+             document.getElementById('passwordInputContainer').classList.remove('hidden');
+             document.getElementById('passwordConfirmContainer').classList.add('hidden');
+             document.getElementById('passwordInput').placeholder = 'Enter your password';
+             document.getElementById('passwordInput').focus();
+         }
+         
+         // Show password creation for new users
+         function showPasswordCreation() {
+             document.getElementById('passwordInputContainer').classList.remove('hidden');
+             document.getElementById('passwordConfirmContainer').classList.remove('hidden');
+             document.getElementById('passwordInput').placeholder = 'Create a password (min 6 characters)';
+             document.getElementById('passwordInput').focus();
+             
+             // Clear password fields when showing password creation
+             document.getElementById('passwordInput').value = '';
+             document.getElementById('passwordConfirm').value = '';
+         }
+         
+         // Hide password input
+         function hidePasswordInput() {
+             document.getElementById('passwordInputContainer').classList.add('hidden');
+             document.getElementById('passwordConfirmContainer').classList.add('hidden');
+             document.getElementById('passwordInput').value = '';
+             document.getElementById('passwordConfirm').value = '';
+             document.getElementById('loginBtn').textContent = 'Continue';
+         }
+         
+         // Reset form to initial state
+         function resetForm() {
+             hidePasswordInput();
+             hideRegistrationFields();
+             hideBackButton();
+             showEmailInput();
+             document.getElementById('emailInput').value = '';
+             document.getElementById('loginBtn').textContent = 'Continue';
+             hideStatusMessage();
+             registrationStep = 'email';
+             
+             // Clear all input fields
+             document.getElementById('passwordInput').value = '';
+             document.getElementById('passwordConfirm').value = '';
+             document.getElementById('firstName').value = '';
+             document.getElementById('lastName').value = '';
+             
+             // Clear temporary password
+             tempPassword = '';
+             console.log('Form reset - temporary password cleared');
+         }
+         
+         // Update profile display
+         function updateProfileDisplay() {
+             const loginForm = document.getElementById('loginForm');
+             const profileInfo = document.getElementById('profileInfo');
+             const profileEmail = document.getElementById('profileEmail');
+             const profileStamps = document.getElementById('profileStamps');
+             const profileWelcome = document.getElementById('profileWelcome');
+             const logoutBtnSmall = document.getElementById('logoutBtnSmall');
+             const registrationNotice = document.getElementById('registrationNotice');
+             
+             if (currentUser) {
+                 loginForm.classList.add('hidden');
+                 profileInfo.classList.remove('hidden');
+                 logoutBtnSmall.classList.remove('hidden');
+                 profileEmail.textContent = currentUser.email;
+                 
+                 // Update welcome message with name if available
+                 if (currentUser.firstName) {
+                     profileWelcome.textContent = `Welcome, ${currentUser.firstName}!`;
+                 } else {
+                     profileWelcome.textContent = 'Welcome!';
+                 }
+                 
+                 // Show/hide registration notice based on completion status
+                 if (currentUser.firstName && currentUser.lastName) {
+                     registrationNotice.classList.add('hidden');
+                 } else {
+                     registrationNotice.classList.remove('hidden');
+                 }
+                 
+                 // Update stamps count
+                 const collected = Object.values(stamps).filter(Boolean).length;
+                 profileStamps.textContent = `${collected}/12`;
+                 
+                 // Load profile picture if available
+                 loadProfilePicture().catch(error => {
+                     console.error('Failed to load profile picture:', error);
+                 });
+             } else {
+                 loginForm.classList.remove('hidden');
+                 profileInfo.classList.add('hidden');
+                 logoutBtnSmall.classList.add('hidden');
+                 registrationNotice.classList.add('hidden');
+             }
+             
+             // Update scan button state
+             updateScanButtonState();
+         }
+         
+         // Load profile picture from localStorage and Firebase
+         async function loadProfilePicture() {
+             if (!currentUser || !currentUser.email) return;
+             
+             // First try to load from localStorage for immediate display (per user)
+             const savedPicture = localStorage.getItem(`mmf_profile_picture_${currentUser.email}`);
+             if (savedPicture) {
+                 const profilePicture = document.getElementById('profilePicture');
+                 profilePicture.innerHTML = `<img src="${savedPicture}" alt="Profile" class="w-full h-full object-cover rounded-full">`;
+             }
+             
+             // Then try to load from Firebase if user is logged in
+             if (window.firebase && window.firebase.db) {
+                 try {
+                     const firebasePicture = await loadProfilePictureFromFirebase();
+                     if (firebasePicture) {
+                         const profilePicture = document.getElementById('profilePicture');
+                         profilePicture.innerHTML = `<img src="${firebasePicture}" alt="Profile" class="w-full h-full object-cover rounded-full">`;
+                         // Update localStorage with Firebase version (per user)
+                         localStorage.setItem(`mmf_profile_picture_${currentUser.email}`, firebasePicture);
+                     }
+                 } catch (error) {
+                     console.error('Failed to load profile picture from Firebase:', error);
+                 }
+             }
+         }
+         
+         // Save profile picture to Firebase
+         async function saveProfilePictureToFirebase(imageData) {
+             if (!window.firebase || !window.firebase.db || !currentUser || !currentUser.email) {
+                 throw new Error('Firebase or user not available');
+             }
+             
+             try {
+                 const { collection, query, where, getDocs, updateDoc, doc } = await import("https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js");
+                 
+                 // Find the user document
+                 const usersRef = collection(window.firebase.db, 'users');
+                 const userQuery = query(usersRef, where('email', '==', currentUser.email));
+                 const querySnapshot = await getDocs(userQuery);
+                 
+                 if (!querySnapshot.empty) {
+                     const userDoc = querySnapshot.docs[0];
+                     await updateDoc(doc(window.firebase.db, 'users', userDoc.id), {
+                         profilePicture: imageData,
+                         updatedAt: new Date()
+                     });
+                     console.log('Profile picture saved to Firebase');
+                 } else {
+                     throw new Error('User document not found');
+                 }
+             } catch (error) {
+                 console.error('Error saving profile picture to Firebase:', error);
+                 throw error;
+             }
+         }
+         
+         // Load profile picture from Firebase
+         async function loadProfilePictureFromFirebase() {
+             if (!window.firebase || !window.firebase.db || !currentUser || !currentUser.email) {
+                 return null;
+             }
+             
+             try {
+                 const { collection, query, where, getDocs } = await import("https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js");
+                 
+                 // Find the user document
+                 const usersRef = collection(window.firebase.db, 'users');
+                 const userQuery = query(usersRef, where('email', '==', currentUser.email));
+                 const querySnapshot = await getDocs(userQuery);
+                 
+                 if (!querySnapshot.empty) {
+                     const userData = querySnapshot.docs[0].data();
+                     if (userData.profilePicture) {
+                         console.log('Profile picture loaded from Firebase');
+                         return userData.profilePicture;
+                     }
+                 }
+                 return null;
+             } catch (error) {
+                 console.error('Error loading profile picture from Firebase:', error);
+                 return null;
+             }
+         }
+         
+         // Show profile page
+         function showProfilePage() {
+             // Hide all other pages first
+             document.getElementById('merchantsPage').classList.add('hidden');
+             document.getElementById('rewardsPage').classList.add('hidden');
+             
+             // Show profile page
+             document.getElementById('profilePage').classList.remove('hidden');
+             updateNavigation();
+             
+             // Refresh user data from Firebase when profile page is shown
+             if (currentUser && currentUser.email && window.firebase && window.firebase.db) {
+                 loadUserDataFromFirebase(currentUser.email);
+             }
+             
+             // If there's an email link in the URL, pre-fill the email
+             if (window.location.href.includes('oobCode=')) {
+                 const email = window.localStorage.getItem('emailForSignIn');
+                 if (email) {
+                     document.getElementById('emailInput').value = email;
+                     showStatusMessage('Please click "Continue" to complete your sign in.', 'info');
+                 }
+             }
+         }
+         
+         // Hide profile page (go back to stamps)
+         function hideProfilePage() {
+             document.getElementById('profilePage').classList.add('hidden');
+             updateNavigation();
+         }
+         
+         // Show home page (stamps)
+         function showHomePage() {
+             document.getElementById('profilePage').classList.add('hidden');
+             document.getElementById('merchantsPage').classList.add('hidden');
+             document.getElementById('rewardsPage').classList.add('hidden');
+             updateNavigation();
+         }
+         
+         // Show merchants page
+         function showMerchantsPage() {
+             document.getElementById('profilePage').classList.add('hidden');
+             document.getElementById('rewardsPage').classList.add('hidden');
+             document.getElementById('merchantsPage').classList.remove('hidden');
+             updateNavigation();
+         }
+         
+         // Hide merchants page
+         function hideMerchantsPage() {
+             document.getElementById('merchantsPage').classList.add('hidden');
+             updateNavigation();
+         }
+         
+         // Show rewards page
+         function showRewardsPage() {
+             document.getElementById('profilePage').classList.add('hidden');
+             document.getElementById('merchantsPage').classList.add('hidden');
+             document.getElementById('rewardsPage').classList.remove('hidden');
+             updateNavigation();
+         }
+         
+         // Hide rewards page
+         function hideRewardsPage() {
+             document.getElementById('rewardsPage').classList.add('hidden');
+             updateNavigation();
+         }
+        
+        // Mock data
+        const DEFAULT_BRANDS = [
+            { id: "B01", name: "Matchanese", logo: "images/matchanese.png" },
+            { id: "B02", name: "Shizu Matcha Bar", logo: "images/shizu.png" },
+            { id: "B03", name: "Oh Hey There", logo: "images/ohheythere.png" },
+            { id: "B04", name: "Day Off Space", logo: "images/dayoff.png" },
+            { id: "B05", name: "Aichi Cafe", logo: "images/aichi.png" },
+            { id: "B06", name: "Take Five Slow Bar", logo: "images/takefive.png" },
+            { id: "B07", name: "Matcha Mama", logo: "images/matchamama.png" },
+            { id: "B08", name: "Ujisan", logo: "images/ujisan.png" },
+            { id: "B09", name: "Matcha Tokyo", logo: "images/matchatokyo.png" },
+            { id: "B10", name: "Chotto Matcha", logo: "images/chotto.png" },
+            { id: "B11", name: "The Matcha Co.", logo: "images/thematchaco.png" },
+            { id: "B12", name: "Melc Patisserie", logo: "images/melc.png" },
+        ];
+
+        // Legacy prototype helpers
+        function codeFor(id) {
+            return `STAMP_${id}`;
+        }
+
+        function verifyCode(brands, rawCode) {
+if (!rawCode) return null;
+const code = String(rawCode).trim().toUpperCase();
+return brands.find((b) => code === codeFor(b.id)) || null;
+}
+
+        // Merchant map (A..L -> B01..B12)
+        const MERCHANTS = [
+            { letter: "A", id: "B01", name: "Matchanese" },
+            { letter: "B", id: "B02", name: "Shizu Matcha Bar" },
+            { letter: "C", id: "B03", name: "Oh Hey There" },
+            { letter: "D", id: "B04", name: "Day Off Space" },
+            { letter: "E", id: "B05", name: "Aichi Cafe" },
+            { letter: "F", id: "B06", name: "Take Five Slow Bar" },
+            { letter: "G", id: "B07", name: "Matcha Mama" },
+            { letter: "H", id: "B08", name: "Ujisan" },
+            { letter: "I", id: "B09", name: "Matcha Tokyo" },
+            { letter: "J", id: "B10", name: "Chotto Matcha" },
+            { letter: "K", id: "B11", name: "The Matcha Co." },
+            { letter: "L", id: "B12", name: "Melc Patisserie" },
+        ];
+const LETTER_TO_MERCHANT = Object.fromEntries(MERCHANTS.map((m) => [m.letter, m]));
+
+// Token parsing for scanner output
+function parseToken(raw) {
+if (!raw || typeof raw !== "string") return { ok: false, reason: "empty" };
+const text = raw.trim();
+
+            // Compact: "<Letter><Base58...>"
+        const first = text[0];
+        if (LETTER_TO_MERCHANT[first]) {
+        return { ok: true, format: "compact", merchant: LETTER_TO_MERCHANT[first], token: text };
+        }
+
+        // Legacy: "mmf:<base64url(json)>"
+            if (text.startsWith("mmf:")) {
+            try {
+            const b64 = text.slice(4).replace(/-/g, "+").replace(/_/g, "/");
+            const json = JSON.parse(decodeURIComponent(escape(atob(b64))));
+            const brandId = json.brandId || json.b || null;
+            let merchant = null;
+            if (brandId) {
+            const num = parseInt(String(brandId).replace(/\D+/g, ""), 10);
+                        if (num >= 1 && num <= 12) merchant = MERCHANTS[num - 1];
+                    }
+                    return { ok: true, format: "mmf-b64", merchant, token: text, payload: json };
+                } catch (e) {
+                    return { ok: false, reason: "mmf_decode_failed", raw: text };
+                }
+            }
+            return { ok: false, reason: "unknown_format", raw: text };
+        }
+
+        // App state
+        let stamps = {};
+        let scanOpen = false;
+        let scannerReady = false;
+        let scannerRunning = false;
+        let scannerError = "";
+        let lastScan = { raw: "", parsed: null };
+        let scannerInstance = null;
+        let scanCompleted = false; // Prevent multiple scans
+        
+        // Debug reset state
+        let logoTapCount = 0;
+        let logoTapTimeout = null;
+
+        // DOM elements
+        const scanBtn = document.getElementById('scanBtn');
+        const scannerPanel = document.getElementById('scannerPanel');
+        const closeScannerBtn = document.getElementById('closeScannerBtn');
+        const largeLogoOverlay = document.getElementById('largeLogoOverlay');
+        const largeLogo = document.getElementById('largeLogo');
+        const scannedMerchant = document.getElementById('scannedMerchant');
+        const scannedLogo = document.getElementById('scannedLogo');
+        const scannedName = document.getElementById('scannedName');
+        const scannedStatus = document.getElementById('scannedStatus');
+        const scanInstructions = document.getElementById('scanInstructions');
+        const validatingMessage = document.getElementById('validatingMessage');
+        const progressText = document.getElementById('progressText');
+        const progressBar = document.getElementById('progressBar');
+
+        const stampGrid = document.getElementById('stampGrid');
+         
+         // Profile elements
+         const emailInput = document.getElementById('emailInput');
+         const loginBtn = document.getElementById('loginBtn');
+         const logoutBtn = document.getElementById('logoutBtn');
+         const navHomeBtn = document.getElementById('navHomeBtn');
+         const navProfileBtn = document.getElementById('navProfileBtn');
+         const closeProfileBtn = document.getElementById('closeProfileBtn');
+
+        // Initialize scanner
+        function initScanner() {
+            if (typeof window.Html5Qrcode !== 'undefined') {
+                scannerReady = true;
+                // Don't show "scanner ready" text - it blocks the view
+            } else {
+                console.error('Failed to load scanner library.');
+            }
+        }
+
+        // Scanner functions
+        async function startScanner() {
+            if (!window.Html5Qrcode || scannerRunning) return;
+            try {
+                if (!scannerInstance) {
+                    scannerInstance = new window.Html5Qrcode('mmf_reader', { verbose: false });
+                }
+                
+                // Get available cameras
+                const devices = await window.Html5Qrcode.getCameras();
+                console.log('Available cameras:', devices);
+                
+                // Camera selection
+                let camId = undefined;
+                
+                // Safari-safe camera selection
+                const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+                
+                if (isSafari) {
+                    // Safari: Use facingMode instead of deviceId for better compatibility
+                    camId = { facingMode: "environment" };
+                    console.log('Safari: Using facingMode environment (back camera)');
+                } else if (devices && devices.length > 0) {
+                    // Other browsers: Try to find back camera first
+                    const back = devices.find((d) => /back|rear/i.test(d.label));
+                    const front = devices.find((d) => /front/i.test(d.label));
+                    
+                    // Prefer back camera, then front camera, then any camera
+                    if (back) {
+                        camId = { deviceId: { exact: back.id } };
+                        console.log('Using back camera:', back.label);
+                    } else if (front) {
+                        camId = { deviceId: { exact: front.id } };
+                        console.log('Using front camera:', front.label);
+                    } else {
+                        camId = { deviceId: { exact: devices[0].id } };
+                        console.log('Using first available camera:', devices[0].label);
+                    }
+                }
+
+                // Safari-safe configuration
+                const config = { 
+                    fps: 10, 
+                    qrbox: (viewfinderWidth, viewfinderHeight) => {
+                        // Make the scanning area cover the entire camera view
+                        return { width: viewfinderWidth, height: viewfinderHeight };
+                    },
+                    rememberLastUsedCamera: true, 
+                    disableFlip: false 
+                };
+                
+                const onSuccess = (decodedText, decodedResult) => onScan(decodedText, decodedResult);
+                const onError = () => {};
+
+                await scannerInstance.start(camId, config, onSuccess, onError);
+                scannerRunning = true;
+                scannerErrorEl.classList.add('hidden');
+                scannerStatus.classList.add('hidden');
+                scannerSuccessEl.classList.add('hidden');
+                console.log('Scanner started successfully');
+                } catch (e) {
+                scannerError = e?.message || String(e);
+                console.error('Scanner start error:', e);
+                
+                // Simple fallback for any browser if camera selection fails
+                if (camId && camId.deviceId) {
+                    console.log('Retrying without specific camera selection');
+                    try {
+                        await scannerInstance.start(undefined, config, onSuccess, onError);
+                        scannerRunning = true;
+                        scannerErrorEl.classList.add('hidden');
+                        scannerStatus.classList.add('hidden');
+                        scannerSuccessEl.classList.add('hidden');
+                        console.log('Scanner started successfully with fallback');
+                        return;
+                    } catch (fallbackError) {
+                        console.error('Fallback also failed:', fallbackError);
+                        scannerError = fallbackError?.message || String(fallbackError);
+                    }
+                }
+                
+                scannerErrorEl.textContent = `Scanner error: ${scannerError}`;
+                scannerErrorEl.classList.remove('hidden');
+            }
+        }
+
+        async function stopScanner() {
+            if (!scannerInstance || !scannerRunning) return;
+            await scannerInstance.stop();
+            await scannerInstance.clear();
+            scannerRunning = false;
+        }
+
+        // Firebase QR Validation Functions
+        async function validateQRInFirebase(token) {
+            try {
+                console.log('Validating QR token:', token);
+                const { collection, query, where, getDocs, doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js");
+                
+                // First, let's check if the QR exists at all (regardless of status)
+                const qrRef = collection(window.firebase.db, 'qrcodes');
+                const allQrQuery = query(qrRef, where('token', '==', token));
+                const allQrSnapshot = await getDocs(allQrQuery);
+                
+                if (allQrSnapshot.empty) {
+                    console.log('QR token not found in database at all');
+                    return { valid: false, reason: 'qr_not_found' };
+                }
+                
+                const qrDoc = allQrSnapshot.docs[0];
+                const qrData = qrDoc.data();
+                console.log('Found QR in database:', qrData);
+                
+                // Check if it's already used
+                if (qrData.status === 'used') {
+                    console.log('QR is already used');
+                    return { valid: false, reason: 'qr_already_used' };
+                }
+                
+                // Now check for unused QR
+                const unusedQrQuery = query(qrRef, 
+                    where('token', '==', token),
+                    where('status', '==', 'unused')
+                );
+                const unusedQrSnapshot = await getDocs(unusedQrQuery);
+                
+                if (!unusedQrSnapshot.empty) {
+                    console.log('Found unused QR, marking as used...');
+                    
+                                         // Mark QR as used with user information
+                     const updateData = {
+                        status: 'used',
+                        usedAt: new Date(),
+                        usedBy: getDeviceId()
+                     };
+                     
+                     // Add user information if logged in
+                     if (currentUser) {
+                         updateData.userEmail = currentUser.email;
+                         updateData.userId = currentUser.uid || currentUser.email; // Use Firebase UID or email as user ID
+                     }
+                     
+                     await updateDoc(doc(window.firebase.db, 'qrcodes', qrDoc.id), updateData);
+                    
+                    console.log('QR marked as used successfully');
+                    
+                    return {
+                        valid: true,
+                        merchant: {
+                            id: qrData.merchantId,
+                            name: qrData.merchantName
+                        },
+                        qrId: qrDoc.id
+                    };
+                }
+                
+                console.log('QR not found as unused');
+                return { valid: false, reason: 'qr_not_found_or_used' };
+            } catch (error) {
+                console.error('Error validating QR in Firebase:', error);
+                return { valid: false, reason: 'firebase_error' };
+            }
+        }
+        
+        function getDeviceId() {
+            // Simple device ID generation
+            let deviceId = localStorage.getItem('mmf_device_id');
+            if (!deviceId) {
+                deviceId = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                localStorage.setItem('mmf_device_id', deviceId);
+            }
+            return deviceId;
+        }
+        
+        // Show logo immediately with fade-in animation
+        function showLogoImmediately(logoUrl, merchantName) {
+            console.log('=== SHOW LOGO IMMEDIATELY ===');
+            console.log('Logo URL:', logoUrl);
+            console.log('Merchant Name:', merchantName);
+            
+            // Set logo and show overlay
+            largeLogo.src = logoUrl;
+            largeLogo.alt = merchantName;
+            largeLogoOverlay.classList.remove('hidden');
+            
+            // Trigger fade-in animation
+            setTimeout(() => {
+                largeLogoOverlay.classList.remove('opacity-0');
+                largeLogoOverlay.classList.add('opacity-100');
+            }, 10);
+            
+            console.log('=== END SHOW LOGO IMMEDIATELY ===');
+        }
+
+        // Start logo timer (2 seconds)
+        function startLogoTimer(shouldCloseScanner = true) {
+            console.log('Starting logo timer (2 seconds), shouldCloseScanner:', shouldCloseScanner);
+            
+            setTimeout(() => {
+                console.log('Logo timer finished, hiding logo');
+                
+                // Hide logo with fade-out
+                largeLogoOverlay.classList.remove('opacity-100');
+                largeLogoOverlay.classList.add('opacity-0');
+                
+                // Reset green border
+                const qrShadedRegion = document.querySelector('#mmf_reader .qr-shaded-region');
+                if (qrShadedRegion) {
+                    qrShadedRegion.style.border = '2px solid rgba(255, 255, 255, 0.85)';
+                }
+                
+                // Close scanner only if requested
+                if (shouldCloseScanner) {
+                    closeScanner();
+            } else {
+                    // Reset scan completed flag to allow new scans
+                    scanCompleted = false;
+                    
+                    // Reset status display for already collected stamps
+                    scannedMerchant.classList.add('hidden');
+                    scanInstructions.classList.remove('hidden');
+                    validatingMessage.classList.add('hidden');
+                }
+            }, 2000);
+        }
+
+        // Helper function to show brand messages with logo
+        function showBrandMessage(merchant, type, message) {
+            console.log('=== SHOW BRAND MESSAGE ===');
+            console.log('Merchant:', merchant);
+            console.log('Type:', type);
+            console.log('Message:', message);
+            
+            // Find the brand logo
+            const brand = DEFAULT_BRANDS.find(b => b.id === merchant.id);
+            const logoUrl = brand ? brand.logo : null;
+            
+            console.log('Found brand:', brand);
+            console.log('Logo URL:', logoUrl);
+            
+            // Show in bottom panel
+            if (logoUrl) {
+                scannedLogo.src = logoUrl;
+                scannedLogo.alt = merchant.name;
+                scannedName.textContent = merchant.name;
+                scannedStatus.textContent = message;
+                scannedMerchant.classList.remove('hidden');
+                validatingMessage.classList.add('hidden');
+            }
+            
+            console.log('=== END SHOW BRAND MESSAGE ===');
+        }
+        
+        // Helper function to show error messages
+        function showErrorMessage(message) {
+            console.log('=== SHOW ERROR MESSAGE ===');
+            console.log('Message:', message);
+            
+            // Show error in bottom panel
+            scannedName.textContent = 'Invalid QR';
+            scannedStatus.textContent = message;
+            scannedMerchant.classList.remove('hidden');
+            validatingMessage.classList.add('hidden');
+            
+            // Show generic error logo immediately
+            showLogoImmediately('images/mmf-logo.png', 'Invalid QR');
+            
+            // Start timer for error case too
+            startLogoTimer(true); // Close scanner for invalid QRs
+            
+            console.log('ERROR MESSAGE SHOWN');
+            console.log('=== END SHOW ERROR MESSAGE ===');
+        }
+        
+                // Handle scan - IMMEDIATE LOGO DISPLAY
+        async function onScan(decodedText) {
+            console.log('=== SCAN START ===');
+            console.log('Decoded text:', decodedText);
+            console.log('Scan completed flag:', scanCompleted);
+            
+            // IMMEDIATELY prevent multiple scans
+            if (scanCompleted) {
+                console.log('Scan already completed, ignoring this scan');
+                return;
+            }
+            
+            // Parse the QR code
+            const parsed = parseToken(decodedText);
+            console.log('Parsed result:', parsed);
+            
+            // Check if QR code is valid
+            if (!parsed.ok || !parsed.merchant) {
+                console.log('Invalid QR code format');
+                showErrorMessage('Invalid QR code. Please try again.');
+                return;
+            }
+            
+            const merchant = parsed.merchant;
+            console.log('Merchant found:', merchant);
+            
+            // MARK AS COMPLETED IMMEDIATELY to prevent multiple scans
+            scanCompleted = true;
+            console.log('Scan marked as completed, processing...');
+            
+            // SHOW LOGO IMMEDIATELY based on local parsing
+            const brand = DEFAULT_BRANDS.find(b => b.id === merchant.id);
+            if (brand) {
+                showLogoImmediately(brand.logo, brand.name);
+            }
+            
+            // Show validating message
+            scanInstructions.classList.add('hidden');
+            validatingMessage.classList.remove('hidden');
+            
+            // Check if already stamped
+            if (stamps[merchant.id]) {
+                console.log('Already stamped, showing message');
+                showBrandMessage(merchant, 'already_collected', 'You already collected this stamp!');
+                startLogoTimer(false); // Don't close scanner for already collected
+                    return;
+                }
+                
+            // IMMEDIATE local save for fast UI (before Firebase validation)
+            console.log('Adding stamp locally for immediate UI feedback');
+            stamps[merchant.id] = true;
+            saveStamps();
+            generateStampGrid();
+            updateProgress();
+            
+            // Validate with Firebase if available
+                if (window.firebase && window.firebase.db) {
+                console.log('Firebase available, validating...');
+                    const validation = await validateQRInFirebase(decodedText);
+                console.log('Firebase validation result:', validation);
+                    
+                    if (!validation.valid) {
+                    console.log('Firebase validation failed, removing local stamp');
+                    // Remove the local stamp if Firebase validation failed
+                    delete stamps[merchant.id];
+                    saveStamps();
+                    generateStampGrid();
+                    updateProgress();
+                    
+                        let errorMessage = 'QR code invalid';
+                        if (validation.reason === 'qr_already_used') {
+                        errorMessage = 'This QR code has already been used by someone else';
+                        } else if (validation.reason === 'qr_not_found') {
+                        errorMessage = 'Invalid QR code - not found in our system';
+                    }
+                    showBrandMessage(merchant, 'error', errorMessage);
+                    startLogoTimer(true); // Close scanner for invalid QRs
+                        return;
+                    }
+                    
+                // Firebase validation successful - stamp stays
+                console.log('Firebase validation successful, stamp confirmed');
+                showBrandMessage(validation.merchant, 'success', 'Stamp collected!');
+                } else {
+                // No Firebase, use local validation
+                console.log('No Firebase, using local validation');
+                showBrandMessage(merchant, 'success', 'Stamp collected!');
+            }
+            
+            // Start logo timer (2 seconds) for successful scans
+            startLogoTimer(true); // Close scanner for successful scans
+            
+            // UI already updated above for immediate feedback
+            
+            // Add visual feedback - solid green border that fades out
+                const qrShadedRegion = document.querySelector('#mmf_reader .qr-shaded-region');
+                if (qrShadedRegion) {
+                    qrShadedRegion.style.border = '2px solid #10b981';
+                qrShadedRegion.style.transition = 'border-color 1s ease';
+            }
+            
+            console.log('=== SCAN END ===');
+        }
+
+        // Generate stamp grid
+        function generateStampGrid() {
+            console.log('Generating stamp grid with brands:', DEFAULT_BRANDS);
+            stampGrid.innerHTML = DEFAULT_BRANDS.map(brand => {
+                const done = !!stamps[brand.id];
+                console.log(`Brand ${brand.id}: ${brand.name}, done: ${done}`);
+                return `
+                    <div class="relative flex flex-col items-center justify-center h-24">
+                        <div class="relative">
+                            <div class="w-16 h-16 rounded-full flex items-center justify-center text-center text-xs font-semibold select-none overflow-hidden bg-gray-50 transition-transform duration-1000 ease-out" 
+                                 data-brand-id="${brand.id}" 
+                                 style="transform-style: preserve-3d;">
+                                <img src="${brand.logo}" alt="${brand.name}" class="w-full h-full object-cover rounded-full transition-opacity duration-200 ${done ? 'opacity-100' : 'opacity-20'}" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                                <span class="px-3 leading-tight" style="display: none;">Logo</span>
+                            </div>
+                            ${done ? `
+                                <div class="absolute -top-1 -right-1 bg-green-500 text-white rounded-full p-0.5 shadow-sm z-10" style="transform: translate(-5px, 5px);">
+                                    <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
+                                        <path d="M9 16.2l-3.5-3.5-1.4 1.4L9 19 20.3 7.7l-1.4-1.4z" fill="currentColor" />
+                                    </svg>
+                                </div>
+                            ` : ''}
+                        </div>
+                        <div class="mt-2 text-xs text-gray-500 text-center">${brand.name}</div>
+                    </div>
+                `;
+            }).join('');
+            console.log('Stamp grid HTML generated');
+            
+            // Add click event listeners for coin flip animation
+            stampGrid.querySelectorAll('[data-brand-id]').forEach(logo => {
+                logo.addEventListener('click', function() {
+                    // Add coin flip animation - just one spin (for all logos)
+                    this.style.transform = 'rotateY(360deg)';
+                    setTimeout(() => {
+                        this.style.transition = 'none';
+                        this.style.transform = '';
+                        // Re-enable transition after a brief moment
+                        setTimeout(() => {
+                            this.style.transition = '';
+                        }, 10);
+                    }, 1000);
+                });
+            });
+        }
+
+        // Update progress
+        function updateProgress() {
+            const total = DEFAULT_BRANDS.length;
+            const collected = Object.values(stamps).filter(Boolean).length;
+            const progress = Math.round((collected / total) * 100);
+            
+            progressText.textContent = `${collected}/${total}`;
+            progressBar.style.width = `${progress}%`;
+            
+             // Update profile stamps count if user is logged in
+             if (currentUser) {
+                 const profileStamps = document.getElementById('profileStamps');
+                 if (profileStamps) {
+                     profileStamps.textContent = `${collected}/${total}`;
+                 }
+            }
+        }
+
+        // Reset all stamps
+        function resetAll() {
+            if (confirm("Reset all stamps?")) {
+                stamps = {};
+                localStorage.removeItem("mmf_stamps"); // Completely remove from localStorage
+                generateStampGrid();
+                updateProgress();
+                console.log('Stamps reset. Current stamps:', stamps);
+            }
+        }
+        
+        // Debug reset function
+        function debugReset() {
+            console.log('=== DEBUG RESET ACTIVATED ===');
+            stamps = {};
+            localStorage.removeItem("mmf_stamps");
+            generateStampGrid();
+            updateProgress();
+            console.log('Debug reset completed. All stamps cleared.');
+        }
+        
+        // Handle logo taps for debug reset
+        function handleLogoTap() {
+            logoTapCount++;
+            console.log(`Logo tap ${logoTapCount}/3`);
+            
+            // Clear existing timeout
+            if (logoTapTimeout) {
+                clearTimeout(logoTapTimeout);
+            }
+            
+            // Set new timeout to reset counter - much shorter window for quick succession
+            logoTapTimeout = setTimeout(() => {
+                logoTapCount = 0;
+                console.log('Tap timeout reset');
+            }, 800); // 800ms window for 3 taps - requires quick succession
+            
+            // Check if we have 3 taps
+            if (logoTapCount >= 3) {
+                debugReset();
+                logoTapCount = 0;
+                if (logoTapTimeout) {
+                    clearTimeout(logoTapTimeout);
+                }
+            }
+        }
+
+        // Open scanner
+        async function openScanner() {
+            scanOpen = true;
+            scanCompleted = false; // Reset scan completion flag
+            console.log('Scanner opened, scanCompleted reset to false');
+            scannerPanel.classList.remove('hidden');
+            
+            if (scannerReady && !scannerRunning) {
+                await startScanner();
+            }
+        }
+
+        // Close scanner
+        async function closeScanner() {
+            scanOpen = false;
+            scannerPanel.classList.add('hidden');
+            
+            if (scannerRunning) {
+                await stopScanner();
+            }
+            
+            // Reset all message elements
+            scannedMerchant.classList.add('hidden');
+            validatingMessage.classList.add('hidden');
+            scanInstructions.classList.remove('hidden');
+            largeLogoOverlay.classList.add('hidden');
+            largeLogoOverlay.classList.remove('opacity-100');
+            largeLogoOverlay.classList.add('opacity-0');
+            
+            // Reset scanning guide border
+            const qrShadedRegion = document.querySelector('#mmf_reader .qr-shaded-region');
+            if (qrShadedRegion) {
+                qrShadedRegion.style.border = '';
+                qrShadedRegion.style.transition = '';
+            }
+            
+            // Always return to the stamp page (home) after scanning
+            showHomePage();
+        }
+
+
+
+                 // Event listeners
+         scanBtn.addEventListener('click', () => {
+             if (currentUser && currentUser.firstName && currentUser.lastName) {
+                 openScanner();
+             } else if (currentUser && (!currentUser.firstName || !currentUser.lastName)) {
+                 showToast('Please complete your profile with your name first');
+                 showProfilePage();
+             } else {
+                 showToast('Please log in to collect stamps');
+                 showProfilePage();
+             }
+         });
+        closeScannerBtn.addEventListener('click', closeScanner);
+         
+         // Navigation event listeners
+         navHomeBtn.addEventListener('click', showHomePage); // Home button shows stamps
+         navProfileBtn.addEventListener('click', showProfilePage); // Profile button shows profile
+         
+         // New navigation buttons
+         const navMerchantsBtn = document.getElementById('navMerchantsBtn');
+         const navRewardsBtn = document.getElementById('navRewardsBtn');
+         const closeRewardsBtn = document.getElementById('closeRewardsBtn');
+         
+         navMerchantsBtn.addEventListener('click', showMerchantsPage);
+         navRewardsBtn.addEventListener('click', showRewardsPage);
+         closeRewardsBtn.addEventListener('click', hideRewardsPage);
+         
+         // Landing page signup button
+         const landingSignupBtn = document.getElementById('landingSignupBtn');
+         landingSignupBtn.addEventListener('click', () => {
+             // Show main app and go directly to profile tab
+             showMainApp();
+             showProfilePage();
+         });
+         
+         // Email authentication event listener
+         loginBtn.addEventListener('click', async () => {
+             if (isCheckingUser) return; // Prevent multiple clicks
+             
+             const registrationFields = document.getElementById('registrationFields');
+             const isRegistrationMode = !registrationFields.classList.contains('hidden');
+             const passwordContainer = document.getElementById('passwordInputContainer');
+             const isPasswordMode = !passwordContainer.classList.contains('hidden');
+             
+             if (isRegistrationMode) {
+                 // Step 3: Name Step - Create Account
+                 const email = document.getElementById('emailInput').value.trim();
+                 const firstName = document.getElementById('firstName').value.trim();
+                 const lastName = document.getElementById('lastName').value.trim();
+                 
+                 console.log('Creating account with:', { email, password: tempPassword ? '***' : 'EMPTY', firstName, lastName });
+                 
+                 if (!firstName || !lastName) {
+                     showStatusMessage('Please fill in your first and last name', 'error');
+                     return;
+                 }
+                 
+                 if (!tempPassword) {
+                     showStatusMessage('Password is missing. Please go back and enter your password.', 'error');
+                     return;
+                 }
+                 
+                 // Create the account
+                 isCheckingUser = true;
+                 const loginBtn = document.getElementById('loginBtn');
+                 const originalText = loginBtn.textContent;
+                 loginBtn.textContent = 'Creating Account...';
+                 loginBtn.disabled = true;
+                 
+                 try {
+                     if (window.firebase && window.firebase.auth) {
+                         const { createUserWithEmailAndPassword } = await import("https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js");
+                         const userCredential = await createUserWithEmailAndPassword(window.firebase.auth, email, tempPassword);
+                         
+                         currentUser = { 
+                             email: email,
+                             uid: userCredential.user.uid,
+                             firstName: firstName,
+                             lastName: lastName
+                         };
+                         
+                         // Save user data to Firestore immediately
+                         try {
+                             await registerUser(email, firstName, lastName);
+                         } catch (firestoreError) {
+                             console.error('Error saving user to Firestore:', firestoreError);
+                             // Continue anyway - user is created in Auth
+                         }
+                         
+                         saveUser();
+                         updateProfileDisplay();
+                         await loadUserStampsFromFirebase(email);
+                         hideProfilePage();
+                         showToast('Account created successfully! You can now scan QR codes.');
+                         
+                         // Force update scan button state after registration
+                         updateScanButtonState();
+                         
+                         // Reset form
+                         resetForm();
+                     } else {
+                         showStatusMessage('Authentication service not available. Please try again.', 'error');
+                     }
+                 } catch (error) {
+                     console.error('Error during account creation:', error);
+                     
+                     let errorMessage = 'Failed to create account. Please try again.';
+                     
+                     if (error.code === 'auth/email-already-in-use') {
+                         errorMessage = 'Account already exists. Please login instead.';
+                     } else if (error.code === 'auth/weak-password') {
+                         errorMessage = 'Password is too weak. Please choose a stronger password.';
+                     }
+                     
+                     showStatusMessage(errorMessage, 'error');
+                 } finally {
+                     isCheckingUser = false;
+                     loginBtn.textContent = originalText;
+                     loginBtn.disabled = false;
+                 }
+                 
+             } else if (isPasswordMode) {
+                 // Step 2: Password Step
+                 const email = document.getElementById('emailInput').value.trim();
+                 const password = document.getElementById('passwordInput').value.trim();
+                 const passwordConfirm = document.getElementById('passwordConfirm').value.trim();
+                 
+                 if (!password) {
+                     showStatusMessage('Please enter your password', 'error');
+                     return;
+                 }
+                 
+                 if (password.length < 6) {
+                     showStatusMessage('Password must be at least 6 characters', 'error');
+                     return;
+                 }
+                 
+                 if (registrationStep === 'password') {
+                     // New user - validate password and move to name step
+                     console.log('Password step - validating password for new user');
+                     
+                     if (!passwordConfirm) {
+                         showStatusMessage('Please confirm your password', 'error');
+                         return;
+                     }
+                     
+                     if (password !== passwordConfirm) {
+                         showStatusMessage('Passwords do not match', 'error');
+                         return;
+                     }
+                     
+                     // Password is valid, show name fields and hide email/password
+                     console.log('Password valid, moving to name step');
+                     
+                     // Store the password temporarily
+                     tempPassword = password;
+                     console.log('Password stored temporarily, length:', password.length);
+                     
+                     showRegistrationFields();
+                     hidePasswordInput();
+                     hideEmailInput();
+                     showStatusMessage('Please enter your first and last name.', 'info');
+                     loginBtn.textContent = 'Create Account';
+                     
+                     // Update registration step
+                     registrationStep = 'name';
+                     console.log('Registration step set to:', registrationStep);
+                     
+                     // Show back button
+                     showBackButton();
+                     return;
+                     
+                 } else {
+                     // Existing user - login
+                     isCheckingUser = true;
+                     const loginBtn = document.getElementById('loginBtn');
+                     const originalText = loginBtn.textContent;
+                     loginBtn.textContent = 'Logging in...';
+                     loginBtn.disabled = true;
+                     
+                     try {
+                         if (window.firebase && window.firebase.auth) {
+                             const { signInWithEmailAndPassword } = await import("https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js");
+                             const userCredential = await signInWithEmailAndPassword(window.firebase.auth, email, password);
+                             
+                             currentUser = { 
+                                 email: email,
+                                 uid: userCredential.user.uid 
+                             };
+                             
+                             // Load user data from Firebase
+                             await loadUserDataFromFirebase(email);
+                             
+                             saveUser();
+                             updateProfileDisplay();
+                             await loadUserStampsFromFirebase(email);
+                             hideProfilePage();
+                             showToast('Successfully logged in!');
+                             
+                             // Reset form
+                             hidePasswordInput();
+                             document.getElementById('emailInput').value = '';
+                             
+                             // Force update scan button state after login
+                             updateScanButtonState();
+                             
+                         } else {
+                             showStatusMessage('Authentication service not available. Please try again.', 'error');
+                         }
+                     } catch (error) {
+                         console.error('Error during login:', error);
+                         
+                         let errorMessage = 'Failed to login. Please try again.';
+                         
+                         if (error.code === 'auth/wrong-password') {
+                             errorMessage = 'Incorrect password. Please try again.';
+                         } else if (error.code === 'auth/user-not-found') {
+                             errorMessage = 'User not found. Please check your email.';
+                         }
+                         
+                         showStatusMessage(errorMessage, 'error');
+                     } finally {
+                         isCheckingUser = false;
+                         loginBtn.textContent = originalText;
+                         loginBtn.disabled = false;
+                     }
+                 }
+                 
+             } else {
+                 // Step 1: Email Entry
+                 const email = document.getElementById('emailInput').value.trim();
+                 if (!email) {
+                     showStatusMessage('Please enter your email address', 'error');
+                     return;
+                 }
+                 
+                 // Basic email validation
+                 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                 if (!emailRegex.test(email)) {
+                     showStatusMessage('Please enter a valid email address', 'error');
+                     return;
+                 }
+                 
+                 isCheckingUser = true;
+                 const loginBtn = document.getElementById('loginBtn');
+                 const originalText = loginBtn.textContent;
+                 loginBtn.textContent = 'Checking Account...';
+                 loginBtn.disabled = true;
+                 
+                 try {
+                     console.log('Checking if user exists...');
+                     console.log('Firebase auth available:', !!window.firebase?.auth);
+                     
+                     if (window.firebase && window.firebase.auth) {
+                         // Check if user exists
+                         const userExists = await checkUserExists(email);
+                         
+                         if (userExists) {
+                             // User exists - show password input for login
+                             console.log('User exists, showing login form');
+                             showPasswordInput();
+                             showStatusMessage('Please enter your password to login.', 'info');
+                             loginBtn.textContent = 'Login';
+                         } else {
+                             // New user - show password creation
+                             console.log('New user, showing password creation form');
+                             showPasswordCreation();
+                             hideEmailInput();
+                             showStatusMessage('Create a password for your new account.', 'info');
+                             loginBtn.textContent = 'Continue';
+                             
+                             // Set registration step
+                             registrationStep = 'password';
+                             console.log('Registration step set to:', registrationStep);
+                             
+                             // Show back button
+                             showBackButton();
+                         }
+                         
+                     } else {
+                         console.error('Firebase auth not available');
+                         showStatusMessage('Authentication service not available. Please try again.', 'error');
+                     }
+                 } catch (error) {
+                     console.error('Error during authentication:', error);
+                     console.error('Error code:', error.code);
+                     console.error('Error message:', error.message);
+                     
+                     let errorMessage = 'Failed to process request. Please try again.';
+                     
+                     if (error.code === 'auth/invalid-email') {
+                         errorMessage = 'Please enter a valid email address.';
+                     }
+                     
+                     showStatusMessage(errorMessage, 'error');
+                 } finally {
+                     isCheckingUser = false;
+                     loginBtn.textContent = originalText;
+                     loginBtn.disabled = false;
+                 }
+             }
+         });
+         
+         // Email input event listener - combined functionality
+         document.getElementById('emailInput').addEventListener('input', () => {
+             // Reset form when user starts typing a new email
+             hideStatusMessage();
+             hidePasswordInput();
+             hideRegistrationFields();
+             hideBackButton();
+             showEmailInput();
+             document.getElementById('loginBtn').textContent = 'Continue';
+             registrationStep = 'email';
+             
+             // Clear all input fields when user starts typing new email
+             document.getElementById('passwordInput').value = '';
+             document.getElementById('passwordConfirm').value = '';
+             document.getElementById('firstName').value = '';
+             document.getElementById('lastName').value = '';
+             
+             // Clear temporary password when user starts typing new email
+             tempPassword = '';
+             console.log('Email input changed - temporary password cleared');
+             
+             // If there's an email link in the URL, pre-fill the email
+             if (window.location.href.includes('oobCode=') && !document.getElementById('emailInput').value) {
+                 const email = window.localStorage.getItem('emailForSignIn');
+                 if (email) {
+                     document.getElementById('emailInput').value = email;
+                 }
+             }
+         });
+          
+          // Password toggle functionality
+          document.getElementById('togglePassword').addEventListener('click', () => {
+             const passwordInput = document.getElementById('passwordInput');
+             const toggleBtn = document.getElementById('togglePassword');
+             
+             if (passwordInput.type === 'password') {
+                 passwordInput.type = 'text';
+                 toggleBtn.innerHTML = `
+                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21"></path>
+                     </svg>
+                 `;
+             } else {
+                 passwordInput.type = 'password';
+                 toggleBtn.innerHTML = `
+                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                     </svg>
+                 `;
+             }
+         });
+         
+         document.getElementById('togglePasswordConfirm').addEventListener('click', () => {
+             const passwordConfirm = document.getElementById('passwordConfirm');
+             const toggleBtn = document.getElementById('togglePasswordConfirm');
+             
+             if (passwordConfirm.type === 'password') {
+                 passwordConfirm.type = 'text';
+                 toggleBtn.innerHTML = `
+                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21"></path>
+                     </svg>
+                 `;
+             } else {
+                 passwordConfirm.type = 'password';
+                 toggleBtn.innerHTML = `
+                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                     </svg>
+                 `;
+             }
+         });
+         
+         // Logout event listeners
+         logoutBtn.addEventListener('click', handleLogout);
+         document.getElementById('logoutBtnSmall').addEventListener('click', handleLogout);
+         
+
+         
+         // Back button event listener
+         const backBtn = document.getElementById('backBtn');
+         if (backBtn) {
+             backBtn.addEventListener('click', handleBackButton);
+             console.log('Back button event listener added');
+         } else {
+             console.error('Back button not found when adding event listener');
+         }
+         
+         // Profile picture upload functionality
+         document.getElementById('profilePicture').addEventListener('click', () => {
+             document.getElementById('profilePictureInput').click();
+         });
+         
+         document.getElementById('profilePictureInput').addEventListener('change', async (event) => {
+             const file = event.target.files[0];
+             if (file) {
+                 const reader = new FileReader();
+                 reader.onload = async function(e) {
+                     const profilePicture = document.getElementById('profilePicture');
+                     profilePicture.innerHTML = `<img src="${e.target.result}" alt="Profile" class="w-full h-full object-cover rounded-full">`;
+                     
+                     // Save to localStorage for immediate display (per user)
+                     if (currentUser && currentUser.email) {
+                         localStorage.setItem(`mmf_profile_picture_${currentUser.email}`, e.target.result);
+                     }
+                     
+                     // Save to Firebase if user is logged in
+                     if (currentUser && currentUser.email) {
+                         try {
+                             await saveProfilePictureToFirebase(e.target.result);
+                             showToast('Profile picture updated and saved to cloud!');
+                         } catch (error) {
+                             console.error('Failed to save profile picture to Firebase:', error);
+                             showToast('Profile picture updated locally (cloud save failed)');
+                         }
+                     } else {
+                         showToast('Profile picture updated locally!');
+                     }
+                 };
+                 reader.readAsDataURL(file);
+             }
+         });
+         
+         function handleBackButton() {
+             console.log('Back button clicked, current step:', registrationStep);
+             
+             if (registrationStep === 'name') {
+                 console.log('Going back from name step to password step');
+                 // Go back from name step to password step
+                 hideRegistrationFields();
+                 showPasswordCreation();
+                 showEmailInput();
+                 showStatusMessage('Create a password for your new account.', 'info');
+                 document.getElementById('loginBtn').textContent = 'Continue';
+                 
+                 // Clear the name fields
+                 document.getElementById('firstName').value = '';
+                 document.getElementById('lastName').value = '';
+                 
+                 // Clear temporary password when going back
+                 tempPassword = '';
+                 console.log('Temporary password cleared');
+                 
+                 // Update registration step
+                 registrationStep = 'password';
+                 // Back button should remain visible in password step
+             } else if (registrationStep === 'password') {
+                 console.log('Going back from password step to email step');
+                 // Go back from password step to email step
+                 hidePasswordInput();
+                 showEmailInput();
+                 hideBackButton();
+                 showStatusMessage('Enter your email address', 'info');
+                 document.getElementById('loginBtn').textContent = 'Continue';
+                 
+                 // Clear the password fields
+                 document.getElementById('passwordInput').value = '';
+                 document.getElementById('passwordConfirm').value = '';
+                 
+                 // Clear temporary password when going back to email
+                 tempPassword = '';
+                 console.log('Temporary password cleared');
+                 
+                 // Update registration step
+                 registrationStep = 'email';
+             }
+         }
+         
+         function handleLogout() {
+             if (!confirm('Are you sure you want to log out?')) {
+                 return;
+             }
+             
+             // Keep the email in the input field for easy re-login
+             const emailInput = document.getElementById('emailInput');
+             if (currentUser) {
+                 emailInput.value = currentUser.email;
+             }
+             
+             currentUser = null;
+             saveUser();
+             
+             // Clear stamps on logout
+             localStorage.removeItem("mmf_stamps");
+             stamps = {};
+             generateStampGrid();
+             updateProgress();
+             
+             // Hide registration fields and reset form
+             hideRegistrationFields();
+             
+             updateProfileDisplay();
+             updateScanButtonState();
+             
+             console.log('User logged out, stamps cleared');
+         }
+        
+        // Debug reset event listener - handle both click and touch for mobile compatibility
+        const logoDebug = document.getElementById('logoDebug');
+        logoDebug.addEventListener('click', handleLogoTap);
+        logoDebug.addEventListener('touchstart', function(e) {
+            e.preventDefault(); // Prevent double-firing on mobile
+            handleLogoTap();
+        });
+
+                // Load saved stamps
+        function loadStamps() {
+            try {
+                const saved = JSON.parse(localStorage.getItem("mmf_stamps") || "{}");
+                console.log('Loading stamps from localStorage:', saved);
+                if (saved && typeof saved === "object") {
+                    stamps = saved;
+                    console.log('Stamps loaded:', stamps);
+                }
+            } catch (e) {
+                console.warn("Failed to parse saved stamps", e);
+            }
+        }
+
+        // Save stamps
+        function saveStamps() {
+                try {
+                localStorage.setItem("mmf_stamps", JSON.stringify(stamps));
+                } catch (e) {
+                console.warn("Failed to save stamps", e);
+                }
+        }
+        
+                 // Check if user exists in Firebase Auth
+         async function checkUserExists(email) {
+             if (!window.firebase || !window.firebase.auth) {
+                 console.log('Firebase not available for user check');
+                 return false;
+             }
+             
+             try {
+                 // Try to create a user with a temporary password to check if user exists
+                 // This will fail with 'auth/email-already-in-use' if user exists
+                 const { createUserWithEmailAndPassword } = await import("https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js");
+                 
+                 try {
+                     const tempPassword = 'TempPassword123!';
+                     const userCredential = await createUserWithEmailAndPassword(window.firebase.auth, email, tempPassword);
+                     
+                     // If we get here, user was created successfully
+                     // We need to delete this temporary user
+                     await userCredential.user.delete();
+                     
+                     // User didn't exist before
+                     return false;
+                 } catch (error) {
+                     if (error.code === 'auth/email-already-in-use') {
+                         // User already exists
+                         return true;
+                     } else {
+                         // Other error, assume user doesn't exist
+                         console.error('Error checking user existence:', error);
+                         return false;
+                     }
+                 }
+             } catch (error) {
+                 console.error('Error checking user existence:', error);
+                 return false;
+             }
+         }
+         
+         // Load user data from Firebase
+         async function loadUserDataFromFirebase(email) {
+             if (!window.firebase || !window.firebase.db) {
+                 console.log('Firebase not available for user data loading');
+                 return;
+             }
+             
+             try {
+                 const { collection, query, where, getDocs } = await import("https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js");
+                 
+                 const usersRef = collection(window.firebase.db, 'users');
+                 const userQuery = query(usersRef, where('email', '==', email));
+                 const querySnapshot = await getDocs(userQuery);
+                 
+                 if (!querySnapshot.empty) {
+                     const userData = querySnapshot.docs[0].data();
+                     currentUser.firstName = userData.firstName;
+                     currentUser.lastName = userData.lastName;
+                     console.log('User data loaded from Firebase:', userData);
+                     
+                     // Save updated user data to localStorage
+                     saveUser();
+                     
+                     // Update profile display after loading user data
+                     updateProfileDisplay();
+                 }
+             } catch (error) {
+                 console.error('Error loading user data from Firebase:', error);
+             }
+         }
+         
+         // Register new user in Firebase
+         async function registerUser(email, firstName, lastName) {
+             if (!window.firebase || !window.firebase.db) {
+                 console.log('Firebase not available for user registration');
+                 return false;
+             }
+             
+             try {
+                 const { addDoc, collection } = await import("https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js");
+                 
+                 const usersRef = collection(window.firebase.db, 'users');
+                 const userData = {
+                     email: email,
+                     firstName: firstName,
+                     lastName: lastName,
+                     createdAt: new Date(),
+                     lastLogin: new Date()
+                 };
+                 
+                 const docRef = await addDoc(usersRef, userData);
+                 console.log('User registered with ID:', docRef.id);
+                 return true;
+             } catch (error) {
+                 console.error('Error registering user:', error);
+                 return false;
+             }
+         }
+         
+         // Get user stamps from Firebase QR data
+         async function getUserStampsFromFirebase(userEmail) {
+             if (!window.firebase || !window.firebase.db) {
+                 console.log('Firebase not available for stamp calculation');
+                 return {};
+             }
+             
+             try {
+                 const { collection, query, where, getDocs } = await import("https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js");
+                 
+                 // Query QR codes for this user
+                 const qrRef = collection(window.firebase.db, 'qrcodes');
+                 const userQRQuery = query(qrRef, where('userEmail', '==', userEmail), where('status', '==', 'used'));
+                 const querySnapshot = await getDocs(userQRQuery);
+                 
+                 const userStamps = {};
+                 querySnapshot.forEach(doc => {
+                     const qrData = doc.data();
+                     if (qrData.merchantId) {
+                         userStamps[qrData.merchantId] = true;
+                     }
+                 });
+                 
+                 console.log('User stamps from Firebase:', userStamps);
+                 return userStamps;
+             } catch (error) {
+                 console.error('Error fetching user stamps from Firebase:', error);
+                 return {};
+             }
+         }
+        
+        // Set up listener for when Firebase becomes available
+        function setupFirebaseReadyListener() {
+            // Check if Firebase is already ready
+            if (window.firebase && window.firebase.db) {
+                console.log('Firebase already ready');
+                return;
+            }
+            
+            // Wait for Firebase to become available
+            const checkFirebase = setInterval(() => {
+                if (window.firebase && window.firebase.db) {
+                    clearInterval(checkFirebase);
+                    console.log('Firebase now ready');
+                }
+            }, 100);
+        }
+        
+        
+         
+         // Sync stamps with Firebase (Firebase is authoritative source)
+         async function syncStampsWithFirebase(userEmail) {
+            console.log('Syncing stamps with Firebase for user:', userEmail);
+            
+            // Get verified stamps from Firebase (this is the authoritative source)
+            const verifiedStamps = await getUserStampsFromFirebase(userEmail);
+            
+            // Use only Firebase stamps (don't merge with local stamps)
+            // This ensures deleted QRs are properly removed
+            stamps = verifiedStamps;
+            
+            // Save to localStorage for offline access
+            localStorage.setItem("mmf_stamps", JSON.stringify(verifiedStamps));
+            
+            console.log('Stamps synced with Firebase (Firebase authoritative):', verifiedStamps);
+            
+            // Update UI
+            generateStampGrid();
+            updateProgress();
+        }
+        
+        // Load user stamps from Firebase and sync to localStorage (for email link auth)
+        async function loadUserStampsFromFirebase(userEmail) {
+            console.log('Loading stamps from Firebase for user:', userEmail);
+            
+            // Get verified stamps from Firebase
+            const verifiedStamps = await getUserStampsFromFirebase(userEmail);
+            
+            // Save to localStorage for offline access
+            localStorage.setItem("mmf_stamps", JSON.stringify(verifiedStamps));
+            stamps = verifiedStamps;
+            
+            console.log('Stamps loaded from Firebase:', verifiedStamps);
+            
+            // Update UI
+            generateStampGrid();
+            updateProgress();
+        }
+
+        // Merchant grid functionality
+        const MERCHANT_FOLDERS = {
+            'B01': 'matchanese',
+            'B02': 'shizu', 
+            'B03': 'ohheythere',
+            'B04': 'dayoff',
+            'B05': 'aichi',
+            'B06': 'takefive',
+            'B07': 'matchamama',
+            'B08': 'ujisan',
+            'B09': 'matchatokyo',
+            'B10': 'chottomatcha',
+            'B11': 'thematchaco',
+            'B12': 'melc'
+        };
+
+        // Load background images for merchant grid with optimized loading
+        function loadMerchantBackgroundImages() {
+            const cells = document.querySelectorAll('.merchant-cell');
+            
+            cells.forEach(cell => {
+                const merchantId = cell.dataset.merchant;
+                const folderName = MERCHANT_FOLDERS[merchantId];
+                
+                if (folderName) {
+                    const img = new Image();
+                    const imagePath = `images/items/${folderName}/thumb.jpg`;
+                    
+                    img.onload = () => {
+                        cell.style.backgroundImage = `url(${imagePath})`;
+                        cell.classList.remove('shimmer');
+                    };
+                    
+                    img.onerror = () => {
+                        // Fallback to a solid color if thumbnail fails to load
+                        cell.style.backgroundImage = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+                        cell.classList.remove('shimmer');
+                    };
+                    
+                    img.src = imagePath;
+                }
+            });
+        }
+
+        // Handle merchant selection
+        function selectMerchant(merchantId, merchantName) {
+            // Show merchant info modal
+            const modal = document.getElementById('merchantModal');
+            const modalName = document.getElementById('modalMerchantName');
+            const modalDescription = document.getElementById('modalMerchantDescription');
+            const modalPhotoGallery = document.getElementById('modalPhotoGallery');
+            const modalInstagramLink = document.getElementById('modalInstagramLink');
+            
+            modalName.textContent = merchantName;
+            
+            // Load photo gallery
+            loadMerchantPhotoGallery(merchantId, modalPhotoGallery);
+            
+            // Set description based on merchant
+            setMerchantDescription(merchantName, modalDescription);
+            
+            // Set Instagram link
+            setMerchantInstagramLink(merchantName, modalInstagramLink);
+            
+            modal.classList.remove('hidden');
+        }
+
+        // Close merchant modal
+        function closeMerchantModal() {
+            document.getElementById('merchantModal').classList.add('hidden');
+        }
+
+        // Slideshow state
+        let currentSlideIndex = 0;
+        let slideshowImages = [];
+        let slideshowInterval = null;
+
+        // Load merchant photo slideshow
+        function loadMerchantPhotoGallery(merchantId, galleryContainer) {
+            const merchantFolder = MERCHANT_FOLDERS[merchantId];
+            if (!merchantFolder) {
+                showNoPhotosMessage();
+                return;
+            }
+            
+            // Reset slideshow state
+            currentSlideIndex = 0;
+            slideshowImages = [];
+            
+            // Show loading state
+            showLoadingState();
+            
+            // Find all available images for this merchant
+            findAvailableImages(merchantFolder, (images) => {
+                console.log(`🎯 Callback received ${images.length} images for ${merchantFolder}:`, images);
+                if (images.length === 0) {
+                    console.log(`❌ No images found for ${merchantFolder}, showing no photos message`);
+                    showNoPhotosMessage();
+                    return;
+                }
+                
+                console.log(`✅ Setting up slideshow with ${images.length} images`);
+                slideshowImages = images;
+                setupSlideshow();
+                showSlide(0);
+            });
+        }
+
+        // Find available images for a merchant
+        function findAvailableImages(merchantFolder, callback) {
+            console.log(`Starting to find images for merchant folder: ${merchantFolder}`);
+            const images = [];
+            const maxImages = 50; // Check more images
+            const extensions = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'tiff', 'svg', 'JPG', 'JPEG', 'PNG', 'WEBP', 'GIF', 'BMP', 'TIFF', 'SVG'];
+            let completedChecks = 0;
+            const totalChecks = maxImages * extensions.length; // Total number of requests
+            
+            console.log(`Will check ${maxImages} images with ${extensions.length} extensions each = ${totalChecks} total checks`);
+            
+            // Load all images in parallel
+            for (let imageNumber = 1; imageNumber <= maxImages; imageNumber++) {
+                // Try all extensions for this image number
+                extensions.forEach(extension => {
+                    const img = new Image();
+                    const imagePath = `images/items/${merchantFolder}/${imageNumber}.${extension}`;
+                    
+                    img.onload = function() {
+                        console.log(`✅ Image loaded successfully: ${imagePath}`);
+                        // Check if this image is not thumb.jpg or thumb.png (case insensitive)
+                        if (!img.src.toLowerCase().includes('thumb.jpg') && !img.src.toLowerCase().includes('thumb.jpeg') && !img.src.toLowerCase().includes('thumb.png')) {
+                            // Check if we already have this image number
+                            const existingIndex = images.findIndex(img => img.number === imageNumber);
+                            if (existingIndex === -1) {
+                                console.log(`✅ Adding image to gallery: ${img.src}`);
+                                images.push({
+                                    src: img.src,
+                                    alt: `${merchantFolder} photo ${imageNumber}`,
+                                    number: imageNumber
+                                });
+                            } else {
+                                console.log(`⚠️ Skipping duplicate image number ${imageNumber}`);
+                            }
+                        } else {
+                            console.log(`⚠️ Skipping thumb file: ${img.src}`);
+                        }
+                        
+                        completedChecks++;
+                        if (completedChecks >= totalChecks) {
+                            // Sort images by number and callback
+                            images.sort((a, b) => a.number - b.number);
+                            console.log(`📊 Total images found for ${merchantFolder}:`, images.length, images);
+                            callback(images);
+                        }
+                    };
+                    
+                    img.onerror = function() {
+                        console.log(`❌ Image failed to load: ${imagePath}`);
+                        // Image failed to load, continue
+                        completedChecks++;
+                        if (completedChecks >= totalChecks) {
+                            // Sort images by number and callback
+                            images.sort((a, b) => a.number - b.number);
+                            console.log(`📊 Final check - Total images found for ${merchantFolder}:`, images.length, images);
+                            callback(images);
+                        }
+                    };
+                    
+                    console.log(`🔍 Attempting to load: ${imagePath}`);
+                    img.src = imagePath;
+                });
+            }
+        }
+
+        // Setup slideshow controls
+        function setupSlideshow() {
+            const prevBtn = document.getElementById('prevSlide');
+            const nextBtn = document.getElementById('nextSlide');
+            const indicators = document.getElementById('slideIndicators');
+            
+            // Clear previous indicators
+            indicators.innerHTML = '';
+            
+            // Create indicators
+            slideshowImages.forEach((_, index) => {
+                const indicator = document.createElement('button');
+                indicator.className = `w-2 h-2 rounded-full transition-colors ${index === 0 ? 'bg-green-500' : 'bg-gray-300'}`;
+                indicator.onclick = () => showSlide(index);
+                indicators.appendChild(indicator);
+            });
+            
+            // Setup navigation buttons
+            prevBtn.onclick = () => showSlide(currentSlideIndex - 1);
+            nextBtn.onclick = () => showSlide(currentSlideIndex + 1);
+            
+            // Show/hide navigation buttons
+            updateNavigationButtons();
+        }
+
+        // Show specific slide
+        function showSlide(index) {
+            console.log(`🖼️ Showing slide ${index} of ${slideshowImages.length}`);
+            if (slideshowImages.length === 0) {
+                console.log(`❌ No slideshow images available`);
+                return;
+            }
+            
+            // Handle circular navigation
+            if (index < 0) index = slideshowImages.length - 1;
+            if (index >= slideshowImages.length) index = 0;
+            
+            currentSlideIndex = index;
+            const image = slideshowImages[index];
+            console.log(`🖼️ Loading image: ${image.src}`);
+            
+            // Update current slide image
+            const currentSlide = document.getElementById('currentSlide');
+            currentSlide.onload = function() {
+                console.log(`✅ Slide image loaded successfully: ${image.src}`);
+                hideLoadingState();
+            };
+            currentSlide.onerror = function() {
+                console.log(`❌ Slide image failed to load: ${image.src}`);
+            };
+            currentSlide.src = image.src;
+            currentSlide.alt = image.alt;
+            
+            // Update indicators
+            const indicators = document.querySelectorAll('#slideIndicators button');
+            indicators.forEach((indicator, i) => {
+                indicator.className = `w-2 h-2 rounded-full transition-colors ${i === index ? 'bg-green-500' : 'bg-gray-300'}`;
+            });
+            
+            // Update navigation buttons
+            updateNavigationButtons();
+        }
+
+        // Update navigation button visibility
+        function updateNavigationButtons() {
+            const prevBtn = document.getElementById('prevSlide');
+            const nextBtn = document.getElementById('nextSlide');
+            
+            if (slideshowImages.length <= 1) {
+                prevBtn.classList.add('hidden');
+                nextBtn.classList.add('hidden');
+            } else {
+                prevBtn.classList.remove('hidden');
+                nextBtn.classList.remove('hidden');
+            }
+        }
+
+        // Show loading state
+        function showLoadingState() {
+            document.getElementById('slideshowLoading').classList.remove('hidden');
+            document.getElementById('noPhotosMessage').classList.add('hidden');
+            document.getElementById('currentSlide').style.display = 'none';
+        }
+
+        // Show no photos message
+        function showNoPhotosMessage() {
+            document.getElementById('slideshowLoading').classList.add('hidden');
+            document.getElementById('noPhotosMessage').classList.remove('hidden');
+            document.getElementById('currentSlide').style.display = 'none';
+            document.getElementById('prevSlide').classList.add('hidden');
+            document.getElementById('nextSlide').classList.add('hidden');
+            document.getElementById('slideIndicators').innerHTML = '';
+        }
+
+        // Hide loading and show image
+        function hideLoadingState() {
+            document.getElementById('slideshowLoading').classList.add('hidden');
+            document.getElementById('noPhotosMessage').classList.add('hidden');
+            document.getElementById('currentSlide').style.display = 'block';
+        }
+
+        // Set merchant description
+        function setMerchantDescription(merchantName, descriptionElement) {
+            const descriptions = {
+                'Matchanese': 'matchanese is a specialty matcha brand with the goal of cultivating matcha culture and community in the Philippines',
+                'Shizu Matcha Bar': 'From a humble vision to a cherished community space, Shizu Matcha Bar is all about redefining how we experience matcha. Rooted in tradition and elevated through creativity, every sip and bite is crafted as a tribute to the art of Japanese matcha. More than just a beverage — it’s a movement, a moment, and a memory in the making.',
+                'Oh Hey There': 'OH HEY THERE Matcha Café is the home of Banana Pudding Matcha in the south — serving creatively, crafted with care, rooted in quality, and backed by a strong matcha community.',
+                'Day Off Space': 'Day Off Space started as a secondhand furniture store and is now a matcha slow bar inspired by the same philosophy: making every day feel like a day off. Their drinks are made with intention. Each drink is thoughtfully crafted to be balanced, comforting, and easy to enjoy.',
+                'Aichi Cafe': 'Aichi Cafe is ready to serve your favorite mochi ice cream at the Manila Matcha Fest! 🍡 Catch them at their booth from August 22-31 at the SM Mall of Asia Main Atrium 🎊',
+                'Take Five Slow Bar': 'from traditional whisked matcha to inventive latte blends, take five slow bar is a pop up cafe all about the many ways to enjoy japanese tea. whether you\'re a matcha enthusiast or just getting started, they\'re always brewing up new recipes to make sure there\'s something you\'ll love.',
+                'Matcha Mama': 'Matcha Mama brings matcha to life with playful drinks, cozy workshops, and a welcoming community space. Always sourced with care, always shared with love.',
+                'Ujisan': 'UJISAN is a matcha café dedicated to bringing the rich and authentic flavors of Japanese culture to the Philippine market. With a unique twist, UJISAN offers matcha-centric drinks crafted with varying matcha intensity levels—from Level 1 (mild) to Level 10 (bold)—allowing customers to discover and enjoy matcha to fit their preference best.',
+                'Matcha Tokyo': 'The Matcha Tokyo is bringing their authentic Japanese drinks made with 100% Organic Matcha to the first ever Manila Matcha Fest 🍵',
+                'Chotto Matcha': 'Chotto Matcha was started by two young Japanese sisters driven by a desire to help tea farmers in Shizuoka\'s Mt. Fuji region. Inspired by the farmers\' challenges, they created a café that sources directly from them, bringing their stories to customers while supporting the farmers\' livelihoods.',
+                'The Matcha Co.': 'New to the pop-up scene but not to the industry - The Matcha Co. is a trusted supplier of high-quality, authentic first-harvest matcha for cafés. Working directly with farmers in Japan, they source with integrity to bring truly authentic matcha to the community.',
+                'Melc Patisserie': 'Melc Patisserie by MasterChef Singapore alum Chef Melissa Lim redefines the pastry experience with French-inspired creations elevated by inventive flavors and meticulous craftsmanship. Each dessert is designed to be both indulgent and approachable, blending fine dining artistry with modern flair to create memorable sweet moments.'
+            };
+            
+            descriptionElement.textContent = descriptions[merchantName] || 'Visit this merchant to collect your stamp and enjoy their amazing matcha offerings!';
+        }
+
+        // Set merchant Instagram link
+        function setMerchantInstagramLink(merchantName, linkElement) {
+            const instagramLinks = {
+                'Matchanese': 'https://www.instagram.com/matchaneseph',
+                'Shizu Matcha Bar': 'https://www.instagram.com/shizumatchabar',
+                'Oh Hey There': 'https://www.instagram.com/ohheythere.matchacafe/',
+                'Day Off Space': 'https://www.instagram.com/dayoff___space/',
+                'Aichi Cafe': 'https://www.instagram.com/aichicafe',
+                'Take Five Slow Bar': 'https://www.instagram.com/takefive.slowbar/',
+                'Matcha Mama': 'https://www.instagram.com/matchamama.ph/',
+                'Ujisan': 'https://www.instagram.com/ujisanmatcha/',
+                'Matcha Tokyo': 'https://www.instagram.com/the.matcha.tokyo.ph/',
+                'Chotto Matcha': 'https://www.instagram.com/chottomatchaph/',
+                'The Matcha Co.': 'https://www.instagram.com/thematchaco.ph/',
+                'Melc Patisserie': 'https://www.instagram.com/melcpatisserie'
+            };
+            
+            const instagramUrl = instagramLinks[merchantName];
+            if (instagramUrl) {
+                linkElement.href = instagramUrl;
+                linkElement.style.display = 'inline-flex';
+                // Update button text to show merchant name
+                const buttonText = document.getElementById('instagramButtonText');
+                buttonText.textContent = merchantName;
+            } else {
+                linkElement.style.display = 'none';
+            }
+        }
+
+        // Initialize merchant grid event listeners
+        function initMerchantGrid() {
+            // Load background images
+            loadMerchantBackgroundImages();
+            
+            // Add click handlers to merchant cells
+            const cells = document.querySelectorAll('.merchant-cell');
+            cells.forEach(cell => {
+                cell.addEventListener('click', () => {
+                    const merchantId = cell.dataset.merchant;
+                    const merchantName = cell.dataset.name;
+                    selectMerchant(merchantId, merchantName);
+                });
+            });
+            
+            // Add modal event listeners
+            document.getElementById('closeModalBtn').addEventListener('click', closeMerchantModal);
+            
+            // Close modal when clicking outside
+            document.getElementById('merchantModal').addEventListener('click', (e) => {
+                if (e.target.id === 'merchantModal') {
+                    closeMerchantModal();
+                }
+            });
+        }
+
+        // Initialize app
+        async function init() {
+            console.log('=== INITIALIZING APP ===');
+            loadStamps();
+            await loadUser();
+            generateStampGrid();
+            updateProgress();
+            updateScanButtonState();
+            
+            // Initialize merchant grid
+            initMerchantGrid();
+            
+            // Set up Firebase ready listener to sync stamps
+            setupFirebaseReadyListener();
+            
+            // Check for email link authentication after Firebase is ready
+            await waitForFirebaseAndCheckEmailLink();
+            
+            // Initialize scanner when library loads
+            if (typeof window.Html5Qrcode !== 'undefined') {
+                initScanner();
+            } else {
+                // Wait for library to load
+                const checkScanner = setInterval(() => {
+                    if (typeof window.Html5Qrcode !== 'undefined') {
+                        clearInterval(checkScanner);
+                        initScanner();
+                    }
+                }, 100);
+            }
+            console.log('=== APP INITIALIZATION COMPLETE ===');
+        }
+        
+        // Wait for Firebase to be ready, then check email link
+        async function waitForFirebaseAndCheckEmailLink() {
+            console.log('Waiting for Firebase to be ready...');
+            
+            // Check if Firebase is already ready
+            if (window.firebase && window.firebase.auth) {
+                console.log('Firebase already ready, checking email link');
+                await checkEmailLink();
+                return;
+            }
+            
+            // Wait for Firebase to become available
+            return new Promise((resolve) => {
+                const checkFirebase = setInterval(() => {
+                    if (window.firebase && window.firebase.auth) {
+                        clearInterval(checkFirebase);
+                        console.log('Firebase now ready, checking email link');
+                        checkEmailLink().then(resolve);
+                    }
+                }, 100);
+                
+                // Timeout after 10 seconds
+                setTimeout(() => {
+                    clearInterval(checkFirebase);
+                    console.log('Firebase timeout, continuing without email link check');
+                    resolve();
+                }, 10000);
+            });
+        }
+
+        // Run tests
+        function runTests() {
+                const results = [];
+                const log = (name, pass, detail = "") => results.push({ test: name, pass, detail });
+            
+                try {
+                log("codeFor produces expected format", codeFor("B01") === "STAMP_B01");
+                log("verifyCode success", verifyCode(DEFAULT_BRANDS, "STAMP_B03")?.id === "B03");
+                log("verifyCode case-insensitive", verifyCode(DEFAULT_BRANDS, "stamp_b04")?.id === "B04");
+                log("verifyCode invalid returns null", verifyCode(DEFAULT_BRANDS, "NOPE") === null);
+                
+                // localStorage roundtrip
+                const k = "__mmf_test__";
+                const sample = { B01: true };
+                localStorage.setItem(k, JSON.stringify(sample));
+                const parsed = JSON.parse(localStorage.getItem(k) || "null");
+                log("localStorage roundtrip", parsed?.B01 === true);
+                localStorage.removeItem(k);
+                } catch (e) {
+                log("tests crashed", false, String(e?.message || e));
+                }
+            
+                const passCount = results.filter((r) => r.pass).length;
+                const failCount = results.length - passCount;
+                console.table(results);
+                console.info(`MMF StampRally tests: ${passCount} passed, ${failCount} failed`);
+        }
+
+        // Debug function to check localStorage
+        function debugStamps() {
+            console.log('=== DEBUG STAMPS ===');
+            console.log('Current stamps object:', stamps);
+            console.log('localStorage mmf_stamps:', localStorage.getItem("mmf_stamps"));
+            console.log('Parsed localStorage:', JSON.parse(localStorage.getItem("mmf_stamps") || "{}"));
+            console.log('===================');
+        }
+
+        // Desktop detection and notice
+        function checkDeviceType() {
+            // Skip desktop detection for merchant and print pages
+            if (window.location.pathname.includes('merchant.html') || 
+                window.location.pathname.includes('print-qr.html') ||
+                window.location.pathname.includes('dashboard.html')) {
+                console.log('Skipping desktop detection for admin pages');
+                return;
+            }
+            
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
+                            (window.innerWidth <= 768 && window.innerHeight <= 1024);
+            
+            const desktopNotice = document.getElementById('desktopNotice');
+            const mainContent = document.querySelector('.max-w-md.mx-auto');
+            
+            if (!isMobile) {
+                // Show desktop notice
+                desktopNotice.classList.remove('hidden');
+                if (mainContent) {
+                    mainContent.style.display = 'none';
+                }
+                console.log('Desktop detected - showing mobile notice');
+            } else {
+                // Hide desktop notice and show main content
+                desktopNotice.classList.add('hidden');
+                if (mainContent) {
+                    mainContent.style.display = 'flex';
+                }
+                console.log('Mobile device detected - showing app');
+            }
+        }
+
+                 // Wait for DOM to be ready before adding event listeners
+         if (document.readyState === 'loading') {
+             document.addEventListener('DOMContentLoaded', () => {
+                 console.log('DOM ready, adding event listeners...');
+                 checkDeviceType();
+                 init();
+             });
+         } else {
+             console.log('DOM already ready, initializing immediately...');
+             checkDeviceType();
+             init();
+         }
+         
+         // Debug function to test back button
+         window.testBackButton = function() {
+             console.log('Testing back button...');
+             showBackButton();
+         };
+        runTests();
+        
+        // Add debug function to window for easy access
+        window.debugStamps = debugStamps;
+        
+        // Prevent Safari scaling and zooming
+        document.addEventListener('gesturestart', function(e) {
+            e.preventDefault();
+        });
+        
+        document.addEventListener('gesturechange', function(e) {
+            e.preventDefault();
+        });
+        
+        document.addEventListener('gestureend', function(e) {
+            e.preventDefault();
+        });
+        
+        // Prevent double-tap zoom
+        let lastTouchEnd = 0;
+        document.addEventListener('touchend', function(event) {
+            const now = (new Date()).getTime();
+            if (now - lastTouchEnd <= 300) {
+                event.preventDefault();
+            }
+            lastTouchEnd = now;
+        }, false);
+        
+        // Handle window resize for device type detection
+        window.addEventListener('resize', function() {
+            checkDeviceType();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Matchanese Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        }
+        
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            transition: transform 0.2s ease;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-2px);
+        }
+        
+        .progress-bar {
+            background: #e5e7eb;
+            border-radius: 9999px;
+            height: 8px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            background: linear-gradient(90deg, #10b981, #059669);
+            height: 100%;
+            transition: width 0.5s ease;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-6 py-8">
+        <!-- Header -->
+        <div class="mb-8">
+            <h1 class="text-3xl font-bold text-gray-900">Matchanese Loyalty Dashboard</h1>
+            <p class="text-gray-600 mt-2">Track your loyalty program performance</p>
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div class="stat-card">
+                <div class="flex items-center">
+                    <div class="p-2 bg-blue-100 rounded-lg">
+                        <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                        </svg>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">Total QR Codes</p>
+                        <p class="text-2xl font-semibold text-gray-900" id="totalQrs">-</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="flex items-center">
+                    <div class="p-2 bg-green-100 rounded-lg">
+                        <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">Unused QR Codes</p>
+                        <p class="text-2xl font-semibold text-gray-900" id="unusedQrs">-</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="flex items-center">
+                    <div class="p-2 bg-red-100 rounded-lg">
+                        <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">Used QR Codes</p>
+                        <p class="text-2xl font-semibold text-gray-900" id="usedQrs">-</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="flex items-center">
+                    <div class="p-2 bg-purple-100 rounded-lg">
+                        <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"></path>
+                        </svg>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">Rewards Given</p>
+                        <p class="text-2xl font-semibold text-gray-900" id="rewardsGiven">-</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Usage Rate -->
+        <div class="bg-white rounded-lg shadow p-6 mb-8">
+            <h2 class="text-xl font-semibold text-gray-900 mb-4">QR Code Usage Rate</h2>
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-sm text-gray-600">Usage Rate</span>
+                <span class="text-sm font-medium text-gray-900" id="usageRate">-</span>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="usageProgress" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-xl font-semibold text-gray-900 mb-4">Recent QR Code Activity</h2>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Token</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Used</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200" id="activityTable">
+                        <!-- Activity rows will be populated here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="mt-8 flex gap-4">
+            <a href="matchanese-merchant.html" class="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition-colors">
+                Generate QR Codes
+            </a>
+            <button id="refreshBtn" class="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors">
+                Refresh Data
+            </button>
+        </div>
+    </div>
+
+    <script type="module">
+        import { db, collection, getDocs, query, where, orderBy, limit } from './firebase-config.js';
+
+        // DOM elements
+        const totalQrs = document.getElementById('totalQrs');
+        const unusedQrs = document.getElementById('unusedQrs');
+        const usedQrs = document.getElementById('usedQrs');
+        const rewardsGiven = document.getElementById('rewardsGiven');
+        const usageRate = document.getElementById('usageRate');
+        const usageProgress = document.getElementById('usageProgress');
+        const activityTable = document.getElementById('activityTable');
+        const refreshBtn = document.getElementById('refreshBtn');
+
+        // Load dashboard data
+        async function loadDashboardData() {
+            try {
+                const qrRef = collection(db, 'qrcodes');
+                
+                // Get all QR codes
+                const allQrsSnapshot = await getDocs(qrRef);
+                const total = allQrsSnapshot.size;
+                
+                // Get unused QR codes
+                const unusedQuery = query(qrRef, where('status', '==', 'unused'));
+                const unusedSnapshot = await getDocs(unusedQuery);
+                const unused = unusedSnapshot.size;
+                
+                // Get used QR codes
+                const usedQuery = query(qrRef, where('status', '==', 'used'));
+                const usedSnapshot = await getDocs(usedQuery);
+                const used = usedSnapshot.size;
+                
+                // Calculate usage rate
+                const usagePercentage = total > 0 ? Math.round((used / total) * 100) : 0;
+                
+                // Calculate rewards given (every 10 stamps = 1 reward)
+                const rewards = Math.floor(used / 10);
+                
+                // Update stats
+                totalQrs.textContent = total;
+                unusedQrs.textContent = unused;
+                usedQrs.textContent = used;
+                rewardsGiven.textContent = rewards;
+                usageRate.textContent = `${usagePercentage}%`;
+                usageProgress.style.width = `${usagePercentage}%`;
+                
+                // Load recent activity
+                await loadRecentActivity();
+                
+            } catch (error) {
+                console.error('Error loading dashboard data:', error);
+            }
+        }
+
+        // Load recent activity
+        async function loadRecentActivity() {
+            try {
+                const qrRef = collection(db, 'qrcodes');
+                const recentQuery = query(qrRef, orderBy('createdAt', 'desc'), limit(10));
+                const snapshot = await getDocs(recentQuery);
+                
+                activityTable.innerHTML = '';
+                
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    const row = document.createElement('tr');
+                    
+                    const statusBadge = data.status === 'used' 
+                        ? '<span class="px-2 py-1 text-xs font-medium bg-red-100 text-red-800 rounded-full">Used</span>'
+                        : '<span class="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">Unused</span>';
+                    
+                    const createdAt = data.createdAt ? new Date(data.createdAt.toDate()).toLocaleDateString() : '-';
+                    const usedAt = data.usedAt ? new Date(data.usedAt.toDate()).toLocaleDateString() : '-';
+                    
+                    row.innerHTML = `
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${data.token}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${statusBadge}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${data.type || 'drink'}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${createdAt}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${usedAt}</td>
+                    `;
+                    
+                    activityTable.appendChild(row);
+                });
+                
+            } catch (error) {
+                console.error('Error loading recent activity:', error);
+            }
+        }
+
+        // Event listeners
+        refreshBtn.addEventListener('click', loadDashboardData);
+
+        // Initialize dashboard
+        loadDashboardData();
+
+        // Auto-refresh every 30 seconds
+        setInterval(loadDashboardData, 30000);
+    </script>
+</body>
+</html>

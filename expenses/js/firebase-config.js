@@ -1,8 +1,4 @@
 // Firebase configuration and initialization
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js';
-import { getFirestore, connectFirestoreEmulator } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
-import { getAuth } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js';
-
 // Your Firebase config (same as sales dashboard)
 const firebaseConfig = {
     apiKey: "AIzaSyA6ikBMsQACcUpn4Jff7PQFeWLN8wv18EE",
@@ -14,24 +10,24 @@ const firebaseConfig = {
     measurementId: "G-YEK4GML6SJ"
 };
 
+// Initialize Firebase dynamically to avoid blocking module loading
+let db = null;
+let app = null;
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
-export const auth = getAuth(app);
-
-// For development - uncomment if using emulator
-// if (location.hostname === 'localhost') {
-//   connectFirestoreEmulator(db, 'localhost', 8080);
-// }
-
-// Enable offline persistence
-import { enableNetwork, disableNetwork } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
-
-// Initialize offline support
-try {
-    await enableNetwork(db);
-    console.log('Firebase network enabled');
-} catch (error) {
-    console.log('Firebase offline mode');
+export async function initializeFirebaseConfig() {
+    try {
+        const { initializeApp } = await import('https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js');
+        const { getFirestore } = await import('https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js');
+        
+        app = initializeApp(firebaseConfig);
+        db = getFirestore(app);
+        
+        return { db, app };
+    } catch (error) {
+        console.error('Firebase config initialization failed:', error);
+        return null;
+    }
 }
+
+// Export a getter for db that initializes if needed
+export { db };

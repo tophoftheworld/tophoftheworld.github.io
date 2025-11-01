@@ -1,4 +1,26 @@
-const APP_VERSION = "0.81"; 
+const APP_VERSION = "0.94"; 
+
+// Shared calculator/cache for attendance app
+let payCalculatorAttendance = null;
+let attendanceEmployeeContext = null;
+let attendanceSalesDataCache = {};
+
+function getPayCalculatorAttendance(salesData = null) {
+    try {
+        if (typeof window === 'undefined' || !window.PayCalculator) return null;
+        if (!payCalculatorAttendance) {
+            payCalculatorAttendance = new window.PayCalculator(HOLIDAYS_2025 || {}, salesData || {});
+        } else {
+            if (salesData) payCalculatorAttendance.updateSalesData(salesData);
+            // Always keep holidays updated
+            if (HOLIDAYS_2025) payCalculatorAttendance.updateHolidays(HOLIDAYS_2025);
+        }
+        return payCalculatorAttendance;
+    } catch (e) {
+        console.error('Failed to init PayCalculator for attendance:', e);
+        return null;
+    }
+}
 
 function isDebugMode() {
     return currentUser === "130229";
@@ -51,7 +73,7 @@ const SHIFT_SCHEDULES = {
 // At top of your script.js
 import { db } from './firebase-setup.js';
 import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
-import { getDocs, collection, query, where } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+import { getDocs, collection, collectionGroup, query, where } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 import { storage, ref as storageRef, uploadBytes, getDownloadURL } from './firebase-setup.js';
 
 let employees = {}; // Will be populated from Firebase
@@ -2000,10 +2022,10 @@ function openPayrollDetailModal(dayData, clickedCard) {
         otBonusRow.style.display = 'none';
     }
 
-    // Add this after the holiday bonus logic:
+    // Read sales bonus from data (set by admin app in Firestore)
     const salesBonus = dayData.salesBonus || 0;
+    
     const salesBonusRow = document.getElementById('modalSalesBonusRow');
-
     if (salesBonus > 0) {
         document.getElementById('modalSalesBonus').textContent = `+₱${salesBonus.toFixed(2)}`;
         salesBonusRow.style.display = 'grid';
@@ -2011,7 +2033,7 @@ function openPayrollDetailModal(dayData, clickedCard) {
         salesBonusRow.style.display = 'none';
     }
 
-    // Set total pay
+    // Calculate total pay
     const totalPay = calculateDailyPay(dayData, baseRate);
     document.getElementById('modalTotalPay').textContent = `₱${totalPay.toFixed(2)}`;
 
@@ -2936,13 +2958,24 @@ async function loadPayrollData() {
     if (!periodSelect) return;
 
     const selectedPeriod = periodSelect.value;
+    
+    // Save selected period to localStorage for next visit
+    localStorage.setItem(`lastSelectedPeriod_${currentUser}`, selectedPeriod);
 
     // Clear payment indicator when switching periods
     clearPaymentIndicator();
 
-    // Add caching for payroll data
-    const cacheKey = `payroll_cache_${currentUser}_${selectedPeriod}`;
+    // Add caching for payroll data with version check
+    const cacheKey = `payroll_cache_${currentUser}_${selectedPeriod}_v${APP_VERSION}`;
     const cachedData = localStorage.getItem(cacheKey);
+
+    // Clear old version caches
+    Object.keys(localStorage).forEach(key => {
+        if (key.startsWith(`payroll_cache_${currentUser}_`) && !key.includes(`_v${APP_VERSION}`)) {
+            localStorage.removeItem(key);
+            console.log('Cleared old payroll cache:', key);
+        }
+    });
 
     if (cachedData) {
         // Use cached data immediately
@@ -2996,12 +3029,119 @@ async function fetchFreshPayrollData(selectedPeriod, cacheKey) {
     const dates = getDatesInRange(startDate, endDate);
 
     const payrollData = await fetchPayrollData(dates);
+    
+    // Sales bonus is read from Firestore (calculated and saved by admin app)
 
     // Cache the result
     localStorage.setItem(cacheKey, JSON.stringify(payrollData));
 
     // Update UI
     updatePayrollUI(payrollData);
+}
+
+// Build attendance data structure for all employees (for staffing calculations)
+// Optimized: Only loads SM North attendance data to calculate staffing
+async function buildAttendanceDataForStaffing(dates) {
+    try {
+        if (!navigator.onLine) {
+            window.attendanceData = {};
+            return;
+        }
+
+        const attendanceData = {};
+        
+        // Query ALL attendance subcollections efficiently using collectionGroup
+        // Split dates into chunks of 10 (Firestore 'in' limit)
+        const dateChunks = [];
+        for (let i = 0; i < dates.length; i += 10) {
+            dateChunks.push(dates.slice(i, i + 10));
+        }
+        
+        // Query each chunk and combine results
+        for (const chunk of dateChunks) {
+            const allDatesRef = collectionGroup(db, "dates");
+            const q = query(allDatesRef, where("__name__", "in", chunk));
+            const snapshot = await getDocs(q);
+            
+            snapshot.forEach(doc => {
+                // Extract employeeId from the document path
+                // Path format: attendance/{employeeId}/dates/{dateId}
+                const pathParts = doc.ref.path.split('/');
+                
+                console.log('Document path:', doc.ref.path, 'parts:', pathParts);
+                
+                // Only process if this is from attendance collection
+                if (pathParts[0] !== 'attendance' || pathParts[2] !== 'dates') {
+                    console.log('Skipping non-attendance path:', doc.ref.path);
+                    return; // Skip non-attendance paths
+                }
+                
+                const employeeId = pathParts[1];
+                const dateStr = doc.id;
+                
+                if (!attendanceData[employeeId]) {
+                    attendanceData[employeeId] = {
+                        id: employeeId,
+                        name: employeeId,
+                        dates: []
+                    };
+                }
+                
+                const data = doc.data();
+                console.log(`Employee ${employeeId} on ${dateStr}:`, data.clockIn?.branch, data.clockIn?.shift);
+                
+                // Only include SM North data for staffing calculations
+                if (data.clockIn?.branch === 'SM North') {
+                    attendanceData[employeeId].dates.push({
+                        date: dateStr,
+                        timeIn: data.clockIn?.time || null,
+                        timeOut: data.clockOut?.time || null,
+                        branch: data.clockIn?.branch || null,
+                        shift: data.clockIn?.shift || null
+                    });
+                    console.log(`✅ Added ${employeeId} SM North attendance for ${dateStr}`);
+                }
+            });
+        }
+        
+        window.attendanceData = attendanceData;
+        console.log('✅ Built attendance data for staffing:', Object.keys(attendanceData).length, 'employees,', 
+                    Object.values(attendanceData).reduce((sum, emp) => sum + emp.dates.length, 0), 'SM North days');
+    } catch (error) {
+        console.error("Error building attendance data:", error);
+        window.attendanceData = {};
+    }
+}
+
+// Load sales data limited to the selected period (by document ID date range)
+async function loadSalesDataForPeriod(startDate, endDate) {
+    try {
+        // If Firestore is unavailable or offline, return empty
+        if (!navigator.onLine) return {};
+
+        const start = formatDate(startDate);
+        const end = formatDate(endDate);
+
+        const q = query(
+            collection(db, "sales"),
+            where("__name__", ">=", start),
+            where("__name__", "<=", end)
+        );
+        const snapshot = await getDocs(q);
+
+        const salesData = {};
+        snapshot.forEach(docSnap => {
+            const data = docSnap.data();
+            const hasValue = data.totalSales || ((data.cash || 0) + (data.gcash || 0) + (data.maya || 0) + (data.card || 0) + (data.grab || 0)) > 0;
+            if (hasValue) {
+                salesData[docSnap.id] = data;
+            }
+        });
+        return salesData;
+    } catch (error) {
+        console.error("Error loading sales data for period:", error);
+        return {};
+    }
 }
 
 async function fetchPayrollData(dates) {
@@ -3047,7 +3187,7 @@ async function fetchPayrollData(dates) {
                 hours: data?.clockIn && data?.clockOut ? calculateHours(data.clockIn.time, data.clockOut.time) : null,
                 baseRate: baseRate,
                 hasOTPay: data?.hasOTPay || false,
-                salesBonus: data?.salesBonus || 0  // Add this line
+                salesBonus: data?.salesBonus || 0  // Read from Firestore (set by admin app)
             });
         });
 
@@ -3150,9 +3290,17 @@ function updatePayrollUI(payrollData) {
         return sum;
     }, 0);
 
-    // Calculate total pay for all days
+    // Calculate total pay for all days using shared PayCalculator when available
     const totalPay = payrollData.reduce((sum, day) => {
         if (day.timeIn && day.timeOut) {
+            if (typeof day.totalPayCalc === 'number') {
+                return sum + day.totalPayCalc;
+            }
+            const calc = getPayCalculatorAttendance(attendanceSalesDataCache);
+            if (calc && attendanceEmployeeContext) {
+                return sum + calc.calculateDailyPay(day, attendanceEmployeeContext, 'simple');
+            }
+            // Fallback to legacy calculation
             return sum + calculateDailyPay(day, day.baseRate);
         }
         return sum;
@@ -3182,12 +3330,6 @@ function updatePayrollUI(payrollData) {
     sortedPayrollData.forEach(day => {
         // Skip days with no attendance data
         if (!day.timeIn && !day.timeOut) return;
-
-        console.log(`BEFORE card creation - ${day.date}: timeIn="${day.timeIn}" timeOut="${day.timeOut}" hasOTPay=${day.hasOTPay}`);
-
-        // NEW LOGS - Add these to trace the time values
-        console.log(`RAW timeIn before any processing: "${day.timeIn}"`);
-        console.log(`RAW timeOut before any processing: "${day.timeOut}"`);
 
         const card = document.createElement('div');
         card.className = 'payroll-card';
@@ -3247,20 +3389,20 @@ function updatePayrollUI(payrollData) {
                 <div class="payroll-time-group">
                     <div class="payroll-time-label">Time In</div>
                     <div class="payroll-time">${(() => {
-                        console.log(`INSIDE IIFE - day.timeIn value: "${day.timeIn}"`);
-                        console.log(`INSIDE IIFE - typeof day.timeIn: ${typeof day.timeIn}`);
+                        // console.log(`INSIDE IIFE - day.timeIn value: "${day.timeIn}"`);
+                        // console.log(`INSIDE IIFE - typeof day.timeIn: ${typeof day.timeIn}`);
                         const formatted = formatTime(day.timeIn);
-                        console.log(`Card HTML timeIn: "${day.timeIn}" -> "${formatted}"`);
+                        // console.log(`Card HTML timeIn: "${day.timeIn}" -> "${formatted}"`);
                         return formatted;
                     })()}</div>
                 </div>
                 <div class="payroll-time-group">
                     <div class="payroll-time-label">Time Out</div>
                     <div class="payroll-time">${(() => {
-                        console.log(`INSIDE IIFE - day.timeOut value: "${day.timeOut}"`);
-                        console.log(`INSIDE IIFE - typeof day.timeOut: ${typeof day.timeOut}`);
+                        // console.log(`INSIDE IIFE - day.timeOut value: "${day.timeOut}"`);
+                        // console.log(`INSIDE IIFE - typeof day.timeOut: ${typeof day.timeOut}`);
                         const formatted = formatTime(day.timeOut);
-                        console.log(`Card HTML timeOut: "${day.timeOut}" -> "${formatted}"`);
+                        // console.log(`Card HTML timeOut: "${day.timeOut}" -> "${formatted}"`);
                         return formatted;
                     })()}</div>
                 </div>
@@ -3349,30 +3491,41 @@ async function populatePayrollPeriods() {
     // Sort by newest first
     periods.sort((a, b) => b.end - a.end);
 
-    // Find the most recent period that has ended but not yet been paid
-    const today = new Date();
-    today.setHours(0, 0, 0, 0); // Normalize to start of day
-    let defaultPeriodIndex = 0;
-
-    for (let i = 0; i < periods.length; i++) {
-        const period = periods[i];
-        const payDay = getPayDay(period.end);
-
-        // Period has ended but pay day hasn't arrived yet
-        if (today > period.end && today < payDay) {
-            defaultPeriodIndex = i;
-            break;
-        }
-        // If no period meets criteria, default to most recent ended period
-        else if (today > period.end) {
-            defaultPeriodIndex = i;
-        }
-    }
-
-    // Add all periods to the dropdown
+    // Add all periods to the dropdown first
     periods.forEach((period, index) => {
         addPeriodOption(periodSelect, period.label);
     });
+
+    // Try to restore last selected period from localStorage
+    const lastPeriod = localStorage.getItem(`lastSelectedPeriod_${currentUser}`);
+    let defaultPeriodIndex = 0;
+    
+    if (lastPeriod) {
+        // Find the index of the last selected period
+        const lastIndex = periods.findIndex(p => p.label === lastPeriod);
+        if (lastIndex !== -1) {
+            defaultPeriodIndex = lastIndex;
+        }
+    } else {
+        // Find the most recent period that has ended but not yet been paid
+        const today = new Date();
+        today.setHours(0, 0, 0, 0); // Normalize to start of day
+
+        for (let i = 0; i < periods.length; i++) {
+            const period = periods[i];
+            const payDay = getPayDay(period.end);
+
+            // Period has ended but pay day hasn't arrived yet
+            if (today > period.end && today < payDay) {
+                defaultPeriodIndex = i;
+                break;
+            }
+            // If no period meets criteria, default to most recent ended period
+            else if (today > period.end) {
+                defaultPeriodIndex = i;
+            }
+        }
+    }
 
     // Set the default selection
     if (periods.length > 0) {
@@ -3666,7 +3819,6 @@ function calculateDailyPay(dateObj, baseRate, employee = null) {
 
         // Add OT pay for regular shifts
         const otCalculation = calculateOTPay(dateObj, baseRate);
-        console.log(`🎯 calculateDailyPay OT check for ${dateObj.date}: hasOTPay=${dateObj.hasOTPay}, otResult=`, otCalculation);
         if (otCalculation.otPay > 0) {
             dailyTotalPay += otCalculation.otPay;
         }
@@ -3685,7 +3837,6 @@ function calculateDailyPay(dateObj, baseRate, employee = null) {
 }
 
 function calculateOTPay(dateEntry, baseRate) {
-    console.log('dateEntry in calculateOTPay:', dateEntry);
     if (!dateEntry.hasOTPay || !dateEntry.timeIn || !dateEntry.timeOut) {
         return { otPay: 0, otHours: 0 };
     }

@@ -27,7 +27,8 @@ const customizationOptions = {
   discount: {
     'none': 0,
     'senior': -0.2,  // 20% discount
-    'pwd': -0.2      // 20% discount
+    'pwd': -0.2,     // 20% discount
+    'custom': 0      // Custom discount (will be set dynamically)
   }
 };
 
@@ -214,6 +215,9 @@ function updateDisplayMode() {
 
   // Update order total display
   updateOrderDisplay();
+  
+  // Update sales/cups display based on service type
+  updateTotalSalesDisplay();
 }
 
 function getEventDisplayName(eventKey) {
@@ -249,7 +253,40 @@ function createCategoryElement(category) {
   return categoryDiv;
 }
 
+// Function to generate acronym from item name
+function generateAcronym(name) {
+  return name
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase())
+    .join('')
+    .substring(0, 4); // Limit to 4 characters
+}
+
+// Function to get shorthand for an item
+function getItemShorthand(item) {
+  if (item.shorthand) {
+    return item.shorthand;
+  }
+  return generateAcronym(item.name);
+}
+
 function createMenuItemElement(item) {
+  // Create menu item div
+  const menuItemDiv = document.createElement('div');
+  menuItemDiv.className = 'menu-item';
+
+  // Make the entire item clickable
+  menuItemDiv.addEventListener('click', () => showCustomizationModal(item));
+  menuItemDiv.style.cursor = 'pointer';
+
+  if (isGridView) {
+    return createGridMenuItemElement(item);
+  } else {
+    return createListMenuItemElement(item);
+  }
+}
+
+function createListMenuItemElement(item) {
   // Create menu item div
   const menuItemDiv = document.createElement('div');
   menuItemDiv.className = 'menu-item';
@@ -265,7 +302,10 @@ function createMenuItemElement(item) {
   // Create name (remove individual click event)
   const itemName = document.createElement('h1');
   itemName.className = 'menu-item-name';
-  itemName.innerHTML = item.name;
+  
+  // Format item name with Montserrat font for numerical digits
+  const formattedName = item.name.replace(/(\d+)/g, '<span style="font-family: Montserrat, sans-serif; font-weight: 600;">$1</span>');
+  itemName.innerHTML = formattedName;
   firstLine.appendChild(itemName);
 
   // Add tags if any
@@ -292,7 +332,10 @@ function createMenuItemElement(item) {
   if (item.description) {
     const desc = document.createElement('h1');
     desc.className = 'menu-item-desc';
-    desc.textContent = item.description;
+    
+    // Format description with Montserrat font for numerical digits
+    const formattedDescription = item.description.replace(/(\d+)/g, '<span style="font-family: Montserrat, sans-serif; font-weight: 600;">$1</span>');
+    desc.innerHTML = formattedDescription;
     secondLine.appendChild(desc);
   }
 
@@ -307,6 +350,33 @@ function createMenuItemElement(item) {
   // Assemble menu item
   menuItemDiv.appendChild(firstLine);
   menuItemDiv.appendChild(secondLine);
+
+  return menuItemDiv;
+}
+
+function createGridMenuItemElement(item) {
+  // Create menu item div
+  const menuItemDiv = document.createElement('div');
+  menuItemDiv.className = 'menu-item';
+
+  // Make the entire item clickable
+  menuItemDiv.addEventListener('click', () => showCustomizationModal(item));
+  menuItemDiv.style.cursor = 'pointer';
+
+  // Create shorthand element with Montserrat font for numerical digits
+  const shorthand = document.createElement('h1');
+  shorthand.className = 'menu-item-shorthand';
+  const shorthandText = getItemShorthand(item);
+  const formattedShorthand = shorthandText.replace(/(\d+)/g, '<span style="font-family: Montserrat, sans-serif; font-weight: 600;">$1</span>');
+  shorthand.innerHTML = formattedShorthand;
+  menuItemDiv.appendChild(shorthand);
+
+  // Create name element with Montserrat font for numerical digits
+  const itemName = document.createElement('h1');
+  itemName.className = 'menu-item-name';
+  const formattedName = item.name.replace(/(\d+)/g, '<span style="font-family: Montserrat, sans-serif; font-weight: 600;">$1</span>');
+  itemName.innerHTML = formattedName;
+  menuItemDiv.appendChild(itemName);
 
   return menuItemDiv;
 }
@@ -443,7 +513,14 @@ function updateOrderDisplay() {
         discountBadge.style.padding = '2px 5px';
         discountBadge.style.borderRadius = '4px';
         discountBadge.style.marginLeft = '5px';
-        discountBadge.textContent = item.customizations.discount.toUpperCase();
+        
+        // Show custom discount percentage if available
+        if (item.customizations.discount === 'custom' && item.customizations.customDiscountPercent) {
+          discountBadge.textContent = `${item.customizations.customDiscountPercent}% OFF`;
+        } else {
+          discountBadge.textContent = item.customizations.discount.toUpperCase();
+        }
+        
         orderItemName.appendChild(discountBadge);
       }
 
@@ -459,10 +536,10 @@ function updateOrderDisplay() {
 
     // Show/hide price based on mode
     if (!isPackageMode) {
-      const orderItemPrice = document.createElement('div');
-      orderItemPrice.className = 'order-item-price';
-      orderItemPrice.textContent = '₱ ' + itemTotal.toFixed(2);
-      orderItemHeader.appendChild(orderItemPrice);
+              const orderItemPrice = document.createElement('div');
+        orderItemPrice.className = 'order-item-price';
+        orderItemPrice.textContent = '₱ ' + itemTotal.toFixed(2);
+        orderItemHeader.appendChild(orderItemPrice);
     }
 
     orderItemElement.appendChild(orderItemHeader);
@@ -508,7 +585,7 @@ function updateOrderDisplay() {
     popupPaymentMethods.style.display = 'none';
     packagePaymentMethods.style.display = 'flex';
   } else {
-    document.querySelector('.order-total .price').textContent = '₱ ' + subtotal.toFixed(2);
+            document.querySelector('.order-total .price').textContent = '₱ ' + subtotal.toFixed(2);
     popupPaymentMethods.style.display = 'flex';
     packagePaymentMethods.style.display = 'none';
   }
@@ -520,6 +597,7 @@ document.querySelector('.menu-header').addEventListener('click', () => {
   const orderPanel = document.getElementById('order-panel');
   const ordersContainer = document.getElementById('orders-container');
   const menuHeader = document.querySelector('.menu-header');
+  const viewToggleContainer = document.querySelector('.view-toggle-container');
 
   if (menuContainer.style.display === 'none') {
     // Switch to menu view
@@ -527,12 +605,14 @@ document.querySelector('.menu-header').addEventListener('click', () => {
     orderPanel.style.display = 'flex';
     ordersContainer.style.display = 'none';
     menuHeader.innerHTML = 'MATCHA BAR <span class="light">MENU</span>';
+    viewToggleContainer.style.display = 'block';
   } else {
     // Switch to orders view
     menuContainer.style.display = 'none';
     orderPanel.style.display = 'none';
     ordersContainer.style.display = 'flex';
     menuHeader.innerHTML = 'MATCHA BAR <span class="light">ORDERS</span>';
+    viewToggleContainer.style.display = 'none';
     displayOrderHistory();
   }
 });
@@ -715,11 +795,78 @@ function calculateTotalSales(date) {
   return selectedDateOrders.reduce((total, order) => total + order.total, 0);
 }
 
+function calculateTotalCups(date) {
+  const selectedDateOrders = orderHistory.filter(order => {
+    const orderEvent = order.event || 'pop-up'; // Default to 'pop-up' for existing orders
+    return getLocalDateString(new Date(order.timestamp)) === getLocalDateString(date) &&
+      (order.status === 'pending' || order.status === 'completed') &&
+      orderEvent === currentEvent;
+  });
+
+  // For package orders, total represents cup count
+  // For regular orders, sum up all item quantities
+  return selectedDateOrders.reduce((total, order) => {
+    if (order.serviceType === 'package') {
+      return total + (order.total || 0); // total field contains cup count for package orders
+    } else {
+      // For regular orders, sum up quantities of all items
+      return total + order.items.reduce((itemTotal, item) => itemTotal + item.quantity, 0);
+    }
+  }, 0);
+}
+
+function getPendingOrdersCount(date) {
+  const selectedDateOrders = orderHistory.filter(order => {
+    const orderEvent = order.event || 'pop-up'; // Default to 'pop-up' for existing orders
+    return getLocalDateString(new Date(order.timestamp)) === getLocalDateString(date) &&
+      order.status === 'pending' &&
+      orderEvent === currentEvent;
+  });
+  
+  return selectedDateOrders.length;
+}
+
+function getPendingItemsCount(date) {
+  const selectedDateOrders = orderHistory.filter(order => {
+    const orderEvent = order.event || 'pop-up'; // Default to 'pop-up' for existing orders
+    return getLocalDateString(new Date(order.timestamp)) === getLocalDateString(date) &&
+      order.status === 'pending' &&
+      orderEvent === currentEvent;
+  });
+  
+  return selectedDateOrders.reduce((total, order) => {
+    return total + order.items.reduce((itemTotal, item) => itemTotal + item.quantity, 0);
+  }, 0);
+}
+
 function updateTotalSalesDisplay() {
-  const totalSales = calculateTotalSales(selectedDate);
-  const salesAmount = document.querySelector('.sales-amount');
-  if (salesAmount) {
-    salesAmount.textContent = `₱${totalSales.toFixed(2)}`;
+  const serviceType = getCurrentEventServiceType();
+  const isPackageMode = serviceType === 'package';
+  
+  const salesAmount = document.getElementById('salesAmount');
+  const salesLabel = document.getElementById('salesLabel');
+  
+  if (isPackageMode) {
+    // For package service, show total cups
+    const totalCups = calculateTotalCups(selectedDate);
+    if (salesAmount) {
+      salesAmount.textContent = totalCups.toString();
+    }
+    if (salesLabel) {
+      // Get pending orders count and pending items count
+      const pendingOrders = getPendingOrdersCount(selectedDate);
+      const pendingItems = getPendingItemsCount(selectedDate);
+      salesLabel.textContent = `TOTAL CUPS • ${pendingOrders} PENDING ORDERS • ${pendingItems} PENDING ITEMS`;
+    }
+  } else {
+    // For popup service, show total sales
+    const totalSales = calculateTotalSales(selectedDate);
+    if (salesAmount) {
+      salesAmount.textContent = `₱${totalSales.toFixed(2)}`;
+    }
+    if (salesLabel) {
+      salesLabel.textContent = 'TOTAL SALES';
+    }
   }
 }
 
@@ -764,15 +911,17 @@ function createOrderCard(order, isCompleted, isVoided = false) {
   const orderTotalRow = document.createElement('div');
   orderTotalRow.className = 'order-total-row';
 
-  const orderTotal = document.createElement('div');
-  orderTotal.className = 'order-card-total';
-  orderTotal.textContent = `₱${order.total.toFixed(2)}`;
+          const orderTotal = document.createElement('div');
+        orderTotal.className = 'order-card-total';
+        orderTotal.textContent = `₱${order.total.toFixed(2)}`;
 
-  const orderMethod = document.createElement('div');
-  orderMethod.className = 'order-card-method';
-  orderMethod.textContent = order.paymentMethod.toUpperCase();
-
-  orderTotalRow.appendChild(orderMethod);
+  // Only show payment method for orders that have one
+  if (order.paymentMethod && order.paymentMethod.trim() !== '') {
+    const orderMethod = document.createElement('div');
+    orderMethod.className = 'order-card-method';
+    orderMethod.textContent = order.paymentMethod.toUpperCase();
+    orderTotalRow.appendChild(orderMethod);
+  }
   orderTotalRow.appendChild(orderTotal);
 
   orderMetaBottom.appendChild(orderTotalRow);
@@ -783,6 +932,10 @@ function createOrderCard(order, isCompleted, isVoided = false) {
   order.items.forEach(item => {
     const itemDiv = document.createElement('div');
     itemDiv.className = 'order-card-item';
+
+    // Create item content container
+    const itemContent = document.createElement('div');
+    itemContent.className = 'item-content';
 
     const itemName = document.createElement('div');
     itemName.className = 'item-name';
@@ -799,7 +952,7 @@ function createOrderCard(order, isCompleted, isVoided = false) {
 
     itemName.appendChild(quantitySpan);
     itemName.appendChild(nameSpan);
-    itemDiv.appendChild(itemName);
+    itemContent.appendChild(itemName);
 
     // Add customizations if available
     if (item.customizations) {
@@ -821,7 +974,34 @@ function createOrderCard(order, isCompleted, isVoided = false) {
       if (item.customizations.milk) customDisplay.push(item.customizations.milk);
 
       customizations.innerHTML = customDisplay.join(' | ');
-      itemDiv.appendChild(customizations);
+      itemContent.appendChild(customizations);
+    }
+
+    // Add checkbox for pending orders only
+    if (!isCompleted && !isVoided) {
+      const itemCheckbox = document.createElement('input');
+      itemCheckbox.type = 'checkbox';
+      itemCheckbox.className = 'item-checkbox';
+      itemCheckbox.setAttribute('data-order-id', order.id);
+      itemCheckbox.setAttribute('data-item-name', nameSpan.textContent);
+      
+      // Add event listener for checkbox toggle
+      itemCheckbox.addEventListener('change', function() {
+        const isChecked = this.checked;
+        // Toggle visual state - you can add more logic here if needed
+        if (isChecked) {
+          itemDiv.style.opacity = '0.6';
+          itemDiv.style.textDecoration = 'line-through';
+        } else {
+          itemDiv.style.opacity = '1';
+          itemDiv.style.textDecoration = 'none';
+        }
+      });
+
+      itemDiv.appendChild(itemContent);
+      itemDiv.appendChild(itemCheckbox);
+    } else {
+      itemDiv.appendChild(itemContent);
     }
 
     orderItemsList.appendChild(itemDiv);
@@ -1206,6 +1386,9 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
   // Make modal wider
   modal.style.maxWidth = '400px';
   modal.style.width = '90%';
+  
+  // Store item data in modal for price calculations
+  modal.dataset.item = JSON.stringify(item);
 
   // Modal header
   const header = document.createElement('h2');
@@ -1228,9 +1411,28 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
     optionsGrid.appendChild(sizeSection);
   }
 
-  if (!allowedCustomizations || allowedCustomizations.serving) {
+  // Don't show serving option for brew bar items since preparation includes hot/iced
+  if ((!allowedCustomizations || allowedCustomizations.serving) && !item.customizations?.preparation) {
     const servingSection = createOptionSection('Serving', ['iced', 'hot'], currentCustomizations.serving || 'iced');
     optionsGrid.appendChild(servingSection);
+  }
+
+  // Add preparation method customization for brew bar items
+  if (item.customizations && item.customizations.preparation) {
+    const preparationOptions = Object.keys(item.customizations.preparation);
+    const preparationLabels = {
+      'usucha-hot': 'Usucha (Hot)',
+      'usucha-iced': 'Usucha (Iced)',
+      'classic-latte': 'Classic Latte (Iced)',
+      'cold-whisked-latte': 'Cold-Whisked Latte (Iced)'
+    };
+    
+    const preparationSection = createOptionSection(
+      'Preparation', 
+      preparationOptions.map(opt => preparationLabels[opt] || opt), 
+      currentCustomizations.preparation || 'usucha-hot'
+    );
+    optionsGrid.appendChild(preparationSection);
   }
 
   // Add the optionsGrid to modal before checking sweetness and milk
@@ -1238,7 +1440,8 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
     modal.appendChild(optionsGrid);
   }
 
-  if (!allowedCustomizations || allowedCustomizations.sweetness) {
+  // Don't show sweetness option for brew bar items since they're traditional preparations
+  if ((!allowedCustomizations || allowedCustomizations.sweetness) && !item.customizations?.preparation) {
     const sweetnessSection = createOptionSection('Sweetness', ['0%', '50%', '100%', '150%', '200%'], currentCustomizations.sweetness || '100%');
     modal.appendChild(sweetnessSection);
   }
@@ -1332,7 +1535,50 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
 
   discountButtons.appendChild(seniorBtn);
   discountButtons.appendChild(pwdBtn);
+  
+  // Add custom discount button
+  const customBtn = document.createElement('button');
+  customBtn.className = 'option-button discount-toggle';
+  customBtn.dataset.discount = 'custom';
+
+  // Check if custom discount is active
+  if (currentCustomizations.discount === 'custom') {
+    customBtn.classList.add('active');
+  }
+
+  customBtn.innerHTML = '<span class="option-text">CUSTOM</span>';
+  customBtn.addEventListener('click', () => toggleCustomDiscount(customBtn));
+
+  discountButtons.appendChild(customBtn);
   discountSection.appendChild(discountButtons);
+
+  // Add custom discount input field (initially hidden)
+  const customDiscountInput = document.createElement('div');
+  customDiscountInput.className = 'custom-discount-input';
+  customDiscountInput.style.display = 'none';
+  customDiscountInput.style.position = 'absolute';
+  customDiscountInput.style.left = '100%';
+  customDiscountInput.style.top = '0';
+  customDiscountInput.style.marginLeft = '10px';
+  customDiscountInput.style.zIndex = '10';
+  customDiscountInput.innerHTML = `
+    <div style="display: flex; align-items: center; gap: 5px;">
+      <input type="number" id="customDiscountPercent" placeholder="%" min="0" max="100" style="width: 50px; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px;">
+      <span style="font-size: 12px;">%</span>
+    </div>
+  `;
+  
+  // Make the custom button container relative for positioning
+  customBtn.style.position = 'relative';
+  customBtn.appendChild(customDiscountInput);
+
+  // If editing and item has custom discount, populate the input
+  if (editMode && currentCustomizations.discount === 'custom' && currentCustomizations.customDiscountPercent) {
+    const input = customDiscountInput.querySelector('#customDiscountPercent');
+    if (input) {
+      input.value = currentCustomizations.customDiscountPercent.toString();
+    }
+  }
 
   milkDiscountRow.appendChild(discountSection);
 
@@ -1391,7 +1637,7 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
   hiddenTotal.style.display = 'none';
 
   // Calculate initial price
-  let basePrice = item.price;
+  let basePrice = editMode ? (item.basePrice || item.price) : item.price;
   if (currentCustomizations.size && customizationOptions.size[currentCustomizations.size]) {
     basePrice += customizationOptions.size[currentCustomizations.size];
   }
@@ -1401,7 +1647,7 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
   if (currentCustomizations.discount && customizationOptions.discount[currentCustomizations.discount]) {
     basePrice = basePrice * (1 + customizationOptions.discount[currentCustomizations.discount]);
   }
-  hiddenTotal.dataset.basePrice = basePrice;
+  hiddenTotal.dataset.basePrice = editMode ? (item.basePrice || item.price) : item.price;
   modal.appendChild(hiddenTotal);
 
   // Modal footer
@@ -1452,6 +1698,59 @@ function toggleDiscount(button) {
     button.classList.add('active');
   }
 
+  // Hide custom discount input if custom is not selected
+  const customDiscountInput = document.querySelector('.custom-discount-input');
+  if (customDiscountInput) {
+    const customButton = document.querySelector('.discount-toggle[data-discount="custom"]');
+    if (!customButton || !customButton.classList.contains('active')) {
+      customDiscountInput.style.display = 'none';
+    }
+  }
+
+  // Update item total to reflect discount change
+  updateItemTotal();
+}
+
+function toggleCustomDiscount(button) {
+  // Get all discount toggle buttons
+  const discountButtons = document.querySelectorAll('.discount-toggle');
+  const customDiscountInput = button.querySelector('.custom-discount-input');
+
+  // If this button is already active, deactivate it
+  if (button.classList.contains('active')) {
+    button.classList.remove('active');
+    if (customDiscountInput) {
+      customDiscountInput.style.display = 'none';
+    }
+  } else {
+    // Deactivate all buttons first
+    discountButtons.forEach(btn => btn.classList.remove('active'));
+    // Then activate the clicked button
+    button.classList.add('active');
+    
+    // Show custom discount input
+    if (customDiscountInput) {
+      customDiscountInput.style.display = 'block';
+      // Focus on the input field
+      const input = customDiscountInput.querySelector('#customDiscountPercent');
+      if (input) {
+        input.focus();
+        // Set default value if empty
+        if (!input.value) {
+          input.value = '10'; // Default 10% discount
+        }
+        
+        // Remove existing event listeners to prevent duplicates
+        input.removeEventListener('input', updateItemTotal);
+        input.removeEventListener('change', updateItemTotal);
+        
+        // Add event listener for real-time price updates
+        input.addEventListener('input', updateItemTotal);
+        input.addEventListener('change', updateItemTotal);
+      }
+    }
+  }
+
   // Update item total to reflect discount change
   updateItemTotal();
 }
@@ -1478,13 +1777,30 @@ function updateCustomizedItemInOrder(baseItem, editIndex, overlay) {
     additionalPrice += customizationOptions.milk[options.milk];
   }
 
+  // Add preparation adjustment for brew bar items
+  if (options.preparation && baseItem.customizations && baseItem.customizations.preparation) {
+    const preparationPrice = baseItem.customizations.preparation[options.preparation];
+    if (preparationPrice !== undefined) {
+      // For brew bar items, the preparation price replaces the base price
+      baseItem.price = preparationPrice;
+      additionalPrice = 0; // Reset additional price since preparation price is the total
+    }
+  }
+
   // Apply discount if any
-  if (options.discount && options.discount !== 'none' && customizationOptions.discount[options.discount]) {
-    discountMultiplier = 1 + customizationOptions.discount[options.discount];
+  if (options.discount && options.discount !== 'none') {
+    if (options.discount === 'custom' && options.customDiscountPercent) {
+      // Handle custom discount
+      const customDiscountMultiplier = -(options.customDiscountPercent / 100);
+      discountMultiplier = 1 + customDiscountMultiplier;
+    } else if (customizationOptions.discount[options.discount]) {
+      // Handle predefined discounts (senior, pwd)
+      discountMultiplier = 1 + customizationOptions.discount[options.discount];
+    }
   }
 
   // Calculate final price
-  const finalPrice = (baseItem.basePrice || baseItem.price + additionalPrice) * discountMultiplier;
+  const finalPrice = ((baseItem.basePrice || baseItem.price) + additionalPrice) * discountMultiplier;
 
   // Update item with new customizations
   currentOrder[editIndex] = {
@@ -1570,10 +1886,48 @@ function updateItemTotal() {
     basePrice += customizationOptions.milk[milkOption.dataset.option];
   }
 
+  // Apply preparation adjustment for brew bar items
+  const preparationOption = document.querySelector('.option-button.active[data-group="preparation"]');
+  if (preparationOption) {
+    const modal = document.querySelector('.modal');
+    const item = modal ? modal.dataset.item : null;
+    if (item) {
+      const itemData = JSON.parse(item);
+      if (itemData.customizations && itemData.customizations.preparation) {
+        const preparationKey = preparationOption.dataset.option;
+        const preparationLabels = {
+          'Usucha (Hot)': 'usucha-hot',
+          'Usucha (Iced)': 'usucha-iced', 
+          'Classic Latte (Iced)': 'classic-latte',
+          'Cold-Whisked Latte (Iced)': 'cold-whisked-latte'
+        };
+        const key = preparationLabels[preparationKey] || preparationKey;
+        if (itemData.customizations.preparation[key]) {
+          basePrice = itemData.customizations.preparation[key];
+        }
+      }
+    }
+  }
+
   // Apply discount if selected
   const discountOption = document.querySelector('.discount-toggle.active');
-  if (discountOption && customizationOptions.discount[discountOption.dataset.discount]) {
-    basePrice = basePrice * (1 + customizationOptions.discount[discountOption.dataset.discount]);
+  if (discountOption) {
+    const discountType = discountOption.dataset.discount;
+    
+    if (discountType === 'custom') {
+      // Handle custom discount
+      const customDiscountInput = document.querySelector('#customDiscountPercent');
+      if (customDiscountInput && customDiscountInput.value) {
+        const customDiscountPercent = parseFloat(customDiscountInput.value);
+        if (!isNaN(customDiscountPercent) && customDiscountPercent >= 0 && customDiscountPercent <= 100) {
+          const customDiscountMultiplier = -(customDiscountPercent / 100);
+          basePrice = basePrice * (1 + customDiscountMultiplier);
+        }
+      }
+    } else if (customizationOptions.discount[discountType]) {
+      // Handle predefined discounts (senior, pwd)
+      basePrice = basePrice * (1 + customizationOptions.discount[discountType]);
+    }
   }
 
   // Get quantity
@@ -1596,13 +1950,13 @@ function updateItemTotal() {
   const serviceType = getCurrentEventServiceType();
   const isPackageMode = serviceType === 'package';
 
-  if (!isPackageMode) {
-    const priceSpan = document.createElement('span');
-    priceSpan.style.fontFamily = 'Montserrat, sans-serif';
-    priceSpan.style.fontWeight = '600';
-    priceSpan.textContent = `(₱${finalPrice.toFixed(2)})`;
-    addButton.appendChild(priceSpan);
-  }
+          if (!isPackageMode) {
+          const priceSpan = document.createElement('span');
+          priceSpan.style.fontFamily = 'Montserrat, sans-serif';
+          priceSpan.style.fontWeight = '600';
+          priceSpan.textContent = `(₱${finalPrice.toFixed(2)})`;
+          addButton.appendChild(priceSpan);
+        }
 }
 
 
@@ -1637,9 +1991,31 @@ function getSelectedOptions() {
   const milkButton = document.querySelector('.option-button.active[data-group="milk"]');
   if (milkButton) options.milk = milkButton.dataset.option;
 
+  const preparationButton = document.querySelector('.option-button.active[data-group="preparation"]');
+  if (preparationButton) {
+    const preparationLabels = {
+      'Usucha (Hot)': 'usucha-hot',
+      'Usucha (Iced)': 'usucha-iced', 
+      'Classic Latte (Iced)': 'classic-latte',
+      'Cold-Whisked Latte (Iced)': 'cold-whisked-latte'
+    };
+    options.preparation = preparationLabels[preparationButton.dataset.option] || preparationButton.dataset.option;
+  }
+
   // Get discount from toggle buttons
   const discountButton = document.querySelector('.discount-toggle.active');
   options.discount = discountButton ? discountButton.dataset.discount : 'none';
+  
+  // If custom discount is selected, capture the percentage
+  if (options.discount === 'custom') {
+    const customDiscountInput = document.querySelector('#customDiscountPercent');
+    if (customDiscountInput && customDiscountInput.value) {
+      const customDiscountPercent = parseFloat(customDiscountInput.value);
+      if (!isNaN(customDiscountPercent) && customDiscountPercent >= 0 && customDiscountPercent <= 100) {
+        options.customDiscountPercent = customDiscountPercent;
+      }
+    }
+  }
 
   const quantity = document.querySelector('.modal-quantity .quantity-display');
   if (quantity) options.quantity = parseInt(quantity.textContent);
@@ -1667,6 +2043,16 @@ function addCustomizedItemToOrder(baseItem, overlay) {
     additionalPrice += customizationOptions.milk[options.milk];
   }
 
+  // Add preparation adjustment for brew bar items
+  if (options.preparation && baseItem.customizations && baseItem.customizations.preparation) {
+    const preparationPrice = baseItem.customizations.preparation[options.preparation];
+    if (preparationPrice !== undefined) {
+      // For brew bar items, the preparation price replaces the base price
+      baseItem.price = preparationPrice;
+      additionalPrice = 0; // Reset additional price since preparation price is the total
+    }
+  }
+
   // Apply variant price adjustment if any
   if (options.variant && baseItem.variants) {
     const selectedVariant = baseItem.variants.find(v => v.name === options.variant);
@@ -1676,8 +2062,15 @@ function addCustomizedItemToOrder(baseItem, overlay) {
   }
 
   // Apply discount if any
-  if (options.discount && options.discount !== 'none' && customizationOptions.discount[options.discount]) {
-    discountMultiplier = 1 + customizationOptions.discount[options.discount];
+  if (options.discount && options.discount !== 'none') {
+    if (options.discount === 'custom' && options.customDiscountPercent) {
+      // Handle custom discount
+      const customDiscountMultiplier = -(options.customDiscountPercent / 100);
+      discountMultiplier = 1 + customDiscountMultiplier;
+    } else if (customizationOptions.discount[options.discount]) {
+      // Handle predefined discounts (senior, pwd)
+      discountMultiplier = 1 + customizationOptions.discount[options.discount];
+    }
   }
 
   // Calculate final price with all adjustments
@@ -2109,7 +2502,19 @@ function showCashPaymentModal() {
 
   const totalDisplay = document.createElement('div');
   totalDisplay.className = 'payment-total';
-  totalDisplay.textContent = 'Total: ₱' + formatWithCommas(total.toFixed(2));
+      totalDisplay.innerHTML = '';
+    
+    // Format total with Montserrat font for numerical digits
+    const totalLabelSpan = document.createElement('span');
+    totalLabelSpan.textContent = 'Total: ₱';
+    
+    const priceSpan = document.createElement('span');
+    priceSpan.style.fontFamily = 'Montserrat, sans-serif';
+    priceSpan.style.fontWeight = '600';
+    priceSpan.textContent = formatWithCommas(total.toFixed(2));
+    
+    totalDisplay.appendChild(totalLabelSpan);
+    totalDisplay.appendChild(priceSpan);
   modal.appendChild(totalDisplay);
 
   const changeText = document.createElement('div');
@@ -2300,8 +2705,8 @@ function selectCashAmount(amount, modal) {
 
   const changeText = modal.querySelector('.change-text');
 
-  // Remove cash display element as it's no longer needed
-  changeText.textContent = 'Change: ₱' + change.toFixed(2);
+          // Remove cash display element as it's no longer needed
+        changeText.textContent = 'Change: ₱' + change.toFixed(2);
   changeText.style.color = change >= 0 ? 'black' : 'red';
 }
 
@@ -2854,9 +3259,9 @@ function initializeMobileLayout() {
   // Update the mobile order button total when the order changes
   function updateMobileOrderButton() {
     const mobileTotal = document.querySelector('.mobile-order-total');
-    if (mobileTotal) {
-      const total = calculateOrderTotal();
-      mobileTotal.textContent = '₱ ' + total.toFixed(2);
+            if (mobileTotal) {
+          const total = calculateOrderTotal();
+          mobileTotal.textContent = '₱ ' + total.toFixed(2);
 
       // Update items count
       const itemsCount = currentOrder.reduce((sum, item) => sum + item.quantity, 0);
@@ -2874,6 +3279,12 @@ function initializeMobileLayout() {
 document.addEventListener('DOMContentLoaded', async () => {
   // ... existing code ...
   initializeMobileLayout();
+  
+  // Add toggle button event listener
+  const toggleBtn = document.getElementById('viewToggleBtn');
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', toggleView);
+  }
 });
 
 function clearDateData() {
@@ -3014,7 +3425,7 @@ function submitPackageOrder() {
     id: isEditing ? window.editingOrderData.originalId : now.getTime().toString().slice(-5),
     items: [...currentOrder],
     total: currentOrder.reduce((total, item) => total + item.quantity, 0), // Total cups for package service
-    paymentMethod: 'Package Service', // Fixed payment method for package orders
+    paymentMethod: '', // No payment method for package orders
     timestamp: isEditing ? window.editingOrderData.timestamp : now.toISOString(),
     status: 'pending',
     customerName: customerName,
@@ -3104,6 +3515,7 @@ window.debugEventData = async function () {
 };
 
 let currentMenuData = null;
+let isGridView = false;
 
 async function loadEventMenu(eventKey) {
   if (eventKey === 'pop-up') {
@@ -3141,20 +3553,51 @@ function refreshMenuDisplay() {
   initializeMenu(menuContainer); // Rebuild menu with current data
 }
 
+// Function to toggle between list and grid view
+function toggleView() {
+  isGridView = !isGridView;
+  const menuContainer = document.getElementById('menuContent');
+  const toggleBtn = document.getElementById('viewToggleBtn');
+  
+      if (isGridView) {
+      menuContainer.classList.add('grid-view');
+      toggleBtn.classList.add('active');
+      // Show list icon when in grid view (to switch back to list)
+      toggleBtn.querySelector('.grid-icon').style.display = 'none';
+      toggleBtn.querySelector('.list-icon').style.display = 'block';
+    } else {
+      menuContainer.classList.remove('grid-view');
+      toggleBtn.classList.remove('active');
+      // Show grid icon when in list view (to switch to grid)
+      toggleBtn.querySelector('.grid-icon').style.display = 'block';
+      toggleBtn.querySelector('.list-icon').style.display = 'none';
+    }
+  
+  refreshMenuDisplay();
+}
+
 // Update the initializeMenu function to use currentMenuData instead of importing menuData
 function initializeMenu(container) {
   const menuDataToUse = currentMenuData || menuData;
 
-  // Create menu categories
-  menuDataToUse.categories.forEach(category => {
-    const categoryElement = createCategoryElement(category);
-    const categoryItems = menuDataToUse.items.filter(item => item.categoryId === category.id);
-
-    categoryItems.forEach(item => {
+  if (isGridView) {
+    // In grid view, show all items in a single grid without categories
+    menuDataToUse.items.forEach(item => {
       const menuItemElement = createMenuItemElement(item);
-      categoryElement.appendChild(menuItemElement);
+      container.appendChild(menuItemElement);
     });
+  } else {
+    // In list view, show items organized by categories
+    menuDataToUse.categories.forEach(category => {
+      const categoryElement = createCategoryElement(category);
+      const categoryItems = menuDataToUse.items.filter(item => item.categoryId === category.id);
 
-    container.appendChild(categoryElement);
-  });
+      categoryItems.forEach(item => {
+        const menuItemElement = createMenuItemElement(item);
+        categoryElement.appendChild(menuItemElement);
+      });
+
+      container.appendChild(categoryElement);
+    });
+  }
 }

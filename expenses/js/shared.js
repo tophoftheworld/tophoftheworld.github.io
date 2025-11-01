@@ -20,7 +20,14 @@ export async function initializeFirebase() {
     try {
         // Import Firebase configuration
         const firebaseConfig = await import('./firebase-config.js');
-        db = firebaseConfig.db;
+        const result = await firebaseConfig.initializeFirebaseConfig();
+        
+        if (!result) {
+            console.log('Firebase config initialization failed');
+            return false;
+        }
+        
+        db = result.db;
 
         // Make db available globally for testing
         window.db = db;
@@ -424,7 +431,7 @@ export function parseExpenseFromCSV(headers, values) {
 
     console.log('Mapped data:', data);
 
-    // Detect format type - check for accounting-specific patterns
+    // Detect format type - check for different CSV formats
     const hasAccountingColumns = headers.some(h =>
         h.toLowerCase().includes('particulars') ||
         h.toLowerCase().includes('vatable') ||
@@ -432,20 +439,34 @@ export function parseExpenseFromCSV(headers, values) {
         h.toLowerCase().includes('grosstaxable')
     );
 
+    const hasMatchaneseFormat = headers.some(h =>
+        h.toLowerCase().replace(/"/g, '').includes('item') &&
+        headers.some(h2 => h2.toLowerCase().replace(/"/g, '').includes('supplier')) &&
+        headers.some(h3 => h3.toLowerCase().replace(/"/g, '').includes('paid via')) &&
+        headers.some(h4 => h4.toLowerCase().replace(/"/g, '').includes('category'))
+    );
+
     const hasStandardColumns = headers.some(h =>
         h.toLowerCase().includes('item') &&
         headers.some(h2 => h2.toLowerCase().includes('supplier'))
     );
 
-    // Prioritize accounting format if it has VAT-related columns
-    const isAccountingFormat = hasAccountingColumns && !hasStandardColumns;
+    console.log('Format detection:', {
+        hasAccountingColumns,
+        hasMatchaneseFormat,
+        hasStandardColumns,
+        headers
+    });
 
-    console.log('Is accounting format:', isAccountingFormat);
-    console.log('Headers for detection:', headers);
-
-    if (isAccountingFormat) {
+    // Prioritize formats in order: Matchanese > Accounting > Standard
+    if (hasMatchaneseFormat) {
+        console.log('Using Matchanese format parser');
+        return parseMatchaneseFormatCSV(data, headers, values);
+    } else if (hasAccountingColumns && !hasStandardColumns) {
+        console.log('Using Accounting format parser');
         return parseAccountingFormatCSV(data, headers, values);
     } else {
+        console.log('Using Standard format parser');
         return parseStandardFormatCSV(data);
     }
 }
@@ -554,6 +575,7 @@ function parseAccountingFormatCSV(data, headers, values) {
         tin: tin,
         address: address,
         invoiceNumber: '',
+        expenseCategory: 'General', // Default category for CSV imports
         items: items,
         totalAmount: amount,
         vatExemptAmount: 0,
@@ -568,6 +590,113 @@ function parseAccountingFormatCSV(data, headers, values) {
     };
 
     console.log('Created expense:', expense);
+    return expense;
+}
+
+function parseMatchaneseFormatCSV(data, headers, values) {
+    console.log('Parsing Matchanese format with values:', values);
+
+    // Skip completely empty rows
+    if (values.every(val => !val || val.trim() === '')) {
+        console.log('Skipping empty row');
+        return null;
+    }
+
+    // Parse date - handle "September 23, 2025" format
+    const dateStr = data.date || '';
+    let parsedDate;
+
+    try {
+        // Handle "September 23, 2025" format
+        parsedDate = new Date(dateStr);
+        if (isNaN(parsedDate.getTime())) {
+            console.warn('Invalid date format:', dateStr);
+            parsedDate = new Date();
+        }
+    } catch (error) {
+        console.warn('Date parsing error:', error);
+        parsedDate = new Date();
+    }
+
+    // Parse amount - remove peso sign, commas, and any other currency symbols
+    const amountStr = (data.amount || '').replace(/[₱,â‚±]/g, '');
+    const amount = parseFloat(amountStr) || 0;
+
+    if (amount === 0) {
+        console.warn('Invalid amount:', data.amount);
+        return null;
+    }
+
+    // Map payment method from "Paid Via" column
+    const paidVia = (data.paidvia || 'cash').toLowerCase().replace(/[^a-z]/g, '');
+    const paymentMethodMap = {
+        'cash': 'Cash',
+        'noncash': 'Credit Card',
+        'gcash': 'GCash',
+        'grab': 'GrabPay',
+        'credit': 'Credit Card',
+        'debit': 'Debit Card',
+        'bank': 'Bank Transfer',
+        'online': 'Bank Transfer'
+    };
+    const paymentMethod = paymentMethodMap[paidVia] || 'Cash';
+
+    // Parse items from "Item" column
+    let itemsText = data.item || '';
+    if (!itemsText.trim()) {
+        itemsText = 'Various Items';
+    }
+    
+    // Split items by comma and clean them up
+    const itemNames = itemsText.split(',')
+        .map(item => item.trim())
+        .filter(item => item.length > 0);
+
+    // Create items array - distribute total amount evenly across items
+    const itemCount = itemNames.length;
+    const pricePerItem = itemCount > 0 ? amount / itemCount : amount;
+
+    const items = itemNames.map(itemName => ({
+        name: itemName,
+        quantity: 1,
+        price: pricePerItem,
+        total: pricePerItem
+    }));
+
+    // Fallback if no valid items found
+    if (items.length === 0) {
+        items.push({
+            name: 'Imported Item',
+            quantity: 1,
+            price: amount,
+            total: amount
+        });
+    }
+
+    // Create expense object - always set branch to "Podium" as specified
+    const expense = {
+        id: generateId(),
+        date: parsedDate.toISOString().split('T')[0],
+        branch: 'Podium', // Always Podium branch as specified
+        supplierName: data.supplier || 'Unknown Supplier',
+        businessName: data.supplier || '', // Use supplier name as business name
+        tin: data.tin || '',
+        address: data.address || '',
+        invoiceNumber: data.invoiceno || '',
+        items: items,
+        totalAmount: amount,
+        vatExemptAmount: 0,
+        vatableSale: 0,
+        vatAmount: 0,
+        isVatRegistered: false,
+        paymentMethod: paymentMethod,
+        paidBy: data.purchasee || 'Store',
+        notes: 'Imported from Matchanese Finance Tracking CSV',
+        receiptImage: null,
+        createdAt: new Date().toISOString()
+    };
+
+    console.log('Created Matchanese expense:', expense);
     return expense;
 }
 
@@ -1180,6 +1309,239 @@ export function clearAllData() {
     localStorage.removeItem('expenseTracker_suppliers');
     localStorage.removeItem('expenseTracker_deviceId');
     console.log('All data cleared');
+}
+
+// Expense Detail Modal Functions
+export function viewExpense(expenseId) {
+    const expense = expenses.find(e => e.id === expenseId);
+    if (!expense) {
+        showToast('Expense not found');
+        return;
+    }
+
+    showExpenseDetailModal(expense);
+}
+
+export function showExpenseDetailModal(expense) {
+    const modal = document.getElementById('expenseDetailModalOverlay');
+    const content = document.getElementById('expenseDetailContent');
+
+    if (!modal || !content) {
+        console.error('Expense detail modal elements not found');
+        return;
+    }
+
+    // Format the date
+    const expenseDate = new Date(expense.date);
+    const isToday = expense.date === new Date().toISOString().split('T')[0];
+    const formattedDate = isToday ? 'Today' : formatDate(expense.date);
+
+    // Update modal header to include action buttons
+    const modalHeader = modal.querySelector('.modal-header');
+    const existingActionButtons = modalHeader.querySelector('.modal-action-buttons');
+    if (existingActionButtons) {
+        existingActionButtons.remove();
+    }
+
+    // Add action buttons before the close button
+    const actionButtons = document.createElement('div');
+    actionButtons.className = 'modal-action-buttons';
+    actionButtons.innerHTML = `
+        <button class="modal-action-btn edit" onclick="editExpenseFromDetail('${expense.id}')" title="Edit expense">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                <path d="m18.5 2.5 a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z"></path>
+            </svg>
+        </button>
+        <button class="modal-action-btn delete" onclick="deleteExpenseFromDetail('${expense.id}')" title="Delete expense">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3,6 5,6 21,6"></polyline>
+                <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"></path>
+                <line x1="10" y1="11" x2="10" y2="17"></line>
+                <line x1="14" y1="11" x2="14" y2="17"></line>
+            </svg>
+        </button>
+    `;
+
+    const headerActions = modalHeader.querySelector('.modal-header-actions');
+    headerActions.insertBefore(actionButtons, headerActions.firstChild);
+
+    // Generate content
+    content.innerHTML = `
+        <!-- Basic Information -->
+        <div class="expense-detail-section">
+            <h3>Basic Information</h3>
+            <div class="expense-detail-row">
+                <div class="expense-detail-label">Date</div>
+                <div class="expense-detail-value">${formattedDate}</div>
+            </div>
+            <div class="expense-detail-row">
+                <div class="expense-detail-label">Branch</div>
+                <div class="expense-detail-value">${expense.branch || 'Not specified'}</div>
+            </div>
+            <div class="expense-detail-row">
+                <div class="expense-detail-label">Payment Method</div>
+                <div class="expense-detail-value">${expense.paymentMethod || 'Cash'}</div>
+            </div>
+            ${expense.paidBy ? `
+            <div class="expense-detail-row">
+                <div class="expense-detail-label">Paid By</div>
+                <div class="expense-detail-value">${expense.paidBy}</div>
+            </div>
+            ` : ''}
+            ${expense.invoiceNumber ? `
+            <div class="expense-detail-row">
+                <div class="expense-detail-label">Invoice Number</div>
+                <div class="expense-detail-value">${expense.invoiceNumber}</div>
+            </div>
+            ` : ''}
+        </div>
+
+        <!-- Supplier Information -->
+        <div class="expense-detail-section">
+            <h3>Supplier Information</h3>
+            <div class="expense-detail-row supplier-clickable" onclick="viewSupplierFromExpense('${expense.supplierName}')">
+                <div class="expense-detail-label">Supplier Name</div>
+                <div class="expense-detail-value supplier-link">${expense.supplierName}</div>
+            </div>
+            ${expense.businessName ? `
+            <div class="expense-detail-row">
+                <div class="expense-detail-label">Business Name</div>
+                <div class="expense-detail-value">${expense.businessName}</div>
+            </div>
+            ` : ''}
+            ${expense.tin ? `
+            <div class="expense-detail-row">
+                <div class="expense-detail-label">TIN</div>
+                <div class="expense-detail-value">${expense.tin}</div>
+            </div>
+            ` : ''}
+            ${expense.address ? `
+            <div class="expense-detail-row">
+                <div class="expense-detail-label">Address</div>
+                <div class="expense-detail-value">${expense.address}</div>
+            </div>
+            ` : ''}
+        </div>
+
+        <!-- Financial Information -->
+        <div class="expense-detail-section">
+            <h3>Financial Information</h3>
+            <div class="expense-detail-row">
+                <div class="expense-detail-label">Total Amount</div>
+                <div class="expense-detail-value amount">₱${(expense.totalAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            </div>
+            ${expense.isVatRegistered ? `
+            <div class="expense-detail-row">
+                <div class="expense-detail-label">VAT Status</div>
+                <div class="expense-detail-value">VAT Registered</div>
+            </div>
+            ${expense.vatableSale > 0 ? `
+            <div class="expense-detail-row">
+                <div class="expense-detail-label">VATable Sale</div>
+                <div class="expense-detail-value">₱${expense.vatableSale.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            </div>
+            ` : ''}
+            ${expense.vatAmount > 0 ? `
+            <div class="expense-detail-row">
+                <div class="expense-detail-label">VAT Amount</div>
+                <div class="expense-detail-value">₱${expense.vatAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            </div>
+            ` : ''}
+            ${expense.vatExemptAmount > 0 ? `
+            <div class="expense-detail-row">
+                <div class="expense-detail-label">VAT Exempt Amount</div>
+                <div class="expense-detail-value">₱${expense.vatExemptAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            </div>
+            ` : ''}
+            ` : ''}
+        </div>
+
+        <!-- Items Purchased -->
+        <div class="expense-detail-section">
+            <h3>Items Purchased (${expense.items.length} item${expense.items.length === 1 ? '' : 's'})</h3>
+            <div class="expense-detail-items">
+                ${expense.items.map(item => `
+                    <div class="expense-detail-item">
+                        <div class="expense-detail-item-name">${item.name}</div>
+                        <div class="expense-detail-item-details">
+                            <div class="expense-detail-item-qty-price">
+                                <span>Qty: ${item.quantity}</span>
+                                ${item.price > 0 ? `<span>₱${item.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} each</span>` : ''}
+                            </div>
+                            ${item.total > 0 ? `<div class="expense-detail-item-total">₱${item.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>` : ''}
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+
+        ${expense.notes ? `
+        <!-- Notes -->
+        <div class="expense-detail-section">
+            <h3>Notes</h3>
+            <div class="expense-detail-notes">${expense.notes}</div>
+        </div>
+        ` : ''}
+
+        <!-- Receipt -->
+        <div class="expense-detail-section">
+            <h3>Receipt</h3>
+            ${expense.receiptImage ? `
+                <div class="expense-detail-receipt">
+                    <img src="${expense.receiptImage}" alt="Receipt" onclick="viewReceiptFullscreen('${expense.receiptImage}')">
+                </div>
+            ` : `
+                <div class="expense-detail-no-receipt">No receipt attached</div>
+            `}
+        </div>
+    `;
+
+    // Store current scroll position
+    const scrollY = window.scrollY;
+
+    modal.style.display = 'flex';
+    modal.classList.add('show');
+    document.body.style.overflow = 'hidden';
+    document.body.style.position = 'fixed';
+    document.body.style.width = '100%';
+    document.body.style.top = `-${scrollY}px`;
+}
+
+export function closeExpenseDetailModal() {
+    const modal = document.getElementById('expenseDetailModalOverlay');
+    if (!modal) return;
+
+    modal.style.display = 'none';
+    modal.classList.remove('show');
+
+    // Restore scroll position
+    const scrollY = document.body.style.top;
+    document.body.style.overflow = '';
+    document.body.style.position = '';
+    document.body.style.width = '';
+    document.body.style.top = '';
+    window.scrollTo(0, parseInt(scrollY || '0') * -1);
+}
+
+export function editExpenseFromDetail(expenseId) {
+    // This will be implemented in the specific app (mobile or admin)
+    console.log('Edit expense:', expenseId);
+}
+
+export function deleteExpenseFromDetail(expenseId) {
+    // This will be implemented in the specific app (mobile or admin)
+    console.log('Delete expense:', expenseId);
+}
+
+export function viewSupplierFromExpense(supplierName) {
+    // This will be implemented in the specific app (mobile or admin)
+    console.log('View supplier:', supplierName);
+}
+
+export function viewReceiptFullscreen(imageSrc) {
+    // This will be implemented in the specific app (mobile or admin)
+    console.log('View receipt fullscreen:', imageSrc);
 }
 
 // Manual Firebase initialization for testing
