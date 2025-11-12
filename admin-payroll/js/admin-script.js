@@ -779,13 +779,33 @@ async function loadAllEmployees() {
     }
 }
 
-async function loadSalesData() {
+async function loadSalesData(branch = null) {
     try {
-        const salesRef = collection(db, "sales");
-        const snapshot = await getDocs(salesRef);
+        let snapshot;
+        
+        if (branch === 'podium') {
+            snapshot = await getDocs(collection(db, 'sales-data', 'podium', 'daily'));
+        } else if (branch === 'smnorth' || branch === 'sm-north') {
+            snapshot = await getDocs(collection(db, 'sales-data', 'sm-north', 'daily'));
+        } else {
+            // Load all branches for compatibility
+            const [smNorthSnapshot, podiumSnapshot] = await Promise.all([
+                getDocs(collection(db, 'sales-data', 'sm-north', 'daily')),
+                getDocs(collection(db, 'sales-data', 'podium', 'daily'))
+            ]);
+            
+            // Combine both snapshots
+            const allDocs = [
+                ...smNorthSnapshot.docs,
+                ...podiumSnapshot.docs
+            ];
+            
+            // Create a temporary snapshot-like object
+            snapshot = { size: allDocs.length, docs: allDocs };
+        }
 
         const salesData = {};
-        snapshot.forEach(doc => {
+        snapshot.docs.forEach(doc => {
             const data = doc.data();
             // Only include sales data if it has total sales amount
             if (data.totalSales || (data.cash || 0) + (data.gcash || 0) + (data.maya || 0) + (data.card || 0) + (data.grab || 0) > 0) {
@@ -872,7 +892,7 @@ async function loadSingleEmployeeData(employeeId, periodId = null) {
         // Load sales data only if employee is eligible
         let salesData = {};
         if (employeeDoc.exists() && employeeDoc.data().salesBonusEligible) {
-            salesData = await loadSalesData();
+            salesData = await loadSalesData(branch);
         }
         
         // Initialize PayCalculator with minimal data
@@ -1053,7 +1073,7 @@ async function loadData(selectedPeriodId = null) {
         await loadAllEmployees();
 
         // Load sales data for bonus calculations
-        const salesData = await loadSalesData();
+        const salesData = await loadSalesData(branchId);
         window.salesDataCache = salesData;
 
         // Initialize PayCalculator with current data

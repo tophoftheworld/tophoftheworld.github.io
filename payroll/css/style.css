@@ -1,0 +1,446 @@
+/* Payroll Module - Matches original attendance app payroll tab styling */
+* {
+    box-sizing: border-box;
+}
+
+html {
+    height: 100%;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: #f9f9f9;
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow-x: hidden;
+}
+
+.container {
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 2rem 1rem 4rem 1rem; /* Extra bottom padding */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+#mainInterface {
+    width: 100%;
+}
+
+#payrollView {
+    padding: 0;
+    width: 100%;
+    max-width: 100%;
+}
+
+/* Payroll Summary Cards */
+.payroll-summary {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.summary-card {
+    flex: 1;
+    max-width: 180px;
+    background-color: white;
+    border-radius: 10px;
+    padding: 1rem;
+    text-align: center;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    border: 1px solid #f0f0f0;
+}
+
+.summary-card h3 {
+    font-size: 0.9rem;
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+    color: #555;
+}
+
+.summary-value {
+    font-size: 1.8rem;
+    font-weight: 700;
+    margin: 0;
+    color: #2b9348;
+}
+
+/* Period Selector */
+.period-selector {
+    margin-bottom: 1rem;
+    text-align: center;
+}
+
+/* Download Payslip Button */
+.download-payslip-container {
+    margin-bottom: 2rem;
+    text-align: center;
+    width: 100%;
+}
+
+.download-payslip-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.65rem 1.25rem;
+    background-color: #2b9348;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 6px rgba(43, 147, 72, 0.25);
+    width: auto;
+    font-family: 'Inter', sans-serif;
+}
+
+.download-payslip-btn:hover {
+    background-color: #23803a;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(43, 147, 72, 0.3);
+}
+
+.download-payslip-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(43, 147, 72, 0.2);
+}
+
+.download-payslip-btn:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.download-payslip-btn svg {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+}
+
+.period-selector select {
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+    background-color: white;
+    font-size: 1rem;
+    width: 80%;
+    max-width: 300px;
+    text-align: center;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23000000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    background-size: 16px;
+    padding-right: 30px;
+}
+
+/* Attendance List */
+.attendance-list {
+    overflow-y: visible; /* Let body handle scrolling */
+    padding: 0 1rem 2rem 1rem; /* Bottom padding for spacing */
+    width: 100%;
+    margin-bottom: 2rem; /* Extra breathing room at bottom */
+}
+
+.attendance-header {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #333;
+    margin-bottom: 1.5rem;
+    text-align: center;
+}
+
+/* Payroll Cards */
+.payroll-card {
+    background: white;
+    color: #333;
+    border-radius: 12px;
+    padding: 2rem;
+    margin-bottom: 0.75rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+    border: 1px solid #f0f0f0;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    width: 100%;
+    cursor: pointer;
+}
+
+.payroll-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12);
+}
+
+.payroll-card.today {
+    background: #2b9348;
+    color: white;
+    border-color: #2b9348;
+    box-shadow: 0 4px 12px rgba(43, 147, 72, 0.3);
+}
+
+.payroll-card-main {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.payroll-date-section {
+    display: flex;
+    flex-direction: column;
+}
+
+.payroll-date {
+    font-weight: 700;
+    font-size: 1.2rem;
+    color: #2b9348;
+    cursor: pointer;
+    margin-bottom: 2px;
+}
+
+.payroll-card.today .payroll-date {
+    color: white;
+}
+
+.payroll-day {
+    font-size: 0.9rem;
+    color: #666;
+}
+
+.payroll-card.today .payroll-day {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.payroll-branch-shift {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    text-align: right;
+    min-width: 120px;
+    flex-shrink: 0;
+}
+
+.payroll-branch {
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 2px;
+    font-size: 1rem;
+}
+
+.payroll-card.today .payroll-branch {
+    color: white;
+}
+
+.payroll-shift {
+    font-size: 0.85rem;
+    color: #666;
+}
+
+.payroll-card.today .payroll-shift {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.payroll-times {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 3rem;
+    margin-bottom: 1rem;
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 8px;
+    padding: 0.75rem;
+}
+
+.payroll-card.today .payroll-times {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.payroll-time-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.payroll-time-label {
+    font-size: 0.7rem;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+
+.payroll-card.today .payroll-time-label {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.payroll-time {
+    font-weight: 600;
+    color: #333;
+    font-size: 1.1rem;
+}
+
+.payroll-card.today .payroll-time {
+    color: white;
+}
+
+.payroll-bottom-section {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 0.75rem;
+    border-top: 1px solid #f0f0f0;
+}
+
+.payroll-card.today .payroll-bottom-section {
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.payroll-late-info {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.payroll-late-label {
+    font-size: 0.7rem;
+    color: #777;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 2px;
+}
+
+.payroll-card.today .payroll-late-label {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.payroll-late-value {
+    font-weight: 700;
+    font-size: 1.2rem;
+}
+
+.payroll-late-value.late-green {
+    color: #2b9348;
+}
+
+.payroll-late-value.late-red {
+    color: #e63946;
+}
+
+.payroll-card.today .payroll-late-value.late-green {
+    color: #90ee90;
+}
+
+.payroll-card.today .payroll-late-value.late-red {
+    color: #ffcccb;
+}
+
+.payroll-pay-info {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+}
+
+.payroll-pay-label {
+    font-size: 0.7rem;
+    color: #777;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 2px;
+}
+
+.payroll-card.today .payroll-pay-label {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.payroll-pay {
+    font-weight: 700;
+    font-size: 1.2rem;
+    color: #2b9348;
+}
+
+.payroll-card.today .payroll-pay {
+    color: white;
+}
+
+/* Modal Styles */
+.image-modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 1000;
+    cursor: pointer;
+    justify-content: center;
+    align-items: center;
+}
+
+.image-modal.show {
+    display: flex;
+}
+
+.modal-content {
+    max-width: 90%;
+    max-height: 90%;
+    background: white;
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.modal-content img {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+/* Payroll Detail Modal */
+#payrollDetailModal {
+    opacity: 0;
+    background: rgba(0, 0, 0, 0);
+    transition: opacity 0.3s ease, background 0.3s ease;
+}
+
+#payrollDetailModal.show {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.6);
+}
+
+#payrollDetailModal .modal-content {
+    opacity: 0;
+    transform: scale(0.3);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+#payrollDetailModal.show .modal-content {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.time-thumbnail {
+    width: 40px;
+    height: 40px;
+    object-fit: cover;
+    border-radius: 4px;
+    margin: 4px 0;
+    cursor: pointer;
+    border: 1px solid #ddd;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+    .payroll-summary .summary-card:first-child {
+        display: none;
+    }
+    
+    #payrollView {
+        max-width: 100%;
+        margin: 0 auto;
+    }
+}

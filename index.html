@@ -2,62 +2,621 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Matchanese Staff Portal</title>
+    <link rel="icon" href="icons/icon-64.png" type="image/png">
+    
+    <!-- PWA Meta Tags -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Staff Portal">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" sizes="192x192" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" sizes="512x512" href="icons/icon-512.png">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="theme-color" content="#2b9348">
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://matchanese.site/">
+    <meta property="og:title" content="Matchanese Staff Portal">
+    <meta property="og:description" content="Staff portal for attendance, payroll, scheduling, and more">
+    <meta property="og:image" content="https://matchanese.site/img/og-thumbnail.png">
+    <meta property="fb:app_id" content="YOUR_FACEBOOK_APP_ID">
+    
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:url" content="https://matchanese.site/">
+    <meta property="twitter:title" content="Matchanese Staff Portal">
+    <meta property="twitter:description" content="Staff portal for attendance, payroll, scheduling, and more">
+    <meta property="twitter:image" content="https://matchanese.site/img/og-thumbnail.png">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        window.tailwind = { config: {} };
+        
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        accent: '#2b9348'
+                    }
+                }
+            }
+        }
+    </script>
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        :root {
+            --primary: #2b9348;
+            --primary-dark: #1d6330;
+            --accent: #2b9348;
+        }
+
+        * {
             margin: 0;
             padding: 0;
-            background: #f9fafb;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            position: fixed;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
+
+        /* Mobile Navigation Bar */
+        .mobile-nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 50;
+            background: white;
+            border-bottom: 1px solid #e5e7eb;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+        }
+
+        .mobile-nav-header {
             display: flex;
             align-items: center;
-            justify-content: center;
-            min-height: 100vh;
+            justify-content: space-between;
+            padding: 1rem;
         }
-        .container {
-            text-align: center;
-            padding: 2rem;
+
+        .mobile-logo-icon {
+            height: 2rem;
         }
-        .logo {
-            width: 80px;
-            height: 80px;
-            background: #2b9348;
-            border-radius: 12px;
-            margin: 0 auto 1.5rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-size: 2rem;
-            font-weight: bold;
+
+        .mobile-logo-full-header {
+            height: 2rem;
         }
-        h1 {
+
+        .mobile-page-title {
+            font-size: 1.25rem;
+            font-weight: 700;
             color: #2b9348;
-            margin-bottom: 0.5rem;
-            font-size: 2rem;
+        }
+
+        .mobile-profile-avatar {
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .mobile-profile-avatar:hover {
+            transform: scale(1.05);
+        }
+
+        .mobile-profile-link {
+            display: flex;
+            width: 100%;
+            text-decoration: none;
+            color: inherit;
+        }
+
+        .mobile-profile-name {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: #111827;
+            max-width: 9rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            transition: color 0.2s;
+        }
+
+        .mobile-menu-toggle {
+            background: none;
+            border: none;
+            padding: 0.5rem;
+            color: #2b9348;
+            cursor: pointer;
+            border-radius: 0.375rem;
+            transition: background-color 0.2s;
+        }
+
+        .mobile-menu-toggle:hover {
+            background-color: #f0fdf4;
+        }
+
+        .mobile-nav-divider {
+            height: 1px;
+            background-color: #f3f4f6;
+            margin: 0.5rem 0;
+        }
+
+        .mobile-logout-button {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 1rem;
+            border-bottom: none;
+            text-decoration: none;
+            color: #dc2626;
+            transition: background-color 0.2s;
+            background: none;
+            border: none;
+            width: 100%;
+            text-align: left;
+        }
+
+        .mobile-logout-button:hover {
+            background-color: #fef2f2;
+        }
+
+        .mobile-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border-bottom: 1px solid #e5e7eb;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+
+        .mobile-dropdown.open {
+            max-height: 500px;
+        }
+
+        .mobile-nav-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 1rem;
+            text-decoration: none;
+            color: #374151;
+            transition: background-color 0.2s;
+        }
+
+        .mobile-nav-item:hover {
+            background-color: #f9fafb;
+        }
+
+        .mobile-nav-item.active {
+            background-color: #f0fdf4;
+            color: #2b9348;
             font-weight: 600;
         }
-        p {
-            color: #6b7280;
-            margin-bottom: 2rem;
+
+        .mobile-nav-item.mobile-profile-link {
+            align-items: center;
+            gap: 0.75rem;
         }
-        .coming-soon {
-            background: white;
-            padding: 1rem 2rem;
-            border-radius: 8px;
-            border: 1px solid #e5e7eb;
-            color: #6b7280;
-            font-style: italic;
+
+        .mobile-nav-item.mobile-profile-link:hover .mobile-profile-name {
+            color: #2b9348;
+        }
+
+        .mobile-profile-details {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.125rem;
+        }
+
+        .mobile-profile-subtext {
+            display: none;
+        }
+
+        .mobile-nav-icon {
+            width: 1.25rem;
+            height: 1.25rem;
+            flex-shrink: 0;
+        }
+
+        .mobile-nav-text {
+            font-size: 1rem;
+            font-weight: 500;
+        }
+
+        /* Mobile content padding - removed, using margin-top on container instead */
+
+
+        .update-available {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.7;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="logo">M</div>
-        <h1>Matchanese Staff Portal</h1>
-        <p>Your central hub for all staff applications</p>
-        <div class="coming-soon">Coming Soon - Staff Homepage</div>
+    <!-- Mobile Navigation Bar -->
+    <nav class="mobile-nav">
+        <div class="mobile-nav-header">
+            <div class="flex items-center gap-3" id="mobileHeaderContent">
+                <img 
+                    src="shared/assets/images/matchanese-2025-logo.png" 
+                    alt="Matchanese" 
+                    class="mobile-logo-icon"
+                    id="mobileLogoIcon"
+                />
+                <span class="mobile-page-title" id="mobilePageTitle">Attendance</span>
+                <img 
+                    src="shared/assets/images/matchanese-logo-full.png" 
+                    alt="Matchanese" 
+                    class="mobile-logo-full-header"
+                    id="mobileLogoFullHeader"
+                    style="display: none;"
+                />
+            </div>
+            <div class="flex items-center gap-2">
+                <div class="mobile-profile-avatar" id="mobileProfileAvatar">
+                    <div class="w-8 h-8 bg-accent rounded-full flex items-center justify-center">
+                        <span class="text-white text-sm font-semibold" id="mobileUserInitials">S</span>
+                    </div>
+                </div>
+                <button class="mobile-menu-toggle" id="mobileMenuToggle" aria-label="Toggle menu">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="3" y1="6" x2="21" y2="6"></line>
+                        <line x1="3" y1="12" x2="21" y2="12"></line>
+                        <line x1="3" y1="18" x2="21" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <div class="mobile-dropdown" id="mobileDropdown">
+            <a href="#" class="mobile-nav-item active" data-app="Attendance">
+                <svg class="mobile-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="12 6 12 12 16 14"/>
+                </svg>
+                <span class="mobile-nav-text">Attendance</span>
+            </a>
+            <a href="#" class="mobile-nav-item" data-app="Payroll">
+                <svg class="mobile-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="6" width="18" height="12" rx="2"/>
+                    <text x="12" y="14" text-anchor="middle" font-size="10" font-weight="700" fill="currentColor">₱</text>
+                </svg>
+                <span class="mobile-nav-text">Payroll</span>
+            </a>
+            <a href="#" class="mobile-nav-item" data-app="Schedule">
+                <svg class="mobile-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                    <line x1="16" y1="2" x2="16" y2="6"/>
+                    <line x1="8" y1="2" x2="8" y2="6"/>
+                    <line x1="3" y1="10" x2="21" y2="10"/>
+                    <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01"/>
+                </svg>
+                <span class="mobile-nav-text">Schedule</span>
+            </a>
+            <a href="#" class="mobile-nav-item" data-app="Sales Reporting">
+                <svg class="mobile-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                    <polyline points="10 9 9 9 8 9"/>
+                </svg>
+                <span class="mobile-nav-text">Sales Reporting</span>
+            </a>
+            <a href="#" class="mobile-nav-item" data-app="Inventory">
+                <svg class="mobile-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                    <line x1="12" y1="22.08" x2="12" y2="12"/>
+                </svg>
+                <span class="mobile-nav-text">Inventory</span>
+            </a>
+            <div class="mobile-nav-divider"></div>
+            <a 
+                href="profile/index.html" 
+                class="mobile-nav-item mobile-profile-link" 
+                id="mobileProfileLink" 
+                aria-label="View profile"
+            >
+                <div class="mobile-profile-avatar">
+                    <div class="w-8 h-8 bg-accent rounded-full flex items-center justify-center">
+                        <span class="text-white text-sm font-semibold" data-mobile-user-initials>SM</span>
+                    </div>
+                </div>
+                <div class="mobile-profile-details">
+                    <span class="mobile-profile-name" id="mobileUserName">Staff Member</span>
+                </div>
+            </a>
+            <button 
+                id="mobileLogoutButton" 
+                class="mobile-logout-button"
+            >
+                <svg class="mobile-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+                </svg>
+                <span class="mobile-nav-text">Sign Out</span>
+            </button>
+        </div>
+    </nav>
+
+    <div class="w-full flex bg-white" style="height: calc(100vh - 4.5rem); margin-top: 4.5rem;">
+        <!-- Main content area -->
+        <main class="flex-1 h-full" style="padding: 0; overflow: hidden;">
+            <!-- Loading State -->
+            <div id="loadingState" class="h-full w-full flex items-center justify-center">
+                <div class="text-center">
+                    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-accent mx-auto mb-4"></div>
+                    <p class="text-gray-600">Loading staff portal...</p>
+                </div>
+            </div>
+            
+            <!-- Dashboard Content -->
+            <div id="dashboardContent" class="h-full w-full" style="display: none;">
+                <!-- Content loaded via iframe -->
+            </div>
+        </main>
     </div>
+
+    <!-- Firebase Auth Script -->
+    <script type="module" src="js/staff-auth.js"></script>
+    
+    <!-- Service Worker Registration -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(registration => {
+                        console.log('Service Worker registered:', registration);
+                    })
+                    .catch(error => {
+                        console.log('Service Worker registration failed:', error);
+                    });
+            });
+        }
+    </script>
+    
+    <script>
+        const APP_VERSION = "1.0.0";
+        
+        // Simple JavaScript to handle the functionality
+        let active = localStorage.getItem('activeStaffApp') || "Attendance";
+
+        const mobileNavItems = document.querySelectorAll('.mobile-nav-item');
+        const mobilePageTitle = document.getElementById('mobilePageTitle');
+        const mobileMenuToggle = document.getElementById('mobileMenuToggle');
+        const mobileDropdown = document.getElementById('mobileDropdown');
+        const mobileLogoIcon = document.getElementById('mobileLogoIcon');
+        const mobileLogoFullHeader = document.getElementById('mobileLogoFullHeader');
+
+        // App configurations
+        const appConfigs = {
+            'Attendance': {
+                url: 'employee-attendance/index.html',
+                title: 'Attendance'
+            },
+            'Payroll': {
+                url: 'payroll/index.html',
+                title: 'Payroll'
+            },
+            'Schedule': {
+                url: 'schedule/index.html',
+                title: 'Schedule'
+            },
+            'Inventory': {
+                url: 'inventory/index.html',
+                title: 'Inventory'
+            },
+            'Sales Reporting': {
+                url: 'daily-sales.html',
+                title: 'Sales Reporting'
+            }
+        };
+
+        // Toggle mobile dropdown
+        if (mobileMenuToggle && mobileDropdown) {
+            mobileMenuToggle.addEventListener('click', () => {
+                const isOpen = mobileDropdown.classList.contains('open');
+                mobileDropdown.classList.toggle('open');
+                
+                // Toggle logo display
+                if (!isOpen) {
+                    // Opening dropdown - show full logo, hide icon+title
+                    mobileLogoIcon.style.display = 'none';
+                    mobilePageTitle.style.display = 'none';
+                    mobileLogoFullHeader.style.display = 'block';
+                } else {
+                    // Closing dropdown - show icon+title, hide full logo
+                    mobileLogoIcon.style.display = 'block';
+                    mobilePageTitle.style.display = 'block';
+                    mobileLogoFullHeader.style.display = 'none';
+                }
+            });
+        }
+
+        // Handle mobile nav item clicks
+        mobileNavItems.forEach(item => {
+            if (item.id === 'mobileProfileLink') {
+                return;
+            }
+            item.addEventListener('click', (e) => {
+                e.preventDefault();
+                const appName = item.dataset.app;
+                
+                // Don't do anything if this is already the active tab
+                if (appName === active) {
+                    mobileDropdown.classList.remove('open');
+                    return;
+                }
+                
+                // Update mobile nav active state
+                mobileNavItems.forEach(nav => {
+                    nav.classList.remove('active');
+                });
+                item.classList.add('active');
+                
+                // Update active app
+                active = appName;
+                
+                // Update mobile page title
+                if (mobilePageTitle) {
+                    mobilePageTitle.textContent = appName;
+                }
+                
+                // Save to localStorage for persistence
+                localStorage.setItem('activeStaffApp', appName);
+                
+                // Load the actual app
+                loadApp(appName);
+                
+                // Close mobile dropdown and restore icon+title display
+                mobileDropdown.classList.remove('open');
+                mobileLogoIcon.style.display = 'block';
+                mobilePageTitle.style.display = 'block';
+                mobileLogoFullHeader.style.display = 'none';
+            });
+        });
+
+        // Function to load the actual staff app
+        function loadApp(appName) {
+            const config = appConfigs[appName];
+            if (!config) return;
+            
+            const mainContent = document.querySelector('main');
+            const dashboardContent = mainContent.querySelector('#dashboardContent');
+            const loadingState = mainContent.querySelector('#loadingState');
+            
+            // Hide loading state
+            if (loadingState) {
+                loadingState.style.display = 'none';
+            }
+            
+            // Show dashboard content container
+            if (dashboardContent) {
+                dashboardContent.style.display = 'block';
+                
+                // Remove existing iframe if any
+                const existingIframe = dashboardContent.querySelector('iframe');
+                if (existingIframe) {
+                    existingIframe.remove();
+                }
+            }
+            
+            // Create new iframe with cache-busting
+            const iframe = document.createElement('iframe');
+            
+            // Add cache-busting parameter to force reload
+            const cacheBuster = '?v=' + Date.now();
+            iframe.src = config.url + cacheBuster;
+            
+            iframe.className = 'w-full h-full border-0';
+            iframe.setAttribute('width', '100%');
+            iframe.setAttribute('height', '100%');
+            iframe.style.borderRadius = '0';
+            iframe.style.display = 'block';
+            iframe.style.width = '100%';
+            iframe.style.height = '100%';
+            iframe.style.border = 'none';
+            iframe.style.overflow = 'hidden';
+            
+            // Append iframe to dashboardContent (not main)
+            if (dashboardContent) {
+                dashboardContent.appendChild(iframe);
+            }
+            
+            // Handle iframe load success
+            iframe.onload = () => {
+                console.log(`Successfully loaded ${appName} app`);
+            };
+            
+            // Handle iframe load errors
+            iframe.onerror = () => {
+                if (loadingState) {
+                    loadingState.style.display = 'flex';
+                }
+                if (dashboardContent) {
+                    dashboardContent.style.display = 'none';
+                }
+                iframe.remove();
+                console.error(`Error loading ${appName} app`);
+            };
+        }
+
+        // Initialize the dashboard on page load
+        function initializeDashboard() {
+            // Check localStorage for last selected app first
+            const lastSelectedApp = localStorage.getItem('activeStaffApp');
+            
+            if (lastSelectedApp && appConfigs[lastSelectedApp]) {
+                active = lastSelectedApp;
+            }
+            
+            // Update the active app display
+            mobilePageTitle.textContent = active;
+            
+            // Set the correct active state for the current app
+            mobileNavItems.forEach(item => {
+                if (item.dataset.app === active) {
+                    item.classList.add('active');
+                } else {
+                    item.classList.remove('active');
+                }
+            });
+            
+            // Load the active app
+            loadApp(active);
+        }
+
+        // Make initializeDashboard globally available
+        window.initializeDashboard = initializeDashboard;
+
+        // Close mobile dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            if (mobileDropdown && mobileMenuToggle && 
+                !mobileDropdown.contains(e.target) && 
+                !mobileMenuToggle.contains(e.target)) {
+                mobileDropdown.classList.remove('open');
+                // Restore icon+title display
+                mobileLogoIcon.style.display = 'block';
+                mobilePageTitle.style.display = 'block';
+                mobileLogoFullHeader.style.display = 'none';
+            }
+        });
+
+        // PWA Update Detection
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.addEventListener('message', event => {
+                if (event.data && event.data.type === 'NEW_VERSION') {
+                    const versionBadge = document.getElementById('versionBadge');
+                    if (versionBadge) {
+                        versionBadge.classList.add('update-available');
+                        versionBadge.textContent = 'Update Available!';
+                        versionBadge.addEventListener('click', () => {
+                            if (confirm('A new version is available. Reload to update?')) {
+                                window.location.reload();
+                            }
+                        });
+                    }
+                }
+            });
+        }
+    </script>
 </body>
 </html>

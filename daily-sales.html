@@ -3,10 +3,11 @@
 
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Matchanese Daily Sales Report</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -244,11 +245,6 @@
 
 <body>
     <div class="container">
-        <div style="text-align: center; margin-bottom: 1.5rem;">
-            <img src="img/matchanese-logo.png" alt="Matchanese Logo"
-                style="height: 60px; margin-bottom: 0.75rem;">
-            <h2 style="margin: 0; font-size: 1.75rem;">Daily Sales Report</h2>
-        </div>
 
 
         <!-- <input type="file" id="csvUploader" accept=".csv" style="display:none" />
@@ -259,16 +255,10 @@
         
         <div class="split-row">
             <div class="split-column">
-                <label for="staffName">Staff Name</label>
-                <select id="staffName" onchange="toggleOtherField()">
-                    <option value="">-- Select --</option>
-                    <option value="Acerr">Acerr</option>
-                    <option value="Raniel">Raniel</option>
-                    <option value="Raschel">Raschel</option>
-                    <option value="Denzel">Denzel</option>
-                    <option value="Liezel">Liezel</option>
-                    <option value="Sarah">Sarah</option>
-                    <option value="Other">Other</option>
+                <label for="branchSelect">Branch</label>
+                <select id="branchSelect" onchange="handleBranchChange()">
+                    <option value="sm-north">SM North</option>
+                    <option value="podium">Podium</option>
                 </select>
             </div>
             <div class="split-column">
@@ -276,7 +266,6 @@
                 <input type="text" id="recordDate" readonly />
             </div>
         </div>
-        <input type="text" id="otherStaffName" placeholder="Enter name" style="display: none; margin-top: 0.5rem;" />
 
         <!-- Payments -->
         <label for="totalDisplay">Total Sales</label>
@@ -293,60 +282,64 @@
                 <input type="text" id="cashLeft" readonly value="₱0.00" />
             </div>
         </div>
-
-        <div class="group-card">
-            <!-- Row 1: Cash and GCash -->
-            <div class="split-row">
-                <div class="split-column">
-                    <label for="cash">Cash Payment</label>
-                    <div class="input-wrapper">
-                        <span>₱</span>
-                        <input type="text" inputmode="decimal" pattern="[0-9,]*" id="cash" placeholder="0" step="any" />
-                    </div>
-                </div>
-                <div class="split-column">
-                    <label for="gcash">GCash Payment</label>
-                    <div class="input-wrapper">
-                        <span>₱</span>
-                        <input type="text" inputmode="decimal" pattern="[0-9,]*" id="gcash" placeholder="0" step="any" />
-                    </div>
-                </div>
-            </div>
-        
-            <!-- Row 2: Maya and Card -->
-            <div class="split-row">
-                <div class="split-column">
-                    <label for="maya">Maya Payment</label>
-                    <div class="input-wrapper">
-                        <span>₱</span>
-                        <input type="text" inputmode="decimal" pattern="[0-9,]*" id="maya" placeholder="0" step="any" />
-                    </div>
-                </div>
-                <div class="split-column">
-                    <label for="card">Card Payment</label>
-                    <div class="input-wrapper">
-                        <span>₱</span>
-                        <input type="text" inputmode="decimal" pattern="[0-9,]*" id="card" placeholder="0" step="any" />
-                    </div>
-                </div>
-            </div>
-            
-            <label for="grab">Grab Sales</label>
-            <div class="input-wrapper">
-                <span>₱</span>
-                <input type="text" inputmode="decimal" pattern="[0-9,]*" id="grab" placeholder="0" step="any" />
-            </div>
+        <div class="group-card" id="paymentFieldsContainer">
+            <!-- Payment fields will be dynamically inserted here -->
         </div>
 
-        <div class="group-card">
-        <label for="expenses">Cash Expenses</label>
-        <div class="input-wrapper">
-            <span>₱</span>
-            <input type="text" inputmode="decimal" pattern="[0-9,]*" id="expenses" placeholder="0" step="any" />
-        </div>
+        <div class="group-card" id="expensesContainer">
+            <!-- Expenses fields will be dynamically inserted here -->
         </div>
 
-        <button onclick="submitSales()">Submit</button>
+        <div class="group-card" id="cashReconciliationContainer">
+            <!-- Cash reconciliation fields will be dynamically inserted here -->
+        </div>
+
+        <button onclick="checkExistingAndShowSummary()">Submit</button>
+                    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirmModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; justify-content: center; align-items: center; flex-direction: column;" onclick="handleModalBackdropClick(event, 'confirmModal')">
+        <div style="background: white; border-radius: 16px; padding: 2rem; max-width: 500px; width: calc(90% - 4rem); margin: 2rem; max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.2); position: relative;" onclick="event.stopPropagation()">
+            <button onclick="closeConfirmModal()" style="position: absolute; top: 1rem; right: 1rem; background: none; border: none; cursor: pointer; padding: 0.5rem; width: 2rem; height: 2rem; display: flex; align-items: center; justify-content: center; color: #666; font-size: 1.5rem; line-height: 1;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+            <h2 style="margin-top: 0; margin-bottom: 0.5rem; color: #2b9348; font-size: 0.95rem; font-weight: 600;">Confirm Submission</h2>
+            <div id="confirmSummary" style="margin: 0; line-height: 1.56;"></div>
+            <div id="overwriteWarning" style="display: none; background: #fff3cd; border: 1px solid #ffc107; padding: 1rem; border-radius: 8px; margin: 1rem 0; color: #856404;">
+                <strong>⚠️ Warning:</strong> A record already exists for this date and branch. This will overwrite the existing data.
+                </div>
+            <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+                <button onclick="closeConfirmModal()" style="flex: 1; padding: 0.75rem; background: #e0e0e0; color: #333; border: 1px solid #ccc; border-radius: 8px; cursor: pointer; font-size: 1rem; font-weight: 600;">Cancel</button>
+                <button onclick="confirmSubmit()" style="flex: 1; padding: 0.75rem; background: #2b9348; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 1rem; font-weight: 600;">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Success Summary Modal -->
+    <div id="successModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; justify-content: center; align-items: center; flex-direction: column;" onclick="handleModalBackdropClick(event, 'successModal')">
+        <div id="successModalContent" style="background: white; border-radius: 16px; padding: 2rem; max-width: 500px; width: calc(90% - 4rem); margin: 2rem; max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.2); position: relative;" onclick="event.stopPropagation()">
+            <button onclick="closeSuccessModal()" style="position: absolute; top: 1rem; right: 1rem; background: none; border: none; cursor: pointer; padding: 0.5rem; width: 2rem; height: 2rem; display: flex; align-items: center; justify-content: center; color: #666; font-size: 1.5rem; line-height: 1;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+            <h2 style="margin-top: 0; margin-bottom: 0.5rem; color: #2b9348; font-size: 0.95rem; text-align: center; font-weight: 600;">✅ Sales Submitted Successfully!</h2>
+            <div id="successSummary" style="margin: 0; line-height: 1.56; text-align: center;"></div>
+            <div id="successModalButtons" style="text-align: center; margin-top: 1rem; display: flex; gap: 0.75rem; justify-content: center;">
+                <button onclick="downloadSalesSummary()" style="padding: 0.75rem 2rem; background: #4a90e2; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 1rem; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; margin: 0 auto;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Download
+                </button>
+            </div>
+        </div>
     </div>
 
     <div id="toast" style="
@@ -378,46 +371,779 @@
         } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 
 
-        window.submitSales = async function () {
+        // Get user nickname from localStorage
+        let currentUserNickname = localStorage.getItem("loggedInUser") || "";
+        let currentBranch = "sm-north";
+
+        // Function to map attendance branch names to sales branch values
+        function mapBranchNameToValue(branchName) {
+            if (!branchName) return null;
+            const lower = branchName.toLowerCase();
+            if (lower.includes("sm north") || lower.includes("smnorth")) {
+                return "sm-north";
+            } else if (lower.includes("podium")) {
+                return "podium";
+            }
+            return null;
+        }
+
+        // Function to check attendance and auto-select branch
+        window.checkAttendanceAndSetBranch = async function() {
+            // Update currentUserNickname in case it wasn't set yet
+            const userId = localStorage.getItem("loggedInUser") || "";
+            if (!userId) {
+                // No user logged in, use default
+                const branchSelect = document.getElementById("branchSelect");
+                if (branchSelect && !branchSelect.value) {
+                    branchSelect.value = "sm-north";
+                    if (window.handleBranchChange) {
+                        window.handleBranchChange();
+                    }
+                }
+                return;
+            }
+
+            const selectedDate = flatpickrInstance?.selectedDates[0] || new Date();
+            const dateKey = selectedDate.toLocaleDateString('en-CA'); // YYYY-MM-DD
+
+            try {
+                // Check attendance data for this date
+                const attendanceRef = doc(db, "attendance", userId, "dates", dateKey);
+                const attendanceSnap = await getDoc(attendanceRef);
+
+                if (attendanceSnap.exists()) {
+                    const attendanceData = attendanceSnap.data();
+                    const clockInBranch = attendanceData.clockIn?.branch;
+
+                    if (clockInBranch) {
+                        const mappedBranch = mapBranchNameToValue(clockInBranch);
+                        if (mappedBranch) {
+                            // Auto-select the branch from attendance
+                            document.getElementById("branchSelect").value = mappedBranch;
+                            currentBranch = mappedBranch;
+                            if (window.handleBranchChange) {
+                                window.handleBranchChange();
+                            }
+                            
+                            // Save to localStorage
+                            localStorage.setItem(`lastSalesBranch_${userId}`, mappedBranch);
+                            return;
+                        }
+                    }
+                }
+
+                // No attendance found, use last selected branch
+                const lastBranch = localStorage.getItem(`lastSalesBranch_${userId}`) || "sm-north";
+                document.getElementById("branchSelect").value = lastBranch;
+                currentBranch = lastBranch;
+                if (window.handleBranchChange) {
+                    window.handleBranchChange();
+                }
+            } catch (error) {
+                console.error("Error checking attendance:", error);
+                // Fallback to last selected branch
+                const lastBranch = localStorage.getItem(`lastSalesBranch_${userId}`) || "sm-north";
+                document.getElementById("branchSelect").value = lastBranch;
+                currentBranch = lastBranch;
+                if (window.handleBranchChange) {
+                    window.handleBranchChange();
+                }
+            }
+        };
+
+        window.handleBranchChange = function() {
+            const branch = document.getElementById("branchSelect").value;
+            currentBranch = branch;
+            
+            // Save to localStorage for next time
+            if (currentUserNickname) {
+                localStorage.setItem(`lastSalesBranch_${currentUserNickname}`, branch);
+            }
+            
+            const container = document.getElementById("paymentFieldsContainer");
+            
+            if (branch === "sm-north") {
+                container.innerHTML = `
+            <!-- Row 1: Cash and GCash -->
+        <div class="split-row">
+                <div class="split-column">
+                    <label for="cash">Cash Sales</label>
+                    <div class="input-wrapper">
+                        <span>₱</span>
+                        <input type="text" inputmode="decimal" pattern="[0-9,]*" id="cash" placeholder="0" step="any" />
+                    </div>
+                </div>
+                <div class="split-column">
+                    <label for="gcash">GCash Payment</label>
+                    <div class="input-wrapper">
+                        <span>₱</span>
+                        <input type="text" inputmode="decimal" pattern="[0-9,]*" id="gcash" placeholder="0" step="any" />
+                    </div>
+                </div>
+            </div>
+            <!-- Row 2: Maya and Card -->
+            <div class="split-row">
+                <div class="split-column">
+                    <label for="maya">Maya Payment</label>
+                    <div class="input-wrapper">
+                        <span>₱</span>
+                        <input type="text" inputmode="decimal" pattern="[0-9,]*" id="maya" placeholder="0" step="any" />
+                    </div>
+                </div>
+                <div class="split-column">
+                    <label for="card">Card Payment</label>
+                    <div class="input-wrapper">
+                        <span>₱</span>
+                        <input type="text" inputmode="decimal" pattern="[0-9,]*" id="card" placeholder="0" step="any" />
+                    </div>
+                </div>
+            </div>
+                    <!-- Grab -->
+            <label for="grab">Grab Sales</label>
+            <div class="input-wrapper">
+                <span>₱</span>
+                <input type="text" inputmode="decimal" pattern="[0-9,]*" id="grab" placeholder="0" step="any" />
+            </div>
+                `;
+            } else {
+                container.innerHTML = `
+                    <!-- Row 1: Cash and Card -->
+                    <div class="split-row">
+                        <div class="split-column">
+                            <label for="cash">Cash Sales</label>
+                            <div class="input-wrapper">
+                                <span>₱</span>
+                                <input type="text" inputmode="decimal" pattern="[0-9,]*" id="cash" placeholder="0" step="any" />
+        </div>
+                        </div>
+                        <div class="split-column">
+                            <label for="card">Card Payment</label>
+                            <div class="input-wrapper">
+                                <span>₱</span>
+                                <input type="text" inputmode="decimal" pattern="[0-9,]*" id="card" placeholder="0" step="any" />
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Row 2: QR and Gift Card -->
+                    <div class="split-row">
+                        <div class="split-column">
+                            <label for="qr">QR Payment</label>
+                            <div class="input-wrapper">
+                                <span>₱</span>
+                                <input type="text" inputmode="decimal" pattern="[0-9,]*" id="qr" placeholder="0" step="any" />
+                            </div>
+                        </div>
+                        <div class="split-column">
+                            <label for="giftCard">Gift Card Payment</label>
+                            <div class="input-wrapper">
+                                <span>₱</span>
+                                <input type="text" inputmode="decimal" pattern="[0-9,]*" id="giftCard" placeholder="0" step="any" />
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Grab -->
+                    <label for="grab">Grab Sales</label>
+                    <div class="input-wrapper">
+                        <span>₱</span>
+                        <input type="text" inputmode="decimal" pattern="[0-9,]*" id="grab" placeholder="0" step="any" />
+                    </div>
+                `;
+            }
+            
+            // Initialize expenses fields based on branch
+            const expensesContainer = document.getElementById("expensesContainer");
+            const cashReconciliationContainer = document.getElementById("cashReconciliationContainer");
+            if (branch === "podium") {
+                expensesContainer.innerHTML = `
+        <label for="expenses">Cash Expenses</label>
+        <div class="input-wrapper">
+            <span>₱</span>
+            <input type="text" inputmode="decimal" pattern="[0-9,]*" id="expenses" placeholder="0" step="any" />
+        </div>
+                    <label for="nonCashExpenses" style="margin-top: 1rem;">Non-Cash Expenses</label>
+                    <div class="input-wrapper">
+                        <span>₱</span>
+                        <input type="text" inputmode="decimal" pattern="[0-9,]*" id="nonCashExpenses" placeholder="0" step="any" />
+        </div>
+                `;
+            } else {
+                expensesContainer.innerHTML = `
+                    <label for="expenses">Cash Expenses</label>
+                    <div class="input-wrapper">
+                        <span>₱</span>
+                        <input type="text" inputmode="decimal" pattern="[0-9,]*" id="expenses" placeholder="0" step="any" />
+        </div>
+                `;
+            }
+
+            if (cashReconciliationContainer) {
+                cashReconciliationContainer.innerHTML = `
+                    <div class="split-row">
+                        <div class="split-column">
+                            <label for="actualCashLeft">Actual Cash Left</label>
+                            <div class="input-wrapper">
+                                <span>₱</span>
+                                <input type="text" inputmode="decimal" pattern="[0-9,]*" id="actualCashLeft" placeholder="0" step="any" />
+                            </div>
+                        </div>
+                        <div class="split-column">
+                            <label for="varianceDisplay">Variance</label>
+                            <input type="text" id="varianceDisplay" readonly value="₱0.00" />
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // Reinitialize input listeners for new fields
+            initializeInputListeners();
+        };
+
+        function initializeInputListeners() {
+            const inputIds = currentBranch === "sm-north" 
+                ? ['cash', 'card', 'gcash', 'maya', 'grab', 'expenses', 'actualCashLeft']
+                : ['cash', 'card', 'qr', 'giftCard', 'grab', 'expenses', 'nonCashExpenses', 'actualCashLeft'];
+            
+            inputIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+
+                el.addEventListener('input', () => {
+                    el.dataset.raw = el.value.replace(/[^0-9.]/g, '');
+                });
+
+                el.addEventListener('blur', () => {
+                    const raw = el.dataset.raw || '0';
+                    const parsed = parseFloat(raw.replace(/,/g, ''));
+                    if (!isNaN(parsed)) {
+                        el.value = parsed.toLocaleString('en-US', {
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 2
+                        });
+                    } else {
+                        el.value = '';
+                    }
+                    updateTotal();
+                });
+
+                el.addEventListener('focus', () => {
+                    el.value = el.dataset.raw || '';
+                });
+            });
+        }
+
+        function updateTotal() {
+            const inputIds = currentBranch === "sm-north" 
+                ? ['cash', 'card', 'gcash', 'maya', 'grab']
+                : ['cash', 'card', 'qr', 'giftCard', 'grab'];
+            
+            const formatCurrencyValue = (num) => {
+                const absVal = Math.abs(num).toLocaleString('en-US', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                });
+                return num < 0 ? `-₱${absVal}` : `₱${absVal}`;
+            };
+
+            const total = inputIds.reduce((sum, id) => {
+                const el = document.getElementById(id);
+                const raw = el ? (el.dataset.raw || '0') : '0';
+                const val = parseFloat(raw) || 0;
+                return sum + val;
+            }, 0);
+
+            const cashRaw = document.getElementById('cash')?.dataset.raw || '0';
+            const cashVal = parseFloat(cashRaw) || 0;
+            const expensesRaw = document.getElementById('expenses')?.dataset.raw || '0';
+            const expensesVal = parseFloat(expensesRaw) || 0;
+            const calculatedCashLeft = cashVal - expensesVal;
+
+            const grabRaw = document.getElementById('grab')?.dataset.raw || '0';
+            const grabVal = parseFloat(grabRaw) || 0;
+            const walkInSales = total - grabVal;
+
+            const actualCashRaw = document.getElementById('actualCashLeft')?.dataset.raw || '0';
+            const actualCashVal = parseFloat(actualCashRaw) || 0;
+            const variance = actualCashVal - calculatedCashLeft;
+
+            const totalDisplay = document.getElementById("totalDisplay");
+            const walkInDisplay = document.getElementById("walkInSales");
+            const cashLeftDisplay = document.getElementById("cashLeft");
+            const varianceDisplay = document.getElementById("varianceDisplay");
+
+            if (totalDisplay) {
+                totalDisplay.value = formatCurrencyValue(total);
+            }
+            if (walkInDisplay) {
+                walkInDisplay.value = formatCurrencyValue(walkInSales);
+            }
+            if (cashLeftDisplay) {
+                cashLeftDisplay.value = formatCurrencyValue(calculatedCashLeft);
+            }
+            if (varianceDisplay) {
+                const formattedVariance = formatCurrencyValue(variance);
+                const isVarianceZero = Math.abs(variance) < 0.0005;
+                varianceDisplay.value = isVarianceZero ? '₱0.00' : formattedVariance;
+                varianceDisplay.style.color = isVarianceZero ? '#333' : variance < 0 ? '#d9534f' : '#2b9348';
+            }
+        }
+
+        function formatSummaryDate(dateDisplay) {
+            let formattedDate = dateDisplay;
+            try {
+                // If it's in YYYY-MM-DD format (raw date), convert it
+                if (dateDisplay && dateDisplay.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                    const dateObj = new Date(dateDisplay + 'T00:00:00');
+                    formattedDate = dateObj.toLocaleDateString('en-US', {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                    });
+                } else if (dateDisplay && typeof dateDisplay === 'string' && dateDisplay.includes('-') && !dateDisplay.includes(',')) {
+                    // Try to parse if it looks like a date string without formatting
+                    const dateObj = new Date(dateDisplay);
+                    if (!isNaN(dateObj.getTime())) {
+                        formattedDate = dateObj.toLocaleDateString('en-US', {
+                            weekday: 'long',
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric'
+                        });
+                    }
+                }
+                // Otherwise, use dateDisplay as-is (already formatted)
+            } catch (e) {
+                // Keep original if parsing fails
+                formattedDate = dateDisplay;
+            }
+            return formattedDate;
+        }
+
+        function generateDisplaySummaryHTML(data, branch, dateDisplay) {
+            const formattedDate = formatSummaryDate(dateDisplay) || "";
+            const branchLabel = branch === "sm-north" ? "SM North" : "Podium";
+            const formatCurrency = (val) => {
+                const num = val ?? 0;
+                const absVal = Math.abs(num).toLocaleString('en-US', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                });
+                return num < 0 ? `-₱${absVal}` : `₱${absVal}`;
+            };
+
+        const totalsSection = `
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr><td style="padding: 0.12rem 0.5rem;">Walk-In Sales:</td><td style="text-align: right; padding: 0.12rem 0.5rem;">${formatCurrency(data.walkInSales)}</td></tr>
+                    <tr><td style="padding: 0.12rem 0.5rem;">Grab Sales:</td><td style="text-align: right; padding: 0.12rem 0.5rem;">${formatCurrency(data.grab)}</td></tr>
+                    <tr><td style="padding: 0.12rem 0.5rem;"><strong>Total Sales:</strong></td><td style="text-align: right; padding: 0.12rem 0.5rem;"><strong>${formatCurrency(data.totalSales)}</strong></td></tr>
+                </table>
+            `;
+
+            return `
+                <div style="display: flex; flex-direction: column; align-items: center; gap: 0.85rem; font-size: 0.95rem;">
+                    <div style="text-align: center; line-height: 1.4;">
+                        <div style="font-weight: 600;">${formattedDate}</div>
+                        <div style="color: #555;">${branchLabel}</div>
+                    </div>
+                    <div style="width: 100%; max-width: 320px;">
+                        ${totalsSection}
+                    </div>
+                </div>
+            `;
+        }
+
+        // Function to generate summary HTML
+        function generateSummaryHTML(data, branch, dateDisplay) {
+            const formatCurrency = (val) => `₱${(val || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+            
+            // Format date properly - dateDisplay should already be formatted, but handle raw dates if needed
+            const formattedDate = formatSummaryDate(dateDisplay);
+            
+            const variance = typeof data.cashVariance === "number" ? data.cashVariance : 0;
+            const varianceColor = variance < 0 ? '#d9534f' : variance > 0 ? '#2b9348' : '#333';
+        const formatVariance = (val) => {
+            const num = typeof val === "number" ? val : 0;
+            if (Math.abs(num) < 0.0005) {
+                return '₱0.00';
+            }
+            const absVal = Math.abs(num).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            return num < 0 ? `-₱${absVal}` : `₱${absVal}`;
+        };
+
+            let html = `<div style="font-size: 0.95rem;">`;
+            html += `<div style="margin-bottom: 0.4rem; padding-bottom: 0.2rem; border-bottom: 1px solid #eee;">`;
+            html += `<strong>Date:</strong> ${formattedDate}<br>`;
+            html += `<strong>Branch:</strong> ${branch === "sm-north" ? "SM North" : "Podium"}`;
+            html += `</div>`;
+            
+            html += `<div style="margin-bottom: 0.48rem;">`;
+            html += `<strong style="display: block; margin: 0 0 0.06rem 0;">Sales Breakdown</strong>`;
+            html += `<table style="width: 100%; border-collapse: collapse;">`;
+            html += `<tr><td style="padding: 0.06rem 0.5rem;">Cash:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(data.cash)}</td></tr>`;
+            html += `<tr><td style="padding: 0.06rem 0.5rem;">Card:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(data.card)}</td></tr>`;
+            
+            if (branch === "sm-north") {
+                html += `<tr><td style="padding: 0.06rem 0.5rem;">GCash:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(data.gcash)}</td></tr>`;
+                html += `<tr><td style="padding: 0.06rem 0.5rem;">Maya:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(data.maya)}</td></tr>`;
+            } else {
+                html += `<tr><td style="padding: 0.06rem 0.5rem;">QR:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(data.qr)}</td></tr>`;
+                html += `<tr><td style="padding: 0.06rem 0.5rem;">Gift Card:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(data.giftCard)}</td></tr>`;
+            }
+            html += `<tr><td style="padding: 0.06rem 0.5rem;">Grab:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(data.grab)}</td></tr>`;
+            html += `</table>`;
+            html += `</div>`;
+            
+            html += `<div style="margin-bottom: 0.48rem;">`;
+            html += `<strong style="display: block; margin: 0 0 0.06rem 0;">Expenses</strong>`;
+            html += `<table style="width: 100%; border-collapse: collapse;">`;
+            html += `<tr><td style="padding: 0.06rem 0.5rem;">Cash Expenses:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(data.expenses)}</td></tr>`;
+            if (branch === "podium" && data.nonCashExpenses) {
+                html += `<tr><td style="padding: 0.06rem 0.5rem;">Non-Cash Expenses:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(data.nonCashExpenses)}</td></tr>`;
+            }
+            html += `</table>`;
+            html += `</div>`;
+
+        html += `<div style="margin-bottom: 0.48rem;">`;
+        html += `<strong style="display: block; margin: 0 0 0.06rem 0;">Cash Left</strong>`;
+        html += `<table style="width: 100%; border-collapse: collapse;">`;
+        html += `<tr><td style="padding: 0.06rem 0.5rem;">Calculated:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(data.calculatedCashLeft)}</td></tr>`;
+        html += `<tr><td style="padding: 0.06rem 0.5rem;">Actual:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(data.actualCashLeft)}</td></tr>`;
+        html += `<tr><td style="padding: 0.06rem 0.5rem;">Variance:</td><td style="text-align: right; padding: 0.06rem 0.5rem; color: ${varianceColor};">${formatVariance(variance)}</td></tr>`;
+        html += `</table>`;
+        html += `</div>`;
+            
+            html += `<div style="margin-top: 0.48rem; padding-top: 0.48rem; border-top: 1px solid #eee;">`;
+            html += `<strong style="display: block; margin: 0 0 0.06rem 0;">Totals</strong>`;
+            html += `<table style="width: 100%; border-collapse: collapse;">`;
+            html += `<tr><td style="padding: 0.06rem 0.5rem;">Walk-In Sales:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(data.walkInSales)}</td></tr>`;
+            html += `<tr><td style="padding: 0.06rem 0.5rem;">Grab Sales:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(data.grab)}</td></tr>`;
+            html += `<tr><td style="padding: 0.06rem 0.5rem;"><strong>Total Sales:</strong></td><td style="text-align: right; padding: 0.06rem 0.5rem;"><strong>${formatCurrency(data.totalSales)}</strong></td></tr>`;
+            html += `</table>`;
+            html += `</div>`;
+            html += `</div>`;
+            
+            return html;
+        }
+
+        // Check for existing data and show confirmation
+        window.checkExistingAndShowSummary = async function() {
+            try {
             const selectedDate = flatpickrInstance.selectedDates[0];
-            const recordDate = selectedDate.toLocaleDateString('en-CA'); // Format: YYYY-MM-DD
-
+                const recordDate = selectedDate.toLocaleDateString('en-CA');
             const recordDateRaw = document.getElementById("recordDate").value;
+                const branch = document.getElementById("branchSelect").value;
+                const userId = localStorage.getItem("loggedInUser") || currentUserNickname || "";
+                
+                // Get nickname from Firebase - use employees collection (not staff)
+                let staffNickname = userId || "";
+                try {
+                    // Fetch from employees collection where nickname is stored
+                    const employeeDoc = await getDoc(doc(db, "employees", userId));
+                    if (employeeDoc.exists()) {
+                        const employeeData = employeeDoc.data();
+                        console.log("Employee data from Firebase:", employeeData);
+                        // Use nickname field
+                        if (employeeData.nickname && employeeData.nickname.trim()) {
+                            staffNickname = employeeData.nickname.trim();
+                        } else {
+                            console.error("No nickname found for employee:", userId, "Available fields:", Object.keys(employeeData));
+                            staffNickname = userId; // Fallback only if truly missing
+                        }
+                    } else {
+                        console.error("Employee document not found for:", userId);
+                        staffNickname = userId;
+                    }
+                    console.log("Final staff nickname used:", staffNickname);
+                } catch (e) {
+                    console.error("Error fetching nickname from Firebase:", e);
+                    staffNickname = userId;
+                }
 
-            const staff = document.getElementById("staffName").value === "Other"
-                ? document.getElementById("otherStaffName").value
-                : document.getElementById("staffName").value;
+                // Get raw values from inputs
+                const cash = parseFloat(document.getElementById("cash")?.dataset.raw || 0);
+                const card = parseFloat(document.getElementById("card")?.dataset.raw || 0);
+                const expenses = parseFloat(document.getElementById("expenses")?.dataset.raw || 0);
+                const grab = parseFloat(document.getElementById("grab")?.dataset.raw || 0);
+                const actualCashLeft = parseFloat(document.getElementById("actualCashLeft")?.dataset.raw || 0);
 
-            // Get the raw values from inputs
-            const cash = parseFloat(document.getElementById("cash").dataset.raw || 0);
-            const card = parseFloat(document.getElementById("card").dataset.raw || 0);
-            const gcash = parseFloat(document.getElementById("gcash").dataset.raw || 0);
-            const maya = parseFloat(document.getElementById("maya").dataset.raw || 0);
-            const grab = parseFloat(document.getElementById("grab").dataset.raw || 0);
-            const expenses = parseFloat(document.getElementById("expenses").dataset.raw || 0);
+                let record;
+                
+                if (branch === "sm-north") {
+                    const gcash = parseFloat(document.getElementById("gcash")?.dataset.raw || 0);
+                    const maya = parseFloat(document.getElementById("maya")?.dataset.raw || 0);
+                    const walkInSales = cash + gcash + maya + card;
+                    const calculatedCashLeft = cash - expenses;
+                    const cashVariance = actualCashLeft - calculatedCashLeft;
+                    
+                    record = {
+                        dateDisplay: recordDateRaw,
+                        staff: staffNickname,
+                        cash,
+                        card,
+                        gcash,
+                        maya,
+                        grab,
+                        expenses,
+                        walkInSales,
+                        totalSales: walkInSales + grab,
+                        calculatedCashLeft,
+                        actualCashLeft,
+                        cashVariance
+                    };
+                } else {
+                    const qr = parseFloat(document.getElementById("qr")?.dataset.raw || 0);
+                    const giftCard = parseFloat(document.getElementById("giftCard")?.dataset.raw || 0);
+                    const nonCashExpenses = parseFloat(document.getElementById("nonCashExpenses")?.dataset.raw || 0);
+                    const walkInSales = cash + card + qr + giftCard;
+                    const calculatedCashLeft = cash - expenses;
+                    const cashVariance = actualCashLeft - calculatedCashLeft;
+                    
+                    record = {
+                        dateDisplay: recordDateRaw,
+                        staff: staffNickname,
+                        cash,
+                        card,
+                        qr,
+                        giftCard,
+                        grab,
+                        expenses,
+                        nonCashExpenses,
+                        walkInSales,
+                        totalSales: walkInSales + grab,
+                        calculatedCashLeft,
+                        actualCashLeft,
+                        cashVariance
+                    };
+                }
 
-            const record = {
-                dateDisplay: recordDateRaw,
-                staff,
-                cash,
-                card,
-                gcash,
-                maya,
-                grab,
-                expenses,
-                walkInSales: cash + card + gcash + maya, // NEW: Store walk-in sales (excluding grab)
-                totalSales: cash + card + gcash + maya + grab, // Total including grab
-                actualCashLeft: cash - expenses,
+                // Check if record already exists
+                const salesRef = doc(db, "sales-data", branch, "daily", recordDate);
+                const existingSnap = await getDoc(salesRef);
+                const hasExisting = existingSnap.exists();
+
+                // Store record for later submission
+                window.pendingRecord = record;
+                window.pendingRecordDate = recordDate;
+                window.pendingBranch = branch;
+
+                // Generate summary and show modal
+                const fullSummaryHTML = generateSummaryHTML(record, branch, recordDateRaw);
+                const displaySummaryHTML = generateDisplaySummaryHTML(record, branch, recordDateRaw);
+                document.getElementById("confirmSummary").innerHTML = displaySummaryHTML;
+                window.pendingFullSummaryHTML = fullSummaryHTML;
+                document.getElementById("overwriteWarning").style.display = hasExisting ? "block" : "none";
+                document.getElementById("confirmModal").style.display = "flex";
+
+            } catch (e) {
+                window.showToast("❌ Error preparing submission. Please try again.");
+                console.error("Error:", e);
+            }
+        };
+
+        // Close confirmation modal
+        window.closeConfirmModal = function() {
+            document.getElementById("confirmModal").style.display = "none";
+            window.pendingRecord = null;
+            window.pendingRecordDate = null;
+            window.pendingBranch = null;
+            window.pendingFullSummaryHTML = null;
+        };
+
+        // Actually submit the record
+        window.confirmSubmit = async function() {
+            if (!window.pendingRecord || !window.pendingRecordDate || !window.pendingBranch) {
+                window.showToast("❌ Error: Missing record data");
+                return;
+            }
+
+            try {
+                // Close confirmation modal
+                document.getElementById("confirmModal").style.display = "none";
+
+                // Add timestamp to record
+                const record = {
+                    ...window.pendingRecord,
                 timestamp: serverTimestamp()
             };
 
-            try {
-                await setDoc(doc(db, "sales", recordDate), record);
-                showToast(`✅ Sales submitted!`);
+                // Save to Firestore
+                const salesRef = doc(db, "sales-data", window.pendingBranch, "daily", window.pendingRecordDate);
+                await setDoc(salesRef, record);
+
+                // Show success modal with summary
+                const summaryHTML = window.pendingFullSummaryHTML || generateSummaryHTML(record, window.pendingBranch, record.dateDisplay);
+                const displaySummaryHTML = generateDisplaySummaryHTML(record, window.pendingBranch, record.dateDisplay);
+                document.getElementById("successSummary").innerHTML = displaySummaryHTML;
+                window.downloadSummaryHTML = summaryHTML;
+                window.pendingFullSummaryHTML = null;
+                document.getElementById("successModal").style.display = "flex";
+
+                // Keep branch and date for download function
+                window.downloadBranch = window.pendingBranch;
+                window.downloadDate = window.pendingRecordDate;
+
+                // Clear form
+                document.querySelectorAll('input[type="text"]:not([readonly])').forEach(input => {
+                    if (input.id !== 'recordDate') {
+                        input.value = '';
+                        input.dataset.raw = '';
+                    }
+                });
+                updateTotal();
+
+                // Clear pending data
+                window.pendingRecord = null;
+                window.pendingRecordDate = null;
+                window.pendingBranch = null;
+
             } catch (e) {
-                showToast("❌ Failed to submit. Please try again.");
+                window.showToast("❌ Failed to submit. Please try again.");
                 console.error("Error saving record to Firestore:", e);
+                document.getElementById("confirmModal").style.display = "none";
             }
+        };
+
+        // Close success modal
+        window.closeSuccessModal = function() {
+            document.getElementById("successModal").style.display = "none";
+        };
+
+        // Handle modal backdrop clicks (close on outside click)
+        window.handleModalBackdropClick = function(event, modalId) {
+            if (event.target.id === modalId) {
+                if (modalId === 'successModal') {
+                    window.closeSuccessModal();
+                } else if (modalId === 'confirmModal') {
+                    window.closeConfirmModal();
+                }
+            }
+        };
+
+        // Download sales summary as image
+        window.downloadSalesSummary = async function() {
+            try {
+                const modal = document.getElementById("successModal");
+                if (!modal) return;
+
+                // Show loading state
+                const downloadBtn = document.querySelector('button[onclick="downloadSalesSummary()"]');
+                let originalHTML = "";
+                if (downloadBtn) {
+                    originalHTML = downloadBtn.innerHTML;
+                    downloadBtn.dataset.originalHtml = originalHTML;
+                    downloadBtn.disabled = true;
+                    downloadBtn.innerHTML = "Generating...";
+                }
+
+                // Wait a bit to ensure modal is fully rendered
+                await new Promise(resolve => setTimeout(resolve, 100));
+
+                // Get the modal content div (the white card) but exclude buttons
+                const modalContentDiv = modal.querySelector('#successModalContent');
+                if (!modalContentDiv) {
+                    window.showToast("❌ Could not capture modal");
+                    if (downloadBtn) {
+                        downloadBtn.disabled = false;
+                        downloadBtn.innerHTML = downloadBtn.dataset.originalHtml || originalHTML || "Download";
+                    }
+                    return;
+                }
+                
+                // Clone the content without buttons for screenshot
+                const modalContent = modalContentDiv.cloneNode(true);
+                const summaryNode = modalContent.querySelector('#successSummary');
+                if (summaryNode && window.downloadSummaryHTML) {
+                    summaryNode.innerHTML = window.downloadSummaryHTML;
+                    summaryNode.style.textAlign = "left";
+                }
+                const titleHeading = modalContent.querySelector('h2');
+                if (titleHeading) {
+                    titleHeading.remove();
+                }
+                const buttonsDiv = modalContent.querySelector('#successModalButtons');
+                if (buttonsDiv) {
+                    buttonsDiv.remove();
+                }
+                const closeBtn = modalContent.querySelector('button[onclick="closeSuccessModal()"]');
+                if (closeBtn) {
+                    closeBtn.remove();
+                }
+                
+                // Temporarily append to body for screenshot
+                modalContent.style.position = 'absolute';
+                modalContent.style.left = '-9999px';
+                modalContent.style.top = '0';
+                document.body.appendChild(modalContent);
+
+                // Use html2canvas to capture the modal content
+                const canvas = await html2canvas(modalContent, {
+                    backgroundColor: '#ffffff',
+                    scale: 2, // Higher quality
+                    logging: false,
+                    useCORS: true
+                });
+
+                // Remove the clone
+                document.body.removeChild(modalContent);
+
+                // Convert to image and download
+                const imageData = canvas.toDataURL('image/png');
+                const link = document.createElement('a');
+                
+                // Generate filename with date and branch
+                let dateStr = window.downloadDate || new Date().toISOString().split('T')[0];
+                let branch = "Unknown";
+                
+                if (window.downloadBranch) {
+                    branch = window.downloadBranch === "sm-north" ? "SM-North" : "Podium";
+                } else {
+                    // Try to extract from summary text as fallback
+                    const summarySource = window.downloadSummaryHTML || document.getElementById("successSummary")?.textContent || "";
+                    const summaryText = typeof summarySource === "string" ? summarySource : "";
+                    if (summaryText.includes("SM North")) branch = "SM-North";
+                    else if (summaryText.includes("Podium")) branch = "Podium";
+                }
+                
+                link.download = `sales-report-${branch}-${dateStr}.png`;
+                
+                link.href = imageData;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+                window.showToast("✅ Image downloaded!");
+                
+                if (downloadBtn) {
+                    downloadBtn.disabled = false;
+                    downloadBtn.innerHTML = downloadBtn.dataset.originalHtml || originalHTML || "Download";
+                }
+            } catch (error) {
+                console.error("Error downloading image:", error);
+                window.showToast("❌ Failed to download image");
+                const downloadBtn = document.querySelector('button[onclick="downloadSalesSummary()"]');
+                if (downloadBtn) {
+                    downloadBtn.disabled = false;
+                    downloadBtn.innerHTML = downloadBtn.dataset.originalHtml || "Download";
+                }
+            }
+        };
+
+        // Legacy function for backward compatibility
+        window.submitSales = window.checkExistingAndShowSummary;
+
+        // Toast notification function
+        window.showToast = function(message) {
+            const toast = document.getElementById("toast");
+            if (!toast) return;
+            
+            toast.innerHTML = message;
+            toast.style.opacity = "1";
+            toast.style.transform = "translate(-50%, -50%)";
+
+            setTimeout(() => {
+                toast.style.opacity = "0";
+                toast.style.transform = "translate(-50%, -40%)";
+            }, 3500);
         };
 
         // import Papa from "https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js";
@@ -477,11 +1203,6 @@
         document.getElementById("uploadGrabCSVBtn").addEventListener("click", () => {
                 document.getElementById("grabCSVUploader").click();
             });
-            
-            document.getElementById("grabCSVUploader").addEventListener("change", (e) => {
-                    console.log("Grab CSV file selected:", e.target.files[0]);
-            });
-
 
         document.getElementById("grabCSVUploader").addEventListener("change", (e) => {
             const file = e.target.files[0];
@@ -504,26 +1225,37 @@
                             const [day, month, year] = rawDate.split("/");
                             const dateObj = new Date(`${year}-${month}-${day}`);
 
-                            const docId = getLocalISODateString(dateObj); // e.g. "2025-04-19"
+                            const docId = getLocalISODateString(dateObj);
+                            const branch = document.getElementById("branchSelect").value;
 
                             const grabNet = parseFloat(String(rawGrabNet).replace(/[^\d.-]/g, '')) || 0;
                             
                             console.log(`[${docId}] Grab: ₱${grabNet}`);
 
-                            const salesRef = doc(db, "sales", docId);
+                            const salesRef = doc(db, "sales-data", branch, "daily", docId);
                             const existing = await getDoc(salesRef);
                             const prevData = existing.exists() ? existing.data() : {};
 
-                            const updatedRecord = {
+                            let updatedRecord;
+                            if (branch === "sm-north") {
+                                updatedRecord = {
                                 ...prevData,
                                 grab: grabNet,
                                 totalSales: (prevData.totalSales || 0) - (prevData.grab || 0) + grabNet,
                                 walkInSales: (prevData.cash || 0) + (prevData.card || 0) + (prevData.gcash || 0) + (prevData.maya || 0),
                                 timestamp: serverTimestamp()
                             };
+                            } else {
+                                updatedRecord = {
+                                    ...prevData,
+                                    grab: grabNet,
+                                    totalSales: (prevData.totalSales || 0) - (prevData.grab || 0) + grabNet,
+                                    walkInSales: (prevData.cash || 0) + (prevData.card || 0) + (prevData.qr || 0) + (prevData.giftCard || 0),
+                                    timestamp: serverTimestamp()
+                                };
+                            }
 
                             console.log("Updating Firestore with:", updatedRecord);
-
 
                             await setDoc(salesRef, updatedRecord, { merge: true });
                         } catch (err) {
@@ -531,7 +1263,7 @@
                         }
                     }
 
-                    showToast("✅ Grab CSV upload complete!");
+                    window.showToast("✅ Grab CSV upload complete!");
                 }
             });
         });
@@ -544,13 +1276,20 @@
                 return new Date(date - tzOffset).toISOString().slice(0, 10);
             }
 
+        function formatDate(date) {
+            return date.toLocaleDateString("en-PH", {
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric'
+            });
+        }
+
+            let flatpickrInstance;
+
         document.addEventListener("DOMContentLoaded", () => {
                 const now = new Date();
                 document.getElementById("recordDate").value = formatDate(now);
-                document.getElementById("recordDate").dataset.iso = now.toISOString().slice(0, 10); // e.g., 2025-04-26
-            });
-
-            let flatpickrInstance;
+            document.getElementById("recordDate").dataset.iso = now.toISOString().slice(0, 10);
 
             flatpickr("#recordDate", {
                 dateFormat: "Y-m-d",
@@ -558,115 +1297,29 @@
                 allowInput: false,
                 onChange: function (selectedDates) {
                     document.getElementById("recordDate").value = formatDate(selectedDates[0]);
+                    // Check attendance and update branch when date changes
+                    if (window.checkAttendanceAndSetBranch) {
+                        window.checkAttendanceAndSetBranch();
+                    }
                 },
                 onReady: function (selectedDates, dateStr, instance) {
                     flatpickrInstance = instance;
-                }
-            });
-
-            function formatDate(date) {
-                return date.toLocaleDateString("en-PH", {
-                    weekday: 'long',
-                    month: 'long',
-                    day: 'numeric'
-                });
-            }
-
-            const inputs = ['cash', 'card', 'gcash', 'maya', 'grab', 'expenses'];
-
-                inputs.forEach(id => {
-                    const el = document.getElementById(id);
-
-                    // Store raw value in dataset for persistence
-                    el.addEventListener('input', () => {
-                        el.dataset.raw = el.value.replace(/[^0-9.]/g, '');
-                    });
-
-                    // Format on blur
-                    el.addEventListener('blur', () => {
-                        const raw = el.dataset.raw || '0';
-                        const parsed = parseFloat(raw.replace(/,/g, '')); // FIXED
-                        if (!isNaN(parsed)) {
-                            el.value = parsed.toLocaleString('en-US', {
-                                minimumFractionDigits: 0,
-                                maximumFractionDigits: 2
-                            });
+                    // Check attendance and set branch on initial load
+                    setTimeout(() => {
+                        if (window.checkAttendanceAndSetBranch) {
+                            window.checkAttendanceAndSetBranch();
                         } else {
-                            el.value = '';
+                            // Fallback: just set default branch
+                            const lastBranch = localStorage.getItem(`lastSalesBranch_${localStorage.getItem("loggedInUser") || ""}`) || "sm-north";
+                            document.getElementById("branchSelect").value = lastBranch;
+                            if (window.handleBranchChange) {
+                                window.handleBranchChange();
+                            }
                         }
-                        updateTotal();
-                    });
-
-                    // Restore raw value when focusing again
-                    el.addEventListener('focus', () => {
-                        el.value = el.dataset.raw || '';
+                    }, 200);
+                }
                     });
                 });
-
-                function updateTotal() {
-                        const paymentInputs = ['cash', 'card', 'gcash', 'maya', 'grab'];
-                        const total = paymentInputs.reduce((sum, id) => {
-                            const raw = document.getElementById(id).dataset.raw || '0';
-                            const val = parseFloat(raw) || 0;
-                            return sum + val;
-                        }, 0);
-
-                        const cashRaw = document.getElementById('cash').dataset.raw || '0';
-                        const cashVal = parseFloat(cashRaw) || 0;
-
-                        const expensesRaw = document.getElementById('expenses').dataset.raw || '0';
-                        const expensesVal = parseFloat(expensesRaw) || 0;
-
-                        const cashLeft = cashVal - expensesVal;
-
-                        // Calculate walk-in sales (total minus grab)
-                        const grabRaw = document.getElementById('grab').dataset.raw || '0';
-                        const grabVal = parseFloat(grabRaw) || 0;
-                        const walkInSales = total - grabVal;
-
-                        document.getElementById("totalDisplay").value =
-                            `₱${total.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
-
-                        document.getElementById("walkInSales").value =
-                            `₱${walkInSales.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
-
-                        document.getElementById("cashLeft").value =
-                            `₱${cashLeft.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
-                    }
-
-
-            function toggleOtherField() {
-                const isOther = document.getElementById("staffName").value === "Other";
-                document.getElementById("otherStaffName").style.display = isOther ? "block" : "none";
-            }
-
-            function submitSales() {
-                const record = {
-                    date: document.getElementById("recordDate").value,
-                    staff: document.getElementById("staffName").value === "Other"
-                        ? document.getElementById("otherStaffName").value
-                        : document.getElementById("staffName").value,
-                    cash: parseFloat(document.getElementById("cash").value) || 0,
-                    card: parseFloat(document.getElementById("card").value) || 0,
-                    gcash: parseFloat(document.getElementById("gcash").value) || 0,
-                    maya: parseFloat(document.getElementById("maya").value) || 0,
-                    grab: parseFloat(document.getElementById("grab").value) || 0
-                };
-                const total = record.cash + record.card + record.gcash + record.maya + record.grab;
-                showToast(`✅ Sales submitted!<br><strong>${record.staff}</strong><br>${record.date}<br>Total: ₱${total.toLocaleString('en-US', { minimumFractionDigits: 2 })}`);
-            }
-            
-            function showToast(message) {
-                const toast = document.getElementById("toast");
-                toast.innerHTML = message;
-                toast.style.opacity = "1";
-                toast.style.transform = "translate(-50%, -50%)";
-
-                setTimeout(() => {
-                    toast.style.opacity = "0";
-                    toast.style.transform = "translate(-50%, -40%)";
-                }, 3500);
-            }
     </script>
 </body>
 

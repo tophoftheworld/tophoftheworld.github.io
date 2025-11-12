@@ -1,27 +1,30 @@
-// Matchanese Attendance App - Service Worker
-const APP_VERSION = "0.75"; // IMPORTANT: Keep this in sync with script.js
-const CACHE_NAME = `matchanese-v${APP_VERSION}`;
-const DYNAMIC_CACHE = `matchanese-dynamic-v${APP_VERSION}`;
+// Matchanese Staff Portal - Service Worker
+const APP_VERSION = "1.0.0";
+const CACHE_NAME = `matchanese-staff-v${APP_VERSION}`;
+const DYNAMIC_CACHE = `matchanese-staff-dynamic-v${APP_VERSION}`;
 
 // Resources to cache during installation
 const STATIC_RESOURCES = [
     '/',
     '/index.html',
-    '/js/script.js',
-    '/js/firebase-setup.js',
-    '/css/style.css',
+    '/login.html',
+    '/js/staff-auth.js',
+    '/js/firebase-auth-setup.js',
     '/manifest.webmanifest',
-    'https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap',
-    'https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css',
-    'https://cdn.jsdelivr.net/npm/flatpickr',
+    '/icons/icon-192.png',
+    '/icons/icon-512.png',
+    '/shared/assets/images/matchanese-2025-logo.png',
+    '/shared/assets/images/matchanese-logo-full.png',
+    'https://cdn.tailwindcss.com',
     'https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js',
-    'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js',
-    'https://matchanese.com/cdn/shop/files/matchanese-2025-logo_e4944ef8-b626-4206-80c5-cc4fd9ed79ab.png'
+    'https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js',
+    'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js'
 ];
 
 // Resources that should always be fetched from network
 const NETWORK_ONLY = [
-    'firestore.googleapis.com'
+    'firestore.googleapis.com',
+    'firebase'
 ];
 
 // Install event - cache static resources
@@ -33,7 +36,7 @@ self.addEventListener('install', event => {
         caches.open(CACHE_NAME)
             .then(cache => {
                 console.log('Service Worker: Caching static resources');
-                return cache.addAll(STATIC_RESOURCES);
+                return cache.addAll(STATIC_RESOURCES.filter(url => !url.startsWith('http')));
             })
     );
 });
@@ -70,6 +73,7 @@ self.addEventListener('activate', event => {
         })
     );
 });
+
 // Helper function to check if URL should be network-only
 function isNetworkOnlyRequest(url) {
     return NETWORK_ONLY.some(endpoint => url.includes(endpoint));
@@ -132,49 +136,6 @@ self.addEventListener('fetch', event => {
             })
     );
 });
-
-// Background sync for offline data
-self.addEventListener('sync', event => {
-    if (event.tag === 'sync-attendance') {
-        event.waitUntil(syncAttendanceData());
-    }
-});
-
-// Function to sync offline attendance data
-async function syncAttendanceData() {
-    const offlineData = await getOfflineData();
-
-    if (offlineData && offlineData.length > 0) {
-        // Notify clients that sync is starting
-        self.clients.matchAll().then(clients => {
-            clients.forEach(client => {
-                client.postMessage({
-                    type: 'SYNC_STARTED',
-                    dataCount: offlineData.length
-                });
-            });
-        });
-
-        // This is a placeholder - the actual sync happens in the main JS
-        // through the syncPendingData() function when back online
-
-        // Notify clients sync is completed
-        self.clients.matchAll().then(clients => {
-            clients.forEach(client => {
-                client.postMessage({
-                    type: 'SYNC_COMPLETED'
-                });
-            });
-        });
-    }
-}
-
-// Helper to get offline data (would be implemented in the app logic)
-async function getOfflineData() {
-    // This is just a placeholder since the actual offline data
-    // is stored in localStorage by the app itself
-    return [];
-}
 
 self.addEventListener('message', event => {
     if (event.data && event.data.type === 'CHECK_VERSION') {

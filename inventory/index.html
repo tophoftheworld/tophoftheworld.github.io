@@ -3,10 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>Inventory Management</title>
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/style.css?v=1762840349290">
 </head>
 <body>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <div class="header-container">
         <div class="date-picker-container">
             <div class="date-picker">
@@ -250,7 +254,13 @@
                 </svg>
             </button>
             <h2 class="running-low-title">Running Low</h2>
-            <div class="header-spacer"></div>
+            <button class="running-low-download-btn" id="runningLowDownloadBtn" title="Download Report" onclick="if(window.downloadRunningLowReport) { window.downloadRunningLowReport().catch(function(err) { console.error('Download error:', err); alert('Failed to download: ' + (err.message || 'Unknown error')); }); } else { alert('Download feature loading... Please try again in a moment.'); } return false;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <polyline points="7 10 12 15 17 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <line x1="12" y1="15" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </button>
         </div>
         
         <div class="running-low-content">
@@ -281,6 +291,6 @@
             </div>
         </div>
     </div>
-    <script type="module" src="js/script.js"></script>
+    <script type="module" src="js/script.js?v=1762845423176"></script>
 </body>
 </html>

@@ -417,9 +417,9 @@ async function loadSalesData() {
     let collectionPath;
 
     if (currentBranch === 'sm-north') {
-        // Keep existing structure for SM North
-        collectionPath = 'sales';
-        const snapshot = await getDocs(collection(db, collectionPath));
+        // Use new structure for SM North
+        collectionPath = 'sales-data/sm-north/daily';
+        const snapshot = await getDocs(collection(db, 'sales-data', 'sm-north', 'daily'));
         salesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     } else {
         // Use new structure for Podium

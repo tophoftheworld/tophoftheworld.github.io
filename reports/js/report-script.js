@@ -179,8 +179,8 @@ async function loadSalesData() {
         console.log('Database object:', db);
         
         if (currentBranch === 'sm-north') {
-            console.log('Loading from sales collection');
-            const snapshot = await getDocs(collection(db, 'sales'));
+            console.log('Loading from sales-data/sm-north/daily collection');
+            const snapshot = await getDocs(collection(db, 'sales-data', 'sm-north', 'daily'));
             salesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         } else {
             // Use new structure for Podium - exactly like sales dashboard

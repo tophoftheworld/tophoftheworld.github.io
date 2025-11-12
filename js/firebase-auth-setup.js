@@ -161,20 +161,69 @@ async function createFirebaseUsers() {
     }
 }
 
+// Helper function to find user by username or employeeCode in adminUsers collection
+async function findUserByUsernameOrCode(identifier) {
+    try {
+        const adminUsersRef = collection(db, "adminUsers");
+        const snapshot = await getDocs(adminUsersRef);
+        
+        // Normalize identifier for comparison (case-insensitive)
+        const normalizedIdentifier = identifier.toLowerCase().trim();
+        
+        for (const docSnap of snapshot.docs) {
+            const userData = docSnap.data();
+            const username = (userData.username || '').toLowerCase().trim();
+            const employeeCode = (userData.employeeCode || '').toLowerCase().trim();
+            
+            // Check if identifier matches username or employeeCode (case-insensitive)
+            if (username === normalizedIdentifier || employeeCode === normalizedIdentifier) {
+                return {
+                    uid: docSnap.id,
+                    employeeCode: userData.employeeCode,
+                    username: userData.username,
+                    ...userData
+                };
+            }
+        }
+        console.log(`User lookup: No match found for identifier "${identifier}"`);
+        return null;
+    } catch (error) {
+        console.error("Error finding user:", error);
+        return null;
+    }
+}
+
 // Authentication functions
 async function signInUser(username, password) {
     try {
-        // Load employees from Firebase if not already loaded
-        if (Object.keys(STAFF_CREDENTIALS).length === 0) {
-            await loadEmployeesFromFirebase();
+        // First, try to find the user by username or employeeCode in Firestore
+        const userData = await findUserByUsernameOrCode(username);
+        
+        let email;
+        if (userData && userData.employeeCode) {
+            // Use the employeeCode for Firebase Auth (permanent identifier)
+            // This allows username to be changed without affecting Firebase Auth
+            email = `${userData.employeeCode}@matchanese.local`;
+            console.log(`Found user: username="${userData.username}", employeeCode="${userData.employeeCode}", using email="${email}"`);
+        } else {
+            // Fallback: if not found in adminUsers, try direct login with username
+            // (for backwards compatibility or if user hasn't been migrated yet)
+            email = `${username}@matchanese.local`;
+            console.log(`User not found in adminUsers, trying direct login with email="${email}"`);
         }
         
-        // Convert username to email format for Firebase (username@matchanese.local)
-        const email = `${username}@matchanese.local`;
         const userCredential = await signInWithEmailAndPassword(auth, email, password);
         return { success: true, user: userCredential.user };
     } catch (error) {
-        return { success: false, error: error.message };
+        console.error('Login error:', error.code, error.message);
+        // Provide more specific error messages
+        let errorMessage = error.message;
+        if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
+            errorMessage = 'Invalid employee code or password. Please check your credentials.';
+        } else if (error.code === 'auth/user-not-found') {
+            errorMessage = 'Employee code not found. Please check your credentials.';
+        }
+        return { success: false, error: errorMessage, code: error.code };
     }
 }
 
@@ -190,11 +239,8 @@ async function signOutUser() {
 // Get current user data from Firestore
 async function getCurrentUserData(user) {
     try {
-        // Extract employee ID from the email (remove @matchanese.local)
-        const employeeId = user.email.replace('@matchanese.local', '');
-        
-        // Look up user data using employee ID as document ID
-        const userDoc = await getDoc(doc(db, "adminUsers", employeeId));
+        // Look up user data using Firebase UID as document ID
+        const userDoc = await getDoc(doc(db, "adminUsers", user.uid));
         if (userDoc.exists()) {
             return userDoc.data();
         }

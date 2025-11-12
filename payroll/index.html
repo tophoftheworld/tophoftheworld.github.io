@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title>Matchanese Payroll</title>
+
+    <link rel="icon" href="data:,">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css?v=20250115-2">
+    <meta name="theme-color" content="#2b9348">
+    <script type="module" src="../attendance/js/firebase-setup.js"></script>
+    <!-- PDF Generation Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <div id="mainInterface">
+            <!-- Payroll View - matches original attendance tab styling -->
+            <div id="payrollView">
+                <div class="payroll-summary">
+                    <div class="summary-card">
+                        <h3>Days Worked</h3>
+                        <p class="summary-value" id="daysWorked">0</p>
+                    </div>
+                    <div class="summary-card">
+                        <h3>Total Pay</h3>
+                        <p class="summary-value" id="totalPay">₱0.00</p>
+                    </div>
+                </div>
+
+                <div class="period-selector">
+                    <select id="payrollPeriod">
+                        <option>Loading periods...</option>
+                    </select>
+                </div>
+
+                <div class="attendance-list">
+                    <div class="attendance-header">Attendance Record</div>
+                    <div class="download-payslip-container">
+                        <button id="downloadPayslipBtn" class="download-payslip-btn">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            Download Payslip
+                        </button>
+                    </div>
+                    <div id="payrollCardsContainer">
+                        <!-- This will be populated dynamically -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Payroll Detail Modal -->
+        <div id="payrollDetailModal" class="image-modal" onclick="closePayrollDetailModal()" style="z-index: 3000;">
+            <div class="modal-content" style="padding: 1.5rem; max-width: 90%; width: 500px; text-align: center;"
+                onclick="event.stopPropagation();">
+                <div class="payroll-card" style="margin: 1rem; box-shadow: none; border: none; padding: 0 1rem;">
+                    <div class="payroll-card-main">
+                        <div class="payroll-date-section">
+                            <div class="payroll-date" id="modalPayrollDate">May 29</div>
+                            <div class="payroll-day" id="modalPayrollDay">Thursday</div>
+                        </div>
+                        <div class="payroll-branch-shift">
+                            <div class="payroll-branch" id="modalPayrollBranch">Podium</div>
+                            <div class="payroll-shift" id="modalPayrollShift">Midshift</div>
+                        </div>
+                    </div>
+                    
+                    <div class="payroll-times">
+                        <div class="payroll-time-group">
+                            <div class="payroll-time-label">Time In</div>
+                            <img id="modalTimeInThumb" class="time-thumbnail" src=""
+                                onclick="event.stopPropagation(); openImageModal(this.src)"
+                                style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px; margin: 4px 0; cursor: pointer; border: 1px solid #ddd;">
+                            <div class="payroll-time" id="modalTimeIn">11:41 AM</div>
+                        </div>
+                        <div class="payroll-time-group">
+                            <div class="payroll-time-label">Time Out</div>
+                            <img id="modalTimeOutThumb" class="time-thumbnail" src=""
+                                onclick="event.stopPropagation(); openImageModal(this.src)"
+                                style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px; margin: 4px 0; cursor: pointer; border: 1px solid #ddd;">
+                            <div class="payroll-time" id="modalTimeOut">8:17 PM</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Pay breakdown -->
+                    <div style="margin: 0; background: #f8f9fa; border-radius: 8px; padding: 1rem 1.5rem; width: 100%;">
+                        <div style="display: grid; grid-template-columns: 2fr 1fr 1.5fr; gap: 0.5rem; align-items: center; padding: 0.75rem 0;">
+                            <span style="color: #666; font-size: 1rem; font-weight: 500; text-align: left;">Base Pay</span>
+                            <span></span>
+                            <span class="payroll-late-value" style="color: #333; font-weight: 600;" id="modalBaseRate">₱750.00</span>
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: 2fr 1fr 1.5fr; gap: 0.5rem; align-items: center; padding: 0.75rem 0;">
+                            <span style="color: #666; font-size: 1rem; font-weight: 500; text-align: left;">Meal Allowance</span>
+                            <span></span>
+                            <span class="payroll-late-value" style="color: #333; font-weight: 600;" id="modalMealAllow">₱150.00</span>
+                        </div>
+                        
+                        <div id="modalLateDeductionRow" style="display: grid; grid-template-columns: 2fr 1fr 1.5fr; gap: 0.5rem; align-items: center; padding: 0.75rem 0;">
+                            <span style="color: #666; font-size: 1rem; font-weight: 500; text-align: left;">Late Hours</span>
+                            <span style="font-size: 1rem; color: #333; text-align: center;" id="modalLateHours">37 mins</span>
+                            <span class="payroll-late-value" style="color: #e63946; font-weight: 600;" id="modalLateDeduction">-₱57.81</span>
+                        </div>
+                        
+                        <div id="modalUndertimeDeductionRow" style="display: grid; grid-template-columns: 2fr 1fr 1.5fr; gap: 0.5rem; align-items: center; padding: 0.75rem 0;">
+                            <span style="color: #666; font-size: 1rem; font-weight: 500; text-align: left;">Undertime</span>
+                            <span style="font-size: 1rem; color: #333; text-align: center;" id="modalUndertimeHours">30 mins</span>
+                            <span class="payroll-late-value" style="color: #e63946; font-weight: 600;" id="modalUndertimeDeduction">-₱28.12</span>
+                        </div>
+                        
+                        <div id="modalHolidayBonusRow" style="display: grid; grid-template-columns: 2fr 1fr 1.5fr; gap: 0.5rem; align-items: center; padding: 0.75rem 0;">
+                            <span style="color: #666; font-size: 1rem; font-weight: 500; text-align: left;">Holiday Bonus</span>
+                            <span style="font-size: 1rem; color: #333; text-align: center;" id="modalHolidayType">Regular</span>
+                            <span class="payroll-late-value" style="color: #2b9348; font-weight: 600;" id="modalHolidayBonus">+₱750.00</span>
+                        </div>
+
+                        <div id="modalSalesBonusRow" style="display: grid; grid-template-columns: 2fr 1fr 1.5fr; gap: 0.5rem; align-items: center; padding: 0.75rem 0;">
+                            <span style="color: #666; font-size: 1rem; font-weight: 500; text-align: left;">Sales Bonus 🪙</span>
+                            <span></span>
+                            <span class="payroll-late-value" style="color: #f39c12; font-weight: 600;" id="modalSalesBonus">+₱25.00</span>
+                        </div>
+
+                        <div id="modalOTBonusRow" style="display: grid; grid-template-columns: 2fr 1fr 1.5fr; gap: 0.5rem; align-items: center; padding: 0.75rem 0;">
+                            <span style="color: #666; font-size: 1rem; font-weight: 500; text-align: left;">Overtime Pay</span>
+                            <span style="font-size: 1rem; color: #333; text-align: center;" id="modalOTHours">2.5h</span>
+                            <span class="payroll-late-value" style="color: #2b9348; font-weight: 600;" id="modalOTBonus">+₱234.38</span>
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: 2fr 1fr 1.5fr; gap: 0.5rem; align-items: center; padding: 1.5rem 0 0.5rem 0; border-top: 1px solid #ccc; margin-top: 1rem;">
+                            <span style="color: #666; font-size: 1rem; font-weight: 500; text-align: left;">Total Pay</span>
+                            <span></span>
+                            <span class="payroll-late-value" style="font-weight: 900; color: #2b9348; font-size: 1.3rem;" id="modalTotalPay">₱842.19</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Image Modal -->
+        <div id="imageModal" class="image-modal">
+            <div class="modal-content">
+                <img id="modalImage" src="" />
+            </div>
+        </div>
+
+    </div>
+
+    <script src="../shared/js/PayCalculator.js?v=20250115"></script>
+    <script type="module" src="js/script.js?v=20250115-6"></script>
+</body>
+</html>
+

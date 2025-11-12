@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Migrate SM North Sales Data</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 2rem;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2b9348;
+            margin-bottom: 1.5rem;
+        }
+        .warning {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+        }
+        .info {
+            background: #d1ecf1;
+            border: 1px solid #0c5460;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+        }
+        button {
+            background-color: #2b9348;
+            color: white;
+            border: none;
+            padding: 0.75rem 2rem;
+            font-size: 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 0.5rem;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background-color: #238636;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .danger {
+            background-color: #dc3545;
+        }
+        .danger:hover {
+            background-color: #c82333;
+        }
+        .log {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 1rem;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 1rem;
+            white-space: pre-wrap;
+        }
+        .log-line {
+            margin: 0.25rem 0;
+        }
+        .log-error {
+            color: #f48771;
+        }
+        .log-success {
+            color: #89d185;
+        }
+        .status {
+            margin: 1rem 0;
+            padding: 1rem;
+            border-radius: 8px;
+        }
+        .status-processing {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+        .status-complete {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status-error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📦 SM North Sales Data Migration</h1>
+        
+        <div class="warning">
+            <strong>⚠️ Warning:</strong> This will copy all SM North sales from <code>sales</code> to <code>sales-data/sm-north/daily</code>
+        </div>
+        
+        <div class="warning">
+            <strong>💾 Storage Notice:</strong> If you see "FILE_ERROR_NO_SPACE" errors, your browser's storage is full. Try:
+            <ul style="margin: 0.5rem 0 0 1.5rem; padding: 0;">
+                <li>Clear browser cache and data for this site</li>
+                <li>Close other tabs to free up memory</li>
+                <li>Use a different browser or try Incognito mode</li>
+            </ul>
+        </div>
+        
+        <div class="info">
+            <strong>ℹ️ Information:</strong> This tool will:
+            <ul>
+                <li>Read all documents from the <code>sales</code> collection</li>
+                <li>Copy them to <code>sales-data/sm-north/daily</code> collection</li>
+                <li>Keep the original data intact (read-only copy)</li>
+                <li>After migration is complete, you can update the apps to use the new structure</li>
+            </ul>
+        </div>
+
+        <button id="startMigrationBtn" onclick="startMigration()">Start Migration</button>
+        <button id="verifyBtn" onclick="verifyMigration()" style="display:none;">Verify Migration</button>
+        <button id="checkOldBtn" onclick="checkOldData()">Check Old Data</button>
+        <button id="checkNewBtn" onclick="checkNewData()">Check New Data</button>
+
+        <div id="statusArea"></div>
+        
+        <div class="log" id="logArea"></div>
+    </div>
+
+    <script type="module">
+        import { db } from './js/firebase-setup.js';
+        import { 
+            collection, 
+            getDocs, 
+            doc, 
+            setDoc,
+            getDoc 
+        } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+
+        const logArea = document.getElementById('logArea');
+        const statusArea = document.getElementById('statusArea');
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logLine = document.createElement('div');
+            logLine.className = `log-line log-${type}`;
+            logLine.textContent = `[${timestamp}] ${message}`;
+            logArea.appendChild(logLine);
+            logArea.scrollTop = logArea.scrollHeight;
+            console.log(message);
+        }
+
+        function setStatus(message, type) {
+            statusArea.innerHTML = `<div class="status status-${type}">${message}</div>`;
+        }
+
+        window.checkOldData = async function() {
+            log('Checking old sales collection...', 'info');
+            try {
+                const snapshot = await getDocs(collection(db, 'sales'));
+                const count = snapshot.size;
+                log(`Found ${count} records in old 'sales' collection`, count > 0 ? 'success' : 'error');
+                
+                if (count > 0) {
+                    const firstDoc = snapshot.docs[0];
+                    log(`Sample record ID: ${firstDoc.id}`, 'info');
+                    log(`Sample data: ${JSON.stringify(firstDoc.data(), null, 2)}`, 'info');
+                }
+            } catch (error) {
+                log(`Error checking old data: ${error.message}`, 'error');
+            }
+        };
+
+        window.checkNewData = async function() {
+            log('Checking new sales-data/sm-north/daily collection...', 'info');
+            try {
+                const snapshot = await getDocs(collection(db, 'sales-data', 'sm-north', 'daily'));
+                const count = snapshot.size;
+                log(`Found ${count} records in new 'sales-data/sm-north/daily' collection`, count > 0 ? 'success' : 'error');
+                
+                if (count > 0) {
+                    const firstDoc = snapshot.docs[0];
+                    log(`Sample record ID: ${firstDoc.id}`, 'info');
+                    log(`Sample data: ${JSON.stringify(firstDoc.data(), null, 2)}`, 'info');
+                }
+            } catch (error) {
+                log(`Error checking new data: ${error.message}`, 'error');
+            }
+        };
+
+        window.startMigration = async function() {
+            const btn = document.getElementById('startMigrationBtn');
+            btn.disabled = true;
+            
+            logArea.innerHTML = '';
+            log('Starting migration...', 'info');
+            setStatus('Migration in progress...', 'processing');
+
+            try {
+                // Read all documents from old collection
+                log('Reading from sales collection...', 'info');
+                const oldSnapshot = await getDocs(collection(db, 'sales'));
+                const oldDocs = oldSnapshot.docs;
+                const totalRecords = oldDocs.length;
+                
+                log(`Found ${totalRecords} records to migrate`, 'success');
+
+                if (totalRecords === 0) {
+                    log('No records to migrate!', 'error');
+                    setStatus('No records found to migrate', 'error');
+                    btn.disabled = false;
+                    return;
+                }
+
+                // Copy each document to new location
+                let migrated = 0;
+                let skipped = 0;
+
+                for (const oldDoc of oldDocs) {
+                    try {
+                        const docId = oldDoc.id;
+                        const data = oldDoc.data();
+
+                        // Check if already exists in new location
+                        const newDocRef = doc(db, 'sales-data', 'sm-north', 'daily', docId);
+                        const newDocSnap = await getDoc(newDocRef);
+
+                        if (newDocSnap.exists()) {
+                            log(`Skipping ${docId} (already exists)`, 'error');
+                            skipped++;
+                        } else {
+                            // Copy to new location
+                            await setDoc(newDocRef, data);
+                            migrated++;
+                            log(`Migrated ${docId} (${migrated}/${totalRecords})`, 'success');
+                        }
+                    } catch (error) {
+                        log(`Error migrating ${oldDoc.id}: ${error.message}`, 'error');
+                    }
+                }
+
+                log('', 'info');
+                log('═'.repeat(50), 'info');
+                log(`Migration complete!`, 'success');
+                log(`Migrated: ${migrated} records`, 'success');
+                log(`Skipped: ${skipped} records`, skipped > 0 ? 'error' : 'info');
+                log('═'.repeat(50), 'info');
+
+                setStatus(`✅ Migration complete! Migrated ${migrated} records`, 'complete');
+                document.getElementById('verifyBtn').style.display = 'inline-block';
+
+            } catch (error) {
+                log(`Migration failed: ${error.message}`, 'error');
+                setStatus(`❌ Migration failed: ${error.message}`, 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        };
+
+        window.verifyMigration = async function() {
+            log('Verifying migration...', 'info');
+            
+            try {
+                // Get counts from both collections
+                const oldSnapshot = await getDocs(collection(db, 'sales'));
+                const newSnapshot = await getDocs(collection(db, 'sales-data', 'sm-north', 'daily'));
+                
+                const oldCount = oldSnapshot.size;
+                const newCount = newSnapshot.size;
+
+                log(`Old collection count: ${oldCount}`, 'info');
+                log(`New collection count: ${newCount}`, 'info');
+
+                if (oldCount === newCount) {
+                    log('✅ Verification passed! Both collections have the same number of records.', 'success');
+                    setStatus('✅ Verification passed!', 'complete');
+                    
+                    // Sample check
+                    log('Checking sample records match...', 'info');
+                    const oldSampleIds = oldSnapshot.docs.map(d => d.id).slice(0, 5);
+                    const newSampleIds = newSnapshot.docs.map(d => d.id).slice(0, 5);
+                    
+                    const allMatch = oldSampleIds.every(id => newSampleIds.includes(id));
+                    if (allMatch) {
+                        log('✅ Sample records match!', 'success');
+                    } else {
+                        log('⚠️ Sample records do not match', 'error');
+                    }
+                } else {
+                    log('❌ Verification failed! Record counts do not match.', 'error');
+                    setStatus('❌ Verification failed!', 'error');
+                }
+
+            } catch (error) {
+                log(`Verification error: ${error.message}`, 'error');
+                setStatus(`❌ Verification error: ${error.message}`, 'error');
+            }
+        };
+    </script>
+</body>
+</html>
+

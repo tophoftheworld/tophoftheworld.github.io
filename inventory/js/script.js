@@ -881,13 +881,130 @@ window.debugBranchAccess = debugBranchAccess;
 
 let pendingModeSwitch = null;
 
+// Check if there are unchecked items in opening mode
+function getUncheckedOpeningItems() {
+    if (currentMode !== 'opening') return [];
+    
+    const dateQuantities = getCurrentDateQuantities();
+    const uncheckedItems = [];
+    
+    inventoryItems.forEach(item => {
+        const itemQuantities = dateQuantities[item.id];
+        if (itemQuantities && !itemQuantities.opening?.checked) {
+            uncheckedItems.push(item);
+        }
+    });
+    
+    return uncheckedItems;
+}
+
+// Check if there are unchecked items in closing mode
+function getUncheckedClosingItems() {
+    const dateQuantities = getCurrentDateQuantities();
+    const uncheckedItems = [];
+    
+    inventoryItems.forEach(item => {
+        const itemQuantities = dateQuantities[item.id];
+        if (itemQuantities && !itemQuantities.closing?.checked) {
+            uncheckedItems.push(item);
+        }
+    });
+    
+    return uncheckedItems;
+}
+
+// Scroll to first unchecked closing item
+function scrollToFirstUncheckedClosingItem() {
+    const uncheckedItems = getUncheckedClosingItems();
+    if (uncheckedItems.length === 0) return;
+    
+    const firstUncheckedItem = uncheckedItems[0];
+    // Find the item card element - items are rendered with data-item attribute
+    const quantityElement = document.querySelector(`[data-item="${firstUncheckedItem.id}"].quantity-number`);
+    if (quantityElement) {
+        const itemCard = quantityElement.closest('.item-card');
+        if (itemCard) {
+            // Use scrollIntoView for better compatibility
+            itemCard.scrollIntoView({
+                behavior: 'smooth',
+                block: 'center'
+            });
+            
+            // Highlight the item briefly
+            itemCard.style.transition = 'background-color 0.3s';
+            itemCard.style.backgroundColor = '#fff3cd';
+            setTimeout(() => {
+                itemCard.style.backgroundColor = '';
+            }, 2000);
+        }
+    }
+}
+
+// Scroll to first unchecked item
+function scrollToFirstUncheckedItem() {
+    const uncheckedItems = getUncheckedOpeningItems();
+    if (uncheckedItems.length === 0) return;
+    
+    const firstUncheckedItem = uncheckedItems[0];
+    // Find the item card element - items are rendered with data-item attribute
+    const quantityElement = document.querySelector(`[data-item="${firstUncheckedItem.id}"].quantity-number`);
+    if (quantityElement) {
+        const itemCard = quantityElement.closest('.item-card');
+        if (itemCard) {
+            // Use scrollIntoView for better compatibility
+            itemCard.scrollIntoView({
+                behavior: 'smooth',
+                block: 'center'
+            });
+            
+            // Highlight the item briefly
+            itemCard.style.transition = 'background-color 0.3s';
+            itemCard.style.backgroundColor = '#fff3cd';
+            setTimeout(() => {
+                itemCard.style.backgroundColor = '';
+            }, 2000);
+        }
+    }
+}
+
+// Flag to track if we're showing unchecked items dialog
+let showingUncheckedItemsDialog = false;
+
 function showModeSwitchConfirmation(newMode) {
     pendingModeSwitch = newMode;
+    showingUncheckedItemsDialog = false;
 
     const modal = document.getElementById('modeSwitchModalOverlay');
     const title = document.getElementById('modeSwitchTitle');
     const message = document.getElementById('modeSwitchMessage');
+    const cancelBtn = document.getElementById('modeSwitchCancelBtn');
+    const confirmBtn = document.getElementById('modeSwitchConfirmBtn');
 
+    // Check for unchecked items when switching from opening to closing
+    if (newMode === 'closing' && currentMode === 'opening') {
+        const uncheckedItems = getUncheckedOpeningItems();
+        
+        if (uncheckedItems.length > 0) {
+            // Show unchecked items warning
+            showingUncheckedItemsDialog = true;
+            title.textContent = 'Incomplete Inventory';
+            const itemCount = uncheckedItems.length;
+            const itemText = itemCount === 1 ? 'item' : 'items';
+            message.innerHTML = `<p>${itemCount} ${itemText} still need to be checked.</p>`;
+            
+            // Hide cancel button, show only one button
+            if (cancelBtn) cancelBtn.style.display = 'none';
+            if (confirmBtn) {
+                confirmBtn.textContent = 'Show items';
+            }
+            
+            modal.classList.add('show');
+            return;
+        }
+    }
+
+    // Normal confirmation flow
+    showingUncheckedItemsDialog = false;
     if (newMode === 'closing') {
         title.textContent = 'Submit Opening Inventory?';
         message.innerHTML = `<p>This will submit your opening inventory.</p>`;
@@ -895,12 +1012,59 @@ function showModeSwitchConfirmation(newMode) {
         title.textContent = 'Edit Opening Inventory?';
         message.innerHTML = `<p>You can edit your opening inventory.</p>`;
     }
+    
+    // Show both buttons for normal flow
+    if (cancelBtn) cancelBtn.style.display = '';
+    if (confirmBtn) {
+        confirmBtn.textContent = 'Continue';
+    }
 
     modal.classList.add('show');
 }
 
 async function confirmModeSwitch() {
+    // Handle incomplete closing dialog for download
+    if (showingIncompleteClosingDialog) {
+        const modal = document.getElementById('modeSwitchModalOverlay');
+        modal.classList.remove('show');
+        showingIncompleteClosingDialog = false;
+        
+        // Running Low page should already be closed, but ensure it's closed
+        closeRunningLowPage();
+        
+        // Switch to closing mode first if not already there
+        if (currentMode !== 'closing') {
+            // Switch mode
+            document.querySelectorAll('.toggle-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            const closingBtn = document.querySelector(`[data-mode="closing"]`);
+            if (closingBtn) {
+                closingBtn.classList.add('active');
+                currentMode = 'closing';
+                animateInventorySwitch('closing');
+                renderInventory();
+            }
+        }
+        
+        // Wait a bit for render, then scroll
+        setTimeout(() => {
+            scrollToFirstUncheckedClosingItem();
+        }, 300);
+        return;
+    }
+    
     if (!pendingModeSwitch) return;
+    
+    // Handle unchecked items dialog for mode switch
+    if (showingUncheckedItemsDialog) {
+        const modal = document.getElementById('modeSwitchModalOverlay');
+        modal.classList.remove('show');
+        scrollToFirstUncheckedItem();
+        pendingModeSwitch = null;
+        showingUncheckedItemsDialog = false;
+        return;
+    }
 
     const newMode = pendingModeSwitch;
     pendingModeSwitch = null;
@@ -930,6 +1094,8 @@ async function confirmModeSwitch() {
 
 function cancelModeSwitch() {
     pendingModeSwitch = null;
+    showingUncheckedItemsDialog = false;
+    showingIncompleteClosingDialog = false;
     document.getElementById('modeSwitchModalOverlay').classList.remove('show');
 }
 
@@ -2527,6 +2693,10 @@ function setupAddStocksEventListeners() {
         runningLowBackBtn.addEventListener('click', closeRunningLowPage);
     }
 
+    // Running Low Download Button - Using inline onclick handler in HTML
+    // Function is attached to window object for global access
+    console.log('Download button setup complete');
+
     // Add stock item button
     const addStockItemBtn = document.getElementById('addStockItemBtn');
     if (addStockItemBtn) {
@@ -2752,6 +2922,259 @@ function createRunningLowItemCard(item) {
     `;
     
     return card;
+}
+
+// Get running low items data (similar to loadRunningLowItems but returns data instead of rendering)
+function getRunningLowItemsData() {
+    const runningLowItems = [];
+    const dateKey = getDateKey(currentDate);
+    const dateQuantities = getCurrentDateQuantities();
+    
+    inventoryItems.forEach(item => {
+        const itemData = dateQuantities[item.id];
+        if (!itemData) {
+            return;
+        }
+        
+        const openingQty = itemData.opening?.checked ? itemData.opening.value : null;
+        const closingQty = itemData.closing?.checked ? itemData.closing.value : null;
+        const addedStocks = itemData.added?.checked ? itemData.added.value : 0;
+        
+        let currentQty = 0;
+        if (closingQty !== null) {
+            currentQty = closingQty;
+        } else if (openingQty !== null) {
+            currentQty = openingQty + addedStocks;
+        } else {
+            return;
+        }
+        
+        const restockAmount = item.restockAmount || 0;
+        const isRunningLow = currentQty <= restockAmount;
+        const isDepleted = currentQty <= 0;
+        
+        if (isRunningLow) {
+            runningLowItems.push({
+                ...item,
+                currentQty: currentQty,
+                restockAmount: restockAmount,
+                isDepleted: isDepleted
+            });
+        }
+    });
+    
+    // Sort by current quantity (lowest first)
+    runningLowItems.sort((a, b) => a.currentQty - b.currentQty);
+    
+    return runningLowItems;
+}
+
+// Flag to track if we're showing incomplete closing dialog for download
+let showingIncompleteClosingDialog = false;
+
+// Show incomplete closing inventory dialog for report download
+function showIncompleteClosingDialog() {
+    const uncheckedItems = getUncheckedClosingItems();
+    if (uncheckedItems.length === 0) return false; // All items checked, no dialog needed
+    
+    showingIncompleteClosingDialog = true;
+    
+    const modal = document.getElementById('modeSwitchModalOverlay');
+    const title = document.getElementById('modeSwitchTitle');
+    const message = document.getElementById('modeSwitchMessage');
+    const cancelBtn = document.getElementById('modeSwitchCancelBtn');
+    const confirmBtn = document.getElementById('modeSwitchConfirmBtn');
+    
+    // Show unchecked items warning
+    title.textContent = 'Incomplete Inventory';
+    const itemCount = uncheckedItems.length;
+    const itemText = itemCount === 1 ? 'item' : 'items';
+    message.innerHTML = `<p>${itemCount} ${itemText} still need to be checked.</p>`;
+    
+    // Hide cancel button, show only one button
+    if (cancelBtn) cancelBtn.style.display = 'none';
+    if (confirmBtn) {
+        confirmBtn.textContent = 'Show items';
+    }
+    
+    modal.classList.add('show');
+    return true; // Dialog shown
+}
+
+// Download Running Low Report - Make it globally accessible
+window.downloadRunningLowReport = async function downloadRunningLowReport() {
+    console.log('downloadRunningLowReport called');
+    try {
+        // Check if html2canvas is available
+        if (typeof html2canvas === 'undefined') {
+            console.error('html2canvas is not defined');
+            alert('Download feature is loading. Please wait a moment and try again.');
+            return;
+        }
+        
+        // First check if closing inventory is complete
+        const uncheckedClosingItems = getUncheckedClosingItems();
+        if (uncheckedClosingItems.length > 0) {
+            console.log('Closing inventory incomplete, showing dialog');
+            // Close Running Low page first so dialog is visible
+            closeRunningLowPage();
+            // Delay to allow page closing animation to complete (0.3s transition)
+            setTimeout(() => {
+                showIncompleteClosingDialog();
+            }, 350);
+            return; // Stop download, dialog will handle navigation
+        }
+
+        console.log('html2canvas is available');
+        const downloadBtn = document.getElementById('runningLowDownloadBtn');
+        let originalHTML = '';
+        if (downloadBtn) {
+            originalHTML = downloadBtn.innerHTML;
+            if (!downloadBtn.dataset.originalHtml) {
+                downloadBtn.dataset.originalHtml = originalHTML;
+            }
+            downloadBtn.disabled = true;
+            downloadBtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/><path d="M12 6v6l4 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+        }
+
+        // Get running low items
+        console.log('Getting running low items data...');
+        const runningLowItems = getRunningLowItemsData();
+        console.log('Running low items found:', runningLowItems.length);
+        
+        if (runningLowItems.length === 0) {
+            alert('No items running low to download.');
+            if (downloadBtn) {
+                downloadBtn.disabled = false;
+                downloadBtn.innerHTML = downloadBtn.dataset.originalHtml || originalHTML;
+            }
+            return;
+        }
+
+        // Format date
+        const dateStr = currentDate.toLocaleDateString('en-US', { 
+            weekday: 'long', 
+            month: 'long', 
+            day: 'numeric' 
+        });
+        
+        // Get branch name
+        const branchName = getBranchDisplayName(currentBranch);
+        
+        // Separate out of stock and running low items
+        const outOfStockItems = runningLowItems.filter(item => item.isDepleted);
+        const runningLowOnlyItems = runningLowItems.filter(item => !item.isDepleted);
+        
+        // Generate report HTML (similar to financial report format)
+        const reportHTML = `
+            <div style="
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+                padding: 2rem;
+                background: white;
+                color: #333;
+                width: 600px;
+                line-height: 1.6;
+            ">
+                <div style="margin-bottom: 1.5rem;">
+                    <div style="font-weight: 600; margin-bottom: 0.5rem;">
+                        <strong>Date:</strong> ${dateStr}
+                    </div>
+                    <div style="font-weight: 600;">
+                        <strong>Branch:</strong> ${branchName}
+                    </div>
+                </div>
+                
+                ${outOfStockItems.length > 0 ? `
+                    <div style="margin-bottom: 1.5rem;">
+                        <div style="font-weight: 700; font-size: 1.3rem; margin-bottom: 0.75rem;">
+                            Out of Stock
+                        </div>
+                        ${outOfStockItems.map(item => {
+                            const itemName = item.name + (item.subtitle ? ` (${item.subtitle})` : '');
+                            const quantity = formatNumberWithCommas(item.currentQty) + ' ' + item.unit;
+                            return `
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                                <span style="flex: 1;">${itemName}</span>
+                                <span style="text-align: right; font-weight: 500; margin-left: 1rem;">${quantity}</span>
+                            </div>
+                            `;
+                        }).join('')}
+                    </div>
+                ` : ''}
+                
+                ${runningLowOnlyItems.length > 0 ? `
+                    <div style="margin-bottom: 1.5rem;">
+                        <div style="font-weight: 700; font-size: 1.3rem; margin-bottom: 0.75rem;">
+                            Running Low
+                        </div>
+                        ${runningLowOnlyItems.map(item => {
+                            const itemName = item.name + (item.subtitle ? ` (${item.subtitle})` : '');
+                            const quantity = formatNumberWithCommas(item.currentQty) + ' ' + item.unit;
+                            return `
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                                <span style="flex: 1;">${itemName}</span>
+                                <span style="text-align: right; font-weight: 500; margin-left: 1rem;">${quantity}</span>
+                            </div>
+                            `;
+                        }).join('')}
+                    </div>
+                ` : ''}
+            </div>
+        `;
+        
+        // Create a temporary container for the report
+        const reportContainer = document.createElement('div');
+        reportContainer.innerHTML = reportHTML;
+        reportContainer.style.position = 'absolute';
+        reportContainer.style.left = '-9999px';
+        reportContainer.style.top = '0';
+        reportContainer.style.width = '600px';
+        document.body.appendChild(reportContainer);
+        
+        // Wait a bit for rendering
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Use html2canvas to capture the report
+        const canvas = await html2canvas(reportContainer, {
+            backgroundColor: '#ffffff',
+            scale: 2,
+            logging: false,
+            useCORS: true
+        });
+        
+        // Remove the temporary container
+        document.body.removeChild(reportContainer);
+        
+        // Convert to image and download
+        const imageData = canvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        
+        // Generate filename with date and branch
+        const dateKey = getDateKey(currentDate);
+        const branchKey = currentBranch === 'sm-north' ? 'SM-North' : 'Podium';
+        link.download = `running-low-report-${branchKey}-${dateKey}.png`;
+        
+        link.href = imageData;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        if (downloadBtn) {
+            downloadBtn.disabled = false;
+            downloadBtn.innerHTML = downloadBtn.dataset.originalHtml || originalHTML;
+        }
+        
+        console.log('Download completed successfully');
+    } catch (error) {
+        console.error('Error downloading running low report:', error);
+        console.error('Error details:', error.message, error.stack);
+        alert('Failed to download report: ' + (error.message || 'Unknown error'));
+        const downloadBtn = document.getElementById('runningLowDownloadBtn');
+        if (downloadBtn) {
+            downloadBtn.disabled = false;
+            downloadBtn.innerHTML = downloadBtn.dataset.originalHtml || '';
+        }
+    }
 }
 
 function openItemSelectionModal() {

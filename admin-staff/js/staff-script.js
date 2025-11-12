@@ -38,6 +38,8 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const storage = getStorage(app);
 
+const IDENTITY_TOOLKIT_BASE_URL = 'https://identitytoolkit.googleapis.com/v1';
+
 // Global variables
 let employees = {};
 let filteredEmployees = {};
@@ -84,7 +86,8 @@ async function loadEmployees() {
                 nickname: data.nickname || "",
                 active: data.active !== false, // Default to true if not specified
                 role: data.role || "staff",
-                photoUrl: data.photoUrl || null
+                photoUrl: data.photoUrl || null,
+                permissions: data.permissions || {}
             };
         });
         
@@ -93,14 +96,15 @@ async function loadEmployees() {
         const adminSnapshot = await getDocs(adminUsersRef);
         
         console.log('Loading admin users from Firebase...');
-        adminSnapshot.forEach(doc => {
-            const data = doc.data();
-            const employeeId = doc.id; // Document ID should match employee ID
-            console.log('Found admin user:', employeeId, 'Role:', data.role, 'Permissions:', data.permissions);
+        adminSnapshot.forEach(docSnapshot => {
+            const data = docSnapshot.data();
+            const employeeId = data.employeeCode || docSnapshot.id;
+            console.log('Found admin user:', docSnapshot.id, 'Employee code:', employeeId, 'Role:', data.role, 'Permissions:', data.permissions);
             
-            if (employees[employeeId]) {
+            if (employeeId && employees[employeeId]) {
                 employees[employeeId].role = data.role || "staff";
                 employees[employeeId].permissions = data.permissions || {};
+                employees[employeeId].authId = docSnapshot.id;
                 console.log('Updated role for', employeeId, 'to', data.role, 'with permissions:', data.permissions);
             }
         });
@@ -440,22 +444,9 @@ async function handleRoleManagement(e) {
     try {
         showLoading(true);
         
-        // Update in Firebase Auth collection - use employeeId as document ID to prevent duplicates
-        const adminUserRef = doc(db, "adminUsers", employeeId);
-        const roleData = {
-            employeeCode: employeeId,
-            name: employees[employeeId].name,
-            role: role,
-            permissions: permissions,
-            updatedAt: new Date()
-        };
-        
-        console.log('Saving to Firebase:', roleData);
-        // Use setDoc without merge to ensure single source of truth
-        await setDoc(adminUserRef, roleData);
-        
-        // Update local data
-        employees[employeeId].role = role;
+        const adminDocId = employees[employeeId]?.authId || employeeId;
+        console.log('Saving to Firebase:', { employeeId, adminDocId, role, permissions });
+        await saveAdminUserRecord(adminDocId, employeeId, employees[employeeId].name, role, permissions);
         
         console.log('Role updated successfully for:', employeeId);
         renderEmployeeTable();
@@ -516,8 +507,23 @@ async function handleAddEmployee(e) {
             baseRate: baseRate,
             active: true,
             role: 'staff',
-            photoUrl: photoUrl
+            photoUrl: photoUrl,
+            permissions: {}
         };
+        
+        const provisionResult = await provisionEmployeeAccount(
+            employeeId,
+            name,
+            'staff',
+            employees[employeeId].permissions || {}
+        );
+        
+        if (provisionResult.success) {
+            employees[employeeId].authId = provisionResult.localId;
+            console.log(`Provisioned Firebase Auth account for ${employeeId} (${provisionResult.status}).`);
+        } else {
+            console.error(`Failed to provision Firebase Auth account for ${employeeId}:`, provisionResult.error);
+        }
         
         renderEmployeeTable();
         closeModal(addEmployeeModal);
@@ -526,7 +532,11 @@ async function handleAddEmployee(e) {
         document.getElementById('addEmployeeForm').reset();
         document.getElementById('addPhotoPreview').style.display = 'none';
         
-        alert('Employee added successfully!');
+        if (provisionResult.success) {
+            alert('Employee added successfully and login account created!');
+        } else {
+            alert(`Employee added, but the login account could not be created automatically. Reason: ${provisionResult.readableError}`);
+        }
         
     } catch (error) {
         console.error("Error adding employee:", error);
@@ -610,6 +620,143 @@ async function cleanupDuplicateAdminUsers() {
 
 // Make cleanup function available globally for testing
 window.cleanupDuplicateAdminUsers = cleanupDuplicateAdminUsers;
+
+async function updateAuthDisplayName(idToken, displayName) {
+    if (!idToken || !displayName) {
+        return false;
+    }
+    
+    try {
+        const response = await fetch(`${IDENTITY_TOOLKIT_BASE_URL}/accounts:update?key=${firebaseConfig.apiKey}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                idToken,
+                displayName,
+                returnSecureToken: false
+            })
+        });
+        
+        if (!response.ok) {
+            const data = await response.json();
+            console.warn('Unable to update display name:', data.error?.message);
+            return false;
+        }
+        
+        return true;
+    } catch (error) {
+        console.warn('Update display name error:', error);
+        return false;
+    }
+}
+
+async function provisionEmployeeAccount(employeeId, employeeName, role = 'staff', existingPermissions = {}) {
+    const email = `${employeeId}@matchanese.local`.toLowerCase();
+    const password = employeeId;
+    const readableErrors = {
+        EMAIL_EXISTS: 'An account already exists for this employee code.',
+        INVALID_PASSWORD: 'The existing account has a different password. Please reset it to the employee code in Firebase Console.',
+        USER_DISABLED: 'The account is disabled in Firebase Authentication.',
+        OPERATION_NOT_ALLOWED: 'Password sign-in is disabled for this project.',
+        TOO_MANY_ATTEMPTS_TRY_LATER: 'Too many attempts. Please wait a few minutes before trying again.'
+    };
+    
+    try {
+        const signUpResponse = await fetch(`${IDENTITY_TOOLKIT_BASE_URL}/accounts:signUp?key=${firebaseConfig.apiKey}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                email,
+                password,
+                returnSecureToken: true
+            })
+        });
+        
+        const signUpData = await signUpResponse.json();
+        
+        if (signUpResponse.ok) {
+            const displayNameUpdated = await updateAuthDisplayName(signUpData.idToken, employeeName);
+            await saveAdminUserRecord(signUpData.localId, employeeId, employeeName, role, existingPermissions);
+            return {
+                success: true,
+                localId: signUpData.localId,
+                status: 'created',
+                displayNameUpdated
+            };
+        }
+        
+        const signUpError = signUpData.error?.message;
+        if (signUpError === 'EMAIL_EXISTS') {
+            const signInResponse = await fetch(`${IDENTITY_TOOLKIT_BASE_URL}/accounts:signInWithPassword?key=${firebaseConfig.apiKey}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    email,
+                    password,
+                    returnSecureToken: true
+                })
+            });
+            
+            const signInData = await signInResponse.json();
+            
+            if (signInResponse.ok) {
+                const displayNameUpdated = await updateAuthDisplayName(signInData.idToken, employeeName);
+                await saveAdminUserRecord(signInData.localId, employeeId, employeeName, role, existingPermissions);
+                return {
+                    success: true,
+                    localId: signInData.localId,
+                    status: 'existing',
+                    displayNameUpdated
+                };
+            }
+            
+            const nestedError = signInData.error?.message;
+            return {
+                success: false,
+                error: nestedError || 'Failed to sign in to existing account.',
+                readableError: readableErrors[nestedError] || nestedError || 'Unknown error occurred while accessing the existing account.'
+            };
+        }
+        
+        return {
+            success: false,
+            error: signUpError || 'Unknown error during sign-up.',
+            readableError: readableErrors[signUpError] || signUpError || 'Unknown error during sign-up.'
+        };
+        
+    } catch (error) {
+        return {
+            success: false,
+            error: error.message,
+            readableError: error.message
+        };
+    }
+}
+
+async function saveAdminUserRecord(localId, employeeId, employeeName, role = 'staff', permissions = {}) {
+    const rolePermissions = role === 'manager' ? permissions : {};
+    const adminData = {
+        employeeCode: employeeId,
+        name: employeeName,
+        role: role,
+        permissions: rolePermissions,
+        updatedAt: new Date()
+    };
+    
+    await setDoc(doc(db, "adminUsers", localId), adminData, { merge: true });
+    
+    if (employees[employeeId]) {
+        employees[employeeId].authId = localId;
+        employees[employeeId].role = role;
+        employees[employeeId].permissions = rolePermissions;
+    }
+}
 
 // Photo upload and management functions
 window.uploadPhoto = function(employeeId) {
