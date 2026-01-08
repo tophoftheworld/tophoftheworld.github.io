@@ -4,18 +4,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <title>Expense Tracker</title>
-    <link rel="stylesheet" href="css/style.css">
-    <script type="module" src="js/script.js"></script>
+    <link rel="stylesheet" href="css/style.css?v=1.5.16">
+    <script type="module" src="js/script.js?v=1.5.16"></script>
 </head>
 
 <body>
     <!-- Dashboard Page -->
     <div id="dashboardPage">
-        <div class="header-container">
-            <h1 class="header-title">Expense Tracker</h1>
+        <div class="date-picker-container">
+            <div class="date-picker">
+                <button class="date-nav-btn" id="prevDate">‹</button>
+                <div class="date-display" id="dateDisplay"></div>
+                <button class="date-nav-btn" id="nextDate">›</button>
+            </div>
+            <div class="branch-picker">
+                <select class="branch-select" id="branchSelect">
+                    <option value="SM North">SM North</option>
+                    <option value="Podium">Podium</option>
+                </select>
+            </div>
         </div>
-
         <div class="scrollable-content">
             <div class="expense-list" id="expenseList">
                 <!-- Expenses will be loaded here -->
@@ -25,10 +37,6 @@
 
     <!-- Suppliers Page -->
     <div id="suppliersPage" style="display: none;">
-        <div class="header-container">
-            <h1 class="header-title">Suppliers</h1>
-        </div>
-
         <div class="scrollable-content">
             <div class="expense-list" id="supplierList">
                 <!-- Suppliers will be loaded here -->
@@ -113,8 +121,8 @@
                         </div>
                         <div class="total-amount">
                             <div class="label">Total Amount</div>
-                            <input type="number" id="totalAmountInput" inputmode="decimal" min="0" step="0.01"
-                                placeholder="0.00" onchange="handleTotalChange(); formatTotal()" onblur="formatTotal()"
+                            <input type="text" id="totalAmountInput" inputmode="decimal"
+                                placeholder="₱0.00" onchange="handleTotalChange()" onblur="formatTotal()" onfocus="this.select()"
                                 style="font-size: 24px; font-weight: 600; color: #333; background: none; border: none; text-align: center; width: 100%; padding: 4px;">
                         </div>
                     </div>
@@ -385,6 +393,35 @@
     
             <div class="modal-content" id="mergeSupplierContent">
                 <!-- Content will be populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Date Picker Modal -->
+    <div class="modal-overlay" id="dateModalOverlay">
+        <div class="date-modal">
+            <div class="date-modal-header">
+                <button class="date-nav-btn" id="modalPrevMonth">‹</button>
+                <div class="date-modal-title" id="modalMonthYear">June 2024</div>
+                <button class="date-nav-btn" id="modalNextMonth">›</button>
+            </div>
+            <div class="date-modal-body">
+                <div class="date-weekdays">
+                    <div class="date-weekday">Sun</div>
+                    <div class="date-weekday">Mon</div>
+                    <div class="date-weekday">Tue</div>
+                    <div class="date-weekday">Wed</div>
+                    <div class="date-weekday">Thu</div>
+                    <div class="date-weekday">Fri</div>
+                    <div class="date-weekday">Sat</div>
+                </div>
+                <div class="date-grid" id="dateGrid">
+                    <!-- Days will be generated here -->
+                </div>
+            </div>
+            <div class="date-modal-footer">
+                <button class="btn-cancel" id="dateCancelBtn">Cancel</button>
+                <button class="btn-today" id="todayBtn">Today</button>
             </div>
         </div>
     </div>

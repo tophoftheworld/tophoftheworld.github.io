@@ -1,4 +1,5 @@
-const APP_VERSION = "1.04"; // Bump this to clear cache
+const APP_VERSION = "1.07"; // Bump this to clear cache - Year boundary handling verified
+console.log('✅ Admin Payroll script loaded - Version:', APP_VERSION);
 
 // Import Firebase modules
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
@@ -371,7 +372,15 @@ console.log('Adding event listener to addShiftSchedule:', addShiftSchedule);
 addShiftSchedule.addEventListener('change', function(e) {
     console.log('Schedule change event fired:', e.target.value);
     updateTimePlaceholders();
+    toggleScheduledTimesFields('add', e.target.value);
 });
+
+// Add event listener for edit shift schedule changes
+if (editShiftSchedule) {
+    editShiftSchedule.addEventListener('change', function(e) {
+        toggleScheduledTimesFields('edit', e.target.value);
+    });
+}
 
 // Add event listener for fixed pay checkbox in add shift modal
 addShiftFixedPay.addEventListener('change', function() {
@@ -919,14 +928,24 @@ async function loadSingleEmployeeData(employeeId, periodId = null) {
                 if (branchMatches) {
                     // Now we load the full data including photos
                     const shiftType = dateData.clockIn?.shift || "Custom";
-                    const shiftSchedule = SHIFT_SCHEDULES[shiftType] || SHIFT_SCHEDULES["Custom"];
+                    
+                    // Get scheduled times: use stored values if available (for Custom shifts), otherwise use shift schedule
+                    let scheduledIn, scheduledOut;
+                    if (dateData.scheduledIn !== undefined && dateData.scheduledOut !== undefined) {
+                        scheduledIn = dateData.scheduledIn;
+                        scheduledOut = dateData.scheduledOut;
+                    } else {
+                        const shiftSchedule = SHIFT_SCHEDULES[shiftType] || SHIFT_SCHEDULES["Custom"];
+                        scheduledIn = shiftSchedule.timeIn;
+                        scheduledOut = shiftSchedule.timeOut;
+                    }
 
                     dates.push({
                         date: dateStr,
                         branch: branchName,
                         shift: shiftType,
-                        scheduledIn: shiftSchedule.timeIn,
-                        scheduledOut: shiftSchedule.timeOut,
+                        scheduledIn: scheduledIn,
+                        scheduledOut: scheduledOut,
                         timeIn: dateData.clockIn?.time || null,
                         timeOut: dateData.clockOut?.time || null,
                         timeInPhoto: dateData.clockIn?.selfie || null,
@@ -1218,14 +1237,24 @@ async function loadData(selectedPeriodId = null) {
 
                     // Create the new entry
                     const shiftType = dateData.clockIn?.shift || "Custom";
-                    const shiftSchedule = SHIFT_SCHEDULES[shiftType] || SHIFT_SCHEDULES["Custom"];
+                    
+                    // Get scheduled times: use stored values if available (for Custom shifts), otherwise use shift schedule
+                    let scheduledIn, scheduledOut;
+                    if (dateData.scheduledIn !== undefined && dateData.scheduledOut !== undefined) {
+                        scheduledIn = dateData.scheduledIn;
+                        scheduledOut = dateData.scheduledOut;
+                    } else {
+                        const shiftSchedule = SHIFT_SCHEDULES[shiftType] || SHIFT_SCHEDULES["Custom"];
+                        scheduledIn = shiftSchedule.timeIn;
+                        scheduledOut = shiftSchedule.timeOut;
+                    }
 
                     const newEntry = {
                         date: dateStr,
                         branch: dateData.clockIn?.branch || "N/A",
                         shift: shiftType,
-                        scheduledIn: shiftSchedule.timeIn,
-                        scheduledOut: shiftSchedule.timeOut,
+                        scheduledIn: scheduledIn,
+                        scheduledOut: scheduledOut,
                         timeIn: dateData.clockIn?.time || null,
                         timeOut: dateData.clockOut?.time || null,
                         timeInPhoto: dateData.clockIn?.selfie || null,
@@ -2334,14 +2363,24 @@ async function loadEmployeeDetails(employeeId, detailRow) {
 
                 if (branchMatches) {
                     const shiftType = dateData.clockIn?.shift || "Custom";
-                    const shiftSchedule = SHIFT_SCHEDULES[shiftType] || SHIFT_SCHEDULES["Custom"];
+                    
+                    // Get scheduled times: use stored values if available (for Custom shifts), otherwise use shift schedule
+                    let scheduledIn, scheduledOut;
+                    if (dateData.scheduledIn !== undefined && dateData.scheduledOut !== undefined) {
+                        scheduledIn = dateData.scheduledIn;
+                        scheduledOut = dateData.scheduledOut;
+                    } else {
+                        const shiftSchedule = SHIFT_SCHEDULES[shiftType] || SHIFT_SCHEDULES["Custom"];
+                        scheduledIn = shiftSchedule.timeIn;
+                        scheduledOut = shiftSchedule.timeOut;
+                    }
 
                     dates.push({
                         date: dateStr,
                         branch: branchName,
                         shift: shiftType,
-                        scheduledIn: shiftSchedule.timeIn,
-                        scheduledOut: shiftSchedule.timeOut,
+                        scheduledIn: scheduledIn,
+                        scheduledOut: scheduledOut,
                         timeIn: dateData.clockIn?.time || null,
                         timeOut: dateData.clockOut?.time || null,
                         timeInPhoto: dateData.clockIn?.selfie || null,
@@ -3587,6 +3626,7 @@ function generatePayrollPeriods(startDate, endDate, limitCount = false) {
         let periodStart;
 
         // If period ends on 12th, it starts on 28th or 29th of previous month
+        // IMPORTANT: This correctly handles year boundaries (e.g., Jan 12 period starts Dec 29 of previous year)
         if (periodEnd.getDate() === 12) {
             const prevMonth = periodEnd.getMonth() === 0 ? 11 : periodEnd.getMonth() - 1;
             const prevYear = periodEnd.getMonth() === 0 ? periodEnd.getFullYear() - 1 : periodEnd.getFullYear();
@@ -3988,27 +4028,37 @@ async function loadEmployeeDetailsAsMainTable(employeeId, container, preloadedDa
                 const branchMatches = branch === 'all' || branchName === getBranchName(branch);
 
                 if (branchMatches) {
-                // Now we load the full data including photos
-                const shiftType = dateData.clockIn?.shift || "Custom";
-                const shiftSchedule = SHIFT_SCHEDULES[shiftType] || SHIFT_SCHEDULES["Custom"];
+                    // Now we load the full data including photos
+                    const shiftType = dateData.clockIn?.shift || "Custom";
+                    
+                    // Get scheduled times: use stored values if available (for Custom shifts), otherwise use shift schedule
+                    let scheduledIn, scheduledOut;
+                    if (dateData.scheduledIn !== undefined && dateData.scheduledOut !== undefined) {
+                        scheduledIn = dateData.scheduledIn;
+                        scheduledOut = dateData.scheduledOut;
+                    } else {
+                        const shiftSchedule = SHIFT_SCHEDULES[shiftType] || SHIFT_SCHEDULES["Custom"];
+                        scheduledIn = shiftSchedule.timeIn;
+                        scheduledOut = shiftSchedule.timeOut;
+                    }
 
-                dates.push({
-                    date: dateStr,
-                    branch: branchName,
-                    shift: shiftType,
-                    scheduledIn: shiftSchedule.timeIn,
-                    scheduledOut: shiftSchedule.timeOut,
-                    timeIn: dateData.clockIn?.time || null,
-                    timeOut: dateData.clockOut?.time || null,
-                    timeInPhoto: dateData.clockIn?.selfie || null,
-                    timeOutPhoto: dateData.clockOut?.selfie || null,
-                    hasOTPay: dateData.hasOTPay || false,
-                    transpoAllowance: dateData.transpoAllowance || 0,
-                    hasFixedPay: dateData.hasFixedPay || false,
-                    fixedPayAmount: dateData.fixedPayAmount || 0,
-                    hasDoublePay: dateData.hasDoublePay || false,
-                    hasMealAllowance: dateData.hasMealAllowance !== false // Default to true
-                });
+                    dates.push({
+                        date: dateStr,
+                        branch: branchName,
+                        shift: shiftType,
+                        scheduledIn: scheduledIn,
+                        scheduledOut: scheduledOut,
+                        timeIn: dateData.clockIn?.time || null,
+                        timeOut: dateData.clockOut?.time || null,
+                        timeInPhoto: dateData.clockIn?.selfie || null,
+                        timeOutPhoto: dateData.clockOut?.selfie || null,
+                        hasOTPay: dateData.hasOTPay || false,
+                        transpoAllowance: dateData.transpoAllowance || 0,
+                        hasFixedPay: dateData.hasFixedPay || false,
+                        fixedPayAmount: dateData.fixedPayAmount || 0,
+                        hasDoublePay: dateData.hasDoublePay || false,
+                        hasMealAllowance: dateData.hasMealAllowance !== false // Default to true
+                    });
                 }
             }
         });
@@ -4907,6 +4957,18 @@ function openEditShiftModal(employeeId, dateStr) {
         // Set meal allowance (default to true if not specified)
         editMealAllowance.checked = dateEntry.hasMealAllowance !== false;
 
+        // Load scheduled times for Custom shifts
+        const editShiftScheduledIn = document.getElementById('editShiftScheduledIn');
+        const editShiftScheduledOut = document.getElementById('editShiftScheduledOut');
+        if (editShiftScheduledIn && editShiftScheduledOut) {
+            if (dateEntry.scheduledIn) {
+                editShiftScheduledIn.value = convertTo24HourFormat(dateEntry.scheduledIn) || '';
+            }
+            if (dateEntry.scheduledOut) {
+                editShiftScheduledOut.value = convertTo24HourFormat(dateEntry.scheduledOut) || '';
+            }
+        }
+
         // Show/hide fixed amount field
         if (editShiftFixedPay.checked) {
             editShiftFixedAmountGroup.style.display = 'block';
@@ -4915,6 +4977,9 @@ function openEditShiftModal(employeeId, dateStr) {
             editShiftFixedAmountGroup.style.display = 'none';
             editShiftFixedAmount.required = false;
         }
+
+        // Show/hide scheduled times fields based on shift type
+        toggleScheduledTimesFields('edit', dateEntry.shift || 'Opening');
     }
 
     editShiftEmployeeId.value = employeeId;
@@ -4933,6 +4998,39 @@ function convertTo24HourFormat(timeStr) {
     if (meridian === 'AM' && hours === 12) hours = 0;
 
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+}
+
+// Function to show/hide scheduled time fields based on shift type
+function toggleScheduledTimesFields(modalType, shiftValue) {
+    if (modalType === 'add') {
+        const scheduledTimesGroup = document.getElementById('addScheduledTimesGroup');
+        if (scheduledTimesGroup) {
+            if (shiftValue === 'Custom') {
+                scheduledTimesGroup.style.display = 'block';
+            } else {
+                scheduledTimesGroup.style.display = 'none';
+                // Clear values when hidden
+                const scheduledIn = document.getElementById('addShiftScheduledIn');
+                const scheduledOut = document.getElementById('addShiftScheduledOut');
+                if (scheduledIn) scheduledIn.value = '';
+                if (scheduledOut) scheduledOut.value = '';
+            }
+        }
+    } else if (modalType === 'edit') {
+        const scheduledTimesGroup = document.getElementById('editScheduledTimesGroup');
+        if (scheduledTimesGroup) {
+            if (shiftValue === 'Custom') {
+                scheduledTimesGroup.style.display = 'block';
+            } else {
+                scheduledTimesGroup.style.display = 'none';
+                // Clear values when hidden
+                const scheduledIn = document.getElementById('editShiftScheduledIn');
+                const scheduledOut = document.getElementById('editShiftScheduledOut');
+                if (scheduledIn) scheduledIn.value = '';
+                if (scheduledOut) scheduledOut.value = '';
+            }
+        }
+    }
 }
 
 // Function to update time placeholders based on selected schedule
@@ -5088,6 +5186,12 @@ async function saveShiftChanges(e) {
     const newFixedPayAmount = newHasFixedPay ? (parseFloat(document.getElementById('editShiftFixedAmount').value) || 0) : 0;
     const newHasMealAllowance = document.getElementById('editMealAllowance').checked;
 
+    // Get scheduled times for Custom shifts
+    const editShiftScheduledIn = document.getElementById('editShiftScheduledIn');
+    const editShiftScheduledOut = document.getElementById('editShiftScheduledOut');
+    const newScheduledIn = (newShift === 'Custom' && editShiftScheduledIn?.value) ? convertTo12HourFormat(editShiftScheduledIn.value) : null;
+    const newScheduledOut = (newShift === 'Custom' && editShiftScheduledOut?.value) ? convertTo12HourFormat(editShiftScheduledOut.value) : null;
+
     try {
         // Build update object
         const updateData = {
@@ -5107,6 +5211,25 @@ async function saveShiftChanges(e) {
         }
         if (newTimeOut) {
             updateData['clockOut.time'] = newTimeOut;
+        }
+
+        // Update scheduled times for Custom shifts
+        if (newShift === 'Custom') {
+            if (newScheduledIn) {
+                updateData['scheduledIn'] = newScheduledIn;
+            } else {
+                // Clear scheduled times if Custom shift but no scheduled times provided
+                updateData['scheduledIn'] = null;
+            }
+            if (newScheduledOut) {
+                updateData['scheduledOut'] = newScheduledOut;
+            } else {
+                updateData['scheduledOut'] = null;
+            }
+        } else {
+            // Clear scheduled times for non-Custom shifts
+            updateData['scheduledIn'] = null;
+            updateData['scheduledOut'] = null;
         }
 
         // Update in Firebase
@@ -5129,9 +5252,15 @@ async function saveShiftChanges(e) {
             if (newTimeIn) dateEntry.timeIn = newTimeIn;
             if (newTimeOut) dateEntry.timeOut = newTimeOut;
 
-            const shiftSchedule = SHIFT_SCHEDULES[newShift] || SHIFT_SCHEDULES["Custom"];
-            dateEntry.scheduledIn = shiftSchedule.timeIn;
-            dateEntry.scheduledOut = shiftSchedule.timeOut;
+            // Update scheduled times
+            if (newShift === 'Custom') {
+                dateEntry.scheduledIn = newScheduledIn || null;
+                dateEntry.scheduledOut = newScheduledOut || null;
+            } else {
+                const shiftSchedule = SHIFT_SCHEDULES[newShift] || SHIFT_SCHEDULES["Custom"];
+                dateEntry.scheduledIn = shiftSchedule.timeIn;
+                dateEntry.scheduledOut = shiftSchedule.timeOut;
+            }
         }
 
         // Also update filteredData to ensure UI reflects changes immediately
@@ -5151,9 +5280,15 @@ async function saveShiftChanges(e) {
                 if (newTimeIn) filteredDateEntry.timeIn = newTimeIn;
                 if (newTimeOut) filteredDateEntry.timeOut = newTimeOut;
 
-                const shiftSchedule = SHIFT_SCHEDULES[newShift] || SHIFT_SCHEDULES["Custom"];
-                filteredDateEntry.scheduledIn = shiftSchedule.timeIn;
-                filteredDateEntry.scheduledOut = shiftSchedule.timeOut;
+                // Update scheduled times
+                if (newShift === 'Custom') {
+                    filteredDateEntry.scheduledIn = newScheduledIn || null;
+                    filteredDateEntry.scheduledOut = newScheduledOut || null;
+                } else {
+                    const shiftSchedule = SHIFT_SCHEDULES[newShift] || SHIFT_SCHEDULES["Custom"];
+                    filteredDateEntry.scheduledIn = shiftSchedule.timeIn;
+                    filteredDateEntry.scheduledOut = shiftSchedule.timeOut;
+                }
             }
         }
 
@@ -5624,6 +5759,13 @@ function openAddShiftModal(employeeId) {
     addShiftTimeIn.value = '09:30';
     addShiftTimeOut.value = '18:30';
     
+    // Reset scheduled times fields (hidden by default for non-Custom shifts)
+    const addShiftScheduledIn = document.getElementById('addShiftScheduledIn');
+    const addShiftScheduledOut = document.getElementById('addShiftScheduledOut');
+    if (addShiftScheduledIn) addShiftScheduledIn.value = '';
+    if (addShiftScheduledOut) addShiftScheduledOut.value = '';
+    toggleScheduledTimesFields('add', 'Opening'); // Hide scheduled times fields
+    
     // Set default values for new fields
     addShiftDoublePay.checked = false;
     addShiftFixedPay.checked = false;
@@ -5660,6 +5802,12 @@ async function saveNewShift(e) {
     const hasMealAllowance = addShiftMealAllowance.checked;
     const transpoAllowance = parseFloat(addShiftTranspoAllowance.value) || 0;
     const hasOTPay = addShiftOTPay.checked;
+
+    // Get scheduled times for Custom shifts
+    const addShiftScheduledIn = document.getElementById('addShiftScheduledIn');
+    const addShiftScheduledOut = document.getElementById('addShiftScheduledOut');
+    const scheduledIn = (shift === 'Custom' && addShiftScheduledIn?.value) ? convertTo12HourFormat(addShiftScheduledIn.value) : null;
+    const scheduledOut = (shift === 'Custom' && addShiftScheduledOut?.value) ? convertTo12HourFormat(addShiftScheduledOut.value) : null;
 
     if (!dateStr || !timeIn || !timeOut) {
         showToast('Please fill in all required fields.', 'error');
@@ -5700,6 +5848,12 @@ async function saveNewShift(e) {
             hasOTPay: hasOTPay
         };
 
+        // Add scheduled times for Custom shifts
+        if (shift === 'Custom') {
+            if (scheduledIn) shiftData.scheduledIn = scheduledIn;
+            if (scheduledOut) shiftData.scheduledOut = scheduledOut;
+        }
+
         // Save to Firebase
         await setDoc(docRef, shiftData);
 
@@ -5717,13 +5871,23 @@ async function saveNewShift(e) {
             };
         }
 
-        const shiftSchedule = SHIFT_SCHEDULES[shift] || SHIFT_SCHEDULES["Custom"];
+        // Set scheduled times based on shift type
+        let scheduledInValue, scheduledOutValue;
+        if (shift === 'Custom') {
+            scheduledInValue = scheduledIn || null;
+            scheduledOutValue = scheduledOut || null;
+        } else {
+            const shiftSchedule = SHIFT_SCHEDULES[shift] || SHIFT_SCHEDULES["Custom"];
+            scheduledInValue = shiftSchedule.timeIn;
+            scheduledOutValue = shiftSchedule.timeOut;
+        }
+
         const newEntry = {
             date: dateStr,
             branch: branch,
             shift: shift,
-            scheduledIn: shiftSchedule.timeIn,
-            scheduledOut: shiftSchedule.timeOut,
+            scheduledIn: scheduledInValue,
+            scheduledOut: scheduledOutValue,
             timeIn: timeIn,
             timeOut: timeOut,
             timeInPhoto: null,
@@ -5839,7 +6003,7 @@ async function openPaymentModal(employeeId) {
 
                 paymentForm.style.display = 'block';
                 updateScreenshotBtn.style.display = 'none';
-                document.querySelector('#paymentForm .submit-btn').textContent = 'Upload Payment';
+                document.querySelector('#paymentForm .submit-btn').textContent = 'Confirm Payment';
             }
         } else {
             // No payment record exists, show form directly
@@ -5856,7 +6020,7 @@ async function openPaymentModal(employeeId) {
 
             paymentForm.style.display = 'block';
             updateScreenshotBtn.style.display = 'none';
-            document.querySelector('#paymentForm .submit-btn').textContent = 'Upload Payment';
+            document.querySelector('#paymentForm .submit-btn').textContent = 'Confirm Payment';
         }
     } catch (error) {
         console.error('Error checking existing payment:', error);
@@ -5886,7 +6050,14 @@ function getTransferMethodText(method) {
 }
 
 function closePaymentModal() {
-    document.getElementById('paymentModal').style.display = 'none';
+    const modal = document.getElementById('paymentModal');
+    const loadingOverlay = document.getElementById('paymentModalLoadingOverlay');
+    if (loadingOverlay) {
+        loadingOverlay.style.display = 'none';
+    }
+    if (modal) {
+        modal.style.display = 'none';
+    }
 }
 
 async function savePaymentConfirmation(e) {
@@ -5911,7 +6082,22 @@ async function savePaymentConfirmation(e) {
 
     // Note: Screenshot and note are now optional - you can mark as paid without them
 
-    showLoading('Uploading payment confirmation...');
+    // Show loading overlay inside modal
+    const paymentModalLoadingOverlay = document.getElementById('paymentModalLoadingOverlay');
+    if (paymentModalLoadingOverlay) {
+        paymentModalLoadingOverlay.style.display = 'flex';
+    }
+    
+    // Disable form inputs and buttons during loading
+    const paymentForm = document.getElementById('paymentForm');
+    const submitBtn = paymentForm.querySelector('button[type="submit"]');
+    const cancelBtn = document.getElementById('cancelPaymentBtn');
+    const closeBtn = document.getElementById('closePaymentModal');
+    
+    // Disable all form inputs
+    const formInputs = paymentForm.querySelectorAll('input, select, textarea, button');
+    formInputs.forEach(input => input.disabled = true);
+    if (closeBtn) closeBtn.style.pointerEvents = 'none';
 
     try {
         let downloadURL = null;
@@ -5972,17 +6158,31 @@ async function savePaymentConfirmation(e) {
         localStorage.removeItem(cacheKey);
 
         console.log('Payment confirmation saved successfully');
-        hideLoading(); // Add this line
-        showToast('Payment confirmation uploaded successfully!');   
-        closePaymentModal();
-
+        
         // Refresh payment status indicators and reload table
         await loadPaymentDataAndRender();
+        
+        // Hide loading overlay and close modal after successful save
+        if (paymentModalLoadingOverlay) {
+            paymentModalLoadingOverlay.style.display = 'none';
+        }
+        closePaymentModal();
 
     } catch (error) {
         console.error('Error uploading payment confirmation:', error);
-        hideLoading();
         showToast('Failed to upload payment confirmation. Please try again.', 'error');
+        
+        // Hide loading overlay on error
+        if (paymentModalLoadingOverlay) {
+            paymentModalLoadingOverlay.style.display = 'none';
+        }
+        
+        // Re-enable form inputs on error
+        formInputs.forEach(input => input.disabled = false);
+        if (closeBtn) closeBtn.style.pointerEvents = 'auto';
+        submitBtn.innerHTML = originalButtonHTML;
+        submitBtn.style.opacity = '1';
+        submitBtn.style.cursor = 'pointer';
     }
 }
 
@@ -6135,13 +6335,22 @@ async function duplicateShift(employeeId, dateStr) {
         }
 
         // Create the duplicated shift data with the correct structure
-        const shiftSchedule = SHIFT_SCHEDULES[originalShift.shift] || SHIFT_SCHEDULES["Custom"];
+        // Use originalShift's scheduled times if they exist, otherwise use shift schedule defaults
+        let scheduledInValue, scheduledOutValue;
+        if (originalShift.scheduledIn !== undefined && originalShift.scheduledOut !== undefined) {
+            scheduledInValue = originalShift.scheduledIn;
+            scheduledOutValue = originalShift.scheduledOut;
+        } else {
+            const shiftSchedule = SHIFT_SCHEDULES[originalShift.shift] || SHIFT_SCHEDULES["Custom"];
+            scheduledInValue = shiftSchedule.timeIn;
+            scheduledOutValue = shiftSchedule.timeOut;
+        }
         const duplicatedShift = {
             date: nextDateStr,
             branch: originalShift.branch,
             shift: originalShift.shift,
-            scheduledIn: shiftSchedule.timeIn,
-            scheduledOut: shiftSchedule.timeOut,
+            scheduledIn: scheduledInValue,
+            scheduledOut: scheduledOutValue,
             timeIn: originalShift.timeIn,
             timeOut: originalShift.timeOut,
             timeInPhoto: originalShift.timeInPhoto,
@@ -6171,6 +6380,12 @@ async function duplicateShift(employeeId, dateStr) {
             transpoAllowance: duplicatedShift.transpoAllowance,
             hasOTPay: duplicatedShift.hasOTPay
         };
+
+        // Add scheduled times if they exist (for Custom shifts)
+        if (duplicatedShift.shift === 'Custom' && scheduledInValue && scheduledOutValue) {
+            firebaseData.scheduledIn = scheduledInValue;
+            firebaseData.scheduledOut = scheduledOutValue;
+        }
 
         const docRef = doc(db, "attendance", employeeId, "dates", nextDateStr);
         await setDoc(docRef, firebaseData);

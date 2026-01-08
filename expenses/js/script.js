@@ -1,9 +1,20 @@
-// Import shared utilities
-import * as shared from './shared.js';
+// Import shared utilities with version for cache busting
+// Static import with versioned URL to avoid caching issues; keep in sync with index.html
+import * as shared from './shared.js?v=1.5.16';
+
+// Helper function to get today's date in local timezone (YYYY-MM-DD format)
+function getTodayLocal() {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
 
 // Local state for UI
 let itemCounter = 0;
-let currentFilter = 'all'; // Track current filter
+let selectedDate = getTodayLocal(); // Default to today (local timezone)
+let selectedBranch = localStorage.getItem('expense-selected-branch') || 'SM North';
 
 // Main initialization
 document.addEventListener('DOMContentLoaded', async function () {
@@ -30,6 +41,10 @@ document.addEventListener('DOMContentLoaded', async function () {
         console.log('Running in offline mode - Firebase not available');
         showSyncStatus('⚠ Offline mode', 'error');
     }
+
+    // Initialize date picker and branch select
+    initializeDatePicker();
+    initializeBranchSelect();
 
     // Rest of initialization...
     if (document.getElementById('supplierName')) {
@@ -184,8 +199,32 @@ function loadDashboard() {
     const expenseList = document.getElementById('expenseList');
     const allExpenses = shared.getExpenses(); // Get expenses from shared module
     
+    // Filter by selected date and branch
+    const filteredExpenses = allExpenses.filter(expense => 
+        expense.date === selectedDate && expense.branch === selectedBranch
+    );
+
+    if (filteredExpenses.length === 0 && allExpenses.length > 0) {
+        expenseList.innerHTML = `
+            <div class="summary-card">
+                <div class="summary-title">${formatDateDisplay(selectedDate)} Expenses</div>
+                <div class="summary-amount">₱0.00</div>
+                <div class="summary-count">0 transactions</div>
+            </div>
+            <div class="empty-state">
+                <p>No expenses recorded for ${formatDateDisplay(selectedDate)} at ${selectedBranch}</p>
+            </div>
+        `;
+        return;
+    }
+
     if (allExpenses.length === 0) {
         expenseList.innerHTML = `
+            <div class="summary-card">
+                <div class="summary-title">${formatDateDisplay(selectedDate)} Expenses</div>
+                <div class="summary-amount">₱0.00</div>
+                <div class="summary-count">0 transactions</div>
+            </div>
             <div class="empty-state">
                 <p>No expenses recorded yet</p>
                 <p style="font-size: 14px;">Click the + button to add your first expense</p>
@@ -194,48 +233,14 @@ function loadDashboard() {
         return;
     }
 
-    // Calculate summary based on current filter
-    const today = new Date().toISOString().split('T')[0];
-    const thisMonth = new Date().toISOString().slice(0, 7);
-    const thisWeek = getThisWeekRange();
-
-    let filteredExpenses, summaryTitle;
-    if (currentFilter === 'today') {
-        filteredExpenses = allExpenses.filter(expense => expense.date === today);
-        summaryTitle = "Today's Expenses";
-    } else if (currentFilter === 'week') {
-        filteredExpenses = allExpenses.filter(expense =>
-            expense.date >= thisWeek.start && expense.date <= thisWeek.end
-        );
-        summaryTitle = "This Week's Expenses";
-    } else if (currentFilter === 'month') {
-        filteredExpenses = allExpenses.filter(expense => expense.date.startsWith(thisMonth));
-        summaryTitle = "This Month's Expenses";
-    } else {
-        filteredExpenses = allExpenses; // all expenses
-        summaryTitle = "All Expenses";
-    }
-
     const filteredTotal = filteredExpenses.reduce((sum, expense) => sum + expense.totalAmount, 0);
+    const summaryTitle = formatDateDisplay(selectedDate) + " Expenses";
 
-    // Sort expenses by date (newest first) and filter based on current filter
-    let expensesToShow;
-    if (currentFilter === 'today') {
-        expensesToShow = allExpenses.filter(expense => expense.date === today);
-    } else if (currentFilter === 'week') {
-        expensesToShow = allExpenses.filter(expense =>
-            expense.date >= thisWeek.start && expense.date <= thisWeek.end
-        );
-    } else if (currentFilter === 'month') {
-        expensesToShow = allExpenses.filter(expense => expense.date.startsWith(thisMonth));
-    } else {
-        expensesToShow = allExpenses; // all expenses
-    }
-
-    const sortedExpenses = [...expensesToShow].sort((a, b) => new Date(b.date) - new Date(a.date));
+    // Sort expenses by date (newest first)
+    const sortedExpenses = [...filteredExpenses].sort((a, b) => new Date(b.date) - new Date(a.date));
 
     const summaryCard = `
-    <div class="summary-card" onclick="showSummaryOptions()">
+    <div class="summary-card">
         <div class="summary-title">${summaryTitle}</div>
         <div class="summary-amount">₱${filteredTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
         <div class="summary-count">${filteredExpenses.length} ${filteredExpenses.length === 1 ? 'transaction' : 'transactions'}</div>
@@ -247,7 +252,7 @@ function loadDashboard() {
             ? `${expense.items.slice(0, 3).map(item => item.name).join(', ')} + ${expense.items.length - 3} more`
             : expense.items.map(item => item.name).join(', ');
 
-        const isToday = expense.date === today;
+        const isToday = expense.date === getTodayLocal();
 
         return `
             <div class="expense-card">
@@ -310,6 +315,263 @@ function formatDate(dateString) {
     }
 }
 
+function formatDateDisplay(dateString) {
+    const date = new Date(dateString + 'T00:00:00'); // Parse as local time
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // Compare dates in local timezone
+    if (date.getTime() === today.getTime()) {
+        return "Today's";
+    }
+    
+    return date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric'
+    });
+}
+
+function initializeDatePicker() {
+    const prevBtn = document.getElementById('prevDate');
+    const nextBtn = document.getElementById('nextDate');
+    const dateDisplay = document.getElementById('dateDisplay');
+
+    // Initialize with selected date
+    updateDateDisplay();
+
+    // Previous date button
+    if (prevBtn) prevBtn.addEventListener('click', () => {
+        const date = new Date(selectedDate);
+        date.setDate(date.getDate() - 1);
+        selectedDate = date.toISOString().split('T')[0];
+        updateDateDisplay();
+        loadDashboard();
+    });
+
+    // Next date button
+    if (nextBtn) nextBtn.addEventListener('click', () => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const date = new Date(selectedDate + 'T00:00:00'); // Parse as local time
+        date.setHours(0, 0, 0, 0);
+
+        // Don't allow going beyond today
+        if (date < today) {
+            const nextDate = new Date(selectedDate + 'T00:00:00');
+            nextDate.setDate(nextDate.getDate() + 1);
+            selectedDate = getTodayLocal(); // Use local time helper
+            const year = nextDate.getFullYear();
+            const month = String(nextDate.getMonth() + 1).padStart(2, '0');
+            const day = String(nextDate.getDate()).padStart(2, '0');
+            selectedDate = `${year}-${month}-${day}`;
+            updateDateDisplay();
+            loadDashboard();
+        }
+    });
+
+    // Click on date to open calendar picker
+    if (dateDisplay) dateDisplay.addEventListener('click', () => {
+        openDateModal();
+    });
+}
+
+function updateDateDisplay() {
+    const dateDisplay = document.getElementById('dateDisplay');
+    if (!dateDisplay) return;
+
+    const date = new Date(selectedDate);
+    const displayText = date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric'
+    });
+
+    dateDisplay.textContent = displayText;
+
+    // Update next button state
+    const nextBtn = document.getElementById('nextDate');
+    if (nextBtn) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const selectedDateCopy = new Date(selectedDate + 'T00:00:00'); // Parse as local time
+        selectedDateCopy.setHours(0, 0, 0, 0);
+
+        if (selectedDateCopy.getTime() >= today.getTime()) {
+            nextBtn.style.opacity = '0.3';
+            nextBtn.style.cursor = 'not-allowed';
+            nextBtn.disabled = true;
+        } else {
+            nextBtn.style.opacity = '1';
+            nextBtn.style.cursor = 'pointer';
+            nextBtn.disabled = false;
+        }
+    }
+}
+
+function initializeBranchSelect() {
+    const branchSelect = document.getElementById('branchSelect');
+    if (!branchSelect) {
+        console.warn('Branch select element not found');
+        return;
+    }
+
+    // Load from localStorage again to ensure we have the latest value
+    const savedBranch = localStorage.getItem('expense-selected-branch');
+    if (savedBranch) {
+        selectedBranch = savedBranch;
+    }
+
+    // Set initial value on the select element
+    branchSelect.value = selectedBranch;
+    
+    // Verify the value was set
+    if (branchSelect.value !== selectedBranch) {
+        console.warn('Failed to set branch select value, trying again...');
+        setTimeout(() => {
+            branchSelect.value = selectedBranch;
+        }, 100);
+    }
+
+    branchSelect.addEventListener('change', (e) => {
+        selectedBranch = e.target.value;
+        localStorage.setItem('expense-selected-branch', selectedBranch);
+        console.log('Branch saved to localStorage:', selectedBranch);
+        loadDashboard();
+    });
+}
+
+function openDateModal() {
+    const modal = document.getElementById('dateModalOverlay');
+    if (!modal) return;
+
+    const currentDate = new Date(selectedDate);
+    let viewMonth = currentDate.getMonth();
+    let viewYear = currentDate.getFullYear();
+
+    const modalMonthYear = document.getElementById('modalMonthYear');
+    const dateGrid = document.getElementById('dateGrid');
+    const modalPrevMonth = document.getElementById('modalPrevMonth');
+    const modalNextMonth = document.getElementById('modalNextMonth');
+    const todayBtn = document.getElementById('todayBtn');
+    const cancelBtn = document.getElementById('dateCancelBtn');
+
+    function renderCalendar() {
+        if (!modalMonthYear || !dateGrid) return;
+
+        const firstDay = new Date(viewYear, viewMonth, 1);
+        const lastDay = new Date(viewYear, viewMonth + 1, 0);
+        const daysInMonth = lastDay.getDate();
+        const startingDayOfWeek = firstDay.getDay();
+
+        modalMonthYear.textContent = firstDay.toLocaleDateString('en-US', {
+            month: 'long',
+            year: 'numeric'
+        });
+
+        dateGrid.innerHTML = '';
+
+        // Empty cells for days before month starts
+        for (let i = 0; i < startingDayOfWeek; i++) {
+            const cell = document.createElement('div');
+            cell.className = 'date-cell other-month';
+            dateGrid.appendChild(cell);
+        }
+
+        // Days of the month
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        for (let day = 1; day <= daysInMonth; day++) {
+            const cell = document.createElement('div');
+            const cellDate = new Date(viewYear, viewMonth, day);
+            cellDate.setHours(0, 0, 0, 0);
+            // Format as local date string (YYYY-MM-DD)
+            const year = cellDate.getFullYear();
+            const month = String(cellDate.getMonth() + 1).padStart(2, '0');
+            const dayStr = String(cellDate.getDate()).padStart(2, '0');
+            const dateString = `${year}-${month}-${dayStr}`;
+
+            cell.textContent = day;
+            cell.className = 'date-cell';
+
+            // Check if this is the selected date
+            if (dateString === selectedDate) {
+                cell.classList.add('selected');
+            }
+
+            // Check if this is today
+            if (cellDate.getTime() === today.getTime()) {
+                cell.classList.add('today');
+            }
+
+            // Disable future dates
+            if (cellDate > today) {
+                cell.classList.add('disabled');
+            } else {
+                cell.addEventListener('click', () => {
+                    selectedDate = dateString;
+                    updateDateDisplay();
+                    loadDashboard();
+                    closeDateModal();
+                });
+            }
+
+            dateGrid.appendChild(cell);
+        }
+    }
+
+    if (modalPrevMonth) {
+        modalPrevMonth.onclick = () => {
+            viewMonth--;
+            if (viewMonth < 0) {
+                viewMonth = 11;
+                viewYear--;
+            }
+            renderCalendar();
+        };
+    }
+
+    if (modalNextMonth) {
+        modalNextMonth.onclick = () => {
+            viewMonth++;
+            if (viewMonth > 11) {
+                viewMonth = 0;
+                viewYear++;
+            }
+            renderCalendar();
+        };
+    }
+
+    if (todayBtn) {
+        todayBtn.onclick = () => {
+            selectedDate = getTodayLocal();
+            updateDateDisplay();
+            loadDashboard();
+            closeDateModal();
+        };
+    }
+
+    if (cancelBtn) {
+        cancelBtn.onclick = closeDateModal;
+    }
+
+    // Close on overlay click
+    modal.onclick = (e) => {
+        if (e.target === modal) {
+            closeDateModal();
+        }
+    };
+
+    renderCalendar();
+    modal.style.display = 'flex';
+}
+
+function closeDateModal() {
+    const modal = document.getElementById('dateModalOverlay');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
 function viewExpense(expenseId) {
     const allExpenses = shared.getExpenses();
     const expense = allExpenses.find(e => e.id === expenseId);
@@ -327,7 +589,7 @@ function showExpenseDetailModal(expense) {
 
     // Format the date
     const expenseDate = new Date(expense.date);
-    const isToday = expense.date === new Date().toISOString().split('T')[0];
+    const isToday = expense.date === getTodayLocal();
     const formattedDate = isToday ? 'Today' : formatDate(expense.date);
 
     // Update modal header to include action buttons
@@ -581,7 +843,14 @@ function resetForm() {
     // Clear containers
     document.getElementById('itemsContainer').innerHTML = '';
     const totalInput = document.getElementById('totalAmountInput');
-    if (totalInput) totalInput.value = '';
+    if (totalInput) {
+        totalInput.value = '';
+        // Unlock total input when modal is reset (no items = no prices)
+        totalInput.readOnly = false;
+        totalInput.style.backgroundColor = '';
+        totalInput.style.cursor = '';
+        totalInput.style.opacity = '1';
+    }
 
     // Reset counter
     itemCounter = 0;
@@ -910,23 +1179,33 @@ function selectAutocompleteItem(itemId, inputId) {
 
 function setupSupplierAutocomplete() {
     const supplierInput = document.getElementById('supplierName');
+    if (!supplierInput) return;
 
     createAutocomplete(
         supplierInput,
         (query) => {
             const allSuppliers = shared.getSuppliers();
+            const queryLower = query.toLowerCase().trim();
             const suppliersList = allSuppliers.map(supplier => {
                 const name = supplier.name.toLowerCase();
                 const businessName = (supplier.businessName || '').toLowerCase();
                 let priority = 999;
 
-                if (name.startsWith(query)) priority = 1;
-                else if (businessName.startsWith(query)) priority = 2;
-                else if (name.split(' ').some(word => word.startsWith(query))) priority = 3;
-                else if (businessName.split(' ').some(word => word.startsWith(query))) priority = 4;
-                else if (name.includes(query)) priority = 5;
-                else if (businessName.includes(query)) priority = 6;
-                else if (!query) priority = 7; // Show all when no query
+                if (!queryLower) {
+                    priority = 7; // Show all when no query
+                } else if (name.startsWith(queryLower)) {
+                    priority = 1;
+                } else if (businessName.startsWith(queryLower)) {
+                    priority = 2;
+                } else if (name.split(' ').some(word => word.startsWith(queryLower))) {
+                    priority = 3;
+                } else if (businessName.split(' ').some(word => word.startsWith(queryLower))) {
+                    priority = 4;
+                } else if (name.includes(queryLower)) {
+                    priority = 5;
+                } else if (businessName.includes(queryLower)) {
+                    priority = 6;
+                }
 
                 return {
                     ...supplier,
@@ -935,7 +1214,7 @@ function setupSupplierAutocomplete() {
                 };
             });
 
-            return allSuppliers
+            return suppliersList
                 .filter(supplier => supplier.priority < 999)
                 .sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name));
         },
@@ -1104,7 +1383,7 @@ function addItemRow() {
             </div>
             <div class="form-group price-group">
                 <label>Unit Price</label>
-                <input type="text" name="itemPrice" placeholder="₱0.00" inputmode="decimal" onchange="formatPesoInput(this); updateFromItems()" onblur="formatPesoInput(this)" style="touch-action: manipulation;">
+                <input type="text" name="itemPrice" placeholder="₱0.00" inputmode="decimal" onchange="formatPesoInput(this); updateFromItems()" onblur="formatPesoInput(this); updateFromItems()" oninput="updateFromItems()" style="touch-action: manipulation;">
             </div>
         </div>
     `;
@@ -1146,7 +1425,15 @@ function showItemBreakdown(itemId) {
     });
 
     // Clear the total to switch back to calculated mode
-    document.getElementById('totalAmountInput').value = '';
+    const totalInput = document.getElementById('totalAmountInput');
+    if (totalInput) {
+        totalInput.value = '';
+        // Unlock total input when clearing (no prices = manual entry allowed)
+        totalInput.readOnly = false;
+        totalInput.style.backgroundColor = '';
+        totalInput.style.cursor = '';
+        totalInput.style.opacity = '1';
+    }
 
     // Focus on the clicked item's quantity field
     const clickedItemRow = document.querySelector(`[data-item-id="${itemId}"]`);
@@ -1169,80 +1456,70 @@ function handleFormSubmission(e) {
         return element ? element.value : defaultValue;
     }
 
+    // Collect items from form
     const items = [];
     const itemRows = document.querySelectorAll('.item-row');
     const totalAmountInput = document.getElementById('totalAmountInput');
-    const totalAmount = totalAmountInput ? parseFloat(totalAmountInput.value.replace(/[₱,]/g, '')) || 0 : 0;
+    const totalAmount = totalAmountInput ? shared.getPesoValue(totalAmountInput) : 0;
 
     itemRows.forEach(row => {
         const name = row.querySelector('[name="itemName"]').value;
-        const quantity = parseFloat(row.querySelector('[name="itemQuantity"]').value) || 1;
-        const price = parseFloat(row.querySelector('[name="itemPrice"]').value.replace(/[₱,]/g, '')) || 0;
-
-        if (name) {
+        if (name && name.trim()) {
+            const quantity = parseFloat(row.querySelector('[name="itemQuantity"]').value) || 1;
+            const priceInput = row.querySelector('[name="itemPrice"]');
+            const price = priceInput ? shared.getPesoValue(priceInput) : 0;
             items.push({
-                name,
+                name: name.trim(),
                 quantity,
                 price,
-                total: quantity * price
+                total: shared.calculateItemTotal(quantity, price)
             });
         }
     });
 
-    if (items.length === 0) {
-        showToast('Please add at least one item');
-        return;
-    }
-
-    if (totalAmount === 0) {
-        showToast('Please enter a total amount');
-        return;
-    }
-
-    // Validate required fields
-    if (!getElementValue('supplierName')) {
-        showToast('Please enter a supplier name');
-        return;
-    }
-
-    // Create the expense object
-    const expense = {
-        id: isEditing ? window.editingExpenseId : generateId(),
-        date: getElementValue('expenseDate', new Date().toISOString().split('T')[0]),
-        branch: getElementValue('branch', 'SM North'),
+    // Get existing expense data if editing
+    const existingExpense = isEditing ? shared.getExpenses().find(e => e.id === window.editingExpenseId) : null;
+    
+    // Build data object for expense creation
+    // Get branch from the branch selector dropdown (not hidden field)
+    const branchSelect = document.getElementById('branchSelect');
+    const selectedBranch = branchSelect ? branchSelect.value : 'SM North';
+    
+    const expenseData = {
+        items: items,
+        totalAmount: totalAmount, // Use provided total (mobile app has separate input)
+        date: getElementValue('expenseDate', shared.getTodayLocal()),
+        branch: selectedBranch,
         supplierName: getElementValue('supplierName'),
         businessName: getElementValue('businessName'),
         tin: getElementValue('tin'),
         address: getElementValue('address'),
         invoiceNumber: getElementValue('invoiceNumber'),
         expenseCategory: getElementValue('expenseCategory', 'General'),
-        items,
-        totalAmount,
         vatExemptAmount: parseFloat(getElementValue('vatExemptAmount')) || 0,
         paymentMethod: getElementValue('paymentMethod', 'Cash'),
         paidBy: getElementValue('paidBy'),
         notes: getElementValue('notes'),
-        receiptImage: window.currentReceiptData || null,
-        createdAt: isEditing ?
-            (shared.getExpenses().find(e => e.id === window.editingExpenseId)?.createdAt || new Date().toISOString()) :
-            new Date().toISOString()
+        receiptImage: window.currentReceiptData || (existingExpense?.receiptImage || null),
+        vatComputationEnabled: document.getElementById('vatComputationEnabled')?.checked || false
     };
 
-    // Calculate VAT breakdown if VAT computation is enabled
-    const allSuppliers = shared.getSuppliers();
-    const supplier = allSuppliers.find(s => s.name.toLowerCase() === expense.supplierName.toLowerCase());
-    const vatComputationEnabled = document.getElementById('vatComputationEnabled')?.checked || false;
+    // Create expense using shared function
+    const result = shared.createExpenseObject(expenseData, {
+        existingExpense: existingExpense,
+        isEditing: isEditing,
+        calculateTotalFromItems: false, // Mobile app uses separate total input
+        autoCalculateVAT: true,
+        validate: true
+    });
 
-    if (vatComputationEnabled && (supplier?.isVatRegistered || !supplier)) {
-        const taxableAmount = totalAmount - (expense.vatExemptAmount || 0);
-        expense.vatableSale = taxableAmount / 1.12;
-        expense.vatAmount = taxableAmount - expense.vatableSale;
-        expense.isVatRegistered = true;
-    } else {
-        expense.vatableSale = 0;
-        expense.vatAmount = 0;
-        expense.isVatRegistered = false;
+    // Check for validation errors
+    if (!result.success) {
+        showToast(result.errors.join(', '));
+        return;
     }
+
+    const expense = result.expense;
 
     if (isEditing) {
         // Update existing expense using shared function
@@ -1265,6 +1542,7 @@ function handleFormSubmission(e) {
 
     // Check if supplier is new and show add supplier modal
     const supplierName = expense.supplierName.trim();
+    const allSuppliers = shared.getSuppliers();
     const existingSupplier = allSuppliers.find(s =>
         s.name.toLowerCase() === supplierName.toLowerCase()
     );
@@ -1310,7 +1588,7 @@ function saveSupplierIfNew(expense) {
 
     if (!existingSupplier) {
         const newSupplier = {
-            id: generateId(),
+            id: shared.generateId(),
             name: supplierName,
             businessName: businessName || '',
             tin: expense.tin || '',
@@ -1333,7 +1611,7 @@ function addSampleData() {
 
     const sampleExpenses = [
         {
-            id: generateId(),
+            id: shared.generateId(),
             date: today,
             branch: 'SM North',
             supplierName: 'Metro Supermarket',
@@ -1353,7 +1631,7 @@ function addSampleData() {
             createdAt: new Date().toISOString()
         },
         {
-            id: generateId(),
+            id: shared.generateId(),
             date: today,
             branch: 'Podium',
             supplierName: 'Puregold',
@@ -1372,7 +1650,7 @@ function addSampleData() {
             createdAt: new Date().toISOString()
         },
         {
-            id: generateId(),
+            id: shared.generateId(),
             date: yesterdayStr,
             branch: 'Makati',
             supplierName: 'Office Warehouse',
@@ -1391,7 +1669,7 @@ function addSampleData() {
             createdAt: new Date().toISOString()
         },
         {
-            id: generateId(),
+            id: shared.generateId(),
             date: yesterdayStr,
             branch: 'BGC',
             supplierName: 'FoodSource Co.',
@@ -1416,7 +1694,7 @@ function addSampleData() {
     // Also create sample suppliers
     const sampleSuppliers = [
         {
-            id: generateId(),
+            id: shared.generateId(),
             name: 'Metro Supermarket',
             businessName: 'Metro Retail Stores Group Inc.',
             tin: '123-456-789-000',
@@ -1424,7 +1702,7 @@ function addSampleData() {
             createdAt: new Date().toISOString()
         },
         {
-            id: generateId(),
+            id: shared.generateId(),
             name: 'Puregold',
             businessName: 'Puregold Price Club Inc.',
             tin: '987-654-321-000',
@@ -1432,7 +1710,7 @@ function addSampleData() {
             createdAt: new Date().toISOString()
         },
         {
-            id: generateId(),
+            id: shared.generateId(),
             name: 'Office Warehouse',
             businessName: 'Office Warehouse Inc.',
             tin: '555-666-777-000',
@@ -1440,7 +1718,7 @@ function addSampleData() {
             createdAt: new Date().toISOString()
         },
         {
-            id: generateId(),
+            id: shared.generateId(),
             name: 'FoodSource Co.',
             businessName: 'FoodSource Corporation',
             tin: '111-222-333-000',
@@ -1454,9 +1732,7 @@ function addSampleData() {
 }
 
 // Utility functions
-function generateId() {
-    return Date.now().toString(36) + Math.random().toString(36).substr(2);
-}
+// generateId removed - using shared.generateId() instead
 
 function showToast(message) {
     const toast = document.getElementById('toast');
@@ -1497,19 +1773,66 @@ function resetData() {
 function updateFromItems() {
     const itemRows = document.querySelectorAll('.item-row');
     let total = 0;
+    let hasAnyPrice = false;
 
     itemRows.forEach(row => {
         const breakdown = row.querySelector('.item-breakdown');
         breakdown.style.display = 'flex';
 
-        const quantity = parseFloat(row.querySelector('[name="itemQuantity"]').value) || 0;
+        const quantityInput = row.querySelector('[name="itemQuantity"]');
+        const quantity = quantityInput ? (parseFloat(quantityInput.value) || 0) : 0;
+        
         const priceInput = row.querySelector('[name="itemPrice"]');
-        const price = getPesoValue(priceInput);
-        total += quantity * price;
+        // Only get price if input exists and has a real value (not just placeholder or empty)
+        let price = 0;
+        if (priceInput && priceInput.value && priceInput.value.trim() !== '' && priceInput.value.trim() !== '₱0.00') {
+            const parsedPrice = shared.getPesoValue(priceInput);
+            // Only count as having a price if it's actually > 0
+            if (parsedPrice > 0) {
+                price = parsedPrice;
+                hasAnyPrice = true;
+            }
+        }
+        
+        total += shared.calculateItemTotal(quantity, price);
     });
 
-    document.getElementById('totalAmountInput').value = total.toFixed(2);
+    const totalInput = document.getElementById('totalAmountInput');
+    if (totalInput) {
+        // Lock/unlock total input based on whether items have prices
+        if (hasAnyPrice) {
+            // Lock total input when items have prices (auto-calculated)
+            totalInput.readOnly = true;
+            totalInput.style.backgroundColor = '#f8f9fa';
+            totalInput.style.cursor = 'not-allowed';
+            totalInput.style.opacity = '0.7';
+            
+            // Auto-calculate and format total
+            totalInput.value = shared.formatCurrency(total);
+        } else {
+            // Unlock total input when all items have price = 0 (manual entry allowed)
+            totalInput.readOnly = false;
+            totalInput.style.backgroundColor = '';
+            totalInput.style.cursor = '';
+            totalInput.style.opacity = '1';
+            
+            // Only format existing value if it exists and is not empty
+            // Don't overwrite user's manual entry while they're typing
+            const currentValue = totalInput.value.trim();
+            if (currentValue && currentValue !== '₱0.00' && currentValue !== '') {
+                const numericValue = shared.getPesoValue(totalInput);
+                if (numericValue > 0) {
+                    // Only format if there's a valid number
+                    totalInput.value = shared.formatCurrency(numericValue);
+                }
+            }
+        }
+        
+        updateVatCalculation();
+    }
 }
+// Expose to global scope for inline event handlers
+window.updateFromItems = updateFromItems;
 
 function showItemDetails(itemId) {
     const details = document.getElementById(`itemDetails${itemId}`);
@@ -1518,21 +1841,20 @@ function showItemDetails(itemId) {
 
 function formatTotal() {
     const input = document.getElementById('totalAmountInput');
+    if (!input) return;
+    
     // Remove peso sign and commas before parsing
     let value = parseFloat(input.value.replace(/[₱,]/g, '')) || 0;
-    input.value = value.toFixed(2);
+    
+    // Format with peso sign and comma
+    input.value = shared.formatCurrency(value);
 }
+// Expose to global scope for inline event handlers
+window.formatTotal = formatTotal;
 
-function formatPesoInput(input) {
-    let value = input.value.replace(/[₱,]/g, '');
-    if (value && !isNaN(value)) {
-        input.value = '₱' + parseFloat(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
-}
-
-function getPesoValue(input) {
-    return parseFloat(input.value.replace(/[₱,]/g, '')) || 0;
-}
+// formatPesoInput and getPesoValue removed - using shared functions instead
+// Expose shared functions to global scope for inline event handlers
+window.formatPesoInput = shared.formatPesoInput;
 
 function handleCSVImport(input) {
     const file = input.files[0];
@@ -1561,106 +1883,9 @@ function handleCSVImport(input) {
     input.value = '';
 }
 
-function findSimilarExpense(newExpense, tolerancePercent = 0.05) {
-    const newDate = newExpense.date;
-    const newAmount = newExpense.totalAmount;
-    const tolerance = newAmount * tolerancePercent;
+// findSimilarExpense removed - using shared.findSimilarExpense() instead
 
-    const allExpenses = shared.getExpenses();
-    return allExpenses.find(existingExpense => {
-        // Check if dates match
-        if (existingExpense.date !== newDate) return false;
-
-        // Check if amounts are within tolerance
-        const amountDiff = Math.abs(existingExpense.totalAmount - newAmount);
-        return amountDiff <= tolerance;
-    });
-}
-
-function mergeExpenseData(existingExpense, newExpense) {
-    // Determine which expense has more detailed supplier information
-    const existingHasFullSupplier = existingExpense.tin && existingExpense.address;
-    const newHasFullSupplier = newExpense.tin && newExpense.address;
-
-    // Determine which expense has more detailed items
-    const existingItemCount = existingExpense.items.length;
-    const newItemCount = newExpense.items.length;
-
-    // Check if existing items are generic/summarized
-    const existingHasGenericItems = existingExpense.items.some(item =>
-        item.name.toLowerCase().includes('various') ||
-        item.name.toLowerCase().includes('goods') ||
-        item.name.toLowerCase().includes('items') ||
-        item.name.toLowerCase().includes('supplies')
-    );
-
-    // Check if new items are more specific
-    const newHasSpecificItems = !newExpense.items.some(item =>
-        item.name.toLowerCase().includes('various') ||
-        item.name.toLowerCase().includes('goods') ||
-        item.name.toLowerCase().includes('items')
-    );
-
-    let mergedExpense = { ...existingExpense };
-
-    // Use supplier details from the more complete source (usually accounting CSV)
-    if (existingHasFullSupplier && !newHasFullSupplier) {
-        // Keep existing supplier details (from accounting CSV)
-        console.log('Using existing supplier details (more complete)');
-    } else if (newHasFullSupplier && !existingHasFullSupplier) {
-        // Use new supplier details
-        mergedExpense.supplierName = newExpense.supplierName;
-        mergedExpense.businessName = newExpense.businessName;
-        mergedExpense.tin = newExpense.tin;
-        mergedExpense.address = newExpense.address;
-        console.log('Using new supplier details (more complete)');
-    }
-
-    // Use items from the more detailed source
-    if ((newItemCount > existingItemCount) ||
-        (existingHasGenericItems && newHasSpecificItems) ||
-        (newItemCount > 1 && existingItemCount === 1)) {
-
-        mergedExpense.items = newExpense.items;
-        console.log('Using new items list (more detailed)');
-    } else {
-        console.log('Keeping existing items list');
-    }
-
-    // Use other details from new expense if they're more complete
-    if (newExpense.invoiceNumber && !existingExpense.invoiceNumber) {
-        mergedExpense.invoiceNumber = newExpense.invoiceNumber;
-    }
-
-    if (newExpense.paymentMethod && newExpense.paymentMethod !== 'Cash') {
-        mergedExpense.paymentMethod = newExpense.paymentMethod;
-    }
-
-    if (newExpense.paidBy && !existingExpense.paidBy) {
-        mergedExpense.paidBy = newExpense.paidBy;
-    }
-
-    // Keep VAT information from accounting CSV (existing) as it's more accurate
-    // Only update if existing doesn't have VAT info
-    if (!existingExpense.isVatRegistered && newExpense.isVatRegistered) {
-        mergedExpense.isVatRegistered = newExpense.isVatRegistered;
-        mergedExpense.vatableSale = newExpense.vatableSale;
-        mergedExpense.vatAmount = newExpense.vatAmount;
-        mergedExpense.vatExemptAmount = newExpense.vatExemptAmount;
-    }
-
-    // Add note about merge
-    const existingNotes = existingExpense.notes || '';
-    if (!existingNotes.includes('Merged')) {
-        mergedExpense.notes = existingNotes ?
-            `${existingNotes} | Merged with additional CSV data` :
-            'Merged with additional CSV data';
-    }
-
-    mergedExpense.updatedAt = new Date().toISOString();
-
-    return mergedExpense;
-}
+// mergeExpenseData removed - using shared.mergeExpenseData() instead
 
 function parseAndImportCSV(csvText) {
     console.log('Raw CSV text:', csvText.substring(0, 500));
@@ -1674,7 +1899,7 @@ function parseAndImportCSV(csvText) {
         return;
     }
 
-    const headers = parseCSVLine(lines[0]);
+    const headers = shared.parseCSVLine(lines[0]);
     console.log('Parsed headers:', headers);
 
     const importedExpenses = [];
@@ -1684,7 +1909,7 @@ function parseAndImportCSV(csvText) {
     // Process each data row
     for (let i = 1; i < lines.length; i++) {
         try {
-            const values = parseCSVLine(lines[i]);
+            const values = shared.parseCSVLine(lines[i]);
 
             // Skip empty rows - check if all values are empty
             if (values.every(val => !val || val.trim() === '')) {
@@ -1730,23 +1955,21 @@ function parseAndImportCSV(csvText) {
 
         importedExpenses.forEach(newExpense => {
             // Only compare against ORIGINAL expenses, not newly imported ones
-            const similarExpense = originalExpenses.find(existingExpense => {
-                const newDate = newExpense.date;
-                const newAmount = newExpense.totalAmount;
-                const tolerance = newAmount * 0.05;
+            // Temporarily set expenses to originalExpenses to search only in original data
+            const currentExpenses = shared.getExpenses();
+            shared.setExpenses(originalExpenses);
+            const similarExpense = shared.findSimilarExpense(newExpense, 0.05);
+            shared.setExpenses(currentExpenses); // Restore
+            
+            // Check if similar expense is in original expenses
+            const similarInOriginal = similarExpense ? originalExpenses.find(e => e.id === similarExpense.id) : null;
 
-                // Check if dates match and amounts are within tolerance
-                if (existingExpense.date !== newDate) return false;
-                const amountDiff = Math.abs(existingExpense.totalAmount - newAmount);
-                return amountDiff <= tolerance;
-            });
-
-            if (similarExpense) {
+            if (similarInOriginal) {
                 // Found a similar expense in original data, merge it
-                const mergedExpense = mergeExpenseData(similarExpense, newExpense);
+                const mergedExpense = shared.mergeExpenseData(similarInOriginal, newExpense);
 
                 // Update the existing expense in the main array
-                const index = expenses.findIndex(e => e.id === similarExpense.id);
+                const index = expenses.findIndex(e => e.id === similarInOriginal.id);
                 if (index > -1) {
                     expenses[index] = mergedExpense;
                     mergedCount++;
@@ -1795,27 +2018,7 @@ function parseAndImportCSV(csvText) {
     hideImportProgress();
 }
 
-function parseCSVLine(line) {
-    const result = [];
-    let current = '';
-    let inQuotes = false;
-
-    for (let i = 0; i < line.length; i++) {
-        const char = line[i];
-
-        if (char === '"') {
-            inQuotes = !inQuotes;
-        } else if (char === ',' && !inQuotes) {
-            result.push(current.trim());
-            current = '';
-        } else {
-            current += char;
-        }
-    }
-
-    result.push(current.trim());
-    return result;
-}
+// parseCSVLine removed - using shared.parseCSVLine() instead
 
 // function parseExpenseFromCSV(headers, values) {
 //     const data = {};
@@ -2058,7 +2261,7 @@ function parseAccountingFormatCSV(data, headers, values) {
     const vatAmount = parseFloat(data.inputvat || '') || 0;
 
     const expense = {
-        id: generateId(),
+        id: shared.generateId(),
         date: parsedDate.toISOString().split('T')[0],
         branch: branchName,
         supplierName: supplierName,
@@ -2166,7 +2369,7 @@ function parseMatchaneseFormatCSV(data, headers, values) {
 
     // Create expense object - always set branch to "Podium" as specified
     const expense = {
-        id: generateId(),
+        id: shared.generateId(),
         date: parsedDate.toISOString().split('T')[0],
         branch: 'Podium', // Always Podium branch as specified
         supplierName: data.supplier || 'Unknown Supplier',
@@ -2262,7 +2465,7 @@ function parseStandardFormatCSV(data) {
 
     // Create expense object
     return {
-        id: generateId(),
+        id: shared.generateId(),
         date: parsedDate.toISOString().split('T')[0],
         branch: data.branch || 'Uncategorized',
         supplierName: data.supplier || 'Unknown Supplier',
@@ -2374,7 +2577,7 @@ function loadSuppliers() {
 
     // Calculate supplier statistics
     const supplierStats = allSuppliers.map(supplier => {
-        const supplierExpenses = allExpenses.filter(expense =>
+        const supplierExpenses = expenses.filter(expense =>
             expense.supplierName.toLowerCase() === supplier.name.toLowerCase()
         );
 
@@ -2571,7 +2774,7 @@ function showSupplierDetailModal(supplier) {
             ? `${expense.items.slice(0, 3).map(item => item.name).join(', ')} + ${expense.items.length - 3} more`
             : expense.items.map(item => item.name).join(', ');
 
-        const today = new Date().toISOString().split('T')[0];
+        const today = getTodayLocal();
         const isToday = expense.date === today;
         const formattedDate = isToday ? 'Today' : formatDate(expense.date);
 
@@ -2620,154 +2823,7 @@ function viewExpenseFromSupplier(expenseId) {
     }, 300);
 }
 
-// Summary filter functionality
-function showSummaryOptions() {
-    // Check if options already exist
-    let optionsDiv = document.getElementById('summaryOptions');
-    if (optionsDiv) {
-        // Toggle visibility
-        if (optionsDiv.classList.contains('show')) {
-            hideSummaryOptions();
-            return;
-        }
-    } else {
-        // Create the options div
-        optionsDiv = document.createElement('div');
-        optionsDiv.id = 'summaryOptions';
-        optionsDiv.className = 'summary-options';
-
-        // Insert after the summary card
-        const summaryCard = document.querySelector('.summary-card');
-        summaryCard.appendChild(optionsDiv);
-    }
-
-    // Calculate different time period summaries
-    const today = new Date().toISOString().split('T')[0];
-    const thisMonth = new Date().toISOString().slice(0, 7);
-    const thisWeek = getThisWeekRange();
-
-    const allExpenses = shared.getExpenses();
-    const todayExpenses = allExpenses.filter(expense => expense.date === today);
-    const thisWeekExpenses = allExpenses.filter(expense =>
-        expense.date >= thisWeek.start && expense.date <= thisWeek.end
-    );
-    const thisMonthExpenses = allExpenses.filter(expense =>
-        expense.date.startsWith(thisMonth)
-    );
-
-    const todayTotal = todayExpenses.reduce((sum, expense) => sum + expense.totalAmount, 0);
-    const thisWeekTotal = thisWeekExpenses.reduce((sum, expense) => sum + expense.totalAmount, 0);
-    const thisMonthTotal = thisMonthExpenses.reduce((sum, expense) => sum + expense.totalAmount, 0);
-
-    // Build options array, excluding the currently selected one
-    const options = [];
-
-    if (currentFilter !== 'all') {
-        const allTotal = expenses.reduce((sum, expense) => sum + expense.totalAmount, 0);
-        options.push(`
-        <div class="summary-option" onclick="selectSummaryFilter('all', event)">
-            <div class="summary-option-title">All Expenses</div>
-            <div class="summary-option-amount">₱${allTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-            <div class="summary-option-count">${expenses.length} ${expenses.length === 1 ? 'transaction' : 'transactions'}</div>
-        </div>
-    `);
-    }
-
-    if (currentFilter !== 'today') {
-        options.push(`
-            <div class="summary-option" onclick="selectSummaryFilter('today', event)">
-                <div class="summary-option-title">Today's Expenses</div>
-                <div class="summary-option-amount">₱${todayTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                <div class="summary-option-count">${todayExpenses.length} ${todayExpenses.length === 1 ? 'transaction' : 'transactions'}</div>
-            </div>
-        `);
-    }
-
-    if (currentFilter !== 'week') {
-        options.push(`
-            <div class="summary-option" onclick="selectSummaryFilter('week', event)">
-                <div class="summary-option-title">This Week's Expenses</div>
-                <div class="summary-option-amount">₱${thisWeekTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                <div class="summary-option-count">${thisWeekExpenses.length} ${thisWeekExpenses.length === 1 ? 'transaction' : 'transactions'}</div>
-            </div>
-        `);
-    }
-
-    if (currentFilter !== 'month') {
-        options.push(`
-            <div class="summary-option" onclick="selectSummaryFilter('month', event)">
-                <div class="summary-option-title">This Month's Expenses</div>
-                <div class="summary-option-amount">₱${thisMonthTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                <div class="summary-option-count">${thisMonthExpenses.length} ${thisMonthExpenses.length === 1 ? 'transaction' : 'transactions'}</div>
-            </div>
-        `);
-    }
-
-    optionsDiv.innerHTML = options.join('');
-
-    // Show the options with animation and blur the expense cards
-    setTimeout(() => {
-        optionsDiv.classList.add('show');
-        document.getElementById('expenseList').classList.add('options-expanded');
-    }, 10);
-}
-
-function hideSummaryOptions() {
-    const optionsDiv = document.getElementById('summaryOptions');
-    const expenseList = document.getElementById('expenseList');
-
-    if (optionsDiv) {
-        optionsDiv.classList.remove('show');
-    }
-
-    if (expenseList) {
-        expenseList.classList.remove('options-expanded');
-    }
-
-    setTimeout(() => {
-        if (optionsDiv && optionsDiv.parentNode) {
-            optionsDiv.remove();
-        }
-    }, 300);
-}
-
-function selectSummaryFilter(filter, event) {
-    // Stop the click from bubbling up to the summary card
-    if (event) {
-        event.stopPropagation();
-    }
-
-    currentFilter = filter;
-
-    // Immediately remove blur and hide options
-    const expenseList = document.getElementById('expenseList');
-    const optionsDiv = document.getElementById('summaryOptions');
-
-    if (expenseList) {
-        expenseList.classList.remove('options-expanded');
-    }
-
-    if (optionsDiv) {
-        optionsDiv.remove();
-    }
-
-    // Immediately reload dashboard
-    loadDashboard();
-}
-function getThisWeekRange() {
-    const today = new Date();
-    const dayOfWeek = today.getDay();
-    const startOfWeek = new Date(today);
-    startOfWeek.setDate(today.getDate() - dayOfWeek);
-
-    const endOfWeek = new Date(startOfWeek);
-    endOfWeek.setDate(startOfWeek.getDate() + 6);
-
-    return {
-        start: startOfWeek.toISOString().split('T')[0],
-        end: endOfWeek.toISOString().split('T')[0]
-    };
-}
+// Removed filter functionality - now using date and branch filters only
 
 // Close summary options when clicking outside
 document.addEventListener('click', function (e) {
@@ -2775,7 +2831,7 @@ document.addEventListener('click', function (e) {
     const summaryOptions = document.getElementById('summaryOptions');
 
     if (!summaryCard && summaryOptions && summaryOptions.classList.contains('show')) {
-        hideSummaryOptions();
+        summaryOptions.classList.remove('show');
     }
 });
 
@@ -2810,7 +2866,23 @@ function populateExpenseForm(expense) {
     document.getElementById('paidBy').value = expense.paidBy || '';
     document.getElementById('notes').value = expense.notes || '';
     document.getElementById('invoiceNumber').value = expense.invoiceNumber || '';
-    document.getElementById('totalAmountInput').value = expense.totalAmount.toFixed(2);
+    const totalInput = document.getElementById('totalAmountInput');
+    if (totalInput) {
+        totalInput.value = shared.formatCurrency(expense.totalAmount || 0);
+        // Check if items have prices to determine if input should be locked
+        const hasItemPrices = expense.items && expense.items.some(item => item.price > 0);
+        if (hasItemPrices) {
+            totalInput.readOnly = true;
+            totalInput.style.backgroundColor = '#f8f9fa';
+            totalInput.style.cursor = 'not-allowed';
+            totalInput.style.opacity = '0.7';
+        } else {
+            totalInput.readOnly = false;
+            totalInput.style.backgroundColor = '';
+            totalInput.style.cursor = '';
+            totalInput.style.opacity = '1';
+        }
+    }
 
     // Handle VAT information if supplier is VAT registered
     const allSuppliers = shared.getSuppliers();
@@ -3036,81 +3108,47 @@ function handleSupplierFormSubmission(e) {
     e.preventDefault();
 
     const isEditing = window.editingSupplierId;
-    const supplierName = document.getElementById('supplierModalName').value.trim();
-    const businessName = document.getElementById('supplierModalBusinessName').value.trim();
-    const tin = document.getElementById('supplierModalTin').value.trim();
-    const address = document.getElementById('supplierModalAddress').value.trim();
-    const isVatRegistered = document.getElementById('supplierModalIsVatRegistered').checked;
-
-    if (!supplierName) {
-        showToast('Please enter a supplier name');
-        return;
-    }
-
-    // Check for duplicates (exclude current supplier when editing)
     const allSuppliers = shared.getSuppliers();
-    const existingSupplier = allSuppliers.find(s =>
-        s.name.toLowerCase() === supplierName.toLowerCase() &&
-        s.id !== isEditing
-    );
+    const existingSupplier = isEditing ? allSuppliers.find(s => s.id === isEditing) : null;
 
-    if (existingSupplier) {
-        showToast('A supplier with this name already exists');
-        return;
-    }
-
-    const supplier = {
-        id: isEditing || generateId(),
-        name: supplierName,
-        businessName: businessName,
-        tin: tin,
-        address: address,
-        isVatRegistered: isVatRegistered,
-        createdAt: isEditing ?
-            (allSuppliers.find(s => s.id === isEditing)?.createdAt || new Date().toISOString()) :
-            new Date().toISOString()
+    // Collect form data
+    const supplierData = {
+        name: document.getElementById('supplierModalName').value,
+        businessName: document.getElementById('supplierModalBusinessName').value,
+        tin: document.getElementById('supplierModalTin').value,
+        address: document.getElementById('supplierModalAddress').value,
+        isVatRegistered: document.getElementById('supplierModalIsVatRegistered').checked
     };
 
-    
+    // Create supplier object using shared function
+    const result = shared.createSupplierObject(supplierData, {
+        existingSupplier: existingSupplier,
+        isEditing: isEditing,
+        validate: true
+    });
+
+    // Check for validation errors
+    if (!result.success) {
+        showToast(result.errors.join(', '));
+        return;
+    }
+
+    const supplier = result.supplier;
 
     // Update all expenses from this supplier when editing
-    if (isEditing) {
-        // Get the old supplier data BEFORE updating it
-        const oldSupplier = allSuppliers.find(s => s.id === isEditing);
-        const oldSupplierName = oldSupplier ? oldSupplier.name : '';
-
-        // Then update all expenses that reference the old supplier name
-        const allExpenses = shared.getExpenses();
-        allExpenses.forEach(expense => {
-            // Match by old supplier name first, then update to new name
-            if (expense.supplierName.toLowerCase() === oldSupplierName.toLowerCase()) {
-                // Update supplier name in expense
-                expense.supplierName = supplier.name;
-                expense.businessName = supplier.businessName;
-                expense.tin = supplier.tin;
-                expense.address = supplier.address;
-                expense.isVatRegistered = supplier.isVatRegistered;
-
-                // Recalculate VAT if supplier is no longer VAT registered
-                if (!supplier.isVatRegistered) {
-                    expense.vatExemptAmount = 0;
-                    expense.vatableSale = 0;
-                    expense.vatAmount = 0;
-                } else if (supplier.isVatRegistered && expense.vatableSale === 0) {
-                    // Recalculate VAT for newly VAT registered supplier
-                    const taxableAmount = expense.totalAmount - (expense.vatExemptAmount || 0);
-                    expense.vatableSale = taxableAmount / 1.12;
-                    expense.vatAmount = taxableAmount - expense.vatableSale;
-                }
-            }
-        });
-
-        // Update the supplier AFTER updating expenses
+    if (isEditing && existingSupplier) {
+        // Update expenses first, then supplier
+        const updateResult = shared.updateExpensesForSupplier(existingSupplier, supplier);
+        
+        // Update the supplier
         const success = shared.updateSupplier(isEditing, supplier);
         if (success) {
-            showToast('Supplier updated successfully!');
+            const expenseMsg = updateResult.updated > 0 ? 
+                ` and updated ${updateResult.updated} expense${updateResult.updated === 1 ? '' : 's'}` : '';
+            showToast(`Supplier updated successfully!${expenseMsg}`);
         } else {
             showToast('Failed to update supplier');
+            return;
         }
     } else {
         // Add new supplier
@@ -3137,16 +3175,22 @@ function skipSupplierDetails() {
 
     if (supplierName) {
         // Save basic supplier with just the name
-        const basicSupplier = {
-            id: generateId(),
+        // Create basic supplier using shared function
+        const supplierData = {
             name: supplierName,
             businessName: '',
             tin: '',
             address: '',
-            createdAt: new Date().toISOString()
+            isVatRegistered: false
         };
-
-        shared.addSupplier(basicSupplier);
+        
+        const result = shared.createSupplierObject(supplierData, {
+            validate: false // Skip validation for basic supplier
+        });
+        
+        if (result.success) {
+            shared.addSupplier(result.supplier);
+        }
     }
 
     closeSupplierModal();
@@ -3319,14 +3363,17 @@ function executeMerge(targetSupplierId) {
         'Confirm Merge',
         `Are you sure you want to merge ${supplierNamesToMerge.join(', ')} into ${targetSupplier.name}? This will transfer all expenses and cannot be undone.`,
         'Merge',
-        () => {
-            performSupplierMerge(targetSupplier, suppliersToMerge);
+        async () => {
+            await performSupplierMerge(targetSupplier, suppliersToMerge);
         }
     );
 }
+// Expose to global scope for inline event handlers
+window.executeMerge = executeMerge;
 
-function performSupplierMerge(targetSupplier, suppliersToMerge) {
+async function performSupplierMerge(targetSupplier, suppliersToMerge) {
     let totalTransferred = 0;
+    const expenses = shared.getExpenses();
 
     // Update all expenses from merged suppliers to reference the target supplier
     suppliersToMerge.forEach(supplierToMerge => {
@@ -3343,11 +3390,14 @@ function performSupplierMerge(targetSupplier, suppliersToMerge) {
         });
     });
 
-    // Remove the merged suppliers using shared.js
-    const supplierIdsToRemove = suppliersToMerge.map(s => s.id);
-    supplierIdsToRemove.forEach(supplierId => {
-        shared.deleteSupplier(supplierId);
+    // Save updated expenses
+    expenses.forEach(expense => {
+        shared.updateExpense(expense.id, expense);
     });
+
+    // Remove the merged suppliers using shared.js (await all deletions)
+    const supplierIdsToRemove = suppliersToMerge.map(s => s.id);
+    await Promise.all(supplierIdsToRemove.map(supplierId => shared.deleteSupplier(supplierId)));
 
     // Close modals and refresh
     closeMergeSupplierModal();
@@ -3370,6 +3420,8 @@ function mergeSupplierFromDetail(supplierId) {
         showMergeSupplierModal(supplierId);
     }, 300);
 }
+// Expose to global scope for inline event handlers
+window.mergeSupplierFromDetail = mergeSupplierFromDetail;
 
 function deleteSupplierFromDetail(supplierId) {
     const allSuppliers = shared.getSuppliers();
@@ -3379,16 +3431,18 @@ function deleteSupplierFromDetail(supplierId) {
         return;
     }
 
-    // Check if supplier has any expenses
-    const allExpenses = shared.getExpenses();
-    const supplierExpenses = allExpenses.filter(expense =>
-        expense.supplierName.toLowerCase() === supplier.name.toLowerCase()
-    );
-
-    if (supplierExpenses.length > 0) {
+    // Check if supplier can be deleted using shared function
+    if (!shared.canDeleteSupplier) {
+        console.error('shared.canDeleteSupplier is not available. This usually means shared.js is cached. Please do a hard refresh (Ctrl+Shift+R or Cmd+Shift+R)');
+        showToast('Error: Please refresh the page to load latest updates (Ctrl+Shift+R)');
+        return;
+    }
+    const canDelete = shared.canDeleteSupplier(supplierId);
+    
+    if (!canDelete.canDelete) {
         showConfirmationModal(
             'Cannot Delete Supplier',
-            `Cannot delete "${supplier.name}" because it has ${supplierExpenses.length} expense${supplierExpenses.length === 1 ? '' : 's'}. Please delete all expenses first or merge this supplier with another.`,
+            `Cannot delete "${supplier.name}" because ${canDelete.reason}. Please delete all expenses first or merge this supplier with another.`,
             'OK',
             () => {
                 // Just close the confirmation modal
@@ -3402,9 +3456,9 @@ function deleteSupplierFromDetail(supplierId) {
         'Delete Supplier',
         `Are you sure you want to delete "${supplier.name}"? This action cannot be undone.`,
         'Delete',
-        () => {
-            // Remove supplier from array
-            const success = shared.deleteSupplier(supplierId);
+        async () => {
+            // Remove supplier from array and Firebase using shared function
+            const success = await shared.deleteSupplier(supplierId);
             if (success) {
                 // Close detail modal and refresh
                 closeSupplierDetailModal();
@@ -3420,6 +3474,8 @@ function deleteSupplierFromDetail(supplierId) {
         }
     );
 }
+// Expose to global scope for inline event handlers
+window.deleteSupplierFromDetail = deleteSupplierFromDetail;
 
 // saveToLocalStorage function removed - now using shared.js saveToLocalStorage()
 
@@ -3442,10 +3498,13 @@ function viewSupplierFromExpense(supplierName) {
         showSupplierDetailModal(supplier);
     }, 300);
 }
+// Expose to global scope for inline event handlers
+window.viewSupplierFromExpense = viewSupplierFromExpense;
 
 
 function updateVatCalculation() {
-    const totalAmount = parseFloat(document.getElementById('totalAmountInput').value) || 0;
+    const totalAmountInput = document.getElementById('totalAmountInput');
+    const totalAmount = totalAmountInput ? shared.getPesoValue(totalAmountInput) : 0;
     const vatExemptInput = document.getElementById('vatExemptAmount');
     const vatExemptAmount = parseFloat(vatExemptInput.value) || 0;
     const vatSection = document.getElementById('vatSection');
@@ -3481,6 +3540,8 @@ function updateVatCalculation() {
 
     document.getElementById('vatBreakdown').style.display = 'block';
 }
+// Expose to global scope for inline event handlers
+window.updateVatCalculation = updateVatCalculation;
 
 // Update the total amount change handler
 function handleTotalChange() {
@@ -3503,6 +3564,8 @@ function handleTotalChange() {
     // Update VAT calculation
     updateVatCalculation();
 }
+// Expose to global scope for inline event handlers
+window.handleTotalChange = handleTotalChange;
 
 function toggleVatRegistered() {
     const checkbox = document.getElementById('supplierModalIsVatRegistered');
@@ -3516,6 +3579,8 @@ function toggleVatRegistered() {
         toggleSwitch.classList.remove('active');
     }
 }
+// Expose to global scope for inline event handlers
+window.toggleVatRegistered = toggleVatRegistered;
 function toggleVatComputation() {
     const checkbox = document.getElementById('vatComputationEnabled');
     const track = document.getElementById('vatToggleTrack');
@@ -3534,6 +3599,8 @@ function toggleVatComputation() {
         document.getElementById('vatBreakdown').style.display = 'none';
     }
 }
+// Expose to global scope for inline event handlers
+window.toggleVatComputation = toggleVatComputation;
 
 // Manual Firebase initialization for testing
 window.initFirebaseManually = async function () {
@@ -3582,8 +3649,7 @@ window.closeConfirmationModal = closeConfirmationModal;
 window.viewSupplier = viewSupplier;
 window.closeSupplierDetailModal = closeSupplierDetailModal;
 window.viewExpenseFromSupplier = viewExpenseFromSupplier;
-window.showSummaryOptions = showSummaryOptions;
-window.selectSummaryFilter = selectSummaryFilter;
+// showSummaryOptions and selectSummaryFilter removed - functions not defined
 window.showAddSupplierModal = showAddSupplierModal;
 window.closeSupplierModal = closeSupplierModal;
 window.handleSupplierFormSubmission = handleSupplierFormSubmission;
@@ -3591,14 +3657,6 @@ window.skipSupplierDetails = skipSupplierDetails;
 window.editSupplierFromDetail = editSupplierFromDetail;
 window.deleteSupplierFromDetail = deleteSupplierFromDetail;
 window.showMergeSupplierModal = showMergeSupplierModal;
-window.closeMergeSupplierModal = closeMergeSupplierModal;
-window.executeMerge = executeMerge;
-window.mergeSupplierFromDetail = mergeSupplierFromDetail;
-window.viewSupplierFromExpense = viewSupplierFromExpense;
-window.updateVatCalculation = updateVatCalculation;
-window.handleTotalChange = handleTotalChange;
-window.toggleVatRegistered = toggleVatRegistered;
-window.toggleVatComputation = toggleVatComputation;
-window.formatPesoInput = formatPesoInput;
-window.updateFromItems = updateFromItems;
-window.formatTotal = formatTotal;
+// Note: closeMergeSupplierModal, executeMerge, mergeSupplierFromDetail, viewSupplierFromExpense,
+// updateVatCalculation, toggleVatRegistered, formatPesoInput, and updateFromItems are now
+// exposed immediately after their definitions above for better reliability

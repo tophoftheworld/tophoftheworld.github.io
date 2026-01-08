@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Exchange Gift</title>
+    <link rel="stylesheet" href="css/style.css?v=4">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+</head>
+<body>
+    <div class="user-view-container">
+        <div class="user-content">
+            <div id="loading" class="loading-state">
+                <div class="spinner"></div>
+            </div>
+            
+            <div id="giftInfo" class="gift-card" style="display: none;">
+                <div class="gift-icon">🎁</div>
+                <h1 class="gift-title">Exchange Gift</h1>
+                
+                <div class="reveal-section">
+                    <button class="reveal-btn" id="revealBtn">
+                        <span class="reveal-btn-text">Reveal Giftee</span>
+                    </button>
+                    
+                    <div class="recipient-info" id="recipientInfo" style="display: none;">
+                        <div class="recipient-nickname" id="recipientNickname"></div>
+                        <div class="recipient-name" id="recipientName"></div>
+                    </div>
+                </div>
+                
+                <div class="instructions">
+                    <p>Your gift should be at least <strong>₱200</strong> in value.</p>
+                    <p>Please make it thoughtful and meaningful for your recipient!</p>
+                </div>
+            </div>
+            
+            <div id="errorMessage" class="error-message" style="display: none;"></div>
+            
+            <div id="noAssignment" class="no-assignment-card" style="display: none;">
+                <div class="gift-icon">🎁</div>
+                <h2>No Assignment Yet</h2>
+                <p>No assignment has been set up yet.</p>
+                <p class="no-assignment-subtitle">Please check back later!</p>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="js/user-script.js?v=4"></script>
+    <script>
+        // Force cache clear on page load if ?clear=1 is in URL
+        if (window.location.search.includes('clear=1')) {
+            if ('caches' in window) {
+                caches.keys().then(names => {
+                    names.forEach(name => caches.delete(name));
+                });
+            }
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.getRegistrations().then(registrations => {
+                    registrations.forEach(registration => registration.unregister());
+                });
+            }
+            localStorage.clear();
+            sessionStorage.clear();
+        }
+        
+        // Force service worker update for PWA users
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(registrations => {
+                registrations.forEach(registration => {
+                    registration.update(); // Force check for updates
+                });
+            });
+            
+            // Listen for service worker updates
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                // New service worker is controlling the page
+                window.location.reload();
+            });
+        }
+    </script>
+</body>
+</html>
+

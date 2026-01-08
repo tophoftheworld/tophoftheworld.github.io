@@ -313,24 +313,71 @@ class PayCalculator {
         }
 
         const hourlyRate = employee.baseRate / this.STANDARD_WORK_HOURS;
-        const workHours = actualHours > 4 ? actualHours - 1 : actualHours; // Subtract break time
+        
+        // Check if scheduled times are provided (for grace period and late policy)
+        const hasScheduledTimes = dateEntry.scheduledIn && dateEntry.scheduledOut;
+        
+        let workHours;
+        let regularHours;
+        let basePay;
 
-        // Calculate meal allowance
-        const mealAllowance = (dateEntry.hasMealAllowance !== false) ?
-            (actualHours <= 5 ? this.DAILY_MEAL_ALLOWANCE / 2 : this.DAILY_MEAL_ALLOWANCE) : 0;
+        if (hasScheduledTimes) {
+            // If scheduled times exist, calculate like regular shifts with deductions
+            // Calculate deductions (late/undertime) with grace period
+            const deductionHours = this.calculateDeductions(
+                dateEntry.timeIn,
+                dateEntry.timeOut,
+                dateEntry.scheduledIn,
+                dateEntry.scheduledOut
+            );
 
-        breakdown.mealAllowance = mealAllowance;
-
-        // Calculate base pay (up to 8 hours, then overtime)
-        const regularHours = Math.min(workHours, this.STANDARD_WORK_HOURS);
-        const basePay = hourlyRate * regularHours * multiplier;
+            // Base work hours from scheduled times (standard 8 hours for full day)
+            const scheduledHours = this.calculateHours(dateEntry.scheduledIn, dateEntry.scheduledOut);
+            workHours = scheduledHours > 4 ? scheduledHours - 1 : scheduledHours; // Subtract break time
+            regularHours = Math.min(workHours, this.STANDARD_WORK_HOURS);
+            
+            // Apply deductions to base pay calculation
+            const basePayBeforeDeductions = hourlyRate * regularHours * multiplier;
+            const deductionAmount = deductionHours * hourlyRate * multiplier;
+            
+            basePay = Math.max(0, basePayBeforeDeductions - deductionAmount);
+            
+            // Update breakdown with deductions
+            if (deductionHours > 0) {
+                const detailedDeductions = this._calculateDetailedDeductions(dateEntry, hourlyRate, multiplier);
+                breakdown.deductions = detailedDeductions;
+                
+                if (detailedDeductions.late.amount > 0) {
+                    breakdown.components.push({
+                        type: 'late_deduction',
+                        amount: -detailedDeductions.late.amount,
+                        isPositive: false,
+                        metadata: { hours: detailedDeductions.late.hours }
+                    });
+                }
+                
+                if (detailedDeductions.undertime.amount > 0) {
+                    breakdown.components.push({
+                        type: 'undertime_deduction',
+                        amount: -detailedDeductions.undertime.amount,
+                        isPositive: false,
+                        metadata: { hours: detailedDeductions.undertime.hours }
+                    });
+                }
+            }
+        } else {
+            // Default behavior: calculate from actual hours (backward compatibility)
+            workHours = actualHours > 4 ? actualHours - 1 : actualHours; // Subtract break time
+            regularHours = Math.min(workHours, this.STANDARD_WORK_HOURS);
+            basePay = hourlyRate * regularHours * multiplier;
+        }
 
         breakdown.adjustedBaseRate = basePay;
         breakdown.components.push({
             type: 'base_pay',
             amount: hourlyRate * regularHours,
             isPositive: true,
-            metadata: { hours: regularHours, hourlyRate }
+            metadata: { hours: regularHours, hourlyRate, hasScheduledTimes }
         });
 
         if (multiplier > 1.0) {
@@ -347,6 +394,12 @@ class PayCalculator {
                 }
             });
         }
+
+        // Calculate meal allowance
+        const mealAllowance = (dateEntry.hasMealAllowance !== false) ?
+            (actualHours <= 5 ? this.DAILY_MEAL_ALLOWANCE / 2 : this.DAILY_MEAL_ALLOWANCE) : 0;
+
+        breakdown.mealAllowance = mealAllowance;
 
         if (mealAllowance > 0) {
             breakdown.components.push({

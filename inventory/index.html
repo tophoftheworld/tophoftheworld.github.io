@@ -7,7 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>Inventory Management</title>
-    <link rel="stylesheet" href="css/style.css?v=1762840349290">
+    <link rel="stylesheet" href="css/style.css?v=1736000009">
 </head>
 <body>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -34,15 +34,10 @@
                 </div>
                 <div class="plus-button-container">
                     <button class="add-item-plus-btn" id="addItemPlusBtn">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
+                        <img src="img/stock-mgmt.png" alt="Stock Management" class="stock-mgmt-icon">
                     </button>
                     <button class="hamburger-btn" id="hamburgerBtn">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <line x1="12" y1="6" x2="12" y2="14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-                            <circle cx="12" cy="18" r="1" fill="currentColor"/>
-                        </svg>
+                        <img src="img/list.png" alt="Running Low" class="list-icon">
                     </button>
                 </div>
             </div>
@@ -218,8 +213,14 @@
                     <path d="M19 12H5M12 19L5 12L12 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
             </button>
-            <h2 class="add-stocks-title">Added Stocks</h2>
-            <div class="header-spacer"></div>
+            <h2 class="add-stocks-title">Stock Adjustment</h2>
+            <button class="running-low-download-btn" id="stockAdjustmentDownloadBtn" title="Download Report" onclick="if(window.downloadStockAdjustmentReport) { window.downloadStockAdjustmentReport().catch(function(err) { console.error('Download error:', err); alert('Failed to download: ' + (err.message || 'Unknown error')); }); } else { alert('Download feature loading... Please try again in a moment.'); } return false;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <polyline points="7 10 12 15 17 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <line x1="12" y1="15" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </button>
         </div>
         
         <div class="add-stocks-content">
@@ -231,8 +232,22 @@
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
-                    <span>Add Item</span>
+                    <span>Add Items</span>
                 </button>
+                <div class="subtraction-buttons-container">
+                    <button class="pull-out-item-btn" id="pullOutItemBtn">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <span>Pull Out</span>
+                    </button>
+                    <button class="wastage-item-btn" id="wastageItemBtn">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <span>Wastage</span>
+                    </button>
+                </div>
                 <button class="save-stocks-btn" id="saveStocksBtn" style="display: none;">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -291,6 +306,7 @@
             </div>
         </div>
     </div>
-    <script type="module" src="js/script.js?v=1762845423176"></script>
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+    <script type="module" src="js/script.js?v=1736000007"></script>
 </body>
 </html>

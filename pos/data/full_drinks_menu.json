@@ -1,0 +1,91 @@
+{
+  "categories": [
+    {
+      "id": "matcha",
+      "name": "MATCHA"
+    },
+    {
+      "id": "hojicha",
+      "name": "HOJICHA"
+    },
+    {
+      "id": "coffee",
+      "name": "COFFEE"
+    }
+  ],
+  "items": [
+    {
+      "categoryId": "matcha",
+      "name": "Matcha Tea",
+      "description": "Freshly Whisked Matcha over Water",
+      "price": 0,
+      "type": "Matcha",
+      "shorthand": "MT"
+    },
+    {
+      "categoryId": "matcha",
+      "name": "Matcha Latte",
+      "description": "Freshly Whisked Matcha over Milk",
+      "price": 0,
+      "type": "Matcha",
+      "shorthand": "ML"
+    },
+    {
+      "categoryId": "matcha",
+      "name": "Matcha Seasalt Latte",
+      "description": "Freshly Whisked Matcha over Milk topped with Seasalt Cream",
+      "price": 0,
+      "type": "Matcha",
+      "shorthand": "MSL"
+    },
+    {
+      "categoryId": "matcha",
+      "name": "Strawberry Matcha",
+      "description": "Freshly Whisked Matcha over Milk with Strawberry Puree",
+      "price": 0,
+      "type": "Matcha",
+      "shorthand": "SM"
+    },
+    {
+      "categoryId": "hojicha",
+      "name": "Hojicha Latte",
+      "description": "Freshly Whisked Hojicha over Milk",
+      "price": 0,
+      "type": "Hojicha",
+      "shorthand": "HL"
+    },
+    {
+      "categoryId": "coffee",
+      "name": "Cafe Americano",
+      "description": "Double Shot of Espresso over Water",
+      "price": 0,
+      "type": "Coffee",
+      "shorthand": "CA"
+    },
+    {
+      "categoryId": "coffee",
+      "name": "Cafe Latte",
+      "description": "Double Shot of Espresso over Milk",
+      "price": 0,
+      "type": "Coffee",
+      "shorthand": "CL"
+    },
+    {
+      "categoryId": "coffee",
+      "name": "Spanish Latte",
+      "description": "Espresso over Milk with Sweetened Condensed Milk",
+      "price": 0,
+      "type": "Coffee",
+      "shorthand": "SL"
+    },
+    {
+      "categoryId": "coffee",
+      "name": "Seasalt Latte",
+      "description": "Espresso over Milk topped with Seasalt Cream",
+      "price": 0,
+      "type": "Coffee",
+      "shorthand": "SSL"
+    }
+  ]
+}
+

@@ -2116,6 +2116,66 @@ function showExpenseModal(expense, isNew = false) {
     modal.appendChild(modalContent);
     document.body.appendChild(modal);
     
+    // Add calculation functions for existing items if editing
+    if (isEditing && expense.items) {
+        expense.items.forEach((item, index) => {
+            window[`calculateItemTotal_${index}`] = function() {
+                const qtyInput = document.querySelector(`input[name="itemQty_${index}"]`);
+                const priceInput = document.querySelector(`input[name="itemPrice_${index}"]`);
+                const totalInput = document.querySelector(`input[name="itemTotal_${index}"]`);
+                if (qtyInput && priceInput && totalInput) {
+                    const qty = parseFloat(qtyInput.value) || 0;
+                    const price = parseFloat(priceInput.value) || 0;
+                    const total = shared.calculateItemTotal(qty, price);
+                    totalInput.value = total.toFixed(2);
+                }
+                // Recalculate overall total when item prices change
+                if (typeof calculateOverallTotal === 'function') {
+                    calculateOverallTotal();
+                }
+            };
+        });
+    }
+    
+    // Add overall total calculation function (must be defined before modal is shown)
+    window.calculateOverallTotal = function() {
+        const itemRows = document.querySelectorAll('#itemsContainer .item-row');
+        const items = [];
+        let hasAnyPrice = false;
+        
+        itemRows.forEach((row, index) => {
+            const nameInput = row.querySelector(`input[name="itemName_${index}"]`);
+            const qtyInput = row.querySelector(`input[name="itemQty_${index}"]`);
+            const priceInput = row.querySelector(`input[name="itemPrice_${index}"]`);
+            
+            if (nameInput && nameInput.value.trim()) {
+                const qty = parseFloat(qtyInput?.value) || 1;
+                const price = parseFloat(priceInput?.value) || 0;
+                
+                if (price > 0) {
+                    hasAnyPrice = true;
+                }
+                
+                items.push({ quantity: qty, price: price });
+            }
+        });
+        
+        const overallTotalInput = document.getElementById('overallTotalAmountInput');
+        if (overallTotalInput) {
+            // Only auto-calculate if at least one item has a price
+            if (hasAnyPrice && items.length > 0) {
+                const calculatedTotal = shared.calculateExpenseTotal(items);
+                overallTotalInput.value = calculatedTotal.toFixed(2);
+            }
+            // If no prices, keep manual entry (don't overwrite)
+        }
+        
+        // Update VAT display
+        if (typeof updateVatDisplay === 'function') {
+            updateVatDisplay();
+        }
+    };
+    
     // Close on overlay click
     modal.addEventListener('click', (e) => {
         if (e.target === modal) {
@@ -2226,15 +2286,15 @@ function generateExpenseForm(expense, isEditing) {
                             </div>
                             <div style="flex: 1;">
                                 <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.25rem; font-size: 0.8rem;">Qty</label>
-                                <input type="number" name="itemQty_${index}" value="${item.quantity}" min="1" step="1" style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem;" ${!isEditing ? 'readonly' : ''}>
+                                <input type="number" name="itemQty_${index}" value="${item.quantity}" min="1" step="1" style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem;" ${!isEditing ? 'readonly' : `onchange="calculateItemTotal_${index}()" oninput="calculateItemTotal_${index}()"`}>
                             </div>
                             <div style="flex: 1;">
                                 <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.25rem; font-size: 0.8rem;">Price</label>
-                                <input type="number" name="itemPrice_${index}" value="${item.price}" min="0" step="0.01" style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem;" ${!isEditing ? 'readonly' : ''}>
+                                <input type="number" name="itemPrice_${index}" value="${item.price}" min="0" step="0.01" style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem;" ${!isEditing ? 'readonly' : `onchange="calculateItemTotal_${index}()" oninput="calculateItemTotal_${index}()"`}>
                             </div>
                             <div style="flex: 1;">
                                 <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.25rem; font-size: 0.8rem;">Total</label>
-                                <input type="number" name="itemTotal_${index}" value="${item.total}" min="0" step="0.01" style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem;" ${!isEditing ? 'readonly' : ''}>
+                                <input type="number" name="itemTotal_${index}" value="${item.total}" min="0" step="0.01" readonly style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem; background-color: ${!isEditing ? '#f8f9fa' : '#f8f9fa'};">
                             </div>
                             ${isEditing ? `<button type="button" onclick="removeItem(this)" style="background: #dc3545; color: white; border: none; border-radius: 4px; padding: 0.5rem; cursor: pointer; height: fit-content;">×</button>` : ''}
                         </div>
@@ -2245,10 +2305,49 @@ function generateExpenseForm(expense, isEditing) {
                 <div style="margin-top: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 6px;">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <span style="font-weight: 600; color: #333;">Total Amount:</span>
-                        <span style="font-weight: 600; color: #2b9348; font-size: 1.1rem;">₱${(expense.totalAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        ${isEditing ? `
+                            <input type="number" id="overallTotalAmountInput" name="totalAmount" value="${(expense.totalAmount || 0).toFixed(2)}" min="0" step="0.01" style="width: 150px; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 1.1rem; font-weight: 600; color: #2b9348; text-align: right;" onchange="calculateOverallTotal()" oninput="calculateOverallTotal()">
+                        ` : `
+                            <span style="font-weight: 600; color: #2b9348; font-size: 1.1rem;">₱${(expense.totalAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        `}
                     </div>
+                    ${isEditing ? `
+                        <small style="color: #999; font-size: 0.85rem; margin-top: 0.5rem; display: block;">
+                            ${expense.items && expense.items.some(item => item.price > 0) ? 
+                                'Total auto-calculates from items. Enter item prices to update.' : 
+                                'No item prices entered. Enter total manually or add prices to items.'}
+                        </small>
+                    ` : ''}
                 </div>
             </div>
+
+            <!-- VAT Information (show if expense has VAT or if editing) -->
+            ${(expense.isVatRegistered || expense.vatAmount > 0 || expense.vatableSale > 0 || isEditing) ? `
+            <div style="margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid #f0f0f0;">
+                <h3 style="font-size: 1.1rem; font-weight: 600; color: #2b9348; margin: 0 0 1rem 0; padding-bottom: 0.5rem; border-bottom: 2px solid rgba(43, 147, 72, 0.2);">VAT Information</h3>
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.5rem;">VAT Exempt Amount</label>
+                    <input type="number" name="vatExemptAmount" value="${expense.vatExemptAmount || 0}" min="0" step="0.01" style="width: 100%; padding: 0.75rem; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 0.9rem;" ${!isEditing ? 'readonly' : ''}>
+                    <small style="color: #999; font-size: 0.85rem; margin-top: 0.25rem; display: block;">Amount that is exempt from VAT (if any)</small>
+                </div>
+                ${expense.isVatRegistered && expense.vatAmount > 0 ? `
+                <div style="margin-top: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 6px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                        <span style="color: #666;">VATable Sale:</span>
+                        <span style="font-weight: 500;">₱${(expense.vatableSale || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                        <span style="color: #666;">VAT Amount (12%):</span>
+                        <span style="font-weight: 500; color: #2b9348;">₱${(expense.vatAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding-top: 0.5rem; border-top: 1px solid #e5e5e5; margin-top: 0.5rem;">
+                        <span style="font-weight: 600; color: #333;">VAT Registered:</span>
+                        <span style="font-weight: 600; color: #2b9348;">Yes</span>
+                    </div>
+                </div>
+                ` : ''}
+            </div>
+            ` : ''}
 
             <!-- Notes -->
             <div style="margin-bottom: 1.5rem;">
@@ -2294,20 +2393,43 @@ window.addItem = function() {
         </div>
         <div style="flex: 1;">
             <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.25rem; font-size: 0.8rem;">Qty</label>
-            <input type="number" name="itemQty_${itemCount}" value="1" min="1" step="1" style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem;">
+            <input type="number" name="itemQty_${itemCount}" value="1" min="1" step="1" style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem;" onchange="calculateItemTotal_${itemCount}()" oninput="calculateItemTotal_${itemCount}()">
         </div>
         <div style="flex: 1;">
             <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.25rem; font-size: 0.8rem;">Price</label>
-            <input type="number" name="itemPrice_${itemCount}" value="0" min="0" step="0.01" style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem;">
+            <input type="number" name="itemPrice_${itemCount}" value="0" min="0" step="0.01" style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem;" onchange="calculateItemTotal_${itemCount}()" oninput="calculateItemTotal_${itemCount}()">
         </div>
         <div style="flex: 1;">
             <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.25rem; font-size: 0.8rem;">Total</label>
-            <input type="number" name="itemTotal_${itemCount}" value="0" min="0" step="0.01" style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem;">
+            <input type="number" name="itemTotal_${itemCount}" value="0" min="0" step="0.01" readonly style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem; background-color: #f8f9fa;">
         </div>
         <button type="button" onclick="removeItem(this)" style="background: #dc3545; color: white; border: none; border-radius: 4px; padding: 0.5rem; cursor: pointer; height: fit-content;">×</button>
     `;
     
+    // Create calculation function for this item using shared function
+    window[`calculateItemTotal_${itemCount}`] = function() {
+        const qtyInput = document.querySelector(`input[name="itemQty_${itemCount}"]`);
+        const priceInput = document.querySelector(`input[name="itemPrice_${itemCount}"]`);
+        const totalInput = document.querySelector(`input[name="itemTotal_${itemCount}"]`);
+        
+        if (qtyInput && priceInput && totalInput) {
+            const qty = parseFloat(qtyInput.value) || 0;
+            const price = parseFloat(priceInput.value) || 0;
+            const total = shared.calculateItemTotal(qty, price);
+            totalInput.value = total.toFixed(2);
+        }
+        // Recalculate overall total when item prices change
+        if (typeof calculateOverallTotal === 'function') {
+            calculateOverallTotal();
+        }
+    };
+    
     container.appendChild(itemRow);
+    
+    // Recalculate overall total after adding item
+    if (typeof calculateOverallTotal === 'function') {
+        calculateOverallTotal();
+    }
 };
 
 // Remove item function
@@ -2321,53 +2443,57 @@ window.saveExpense = function(event, expenseId) {
     
     const formData = new FormData(event.target);
     const isNew = !shared.getExpenses().find(e => e.id === expenseId);
+    const existingExpense = isNew ? null : shared.getExpenses().find(e => e.id === expenseId);
     
-    // Collect items
+    // Collect items using shared calculation
     const items = [];
     const itemRows = document.querySelectorAll('.item-row');
+    let hasAnyPrice = false;
     
     itemRows.forEach((row, index) => {
         const name = formData.get(`itemName_${index}`);
-        const qty = parseFloat(formData.get(`itemQty_${index}`)) || 1;
-        const price = parseFloat(formData.get(`itemPrice_${index}`)) || 0;
-        const total = parseFloat(formData.get(`itemTotal_${index}`)) || 0;
-        
         if (name && name.trim()) {
+            const qty = parseFloat(formData.get(`itemQty_${index}`)) || 1;
+            const price = parseFloat(formData.get(`itemPrice_${index}`)) || 0;
+            
+            if (price > 0) {
+                hasAnyPrice = true;
+            }
+            
             items.push({
                 name: name.trim(),
                 quantity: qty,
                 price: price,
-                total: total
+                total: shared.calculateItemTotal(qty, price)
             });
         }
     });
     
-    // Calculate total amount
-    const totalAmount = items.reduce((sum, item) => sum + item.total, 0);
+    // Add items to formData for createExpenseObject
+    formData.items = items;
     
-    const expenseData = {
-        id: expenseId,
-        date: formData.get('date'),
-        branch: formData.get('branch'),
-        supplierName: formData.get('supplierName'),
-        businessName: formData.get('businessName'),
-        tin: formData.get('tin'),
-        address: formData.get('address'),
-        invoiceNumber: formData.get('invoiceNumber'),
-        expenseCategory: formData.get('expenseCategory') || 'General',
-        items: items,
-        totalAmount: totalAmount,
-        vatExemptAmount: 0,
-        vatableSale: 0,
-        vatAmount: 0,
-        isVatRegistered: false,
-        paymentMethod: formData.get('paymentMethod'),
-        paidBy: formData.get('paidBy'),
-        notes: formData.get('notes'),
-        receiptImage: null,
-        createdAt: isNew ? new Date().toISOString() : shared.getExpenses().find(e => e.id === expenseId)?.createdAt,
-        updatedAt: new Date().toISOString()
-    };
+    // Only auto-calculate total from items if at least one item has a price
+    // If all items have price = 0, use manual total input
+    const calculateTotalFromItems = hasAnyPrice && items.length > 0;
+    
+    // Create expense using shared function
+    const result = shared.createExpenseObject(formData, {
+        existingExpense: existingExpense,
+        isEditing: !isNew,
+        calculateTotalFromItems: calculateTotalFromItems, // Only calculate if items have prices
+        autoCalculateVAT: true,
+        validate: true
+    });
+    
+    // Check for validation errors
+    if (!result.success) {
+        shared.showToast(result.errors.join(', '));
+        return;
+    }
+    
+    const expenseData = result.expense;
+    // Ensure ID matches (form might have different ID structure)
+    expenseData.id = expenseId;
     
     if (isNew) {
         shared.addExpense(expenseData);

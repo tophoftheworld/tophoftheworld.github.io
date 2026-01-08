@@ -162,7 +162,7 @@ body {
 
 .control-buttons {
     display: flex;
-    flex-direction: column-reverse;
+    flex-direction: column-reverse !important;
     gap: 4px;
 }
 
@@ -360,6 +360,20 @@ body {
     justify-content: center;
     transition: all 0.2s;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.stock-mgmt-icon {
+    width: 20px;
+    height: 20px;
+    filter: brightness(0) invert(1); /* Convert black to white */
+    object-fit: contain;
+}
+
+.list-icon {
+    width: 20px;
+    height: 20px;
+    filter: brightness(0) invert(1); /* Convert black to white */
+    object-fit: contain;
 }
 
 .add-item-plus-btn:hover {
@@ -1495,11 +1509,25 @@ body {
     font-weight: 400;
 }
 
+.stock-item-adjustment-type {
+    font-size: 12px;
+    color: #666;
+    font-weight: 400;
+    margin-bottom: 2px;
+    text-transform: capitalize;
+}
+
 .stock-item-quantity {
     display: flex;
     flex-direction: column;
     align-items: flex-end;
     gap: 2px;
+}
+
+.stock-item-quantity.pulled-out .quantity-number,
+.stock-item-quantity.pulled-out input {
+    color: #dc3545;
+    font-weight: 600;
 }
 
 
@@ -1534,6 +1562,73 @@ body {
 }
 
 .add-stock-item-btn:active {
+    transform: translateY(0);
+}
+
+.subtraction-buttons-container {
+    display: flex;
+    gap: 12px;
+    margin-top: 12px;
+    width: 100%;
+}
+
+.pull-out-item-btn {
+    width: 60%;
+    background: #dc3545 !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 12px;
+    padding: 16px 24px;
+    font-size: 16px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    box-shadow: none !important;
+    -webkit-appearance: none !important;
+    appearance: none !important;
+}
+
+.pull-out-item-btn:hover {
+    background: #c82333;
+    transform: translateY(-1px);
+}
+
+.pull-out-item-btn:active {
+    transform: translateY(0);
+}
+
+.wastage-item-btn {
+    width: 40%;
+    background: #dc3545 !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 12px;
+    padding: 16px 24px;
+    font-size: 16px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    box-shadow: none !important;
+    -webkit-appearance: none !important;
+    appearance: none !important;
+}
+
+.wastage-item-btn:hover {
+    background: #c82333;
+    transform: translateY(-1px);
+}
+
+.wastage-item-btn:active {
     transform: translateY(0);
 }
 

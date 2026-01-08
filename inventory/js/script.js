@@ -157,9 +157,8 @@ async function syncInventoryItemsFromFirebaseInBackground() {
       freshItems.push({ 
         id: doc.id, 
         ...data,
-        // Ensure description is available as subtitle for backward compatibility
-        subtitle: data.subtitle || data.description || '',
-        // categoryOrder now driven by categories collection
+        // Preserve both description and subtitle fields as-is from Firebase
+        // Don't copy description to subtitle - use description directly in UI
         order: data.order || data.displayOrder || 0
       });
     });
@@ -753,8 +752,8 @@ async function syncWithFirebase() {
             firebaseItems.push({ 
                 id: doc.id, 
                 ...data,
-                // Ensure description is available as subtitle for backward compatibility
-                subtitle: data.subtitle || data.description || '',
+                // Preserve both description and subtitle fields as-is from Firebase
+                // Don't copy description to subtitle - use description directly in UI
                 // categoryOrder removed; use categories mapping during render
                 order: data.order || data.displayOrder || 0,
                 // Migrate defaultRestockLevel to restockAmount for consistency
@@ -837,6 +836,10 @@ async function loadQuantitiesFromFirebase() {
                 if (!currentQuantities[itemId].added) {
                     currentQuantities[itemId].added = { value: 0, checked: false };
                 }
+                // Ensure adjustments array exists
+                if (!currentQuantities[itemId].adjustments) {
+                    currentQuantities[itemId].adjustments = [];
+                }
 
                 // Update from Firebase data
                 if (firebaseQuantities[itemId].opening) {
@@ -847,6 +850,10 @@ async function loadQuantitiesFromFirebase() {
                 }
                 if (firebaseQuantities[itemId].added) {
                     currentQuantities[itemId].added = firebaseQuantities[itemId].added;
+                }
+                // Load adjustments array if it exists
+                if (firebaseQuantities[itemId].adjustments && Array.isArray(firebaseQuantities[itemId].adjustments)) {
+                    currentQuantities[itemId].adjustments = firebaseQuantities[itemId].adjustments;
                 }
             });
 
@@ -1275,7 +1282,7 @@ function renderInventory() {
                 <div class="item-image">${imageHtml}</div>
                 <div class="item-info">
                     <div class="item-name">${item.name}</div>
-                    <div class="item-subtitle">${item.subtitle || item.description || ''}</div>
+                    <div class="item-subtitle">${item.description || ''}</div>
                 </div>
                 <div class="item-controls">
                     <div class="quantity-display">
@@ -1283,8 +1290,8 @@ function renderInventory() {
                         <span class="quantity-unit">${item.unit}</span>
                     </div>
                     <div class="control-buttons">
-                        <button class="control-btn" type="button" data-item="${item.id}" data-action="increase">+</button>
                         <button class="control-btn" type="button" data-item="${item.id}" data-action="decrease">−</button>
+                        <button class="control-btn" type="button" data-item="${item.id}" data-action="increase">+</button>
                     </div>
                 </div>
             </div>
@@ -1449,6 +1456,11 @@ async function syncQuantityToFirebase(itemId, mode) {
             checked: quantityData.checked,
             timestamp: new Date().toISOString()
         };
+        
+        // If mode is 'added' and adjustments array exists, save it too
+        if (mode === 'added' && quantities[dateKey][itemId].adjustments) {
+            currentData.quantities[itemId].adjustments = quantities[dateKey][itemId].adjustments;
+        }
 
         currentData.lastUpdated = new Date().toISOString();
 
@@ -2013,7 +2025,11 @@ function openDateModal() {
 
 // Date-based inventory management
 function getDateKey(date = currentDate) {
-    return date.toISOString().split('T')[0]; // Returns "YYYY-MM-DD"
+    // Use local time instead of UTC to avoid timezone issues
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`; // Returns "YYYY-MM-DD" in local time
 }
 
 function getCurrentDateQuantities() {
@@ -2025,7 +2041,8 @@ function getCurrentDateQuantities() {
             quantities[dateKey][item.id] = {
                 opening: { value: 0, checked: false },
                 closing: { value: 0, checked: false },
-                added: { value: 0, checked: false }
+                added: { value: 0, checked: false },
+                adjustments: []
             };
         });
     } else {
@@ -2034,7 +2051,9 @@ function getCurrentDateQuantities() {
             if (!quantities[dateKey][item.id]) {
                 quantities[dateKey][item.id] = {
                     opening: { value: 0, checked: false },
-                    closing: { value: 0, checked: false }
+                    closing: { value: 0, checked: false },
+                    added: { value: 0, checked: false },
+                    adjustments: []
                 };
             } else {
                 // Migrate old format if needed
@@ -2043,8 +2062,13 @@ function getCurrentDateQuantities() {
                     quantities[dateKey][item.id] = {
                         opening: { value: itemData.opening, checked: true },
                         closing: { value: itemData.closing, checked: true },
-                        added: { value: itemData.added || 0, checked: false }
+                        added: { value: itemData.added || 0, checked: false },
+                        adjustments: []
                     };
+                }
+                // Ensure adjustments array exists
+                if (!quantities[dateKey][item.id].adjustments) {
+                    quantities[dateKey][item.id].adjustments = [];
                 }
             }
         });
@@ -2061,7 +2085,8 @@ function loadQuantitiesForDate(date) {
             quantities[dateKey][item.id] = {
                 opening: { value: 0, checked: false },
                 closing: { value: 0, checked: false },
-                added: { value: 0, checked: false }
+                added: { value: 0, checked: false },
+                adjustments: []
             };
         });
     }
@@ -2135,11 +2160,68 @@ async function syncModeCompletion(mode) {
         currentData.lastUpdated = timestamp;
         await setDoc(docRef, currentData);
 
+        // Send email notification for closing inventory (non-blocking)
+        if (mode === 'closing') {
+            sendInventoryReportEmail(currentBranch, dateKey, currentData).catch(err => {
+                console.error('Email sending failed (non-critical):', err);
+            });
+        }
+
         showSyncIndicator(`${mode} inventory submitted`, 'success');
 
     } catch (error) {
         console.error('Error syncing mode completion:', error);
         showSyncIndicator('Failed to submit inventory', 'error');
+    }
+}
+
+// Email sending function using EmailJS
+async function sendInventoryReportEmail(branch, date, data) {
+    // Configure EmailJS - REPLACE THESE WITH YOUR VALUES
+    const EMAILJS_SERVICE_ID = 'YOUR_SERVICE_ID';
+    const EMAILJS_TEMPLATE_ID = 'YOUR_TEMPLATE_ID';
+    const EMAILJS_PUBLIC_KEY = 'YOUR_PUBLIC_KEY';
+    const RECIPIENT_EMAIL = 'manager@matchanese.com'; // Change to your email
+
+    // Initialize EmailJS
+    if (typeof emailjs === 'undefined') {
+        console.error('EmailJS not loaded');
+        return;
+    }
+
+    emailjs.init(EMAILJS_PUBLIC_KEY);
+
+    const branchLabel = branch === 'sm-north' ? 'SM North' : 'Podium';
+    
+    // Count items with closing quantities
+    const closingItems = Object.keys(data.quantities || {}).filter(itemId => {
+        return data.quantities[itemId].closing?.checked === true;
+    }).length;
+
+    const emailContent = `
+        <h2>Inventory Closing Report - ${branchLabel}</h2>
+        <p><strong>Date:</strong> ${date}</p>
+        <p><strong>Branch:</strong> ${branchLabel}</p>
+        <hr>
+        <p><strong>Items Counted:</strong> ${closingItems}</p>
+        <p><strong>Total Items:</strong> ${Object.keys(data.quantities || {}).length}</p>
+        <hr>
+        <p>Closing inventory has been submitted successfully.</p>
+        <p>Last Updated: ${new Date(data.lastUpdated || Date.now()).toLocaleString('en-PH')}</p>
+    `;
+
+    try {
+        await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+            to_email: RECIPIENT_EMAIL,
+            subject: `Inventory Closing Report - ${branchLabel} - ${date}`,
+            message: emailContent,
+            branch: branchLabel,
+            date: date,
+            items_count: closingItems
+        });
+        console.log('✅ Inventory report email sent');
+    } catch (error) {
+        console.error('❌ Failed to send email:', error);
     }
 }
 
@@ -2207,7 +2289,7 @@ function exportInventoryToJSON() {
         // Create export data with restockAmount instead of order fields
         const exportData = inventoryItems.map(item => ({
             name: item.name,
-            subtitle: item.subtitle || item.description || '',
+            subtitle: item.description || '',
             unit: item.unit,
             category: item.category || 'Other',
             restockAmount: item.restockAmount || 0
@@ -2220,7 +2302,7 @@ function exportInventoryToJSON() {
         const branchName = getBranchDisplayName(currentBranch);
         const link = document.createElement('a');
         link.href = URL.createObjectURL(dataBlob);
-        link.download = `inventory-${currentBranch}-${new Date().toISOString().split('T')[0]}.json`;
+        link.download = `inventory-${currentBranch}-${getDateKey()}.json`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -2667,6 +2749,7 @@ window.testLoadingFlow = function() {
 
 // Add Stocks functionality
 let stockItems = [];
+let currentAdjustmentMode = 'add'; // 'add', 'pull-out', or 'wastage'
 
 function setupAddStocksEventListeners() {
     // Plus button to open Add Stocks page
@@ -2700,7 +2783,28 @@ function setupAddStocksEventListeners() {
     // Add stock item button
     const addStockItemBtn = document.getElementById('addStockItemBtn');
     if (addStockItemBtn) {
-        addStockItemBtn.addEventListener('click', openItemSelectionModal);
+        addStockItemBtn.addEventListener('click', () => {
+            currentAdjustmentMode = 'add';
+            openItemSelectionModal();
+        });
+    }
+
+    // Pull out item button
+    const pullOutItemBtn = document.getElementById('pullOutItemBtn');
+    if (pullOutItemBtn) {
+        pullOutItemBtn.addEventListener('click', () => {
+            currentAdjustmentMode = 'pull-out';
+            openItemSelectionModal();
+        });
+    }
+
+    // Wastage item button
+    const wastageItemBtn = document.getElementById('wastageItemBtn');
+    if (wastageItemBtn) {
+        wastageItemBtn.addEventListener('click', () => {
+            currentAdjustmentMode = 'wastage';
+            openItemSelectionModal();
+        });
     }
 
     // Save stocks button
@@ -2767,21 +2871,41 @@ function loadExistingStockItems() {
     const dateQuantities = getCurrentDateQuantities();
     stockItems = [];
     
-    // Load existing added quantities into stockItems (both positive and negative)
+    // Load existing adjustments into stockItems
     Object.keys(dateQuantities).forEach(itemId => {
         const itemData = dateQuantities[itemId];
-        if (itemData.added && itemData.added.value !== 0 && itemData.added.checked) {
             const inventoryItem = inventoryItems.find(item => item.id === itemId);
-            if (inventoryItem) {
+        if (!inventoryItem) return;
+        
+        // Check if adjustments array exists and has entries (new format)
+        if (itemData.adjustments && Array.isArray(itemData.adjustments) && itemData.adjustments.length > 0) {
+            // Load each adjustment as a separate record
+            itemData.adjustments.forEach(adjustment => {
+                const value = Math.abs(adjustment.value || 0);
+                if (value === 0) return; // skip zero entries
                 stockItems.push({
                     id: inventoryItem.id,
                     name: inventoryItem.name,
                     subtitle: inventoryItem.subtitle,
+                    description: inventoryItem.description,
                     photo: inventoryItem.photo,
                     unit: inventoryItem.unit,
-                    quantity: itemData.added.value
+                    quantity: value, // always positive for display
+                    reason: adjustment.reason || (adjustment.value < 0 ? 'pulled-out' : 'delivery')
                 });
-            }
+            });
+        } else if (itemData.added && itemData.added.value !== 0 && itemData.added.checked) {
+            // Backward compatibility: load old single added value
+            stockItems.push({
+                id: inventoryItem.id,
+                name: inventoryItem.name,
+                subtitle: inventoryItem.subtitle,
+                description: inventoryItem.description,
+                photo: inventoryItem.photo,
+                unit: inventoryItem.unit,
+                quantity: Math.abs(itemData.added.value),
+                reason: itemData.added.value >= 0 ? 'delivery' : 'pulled-out'
+                });
         }
     });
     
@@ -2792,6 +2916,8 @@ function closeAddStocksPage() {
     const addStocksPage = document.getElementById('addStocksPage');
     if (addStocksPage) {
         addStocksPage.classList.remove('show');
+        // Reset mode when closing
+        currentAdjustmentMode = 'add';
     }
 }
 
@@ -2818,6 +2944,27 @@ function closeRunningLowPage() {
     if (runningLowPage) {
         runningLowPage.classList.remove('show');
     }
+}
+
+// Helper function to sort items by inventory order (category order, then item order)
+function sortByInventoryOrder(items) {
+    return items.sort((a, b) => {
+        // Get category order for both items
+        const categoryA = a.category || 'Other';
+        const categoryB = b.category || 'Other';
+        const orderA = (categoryOrderMap && typeof categoryOrderMap[categoryA] === 'number') ? categoryOrderMap[categoryA] : 999;
+        const orderB = (categoryOrderMap && typeof categoryOrderMap[categoryB] === 'number') ? categoryOrderMap[categoryB] : 999;
+        
+        // First sort by category order
+        if (orderA !== orderB) {
+            return orderA - orderB;
+        }
+        
+        // If same category, sort by item order
+        const itemOrderA = a.order || a.displayOrder || 0;
+        const itemOrderB = b.order || b.displayOrder || 0;
+        return itemOrderA - itemOrderB;
+    });
 }
 
 function loadRunningLowItems() {
@@ -2882,8 +3029,8 @@ function loadRunningLowItems() {
     });
     
     
-    // Sort by current quantity (lowest first)
-    runningLowItems.sort((a, b) => a.currentQty - b.currentQty);
+    // Sort by inventory order (category order, then item order)
+    sortByInventoryOrder(runningLowItems);
     
     if (runningLowItems.length === 0) {
         runningLowList.style.display = 'none';
@@ -2913,7 +3060,7 @@ function createRunningLowItemCard(item) {
         </div>
         <div class="running-low-item-info">
             <div class="running-low-item-name">${item.name}</div>
-            ${(item.subtitle || item.description) ? `<div class="running-low-item-subtitle">${item.subtitle || item.description}</div>` : ''}
+            ${item.description ? `<div class="running-low-item-subtitle">${item.description}</div>` : ''}
         </div>
         <div class="running-low-item-quantity">
             <div class="running-low-quantity-number">${formatNumberWithCommas(item.currentQty)}</div>
@@ -2963,8 +3110,8 @@ function getRunningLowItemsData() {
         }
     });
     
-    // Sort by current quantity (lowest first)
-    runningLowItems.sort((a, b) => a.currentQty - b.currentQty);
+    // Sort by inventory order (category order, then item order)
+    sortByInventoryOrder(runningLowItems);
     
     return runningLowItems;
 }
@@ -3177,6 +3324,251 @@ window.downloadRunningLowReport = async function downloadRunningLowReport() {
     }
 }
 
+// Get stock adjustments data grouped by reason
+function getStockAdjustmentsData() {
+    const dateQuantities = getCurrentDateQuantities();
+    const adjustments = {
+        delivery: [],
+        'pulled-out': [],
+        wastage: []
+    };
+    
+    Object.keys(dateQuantities).forEach(itemId => {
+        const itemData = dateQuantities[itemId];
+        const inventoryItem = inventoryItems.find(item => item.id === itemId);
+        if (!inventoryItem) return;
+        
+        // Check if adjustments array exists and has entries
+        if (itemData.adjustments && Array.isArray(itemData.adjustments) && itemData.adjustments.length > 0) {
+            itemData.adjustments.forEach(adjustment => {
+                const value = Math.abs(adjustment.value || 0);
+                if (value === 0) return; // skip zero entries
+                
+                const reason = adjustment.reason || (adjustment.value < 0 ? 'pulled-out' : 'delivery');
+                const adjustmentData = {
+                    name: inventoryItem.name,
+                    subtitle: inventoryItem.subtitle,
+                    quantity: value,
+                    unit: inventoryItem.unit
+                };
+                
+                if (reason === 'delivery') {
+                    adjustments.delivery.push(adjustmentData);
+                } else if (reason === 'pulled-out') {
+                    adjustments['pulled-out'].push(adjustmentData);
+                } else if (reason === 'wastage') {
+                    adjustments.wastage.push(adjustmentData);
+                }
+            });
+        } else if (itemData.added && itemData.added.value !== 0 && itemData.added.checked) {
+            // Backward compatibility: load old single added value
+            const value = Math.abs(itemData.added.value);
+            const reason = itemData.added.value >= 0 ? 'delivery' : 'pulled-out';
+            const adjustmentData = {
+                name: inventoryItem.name,
+                subtitle: inventoryItem.subtitle,
+                quantity: value,
+                unit: inventoryItem.unit
+            };
+            
+            if (reason === 'delivery') {
+                adjustments.delivery.push(adjustmentData);
+            } else {
+                adjustments['pulled-out'].push(adjustmentData);
+            }
+        }
+    });
+    
+    // Sort each group by quantity (highest first)
+    adjustments.delivery.sort((a, b) => b.quantity - a.quantity);
+    adjustments['pulled-out'].sort((a, b) => b.quantity - a.quantity);
+    adjustments.wastage.sort((a, b) => b.quantity - a.quantity);
+    
+    return adjustments;
+}
+
+// Download Stock Adjustment Report - Make it globally accessible
+window.downloadStockAdjustmentReport = async function downloadStockAdjustmentReport() {
+    console.log('downloadStockAdjustmentReport called');
+    try {
+        // Check if html2canvas is available
+        if (typeof html2canvas === 'undefined') {
+            console.error('html2canvas is not defined');
+            alert('Download feature is loading. Please wait a moment and try again.');
+            return;
+        }
+
+        console.log('html2canvas is available');
+        const downloadBtn = document.getElementById('stockAdjustmentDownloadBtn');
+        let originalHTML = '';
+        if (downloadBtn) {
+            originalHTML = downloadBtn.innerHTML;
+            if (!downloadBtn.dataset.originalHtml) {
+                downloadBtn.dataset.originalHtml = originalHTML;
+            }
+            downloadBtn.disabled = true;
+            downloadBtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/><path d="M12 6v6l4 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+        }
+
+        // Get stock adjustments data
+        console.log('Getting stock adjustments data...');
+        const adjustments = getStockAdjustmentsData();
+        console.log('Adjustments found:', {
+            delivery: adjustments.delivery.length,
+            'pulled-out': adjustments['pulled-out'].length,
+            wastage: adjustments.wastage.length
+        });
+        
+        const totalItems = adjustments.delivery.length + adjustments['pulled-out'].length + adjustments.wastage.length;
+        if (totalItems === 0) {
+            alert('No stock adjustments to download.');
+            if (downloadBtn) {
+                downloadBtn.disabled = false;
+                downloadBtn.innerHTML = downloadBtn.dataset.originalHtml || originalHTML;
+            }
+            return;
+        }
+
+        // Format date
+        const dateStr = currentDate.toLocaleDateString('en-US', { 
+            weekday: 'long', 
+            month: 'long', 
+            day: 'numeric' 
+        });
+        
+        // Get branch name
+        const branchName = getBranchDisplayName(currentBranch);
+        
+        // Generate report HTML
+        const reportHTML = `
+            <div style="
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+                padding: 2rem;
+                background: white;
+                color: #333;
+                width: 600px;
+                line-height: 1.6;
+            ">
+                <div style="margin-bottom: 1.5rem;">
+                    <div style="font-weight: 600; margin-bottom: 0.5rem;">
+                        <strong>Date:</strong> ${dateStr}
+                    </div>
+                    <div style="font-weight: 600;">
+                        <strong>Branch:</strong> ${branchName}
+                    </div>
+                </div>
+                
+                ${adjustments.delivery.length > 0 ? `
+                    <div style="margin-bottom: 1.5rem;">
+                        <div style="font-weight: 700; font-size: 1.3rem; margin-bottom: 0.75rem;">
+                            Added Stocks
+                        </div>
+                        ${adjustments.delivery.map(item => {
+                            const itemName = item.name + (item.subtitle ? ` (${item.subtitle})` : '');
+                            const quantity = formatNumberWithCommas(item.quantity) + ' ' + item.unit;
+                            return `
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                                <span style="flex: 1;">${itemName}</span>
+                                <span style="text-align: right; font-weight: 500; margin-left: 1rem;">${quantity}</span>
+                            </div>
+                            `;
+                        }).join('')}
+                    </div>
+                ` : ''}
+                
+                ${adjustments['pulled-out'].length > 0 ? `
+                    <div style="margin-bottom: 1.5rem;">
+                        <div style="font-weight: 700; font-size: 1.3rem; margin-bottom: 0.75rem;">
+                            Pulled Out Stocks
+                        </div>
+                        ${adjustments['pulled-out'].map(item => {
+                            const itemName = item.name + (item.subtitle ? ` (${item.subtitle})` : '');
+                            const quantity = formatNumberWithCommas(item.quantity) + ' ' + item.unit;
+                            return `
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                                <span style="flex: 1;">${itemName}</span>
+                                <span style="text-align: right; font-weight: 500; margin-left: 1rem;">${quantity}</span>
+                            </div>
+                            `;
+                        }).join('')}
+                    </div>
+                ` : ''}
+                
+                ${adjustments.wastage.length > 0 ? `
+                    <div style="margin-bottom: 1.5rem;">
+                        <div style="font-weight: 700; font-size: 1.3rem; margin-bottom: 0.75rem;">
+                            Wastage
+                        </div>
+                        ${adjustments.wastage.map(item => {
+                            const itemName = item.name + (item.subtitle ? ` (${item.subtitle})` : '');
+                            const quantity = formatNumberWithCommas(item.quantity) + ' ' + item.unit;
+                            return `
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                                <span style="flex: 1;">${itemName}</span>
+                                <span style="text-align: right; font-weight: 500; margin-left: 1rem;">${quantity}</span>
+                            </div>
+                            `;
+                        }).join('')}
+                    </div>
+                ` : ''}
+            </div>
+        `;
+        
+        // Create a temporary container for the report
+        const reportContainer = document.createElement('div');
+        reportContainer.innerHTML = reportHTML;
+        reportContainer.style.position = 'absolute';
+        reportContainer.style.left = '-9999px';
+        reportContainer.style.top = '0';
+        reportContainer.style.width = '600px';
+        document.body.appendChild(reportContainer);
+        
+        // Wait a bit for rendering
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Use html2canvas to capture the report
+        const canvas = await html2canvas(reportContainer, {
+            backgroundColor: '#ffffff',
+            scale: 2,
+            logging: false,
+            useCORS: true
+        });
+        
+        // Remove the temporary container
+        document.body.removeChild(reportContainer);
+        
+        // Convert to image and download
+        const imageData = canvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        
+        // Generate filename with date and branch
+        const dateKey = getDateKey(currentDate);
+        const branchKey = currentBranch === 'sm-north' ? 'SM-North' : 'Podium';
+        link.download = `stock-adjustment-report-${branchKey}-${dateKey}.png`;
+        
+        link.href = imageData;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        if (downloadBtn) {
+            downloadBtn.disabled = false;
+            downloadBtn.innerHTML = downloadBtn.dataset.originalHtml || originalHTML;
+        }
+        
+        console.log('Download completed successfully');
+    } catch (error) {
+        console.error('Error downloading stock adjustment report:', error);
+        console.error('Error details:', error.message, error.stack);
+        alert('Failed to download report: ' + (error.message || 'Unknown error'));
+        const downloadBtn = document.getElementById('stockAdjustmentDownloadBtn');
+        if (downloadBtn) {
+            downloadBtn.disabled = false;
+            downloadBtn.innerHTML = downloadBtn.dataset.originalHtml || '';
+        }
+    }
+}
+
 function openItemSelectionModal() {
     const modal = document.getElementById('itemSelectionModalOverlay');
     if (modal) {
@@ -3239,7 +3631,7 @@ function populateItemSelectionList() {
                 </div>
                 <div class="selection-item-info">
                     <div class="selection-item-name">${item.name}</div>
-                    ${(item.subtitle || item.description) ? `<div class="selection-item-subtitle">${item.subtitle || item.description}</div>` : ''}
+                    ${item.description ? `<div class="selection-item-subtitle">${item.description}</div>` : ''}
                 </div>
             `;
             
@@ -3252,22 +3644,22 @@ function addItemToStock(itemId) {
     const item = inventoryItems.find(i => i.id === itemId);
     if (!item) return;
 
-    // Check if item already exists in stock
-    const existingStockItem = stockItems.find(s => s.id === itemId);
-    if (existingStockItem) {
-        // Increase quantity by 1
-        existingStockItem.quantity += 1;
-    } else {
-        // Add new item to stock
+    // Determine reason based on mode
+    const reason = currentAdjustmentMode === 'pull-out' ? 'pulled-out' : 
+                   currentAdjustmentMode === 'wastage' ? 'wastage' : 'delivery';
+    const defaultQuantity = 1; // Always positive for UI; reason determines subtraction
+
+    // Always add as a new record (no merging)
         stockItems.push({
             id: item.id,
             name: item.name,
             subtitle: item.subtitle,
+        description: item.description,
             photo: item.photo,
             unit: item.unit,
-            quantity: 1
+        quantity: defaultQuantity,
+        reason: reason
         });
-    }
 
     renderStockItems();
 }
@@ -3275,9 +3667,16 @@ function addItemToStock(itemId) {
 function updateStockQuantity(itemId, quantity) {
     const stockItem = stockItems.find(s => s.id === itemId);
     if (stockItem) {
-        stockItem.quantity = quantity;
+        stockItem.quantity = Math.abs(quantity);
         // Don't re-render on every keystroke - just update the value
         // renderStockItems(); // This was causing focus loss
+    }
+}
+
+function updateStockQuantityByIndex(index, quantity) {
+    if (stockItems[index]) {
+        stockItems[index].quantity = Math.abs(quantity);
+        // Reason stays as-is; subtraction is implied by reason, not by sign
     }
 }
 
@@ -3285,52 +3684,83 @@ async function saveStockAdditions() {
     const dateQuantities = getCurrentDateQuantities();
     const itemsToSync = new Set(); // Track all items that need Firebase sync
     
-    // First, reset all added quantities to 0 and mark for sync
-    Object.keys(dateQuantities).forEach(itemId => {
-        if (dateQuantities[itemId].added) {
-            dateQuantities[itemId].added.value = 0;
-            dateQuantities[itemId].added.checked = false;
-            itemsToSync.add(itemId); // Mark for Firebase sync
-        }
+    // Group current edits by itemId
+    const itemsMap = new Map();
+    stockItems.forEach(si => {
+        if (!itemsMap.has(si.id)) itemsMap.set(si.id, []);
+        itemsMap.get(si.id).push(si);
     });
-    
-    // Then set the quantities for items in stockItems
-    stockItems.forEach(stockItem => {
-        if (!dateQuantities[stockItem.id]) {
-            dateQuantities[stockItem.id] = {
+
+    itemsMap.forEach((entries, itemId) => {
+        if (!dateQuantities[itemId]) {
+            dateQuantities[itemId] = {
                 opening: { value: 0, checked: false },
                 closing: { value: 0, checked: false },
-                added: { value: 0, checked: false }
+                added: { value: 0, checked: false },
+                adjustments: []
             };
         }
         
-        // Ensure added field exists
-        if (!dateQuantities[stockItem.id].added) {
-            dateQuantities[stockItem.id].added = { value: 0, checked: false };
+        // Ensure adjustments array exists (backward compatibility)
+        if (!dateQuantities[itemId].adjustments) {
+            const oldAdded = dateQuantities[itemId].added;
+            dateQuantities[itemId].adjustments = [];
+            if (oldAdded && oldAdded.value !== 0 && oldAdded.checked) {
+                dateQuantities[itemId].adjustments.push({
+                    value: Math.abs(oldAdded.value),
+                    reason: oldAdded.value >= 0 ? 'delivery' : 'pulled-out',
+                    timestamp: new Date().toISOString()
+                });
+            }
         }
         
-        // Set the added quantity (even if 0)
-        dateQuantities[stockItem.id].added.value = stockItem.quantity;
-        // Always mark as checked when we explicitly set a value (even if 0)
-        dateQuantities[stockItem.id].added.checked = true;
-        itemsToSync.add(stockItem.id); // Mark for Firebase sync
+        // Replace adjustments for this item with the current (non-zero) entries
+        const filtered = entries
+            .filter(e => (Math.abs(e.quantity) || 0) > 0)
+            .map(e => ({
+                    // Store value as positive magnitude; sign determined by reason
+                    value: Math.abs(e.quantity),
+                    reason: e.reason || 'delivery',
+                    timestamp: new Date().toISOString()
+                }));
+
+        if (filtered.length === 0) {
+            // No adjustments: clear and reset added
+            dateQuantities[itemId].adjustments = [];
+            dateQuantities[itemId].added.value = 0;
+            dateQuantities[itemId].added.checked = false;
+        } else {
+            dateQuantities[itemId].adjustments = filtered;
+            // Sum with sign based on reason (both pulled-out and wastage are negative)
+            const totalAdjustment = filtered.reduce((sum, adj) => {
+                const signed = (adj.reason === 'pulled-out' || adj.reason === 'wastage') ? -adj.value : adj.value;
+                return sum + signed;
+            }, 0);
+            dateQuantities[itemId].added.value = totalAdjustment;
+            dateQuantities[itemId].added.checked = true;
+        }
+
+        itemsToSync.add(itemId); // Mark for Firebase sync
     });
 
     // Save to local storage
     saveQuantitiesToLocal();
     
-    // Sync ALL items to Firebase (including zero values)
+    // Sync ALL items to Firebase
     console.log('Items to sync to Firebase:', Array.from(itemsToSync));
     for (const itemId of itemsToSync) {
         const itemData = dateQuantities[itemId];
-        console.log(`Syncing item ${itemId} with added quantity:`, itemData?.added?.value);
+        console.log(`Syncing item ${itemId} with adjustments:`, itemData?.adjustments);
         await syncQuantityToFirebase(itemId, 'added');
     }
+    
+    // Clear stockItems after saving
+    stockItems = [];
     
     // Refresh the main inventory display to update closing suggestions
     renderInventory();
     
-    showSyncIndicator('Stock additions saved', 'success');
+    showSyncIndicator('Stock adjustments saved', 'success');
 }
 
 function renderStockItems() {
@@ -3339,39 +3769,51 @@ function renderStockItems() {
     if (!stocksList) return;
 
     if (stockItems.length === 0) {
-        stocksList.innerHTML = '<div style="text-align: center; color: #999; padding: 40px 20px;">No items added yet</div>';
+        stocksList.innerHTML = '<div style="text-align: center; color: #999; padding: 40px 20px;">No adjustments yet</div>';
         if (saveStocksBtn) saveStocksBtn.style.display = 'none';
         return;
     }
 
-    stocksList.innerHTML = stockItems.map(stockItem => `
-        <div class="stock-item-card">
+    stocksList.innerHTML = stockItems.map((stockItem, index) => {
+        const reason = stockItem.reason || 'delivery';
+        const isNegative = reason === 'pulled-out' || reason === 'wastage';
+        const reasonDisplay = reason === 'pulled-out' ? 'Pulled Out' : 
+                             reason === 'wastage' ? 'Wastage' :
+                             reason === 'transfer' ? 'Transfer' : 'Delivery';
+        const quantityClass = isNegative ? 'pulled-out' : '';
+        const displayQty = Math.abs(stockItem.quantity || 0);
+        
+        return `
+        <div class="stock-item-card" data-index="${index}">
             <div class="stock-item-image">
                 ${stockItem.photo ? `<img src="${stockItem.photo}" alt="${stockItem.name}">` : 'No Image'}
             </div>
             <div class="stock-item-info">
+                <div class="stock-item-adjustment-type">${reasonDisplay}</div>
                 <div class="stock-item-name">${stockItem.name}</div>
-                ${(stockItem.subtitle || stockItem.description) ? `<div class="stock-item-subtitle">${stockItem.subtitle || stockItem.description}</div>` : ''}
+                ${stockItem.description ? `<div class="stock-item-subtitle">${stockItem.description}</div>` : ''}
             </div>
-            <div class="stock-item-quantity">
+            <div class="stock-item-quantity ${quantityClass}">
                 <input type="text" 
                        class="quantity-number" 
                        data-item-id="${stockItem.id}"
-                       value="${stockItem.quantity}" 
+                       data-index="${index}"
+                       value="${displayQty}" 
                        inputmode="decimal"
                        pattern="-?[0-9]*\\.?[0-9]*">
                 <div class="stock-quantity-unit">${stockItem.unit}</div>
             </div>
         </div>
-    `).join('');
+    `;
+    }).join('');
 
     // Add event listeners to the newly created inputs
     stocksList.querySelectorAll('.quantity-number[data-item-id]').forEach(input => {
         input.addEventListener('input', (e) => {
-            const itemId = e.target.dataset.itemId;
+            const index = parseInt(e.target.dataset.index);
             const quantity = parseFloat(e.target.value) || 0;
-            console.log('Stock quantity changed:', itemId, quantity);
-            updateStockQuantity(itemId, quantity);
+            console.log('Stock quantity changed:', index, quantity);
+            updateStockQuantityByIndex(index, quantity);
         });
     });
 

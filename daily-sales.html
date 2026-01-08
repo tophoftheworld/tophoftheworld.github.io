@@ -294,7 +294,33 @@
             <!-- Cash reconciliation fields will be dynamically inserted here -->
         </div>
 
-        <button onclick="checkExistingAndShowSummary()">Submit</button>
+        <!-- Form section (shown when no data exists or in edit mode) -->
+        <div id="formSection">
+            <button id="cancelEditBtn" onclick="cancelEdit()" style="width: 100%; padding: 0.85rem; font-size: 1rem; background-color: #e0e0e0; color: #333; border: none; border-radius: 10px; cursor: pointer; transition: background 0.2s ease; margin-bottom: 0.5rem; display: none;">
+                Cancel
+            </button>
+            <button onclick="checkExistingAndShowSummary()">Submit</button>
+        </div>
+
+        <!-- Summary view section (shown when data exists) -->
+        <div id="summarySection" style="display: none;">
+            <div id="existingDataSummary" style="margin: 1.5rem 0; padding: 1.5rem; background: #f9f9f9; border-radius: 12px;">
+                <!-- Summary content will be inserted here -->
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0;">
+                <button onclick="downloadExistingSummary()" style="width: 100%; padding: 0.85rem; font-size: 1rem; background-color: #4a90e2; color: #fff; border: none; border-radius: 10px; cursor: pointer; transition: background 0.2s ease; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Download Full Summary
+                </button>
+                <button onclick="editExistingData()" style="width: 100%; padding: 0.85rem; font-size: 1rem; background-color: #2b9348; color: #fff; border: none; border-radius: 10px; cursor: pointer; transition: background 0.2s ease;">
+                    Edit
+                </button>
+            </div>
+        </div>
                     </div>
 
     <!-- Confirmation Modal -->
@@ -360,6 +386,7 @@
     "></div>
 
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <script type="module">
         import { db } from './js/firebase-setup.js';
         import {
@@ -451,7 +478,416 @@
             }
         };
 
-        window.handleBranchChange = function() {
+        // Function to check for existing data and show appropriate view
+        window.checkExistingData = async function() {
+            // Don't check if we're in editing mode
+            if (window.isEditingMode) {
+                return;
+            }
+            
+            try {
+                const selectedDate = flatpickrInstance?.selectedDates[0];
+                if (!selectedDate) return;
+                
+                const recordDate = selectedDate.toLocaleDateString('en-CA');
+                const branch = document.getElementById("branchSelect").value;
+                
+                // Check if record exists
+                const salesRef = doc(db, "sales-data", branch, "daily", recordDate);
+                const existingSnap = await getDoc(salesRef);
+                
+                if (existingSnap.exists()) {
+                    // Data exists - show summary view, hide form
+                    const existingData = existingSnap.data();
+                    showSummaryView(existingData, branch, recordDate);
+                } else {
+                    // No data - show form, hide summary, and clear all form fields
+                    clearFormFields();
+                    showFormView();
+                }
+            } catch (error) {
+                console.error("Error checking existing data:", error);
+                // On error, show form view
+                showFormView();
+            }
+        };
+
+        // Function to show summary view
+        function showSummaryView(data, branch, recordDate) {
+            // Hide form section
+            document.getElementById("formSection").style.display = "none";
+            
+            // Hide form fields (but keep date and branch visible)
+            const totalDisplay = document.getElementById("totalDisplay");
+            if (totalDisplay) {
+                totalDisplay.style.display = "none";
+                const totalLabel = totalDisplay.previousElementSibling;
+                if (totalLabel && totalLabel.tagName === 'LABEL') {
+                    totalLabel.style.display = "none";
+                }
+            }
+            
+            const walkInRow = document.getElementById("walkInSales")?.parentElement?.parentElement;
+            if (walkInRow) {
+                walkInRow.style.display = "none";
+            }
+            
+            const paymentContainer = document.getElementById("paymentFieldsContainer");
+            if (paymentContainer) {
+                paymentContainer.style.display = "none";
+            }
+            
+            const expensesContainer = document.getElementById("expensesContainer");
+            if (expensesContainer) {
+                expensesContainer.style.display = "none";
+            }
+            
+            const cashReconciliationContainer = document.getElementById("cashReconciliationContainer");
+            if (cashReconciliationContainer) {
+                cashReconciliationContainer.style.display = "none";
+            }
+            
+            // Show summary section
+            document.getElementById("summarySection").style.display = "block";
+            
+            // Generate and display summary - use dateDisplay from data if available, otherwise format it
+            let dateDisplay;
+            if (data.dateDisplay) {
+                dateDisplay = data.dateDisplay;
+            } else {
+                // Format the date string using the same format as the input field
+                try {
+                    const dateObj = new Date(recordDate + 'T00:00:00');
+                    // Use the same format as formatDate function
+                    dateDisplay = dateObj.toLocaleDateString("en-PH", {
+                        weekday: 'long',
+                        month: 'long',
+                        day: 'numeric'
+                    });
+                } catch (e) {
+                    dateDisplay = recordDate;
+                }
+            }
+            // Pass recordDate for proper formatting
+            const displaySummaryHTML = generateDisplaySummaryHTML(data, branch, dateDisplay, recordDate);
+            document.getElementById("existingDataSummary").innerHTML = displaySummaryHTML;
+            
+            // Store data for download and edit
+            window.existingData = data;
+            window.existingBranch = branch;
+            window.existingDate = recordDate;
+            window.existingDateDisplay = dateDisplay;
+            window.existingFullSummaryHTML = generateSummaryHTML(data, branch, dateDisplay);
+        }
+
+        // Function to clear all form fields
+        function clearFormFields() {
+            // Clear all input fields (except readonly ones like date)
+            const inputIds = ['cash', 'card', 'gcash', 'maya', 'grab', 'expenses', 'actualCashLeft', 'qr', 'giftCard', 'nonCashExpenses'];
+            inputIds.forEach(id => {
+                const field = document.getElementById(id);
+                if (field) {
+                    field.value = '';
+                    field.dataset.raw = '';
+                }
+            });
+            
+            // Reset totals
+            updateTotal();
+        }
+        
+        // Function to show form view
+        function showFormView(isEditMode = false) {
+            // Show form section
+            document.getElementById("formSection").style.display = "block";
+            
+            // Show/hide cancel button based on edit mode
+            const cancelBtn = document.getElementById("cancelEditBtn");
+            if (cancelBtn) {
+                cancelBtn.style.display = isEditMode ? "block" : "none";
+            }
+            
+            // Show form fields
+            const totalDisplay = document.getElementById("totalDisplay");
+            if (totalDisplay) {
+                totalDisplay.style.display = "block";
+                const totalLabel = totalDisplay.previousElementSibling;
+                if (totalLabel && totalLabel.tagName === 'LABEL') {
+                    totalLabel.style.display = "block";
+                }
+            }
+            
+            const walkInRow = document.getElementById("walkInSales")?.parentElement?.parentElement;
+            if (walkInRow) {
+                walkInRow.style.display = "flex";
+            }
+            
+            const paymentContainer = document.getElementById("paymentFieldsContainer");
+            if (paymentContainer) {
+                paymentContainer.style.display = "block";
+            }
+            
+            const expensesContainer = document.getElementById("expensesContainer");
+            if (expensesContainer) {
+                expensesContainer.style.display = "block";
+            }
+            
+            const cashReconciliationContainer = document.getElementById("cashReconciliationContainer");
+            if (cashReconciliationContainer) {
+                cashReconciliationContainer.style.display = "block";
+            }
+            
+            // Hide summary section
+            document.getElementById("summarySection").style.display = "none";
+            
+            // Clear existing data only if not in edit mode
+            if (!isEditMode) {
+                window.existingData = null;
+                window.existingBranch = null;
+                window.existingDate = null;
+                window.existingDateDisplay = null;
+                window.existingFullSummaryHTML = null;
+            }
+        }
+
+        // Function to edit existing data
+        window.editExistingData = function() {
+            if (!window.existingData) {
+                window.showToast("❌ No data to edit");
+                return;
+            }
+            
+            // Store existing data before showing form view
+            const data = window.existingData;
+            const branch = window.existingBranch;
+            const recordDate = window.existingDate;
+            
+            // Set flag to prevent checkExistingData from interfering during edit
+            window.isEditingMode = true;
+            window.editModeRecordDate = recordDate; // Store the original date being edited
+            
+            // Ensure branch is set correctly
+            if (branch) {
+                document.getElementById("branchSelect").value = branch;
+                currentBranch = branch;
+            }
+            
+            // Show form view in edit mode (this shows the cancel button)
+            showFormView(true);
+            
+            // Initialize fields for the correct branch (this will recreate them if needed)
+            // This needs to happen after showFormView so the container is visible
+            // Use setupBranchFields directly to avoid triggering the edit mode cancellation logic
+            setupBranchFields(branch);
+            
+            // Reinitialize input listeners for new fields
+            initializeInputListeners();
+            
+            // Populate fields after they're initialized
+            // Use a delay to ensure fields are set up
+            setTimeout(() => {
+                populateFormFields(data, branch);
+            }, 100);
+        };
+        
+        // Function to check existing data for edit mode when date changes
+        window.checkExistingDataForEdit = async function(selectedDate) {
+            try {
+                const recordDate = selectedDate.toLocaleDateString('en-CA');
+                const branch = document.getElementById("branchSelect").value;
+                const salesRef = doc(db, "sales-data", branch, "daily", recordDate);
+                const existingSnap = await getDoc(salesRef);
+                
+                if (existingSnap.exists()) {
+                    // New date has data - exit edit mode and show summary view
+                    const existingData = existingSnap.data();
+                    
+                    // Clear edit mode flags
+                    window.isEditingMode = false;
+                    window.editModeRecordDate = null;
+                    
+                    // Restore checkExistingData function if it was disabled
+                    // (It should be restored automatically, but ensure it's working)
+                    
+                    // Show summary view for the new date
+                    showSummaryView(existingData, branch, recordDate);
+                } else {
+                    // New date has no data - stay in edit mode but clear form
+                    // Update edit mode record date to the new date (no data)
+                    window.editModeRecordDate = recordDate;
+                    window.existingData = null;
+                    window.existingBranch = branch;
+                    window.existingDate = recordDate;
+                    
+                    // Clear form fields
+                    if (window.clearFormFields) {
+                        window.clearFormFields();
+                    }
+                    
+                    // Ensure form view is still visible with cancel button (we're still in edit mode)
+                    showFormView(true);
+                }
+            } catch (error) {
+                console.error("Error checking data for new date in edit mode:", error);
+                // On error, exit edit mode and show form
+                window.isEditingMode = false;
+                window.editModeRecordDate = null;
+                if (window.clearFormFields) {
+                    window.clearFormFields();
+                }
+                showFormView(false);
+            }
+        };
+        
+        // Make clearFormFields and populateFormFields globally available
+        window.clearFormFields = clearFormFields;
+        window.populateFormFields = populateFormFields;
+        
+        // Function to cancel edit and return to summary view
+        window.cancelEdit = async function() {
+            if (!window.editModeRecordDate || !window.existingBranch) {
+                // If we don't have the original record date, just clear edit mode
+                window.isEditingMode = false;
+                window.editModeRecordDate = null;
+                showFormView(false);
+                return;
+            }
+            
+            // Restore checkExistingData
+            // Get the current date from flatpickr
+            const selectedDate = flatpickrInstance?.selectedDates[0];
+            if (selectedDate) {
+                const recordDate = selectedDate.toLocaleDateString('en-CA');
+                const branch = document.getElementById("branchSelect").value;
+                
+                try {
+                    // Check if record exists for current date/branch
+                    const salesRef = doc(db, "sales-data", branch, "daily", recordDate);
+                    const existingSnap = await getDoc(salesRef);
+                    
+                    if (existingSnap.exists()) {
+                        // Data exists - show summary view
+                        const existingData = existingSnap.data();
+                        showSummaryView(existingData, branch, recordDate);
+                    } else {
+                        // No data - clear form and show empty form
+                        clearFormFields();
+                        showFormView(false);
+                    }
+                } catch (error) {
+                    console.error("Error checking existing data on cancel:", error);
+                    showFormView(false);
+                }
+            } else {
+                showFormView(false);
+            }
+            
+            // Clear edit mode flags
+            window.isEditingMode = false;
+            window.editModeRecordDate = null;
+        };
+        
+        // Helper function to populate form fields with data
+        function populateFormFields(data, branch) {
+            console.log("Populating form fields with data:", data, "branch:", branch);
+            
+            // Populate payment fields
+            const setFieldValue = (fieldId, value) => {
+                const field = document.getElementById(fieldId);
+                if (field) {
+                    const numValue = parseFloat(value) || 0;
+                    field.dataset.raw = numValue.toString();
+                    const formattedValue = numValue.toLocaleString('en-US', {
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 2
+                    });
+                    field.value = formattedValue;
+                    console.log(`Set ${fieldId}: ${numValue} (formatted: ${formattedValue})`);
+                } else {
+                    console.warn(`Field ${fieldId} not found`);
+                }
+            };
+            
+            // Populate common fields
+            setFieldValue("cash", data.cash);
+            setFieldValue("card", data.card);
+            setFieldValue("grab", data.grab);
+            setFieldValue("expenses", data.expenses);
+            setFieldValue("actualCashLeft", data.actualCashLeft);
+            
+            // Populate branch-specific fields
+            if (branch === "sm-north") {
+                setFieldValue("gcash", data.gcash);
+                setFieldValue("maya", data.maya);
+            } else {
+                setFieldValue("qr", data.qr);
+                setFieldValue("giftCard", data.giftCard);
+                setFieldValue("nonCashExpenses", data.nonCashExpenses);
+            }
+            
+            // Force update totals after populating
+            setTimeout(() => {
+                updateTotal();
+            }, 50);
+        }
+
+        // Function to download existing summary
+        window.downloadExistingSummary = async function() {
+            if (!window.existingData || !window.existingFullSummaryHTML) {
+                window.showToast("❌ No data to download");
+                return;
+            }
+            
+            try {
+                // Create a temporary container for the summary
+                const tempContainer = document.createElement('div');
+                tempContainer.style.position = 'absolute';
+                tempContainer.style.left = '-9999px';
+                tempContainer.style.top = '0';
+                tempContainer.style.width = '500px';
+                tempContainer.style.padding = '2rem';
+                tempContainer.style.background = 'white';
+                tempContainer.style.borderRadius = '16px';
+                tempContainer.innerHTML = window.existingFullSummaryHTML;
+                document.body.appendChild(tempContainer);
+                
+                // Use html2canvas to capture
+                const canvas = await html2canvas(tempContainer, {
+                    backgroundColor: '#ffffff',
+                    scale: 2,
+                    logging: false,
+                    useCORS: true
+                });
+                
+                // Remove temporary container
+                document.body.removeChild(tempContainer);
+                
+                // Convert to image and download
+                const imageData = canvas.toDataURL('image/png');
+                const link = document.createElement('a');
+                
+                // Generate filename
+                let dateStr = window.existingDate || new Date().toISOString().split('T')[0];
+                let branch = "Unknown";
+                if (window.existingBranch) {
+                    branch = window.existingBranch === "sm-north" ? "SM-North" : "Podium";
+                }
+                
+                link.download = `sales-report-${branch}-${dateStr}.png`;
+                link.href = imageData;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                window.showToast("✅ Image downloaded!");
+            } catch (error) {
+                console.error("Error downloading image:", error);
+                window.showToast("❌ Failed to download image");
+            }
+        };
+
+
+        window.handleBranchChange = async function() {
             const branch = document.getElementById("branchSelect").value;
             currentBranch = branch;
             
@@ -460,6 +896,80 @@
                 localStorage.setItem(`lastSalesBranch_${currentUserNickname}`, branch);
             }
             
+            // If in edit mode, check for data for the new branch/date combination
+            if (window.isEditingMode) {
+                try {
+                    const selectedDate = flatpickrInstance?.selectedDates[0];
+                    if (selectedDate) {
+                        const recordDate = selectedDate.toLocaleDateString('en-CA');
+                        const salesRef = doc(db, "sales-data", branch, "daily", recordDate);
+                        const existingSnap = await getDoc(salesRef);
+                        
+                        if (existingSnap.exists()) {
+                            // New branch/date has data - exit edit mode and show summary
+                            const existingData = existingSnap.data();
+                            
+                            // Clear edit mode flags
+                            window.isEditingMode = false;
+                            window.editModeRecordDate = null;
+                            
+                            // Setup fields first, then show summary
+                            setupBranchFields(branch);
+                            initializeInputListeners();
+                            
+                            // Show summary view for the new branch/date
+                            setTimeout(() => {
+                                showSummaryView(existingData, branch, recordDate);
+                            }, 100);
+                            return; // Exit early, don't continue with normal flow
+                        } else {
+                            // New branch/date has no data - stay in edit mode but clear form
+                            window.editModeRecordDate = recordDate;
+                            window.existingData = null;
+                            window.existingBranch = branch;
+                            window.existingDate = recordDate;
+                            
+                            // Ensure form view is visible first (we're still in edit mode)
+                            showFormView(true);
+                            
+                            // Setup fields for the new branch
+                            setupBranchFields(branch);
+                            
+                            // Reinitialize input listeners for new fields
+                            initializeInputListeners();
+                            
+                            // Clear form fields
+                            setTimeout(() => {
+                                if (window.clearFormFields) {
+                                    window.clearFormFields();
+                                }
+                            }, 50);
+                            return; // Exit early, don't continue with normal flow
+                        }
+                    }
+                } catch (error) {
+                    console.error("Error checking data for new branch in edit mode:", error);
+                    // On error, continue with normal flow
+                }
+            }
+            
+            // Normal flow: setup fields and check for existing data
+            setupBranchFields(branch);
+            
+            // Reinitialize input listeners for new fields
+            initializeInputListeners();
+            
+            // Check for existing data after setting up fields (wait for listeners to be initialized)
+            // But only if not in editing mode
+            if (window.checkExistingData && !window.isEditingMode) {
+                setTimeout(() => {
+                    window.checkExistingData();
+                }, 200);
+            }
+        };
+        
+        // Helper function to setup branch-specific fields
+        function setupBranchFields(branch) {
             const container = document.getElementById("paymentFieldsContainer");
             
             if (branch === "sm-north") {
@@ -593,9 +1103,6 @@
                     </div>
                 `;
             }
-            
-            // Reinitialize input listeners for new fields
-            initializeInputListeners();
         };
 
         function initializeInputListeners() {
@@ -718,9 +1225,55 @@
             }
             return formattedDate;
         }
+        
+        // Function to format date for display (date on one line, weekday on next)
+        function formatDateForDisplay(dateDisplay, recordDate) {
+            let dateObj;
+            try {
+                // Try to parse from recordDate first (YYYY-MM-DD format)
+                if (recordDate && recordDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                    dateObj = new Date(recordDate + 'T00:00:00');
+                } else if (dateDisplay && dateDisplay.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                    dateObj = new Date(dateDisplay + 'T00:00:00');
+                } else if (dateDisplay && typeof dateDisplay === 'string') {
+                    // Try to parse existing formatted date
+                    dateObj = new Date(dateDisplay);
+                } else {
+                    dateObj = new Date();
+                }
+                
+                if (isNaN(dateObj.getTime())) {
+                    // Fallback to current date
+                    dateObj = new Date();
+                }
+                
+                // Format date without weekday: "November 12, 2025"
+                const dateStr = dateObj.toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                });
+                
+                // Format weekday: "Wednesday"
+                const weekdayStr = dateObj.toLocaleDateString('en-US', {
+                    weekday: 'long'
+                });
+                
+                return {
+                    date: dateStr,
+                    weekday: weekdayStr
+                };
+            } catch (e) {
+                // Fallback
+                return {
+                    date: dateDisplay || new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+                    weekday: new Date().toLocaleDateString('en-US', { weekday: 'long' })
+                };
+            }
+        }
 
-        function generateDisplaySummaryHTML(data, branch, dateDisplay) {
-            const formattedDate = formatSummaryDate(dateDisplay) || "";
+        function generateDisplaySummaryHTML(data, branch, dateDisplay, recordDate) {
+            const dateInfo = formatDateForDisplay(dateDisplay, recordDate);
             const branchLabel = branch === "sm-north" ? "SM North" : "Podium";
             const formatCurrency = (val) => {
                 const num = val ?? 0;
@@ -741,9 +1294,10 @@
 
             return `
                 <div style="display: flex; flex-direction: column; align-items: center; gap: 0.85rem; font-size: 0.95rem;">
-                    <div style="text-align: center; line-height: 1.4;">
-                        <div style="font-weight: 600;">${formattedDate}</div>
-                        <div style="color: #555;">${branchLabel}</div>
+                    <div style="text-align: center; line-height: 1.5;">
+                        <div style="font-weight: 600; font-size: 1.05rem; margin-bottom: 0.25rem;">${dateInfo.date}</div>
+                        <div style="font-weight: 500; color: #666; margin-bottom: 0.5rem;">${dateInfo.weekday}</div>
+                        <div style="font-weight: 700; font-size: 1.15rem; color: #2b9348; margin-top: 0.5rem;">${branchLabel}</div>
                     </div>
                     <div style="width: 100%; max-width: 320px;">
                         ${totalsSection}
@@ -823,6 +1377,135 @@
             html += `</div>`;
             
             return html;
+        }
+
+        // Email sending function using EmailJS
+        async function sendSalesReportEmail(record, branch, date) {
+            // Configure EmailJS
+            const EMAILJS_SERVICE_ID = 'service_1085n74';
+            const EMAILJS_TEMPLATE_ID = 'template_6zh5mq8';
+            const EMAILJS_PUBLIC_KEY = 'Jxzqofh9mPAsb9V0M';
+            const RECIPIENT_EMAIL = 'hi@matchanese.com';
+
+            // Initialize EmailJS
+            if (typeof emailjs === 'undefined') {
+                console.error('EmailJS not loaded');
+                return;
+            }
+
+            emailjs.init(EMAILJS_PUBLIC_KEY);
+
+            const branchLabel = branch === 'sm-north' ? 'SM North' : 'Podium';
+            const formatCurrency = (val) => `₱${(val || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+            const formattedDate = formatSummaryDate(record.dateDisplay || date);
+            
+            // Format date for subject line (e.g., "December 31 (Wednesday)")
+            const dateObj = new Date(date + 'T00:00:00');
+            const monthDay = dateObj.toLocaleDateString('en-US', {
+                month: 'long',
+                day: 'numeric'
+            });
+            const weekday = dateObj.toLocaleDateString('en-US', {
+                weekday: 'long'
+            });
+            const subjectDate = `${monthDay} (${weekday})`;
+            
+            const variance = typeof record.cashVariance === "number" ? record.cashVariance : 0;
+            const varianceColor = variance < 0 ? '#d9534f' : variance > 0 ? '#2b9348' : '#333';
+            const formatVariance = (val) => {
+                const num = typeof val === "number" ? val : 0;
+                if (Math.abs(num) < 0.0005) {
+                    return '₱0.00';
+                }
+                const absVal = Math.abs(num).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                return num < 0 ? `-₱${absVal}` : `₱${absVal}`;
+            };
+
+            // Use exact same HTML format as the downloaded report, wrapped in proper email HTML
+            let emailContent = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 20px; font-family: Arial, sans-serif; background-color: #f5f5f5;">
+    <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 20px; border-radius: 8px;">
+    
+    <!-- Quick Summary at Top -->
+    <div style="background: linear-gradient(135deg, #2b9348 0%, #238636 100%); color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; text-align: center;">
+        <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Matchanese - ${branchLabel}</div>
+        <div style="font-size: 32px; font-weight: bold; margin-bottom: 4px;">${formatCurrency(record.totalSales)}</div>
+        <div style="font-size: 12px; opacity: 0.8;">Total Sales for ${formattedDate}</div>
+    </div>
+    
+    <div style="font-size: 0.95rem;">`;
+            emailContent += `<div style="margin-bottom: 0.4rem; padding-bottom: 0.2rem; border-bottom: 1px solid #eee;">`;
+            emailContent += `<strong>Date:</strong> ${formattedDate}<br>`;
+            emailContent += `<strong>Branch:</strong> ${branchLabel}`;
+            emailContent += `</div>`;
+            
+            emailContent += `<div style="margin-bottom: 0.48rem;">`;
+            emailContent += `<strong style="display: block; margin: 0 0 0.06rem 0;">Sales Breakdown</strong>`;
+            emailContent += `<table style="width: 100%; border-collapse: collapse;">`;
+            emailContent += `<tr><td style="padding: 0.06rem 0.5rem;">Cash:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(record.cash)}</td></tr>`;
+            emailContent += `<tr><td style="padding: 0.06rem 0.5rem;">Card:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(record.card)}</td></tr>`;
+            
+            if (branch === "sm-north") {
+                emailContent += `<tr><td style="padding: 0.06rem 0.5rem;">GCash:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(record.gcash)}</td></tr>`;
+                emailContent += `<tr><td style="padding: 0.06rem 0.5rem;">Maya:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(record.maya)}</td></tr>`;
+            } else {
+                emailContent += `<tr><td style="padding: 0.06rem 0.5rem;">QR:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(record.qr)}</td></tr>`;
+                emailContent += `<tr><td style="padding: 0.06rem 0.5rem;">Gift Card:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(record.giftCard)}</td></tr>`;
+            }
+            emailContent += `<tr><td style="padding: 0.06rem 0.5rem;">Grab:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(record.grab)}</td></tr>`;
+            emailContent += `</table>`;
+            emailContent += `</div>`;
+            
+            emailContent += `<div style="margin-bottom: 0.48rem;">`;
+            emailContent += `<strong style="display: block; margin: 0 0 0.06rem 0;">Expenses</strong>`;
+            emailContent += `<table style="width: 100%; border-collapse: collapse;">`;
+            emailContent += `<tr><td style="padding: 0.06rem 0.5rem;">Cash Expenses:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(record.expenses)}</td></tr>`;
+            if (branch === "podium" && record.nonCashExpenses) {
+                emailContent += `<tr><td style="padding: 0.06rem 0.5rem;">Non-Cash Expenses:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(record.nonCashExpenses)}</td></tr>`;
+            }
+            emailContent += `</table>`;
+            emailContent += `</div>`;
+
+            emailContent += `<div style="margin-bottom: 0.48rem;">`;
+            emailContent += `<strong style="display: block; margin: 0 0 0.06rem 0;">Cash Left</strong>`;
+            emailContent += `<table style="width: 100%; border-collapse: collapse;">`;
+            emailContent += `<tr><td style="padding: 0.06rem 0.5rem;">Calculated:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(record.calculatedCashLeft)}</td></tr>`;
+            emailContent += `<tr><td style="padding: 0.06rem 0.5rem;">Actual:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(record.actualCashLeft)}</td></tr>`;
+            emailContent += `<tr><td style="padding: 0.06rem 0.5rem;">Variance:</td><td style="text-align: right; padding: 0.06rem 0.5rem; color: ${varianceColor};">${formatVariance(variance)}</td></tr>`;
+            emailContent += `</table>`;
+            emailContent += `</div>`;
+                
+            emailContent += `<div style="margin-top: 0.48rem; padding-top: 0.48rem; border-top: 1px solid #eee;">`;
+            emailContent += `<strong style="display: block; margin: 0 0 0.06rem 0;">Totals</strong>`;
+            emailContent += `<table style="width: 100%; border-collapse: collapse;">`;
+            emailContent += `<tr><td style="padding: 0.06rem 0.5rem;">Walk-In Sales:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(record.walkInSales)}</td></tr>`;
+            emailContent += `<tr><td style="padding: 0.06rem 0.5rem;">Grab Sales:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(record.grab)}</td></tr>`;
+            emailContent += `<tr><td style="padding: 0.06rem 0.5rem;"><strong>Total Sales:</strong></td><td style="text-align: right; padding: 0.06rem 0.5rem;"><strong>${formatCurrency(record.totalSales)}</strong></td></tr>`;
+            emailContent += `</table>`;
+            emailContent += `</div>`;
+            emailContent += `</div>`;
+            emailContent += `    </div>
+</body>
+</html>`;
+
+            try {
+                await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+                    to_email: RECIPIENT_EMAIL,
+                    from_name: `Matchanese - ${branchLabel}`,
+                    subject: `Daily Sales Report - ${subjectDate} - ${branchLabel}`,
+                    message: emailContent,
+                    branch: branchLabel,
+                    date: formattedDate
+                });
+                console.log('✅ Sales report email sent');
+            } catch (error) {
+                console.error('❌ Failed to send email:', error);
+            }
         }
 
         // Check for existing data and show confirmation
@@ -928,7 +1611,7 @@
 
                 // Generate summary and show modal
                 const fullSummaryHTML = generateSummaryHTML(record, branch, recordDateRaw);
-                const displaySummaryHTML = generateDisplaySummaryHTML(record, branch, recordDateRaw);
+                const displaySummaryHTML = generateDisplaySummaryHTML(record, branch, recordDateRaw, recordDate);
                 document.getElementById("confirmSummary").innerHTML = displaySummaryHTML;
                 window.pendingFullSummaryHTML = fullSummaryHTML;
                 document.getElementById("overwriteWarning").style.display = hasExisting ? "block" : "none";
@@ -970,31 +1653,35 @@
                 const salesRef = doc(db, "sales-data", window.pendingBranch, "daily", window.pendingRecordDate);
                 await setDoc(salesRef, record);
 
+                // Send email notification (non-blocking)
+                sendSalesReportEmail(record, window.pendingBranch, window.pendingRecordDate).catch(err => {
+                    console.error('Email sending failed (non-critical):', err);
+                });
+
                 // Show success modal with summary
                 const summaryHTML = window.pendingFullSummaryHTML || generateSummaryHTML(record, window.pendingBranch, record.dateDisplay);
-                const displaySummaryHTML = generateDisplaySummaryHTML(record, window.pendingBranch, record.dateDisplay);
+                const displaySummaryHTML = generateDisplaySummaryHTML(record, window.pendingBranch, record.dateDisplay, window.pendingRecordDate);
                 document.getElementById("successSummary").innerHTML = displaySummaryHTML;
                 window.downloadSummaryHTML = summaryHTML;
                 window.pendingFullSummaryHTML = null;
                 document.getElementById("successModal").style.display = "flex";
+                
+                // Clear edit mode flags after successful submission
+                window.isEditingMode = false;
+                window.editModeRecordDate = null;
 
                 // Keep branch and date for download function
                 window.downloadBranch = window.pendingBranch;
                 window.downloadDate = window.pendingRecordDate;
 
-                // Clear form
-                document.querySelectorAll('input[type="text"]:not([readonly])').forEach(input => {
-                    if (input.id !== 'recordDate') {
-                        input.value = '';
-                        input.dataset.raw = '';
-                    }
-                });
-                updateTotal();
-
                 // Clear pending data
                 window.pendingRecord = null;
                 window.pendingRecordDate = null;
                 window.pendingBranch = null;
+                
+                // Note: Success modal remains open for user to download if desired
+                // When user closes the success modal, we'll check for existing data
+                // This is handled in the closeSuccessModal function
 
             } catch (e) {
                 window.showToast("❌ Failed to submit. Please try again.");
@@ -1006,6 +1693,12 @@
         // Close success modal
         window.closeSuccessModal = function() {
             document.getElementById("successModal").style.display = "none";
+            // After closing success modal, check for existing data and show summary view
+            if (window.checkExistingData) {
+                setTimeout(() => {
+                    window.checkExistingData();
+                }, 100);
+            }
         };
 
         // Handle modal backdrop clicks (close on outside click)
@@ -1295,19 +1988,44 @@
                 dateFormat: "Y-m-d",
                 defaultDate: new Date(),
                 allowInput: false,
-                onChange: function (selectedDates) {
+                onChange: async function (selectedDates) {
                     document.getElementById("recordDate").value = formatDate(selectedDates[0]);
                     // Check attendance and update branch when date changes
                     if (window.checkAttendanceAndSetBranch) {
-                        window.checkAttendanceAndSetBranch();
+                        await window.checkAttendanceAndSetBranch();
+                    }
+                    
+                    // If in edit mode, check if new date has data, if not clear form
+                    if (window.isEditingMode) {
+                        // Use checkExistingDataForEdit helper which is defined in the module
+                        if (window.checkExistingDataForEdit) {
+                            setTimeout(async () => {
+                                await window.checkExistingDataForEdit(selectedDates[0]);
+                            }, 100);
+                        } else {
+                            // Fallback: clear form if helper not available
+                            if (window.clearFormFields) {
+                                window.clearFormFields();
+                            }
+                            window.existingData = null;
+                            window.existingBranch = null;
+                            window.existingDate = null;
+                        }
+                    } else {
+                        // Not in edit mode - check for existing data normally
+                        if (window.checkExistingData) {
+                            setTimeout(() => {
+                                window.checkExistingData();
+                            }, 300);
+                        }
                     }
                 },
                 onReady: function (selectedDates, dateStr, instance) {
                     flatpickrInstance = instance;
                     // Check attendance and set branch on initial load
-                    setTimeout(() => {
+                    setTimeout(async () => {
                         if (window.checkAttendanceAndSetBranch) {
-                            window.checkAttendanceAndSetBranch();
+                            await window.checkAttendanceAndSetBranch();
                         } else {
                             // Fallback: just set default branch
                             const lastBranch = localStorage.getItem(`lastSalesBranch_${localStorage.getItem("loggedInUser") || ""}`) || "sm-north";
@@ -1315,6 +2033,12 @@
                             if (window.handleBranchChange) {
                                 window.handleBranchChange();
                             }
+                        }
+                        // Check for existing data after initial setup (give time for fields to be set up)
+                        if (window.checkExistingData) {
+                            setTimeout(() => {
+                                window.checkExistingData();
+                            }, 600);
                         }
                     }, 200);
                 }

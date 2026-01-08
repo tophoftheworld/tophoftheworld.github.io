@@ -14,6 +14,10 @@ let pendingOperations = [];
 let syncTimeout = null;
 let hasPendingChanges = false;
 const SYNC_DEBOUNCE_DELAY = 3000; // 3 seconds
+let deletionInProgress = false; // Prevent fetchFromFirebase during deletions
+let deletedSupplierIds = new Set(); // Track deleted supplier IDs to prevent restoration
+const DELETION_TRACKING_TTL = 5 * 60 * 1000; // 5 minutes - after this, allow restoration from other devices
+let deletionTimestamps = new Map(); // Track when each supplier was deleted (supplierId -> timestamp)
 
 // Initialize Firebase and load dependencies
 export async function initializeFirebase() {
@@ -115,12 +119,71 @@ export function updateSupplier(supplierId, updatedSupplier) {
     return false;
 }
 
-export function deleteSupplier(supplierId) {
+export async function deleteSupplier(supplierId) {
     const index = suppliers.findIndex(s => s.id === supplierId);
     if (index > -1) {
-        suppliers.splice(index, 1);
-        saveToLocalStorage();
-        return true;
+        // Set deletion flag to prevent fetchFromFirebase from running
+        deletionInProgress = true;
+        
+        // Track deletion immediately
+        deletedSupplierIds.add(supplierId);
+        deletionTimestamps.set(supplierId, Date.now());
+        
+        // Persist deletion tracking to localStorage
+        try {
+            const trackingData = {
+                ids: Array.from(deletedSupplierIds),
+                timestamps: Object.fromEntries(deletionTimestamps)
+            };
+            localStorage.setItem('expenseTracker_deletedSuppliers', JSON.stringify(trackingData));
+        } catch (error) {
+            console.warn('Failed to save deletion tracking:', error);
+        }
+        
+        try {
+            // DELETE FROM FIREBASE FIRST - before removing from local array
+            // This ensures Firebase deletion completes before any sync can run
+            if (db) {
+                try {
+                    const supplierRef = doc(db, 'suppliers', supplierId);
+                    await deleteDoc(supplierRef);
+                    console.log('Supplier deleted from Firebase:', supplierId);
+                } catch (error) {
+                    console.error('Failed to delete supplier from Firebase:', error);
+                    // Even if Firebase deletion fails, we still track it locally
+                    // syncToFirebase() will handle the deletion on next sync
+                }
+            }
+            
+            // Remove from local array
+            suppliers.splice(index, 1);
+            
+            // Force immediate sync to ensure deletion is persisted
+            // Don't use saveToLocalStorage() here to avoid debounce delay
+            try {
+                const expensesJson = JSON.stringify(expenses);
+                const suppliersJson = JSON.stringify(suppliers);
+                localStorage.setItem('expenseTracker_expenses', expensesJson);
+                localStorage.setItem('expenseTracker_suppliers', suppliersJson);
+            } catch (error) {
+                console.error('Failed to save to localStorage:', error);
+            }
+            
+            // Trigger immediate sync to Firebase
+            if (db && !syncInProgress) {
+                await syncToFirebase();
+            } else {
+                // Mark for sync if sync is in progress
+                hasPendingChanges = true;
+            }
+            
+            return true;
+        } finally {
+            // Clear deletion flag after a short delay to ensure deletion is fully processed
+            setTimeout(() => {
+                deletionInProgress = false;
+            }, 1000);
+        }
     }
     return false;
 }
@@ -143,6 +206,29 @@ export function loadFromLocalStorage() {
             console.log('Loaded suppliers from localStorage:', suppliers.length, 'items');
         }
 
+        // Load deletion tracking
+        try {
+            const trackingData = localStorage.getItem('expenseTracker_deletedSuppliers');
+            if (trackingData) {
+                const tracking = JSON.parse(trackingData);
+                const now = Date.now();
+                
+                // Only keep recent deletions (within TTL)
+                tracking.ids.forEach(id => {
+                    const deletedAt = tracking.timestamps[id] || 0;
+                    if (now - deletedAt < DELETION_TRACKING_TTL) {
+                        deletedSupplierIds.add(id);
+                        deletionTimestamps.set(id, deletedAt);
+                    }
+                });
+                
+                // Clean up old deletions
+                cleanupOldDeletions();
+            }
+        } catch (error) {
+            console.warn('Failed to load deletion tracking:', error);
+        }
+
         return expenses.length > 0 || suppliers.length > 0;
     } catch (error) {
         console.error('Failed to load from localStorage:', error);
@@ -150,10 +236,44 @@ export function loadFromLocalStorage() {
     }
 }
 
+// Clean up old deletion tracking entries
+function cleanupOldDeletions() {
+    const now = Date.now();
+    const toRemove = [];
+    
+    deletedSupplierIds.forEach(id => {
+        const deletedAt = deletionTimestamps.get(id) || 0;
+        if (now - deletedAt >= DELETION_TRACKING_TTL) {
+            toRemove.push(id);
+        }
+    });
+    
+    toRemove.forEach(id => {
+        deletedSupplierIds.delete(id);
+        deletionTimestamps.delete(id);
+    });
+    
+    // Persist cleaned tracking
+    if (toRemove.length > 0) {
+        try {
+            const trackingData = {
+                ids: Array.from(deletedSupplierIds),
+                timestamps: Object.fromEntries(deletionTimestamps)
+            };
+            localStorage.setItem('expenseTracker_deletedSuppliers', JSON.stringify(trackingData));
+        } catch (error) {
+            console.warn('Failed to save cleaned deletion tracking:', error);
+        }
+    }
+}
+
 export function saveToLocalStorage() {
     try {
-        localStorage.setItem('expenseTracker_expenses', JSON.stringify(expenses));
-        localStorage.setItem('expenseTracker_suppliers', JSON.stringify(suppliers));
+        const expensesJson = JSON.stringify(expenses);
+        const suppliersJson = JSON.stringify(suppliers);
+        
+        localStorage.setItem('expenseTracker_expenses', expensesJson);
+        localStorage.setItem('expenseTracker_suppliers', suppliersJson);
         console.log('Data saved to localStorage');
 
         // Mark that we have pending changes
@@ -176,6 +296,27 @@ export function saveToLocalStorage() {
         console.log('Sync scheduled for 3 seconds from now');
     } catch (error) {
         console.error('Failed to save to localStorage:', error);
+        
+        // Handle quota exceeded error specifically
+        if (error.name === 'QuotaExceededError' || error.message.includes('quota')) {
+            console.warn('localStorage quota exceeded. Data size:', {
+                expenses: expenses.length,
+                suppliers: suppliers.length,
+                expensesSize: new Blob([JSON.stringify(expenses)]).size,
+                suppliersSize: new Blob([JSON.stringify(suppliers)]).size
+            });
+            
+            // Try to show user-friendly error message if showSyncStatus exists
+            if (typeof showSyncStatus === 'function') {
+                showSyncStatus('⚠ Storage full - syncing to Firebase only', 'error');
+            }
+            
+            // Force immediate Firebase sync since localStorage is full
+            if (db && hasPendingChanges) {
+                console.log('Forcing immediate Firebase sync due to localStorage quota exceeded');
+                syncToFirebase();
+            }
+        }
     }
 }
 
@@ -191,6 +332,20 @@ export async function syncToFirebase() {
     try {
         console.log('Starting Firebase sync...');
 
+        // Clean up old deletions before syncing
+        cleanupOldDeletions();
+
+        // Fetch current Firebase suppliers to find what needs to be deleted
+        let firebaseSupplierIds = new Set();
+        if (db) {
+            try {
+                const suppliersSnapshot = await getDocs(collection(db, 'suppliers'));
+                firebaseSupplierIds = new Set(suppliersSnapshot.docs.map(doc => doc.id));
+            } catch (error) {
+                console.warn('Failed to fetch Firebase suppliers for deletion check:', error);
+            }
+        }
+
         // Sync expenses with batch writes for better performance
         const batch = writeBatch(db);
 
@@ -203,7 +358,10 @@ export async function syncToFirebase() {
             });
         });
 
+        // Sync suppliers that exist locally
+        const localSupplierIds = new Set();
         suppliers.forEach(supplier => {
+            localSupplierIds.add(supplier.id);
             const docRef = doc(db, 'suppliers', supplier.id);
             batch.set(docRef, {
                 ...supplier,
@@ -212,9 +370,62 @@ export async function syncToFirebase() {
             });
         });
 
+        // Delete suppliers from Firebase that:
+        // 1. Are in Firebase but not in local array (was deleted locally), OR
+        // 2. Are explicitly in deletion tracking (explicitly marked for deletion)
+        let deletionCount = 0;
+        firebaseSupplierIds.forEach(supplierId => {
+            const isNotInLocal = !localSupplierIds.has(supplierId);
+            const isInDeletionTracking = deletedSupplierIds.has(supplierId);
+            
+            // Delete if supplier was removed from local OR explicitly marked for deletion
+            if (isNotInLocal || isInDeletionTracking) {
+                const supplierRef = doc(db, 'suppliers', supplierId);
+                batch.delete(supplierRef);
+                deletionCount++;
+                const reason = isInDeletionTracking ? 'deletion tracking' : 'not in local array';
+                console.log(`Marking supplier for deletion in Firebase (${reason}):`, supplierId);
+            }
+        });
+
         await batch.commit();
-        console.log('Firebase sync completed successfully');
+        console.log('Firebase sync completed successfully', { 
+            expenses: expenses.length, 
+            suppliers: suppliers.length,
+            deletions: deletionCount 
+        });
         showSyncStatus('✓ Synced', 'success');
+
+        // Clear deletion tracking for successfully synced deletions
+        // Only clear if deletion was successful (supplier not in local and not in Firebase anymore)
+        if (deletionCount > 0) {
+            // Re-fetch to verify deletions
+            try {
+                const suppliersSnapshot = await getDocs(collection(db, 'suppliers'));
+                const remainingIds = new Set(suppliersSnapshot.docs.map(doc => doc.id));
+                
+                deletedSupplierIds.forEach(id => {
+                    // If supplier is not in Firebase anymore and not in local, clear tracking
+                    if (!remainingIds.has(id) && !localSupplierIds.has(id)) {
+                        deletedSupplierIds.delete(id);
+                        deletionTimestamps.delete(id);
+                    }
+                });
+                
+                // Persist updated tracking
+                try {
+                    const trackingData = {
+                        ids: Array.from(deletedSupplierIds),
+                        timestamps: Object.fromEntries(deletionTimestamps)
+                    };
+                    localStorage.setItem('expenseTracker_deletedSuppliers', JSON.stringify(trackingData));
+                } catch (error) {
+                    console.warn('Failed to persist deletion tracking:', error);
+                }
+            } catch (error) {
+                console.warn('Failed to verify deletions:', error);
+            }
+        }
 
         // Clear pending changes flag on successful sync
         hasPendingChanges = false;
@@ -236,6 +447,12 @@ export async function syncToFirebase() {
 export async function fetchFromFirebase() {
     if (!db) {
         console.log('Database not available for fetching');
+        return;
+    }
+
+    // Don't fetch while deletions are in progress
+    if (deletionInProgress) {
+        console.log('Skipping fetch - deletion in progress');
         return;
     }
 
@@ -310,15 +527,58 @@ function mergeData(localData, firebaseData) {
         }
     });
 
-    // Merge suppliers (same logic)
+    // Clean up old deletions before merging
+    cleanupOldDeletions();
+
+    // Merge suppliers with smart logic
     firebaseData.suppliers.forEach(firebaseItem => {
         const localIndex = mergedSuppliers.findIndex(item => item.id === firebaseItem.id);
 
         if (localIndex === -1) {
-            mergedSuppliers.push(firebaseItem);
-            hasChanges = true;
+            // Supplier exists in Firebase but not locally
+            
+            // Check if this supplier was recently deleted locally
+            const wasRecentlyDeleted = deletedSupplierIds.has(firebaseItem.id);
+            const deletionTime = deletionTimestamps.get(firebaseItem.id) || 0;
+            const timeSinceDeletion = Date.now() - deletionTime;
+            
+            if (wasRecentlyDeleted && timeSinceDeletion < DELETION_TRACKING_TTL) {
+                // Recently deleted - don't restore it
+                console.log('Skipping recently deleted supplier from Firebase:', firebaseItem.id, firebaseItem.name);
+                return;
+            }
+            
+            // Only add it if it has expenses (likely from another device)
+            // This prevents re-adding deleted empty suppliers
+            const hasExpenses = localData.expenses.some(expense => 
+                expense.supplierName.toLowerCase() === firebaseItem.name.toLowerCase()
+            );
+            
+            if (hasExpenses) {
+                // Has expenses - likely legitimate from another device, add it
+                // But only if it wasn't recently deleted
+                if (!wasRecentlyDeleted) {
+                    mergedSuppliers.push(firebaseItem);
+                    hasChanges = true;
+                    console.log('Restoring supplier from Firebase (has expenses):', firebaseItem.id, firebaseItem.name);
+                } else {
+                    console.log('Skipping recently deleted supplier even though it has expenses:', firebaseItem.id, firebaseItem.name);
+                }
+            } else {
+                // No expenses - likely a deleted supplier, skip it
+                console.log('Skipping supplier from Firebase with no expenses:', firebaseItem.id, firebaseItem.name);
+            }
         } else {
+            // Supplier exists in both - merge/update logic
             const localItem = mergedSuppliers[localIndex];
+            
+            // Don't overwrite local if it was recently deleted
+            const wasRecentlyDeleted = deletedSupplierIds.has(firebaseItem.id);
+            if (wasRecentlyDeleted) {
+                console.log('Skipping merge for recently deleted supplier:', firebaseItem.id);
+                return;
+            }
+            
             const firebaseUpdated = new Date(firebaseItem.updatedAt || firebaseItem.createdAt);
             const localUpdated = new Date(localItem.updatedAt || localItem.createdAt);
 
@@ -351,6 +611,15 @@ export function generateId() {
     return Date.now().toString(36) + Math.random().toString(36).substr(2);
 }
 
+// Date Utility Functions
+export function getTodayLocal() {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
 export function formatDate(dateString) {
     const date = new Date(dateString);
     const currentYear = new Date().getFullYear();
@@ -372,6 +641,23 @@ export function formatDate(dateString) {
     }
 }
 
+export function formatDateDisplay(dateString, showToday = true) {
+    if (!dateString) return '';
+    
+    const date = new Date(dateString + 'T00:00:00'); // Parse as local time
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    if (showToday && date.getTime() === today.getTime()) {
+        return "Today's";
+    }
+    
+    return date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric'
+    });
+}
+
 export function getThisWeekRange() {
     const today = new Date();
     const dayOfWeek = today.getDay();
@@ -387,14 +673,28 @@ export function getThisWeekRange() {
     };
 }
 
+// Currency Formatting Functions
+export function formatCurrency(amount) {
+    const numAmount = parseFloat(amount) || 0;
+    return '₱' + numAmount.toLocaleString('en-US', { 
+        minimumFractionDigits: 2, 
+        maximumFractionDigits: 2 
+    });
+}
+
 export function formatPesoInput(input) {
     let value = input.value.replace(/[₱,]/g, '');
     if (value && !isNaN(value)) {
-        input.value = '₱' + parseFloat(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        input.value = formatCurrency(value);
     }
 }
 
 export function getPesoValue(input) {
+    if (typeof input === 'string') {
+        // If input is a string, parse it directly
+        return parseFloat(input.replace(/[₱,]/g, '')) || 0;
+    }
+    // If input is an input element, get its value
     return parseFloat(input.value.replace(/[₱,]/g, '')) || 0;
 }
 
@@ -1043,6 +1343,139 @@ export function getSupplierMatches(query) {
         .sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name));
 }
 
+// Expense Object Creation Function
+// This is the single source of truth for creating/updating expense objects
+// Solves Steps 3, 4, 5, and 6: standardizes total calculation, VAT calculation, and validation
+export function createExpenseObject(data, options = {}) {
+    const {
+        existingExpense = null,
+        isEditing = false,
+        calculateTotalFromItems = true,
+        autoCalculateVAT = true,
+        validate = true
+    } = options;
+
+    // Extract data (supports both FormData and plain objects)
+    const getValue = (key, defaultValue = '') => {
+        if (data instanceof FormData) {
+            return data.get(key) || defaultValue;
+        }
+        return data[key] !== undefined ? data[key] : defaultValue;
+    };
+
+    // Process items - ensure they have correct totals
+    let items = [];
+    if (data.items && Array.isArray(data.items)) {
+        items = data.items.map(item => ({
+            name: (item.name || '').trim(),
+            quantity: parseFloat(item.quantity) || 1,
+            price: parseFloat(item.price) || 0,
+            total: calculateItemTotal(item.quantity, item.price)
+        })).filter(item => item.name); // Remove empty items
+    }
+
+    // Calculate total amount
+    let totalAmount;
+    if (calculateTotalFromItems && items.length > 0) {
+        totalAmount = calculateExpenseTotal(items);
+    } else {
+        // Use provided total or calculate from items
+        totalAmount = parseFloat(getValue('totalAmount')) || 
+                     (items.length > 0 ? calculateExpenseTotal(items) : 0);
+    }
+
+    // Get VAT exempt amount
+    const vatExemptAmount = parseFloat(getValue('vatExemptAmount')) || 
+                           (existingExpense?.vatExemptAmount || 0);
+
+    // Get supplier information for VAT calculation
+    const supplierName = getValue('supplierName', existingExpense?.supplierName || '').trim();
+    const allSuppliers = getSuppliers();
+    const supplier = supplierName ? allSuppliers.find(s => 
+        s.name.toLowerCase() === supplierName.toLowerCase()
+    ) : null;
+
+    // Calculate VAT if auto-calculate is enabled
+    let vatBreakdown = {
+        vatableSale: existingExpense?.vatableSale || 0,
+        vatAmount: existingExpense?.vatAmount || 0,
+        isVatRegistered: existingExpense?.isVatRegistered || false
+    };
+
+    if (autoCalculateVAT) {
+        // Check if VAT computation should be enabled
+        const vatComputationEnabled = getValue('vatComputationEnabled') === 'true' || 
+                                     getValue('vatComputationEnabled') === true ||
+                                     getValue('vatComputationEnabled') === 'checked' ||
+                                     (existingExpense?.isVatRegistered && getValue('vatComputationEnabled') === '');
+
+        // Calculate VAT if VAT computation is enabled and (supplier is VAT registered or no supplier found)
+        if (vatComputationEnabled && (supplier?.isVatRegistered || !supplier)) {
+            vatBreakdown = calculateVATFromSupplier(totalAmount, vatExemptAmount, supplier);
+        } else if (supplier && !supplier.isVatRegistered) {
+            // Supplier is not VAT registered and VAT not enabled - clear VAT
+            vatBreakdown = {
+                vatableSale: 0,
+                vatAmount: 0,
+                isVatRegistered: false
+            };
+        } else if (!vatComputationEnabled) {
+            // VAT computation explicitly disabled - clear VAT
+            vatBreakdown = {
+                vatableSale: 0,
+                vatAmount: 0,
+                isVatRegistered: false
+            };
+        }
+        // If expense had VAT and supplier still registered, preserve (handled by existingExpense default above)
+    }
+
+    // Build expense object
+    const expense = {
+        id: isEditing && existingExpense ? existingExpense.id : (existingExpense?.id || generateId()),
+        date: getValue('date', existingExpense?.date || getTodayLocal()),
+        branch: getValue('branch', existingExpense?.branch || 'SM North'),
+        supplierName: supplierName,
+        businessName: getValue('businessName', existingExpense?.businessName || ''),
+        tin: getValue('tin', existingExpense?.tin || ''),
+        address: getValue('address', existingExpense?.address || ''),
+        invoiceNumber: getValue('invoiceNumber', existingExpense?.invoiceNumber || ''),
+        expenseCategory: getValue('expenseCategory', existingExpense?.expenseCategory || 'General'),
+        items: items,
+        totalAmount: totalAmount,
+        vatExemptAmount: vatExemptAmount,
+        vatableSale: vatBreakdown.vatableSale,
+        vatAmount: vatBreakdown.vatAmount,
+        isVatRegistered: vatBreakdown.isVatRegistered,
+        paymentMethod: getValue('paymentMethod', existingExpense?.paymentMethod || 'Cash'),
+        paidBy: getValue('paidBy', existingExpense?.paidBy || ''),
+        notes: getValue('notes', existingExpense?.notes || ''),
+        receiptImage: getValue('receiptImage', existingExpense?.receiptImage || null),
+        createdAt: isEditing && existingExpense ? 
+                   (existingExpense.createdAt || new Date().toISOString()) : 
+                   new Date().toISOString(),
+        updatedAt: new Date().toISOString() // Always set updatedAt, even for new expenses
+    };
+
+    // Validate if requested
+    if (validate) {
+        const errors = validateExpense(expense);
+        if (errors.length > 0) {
+            return {
+                success: false,
+                errors: errors,
+                expense: null
+            };
+        }
+    }
+
+    return {
+        success: true,
+        errors: [],
+        expense: expense
+    };
+}
+
 // Validation Functions
 export function validateExpense(expense) {
     const errors = [];
@@ -1090,6 +1523,142 @@ export function validateSupplier(supplier) {
     return errors;
 }
 
+// Supplier Object Creation Function
+// Creates a supplier object with validation and defaults
+export function createSupplierObject(data, options = {}) {
+    const {
+        existingSupplier = null,
+        isEditing = false,
+        validate = true
+    } = options;
+
+    // Extract data (supports both FormData and plain objects)
+    const getValue = (key, defaultValue = '') => {
+        if (data instanceof FormData) {
+            return data.get(key) || defaultValue;
+        }
+        return data[key] !== undefined ? data[key] : defaultValue;
+    };
+
+    const supplier = {
+        id: isEditing && existingSupplier ? existingSupplier.id : generateId(),
+        name: (getValue('name') || '').trim(),
+        businessName: (getValue('businessName') || '').trim(),
+        tin: (getValue('tin') || '').trim(),
+        address: (getValue('address') || '').trim(),
+        isVatRegistered: getValue('isVatRegistered') === 'true' || 
+                        getValue('isVatRegistered') === true ||
+                        getValue('isVatRegistered') === 'checked' ||
+                        false,
+        createdAt: isEditing && existingSupplier ? 
+                   (existingSupplier.createdAt || new Date().toISOString()) : 
+                   new Date().toISOString(),
+        updatedAt: new Date().toISOString() // Always set updatedAt, even for new suppliers
+    };
+
+    // Validate if requested
+    if (validate) {
+        const errors = validateSupplier(supplier);
+        if (errors.length > 0) {
+            return {
+                success: false,
+                errors: errors,
+                supplier: null
+            };
+        }
+    }
+
+    return {
+        success: true,
+        errors: [],
+        supplier: supplier
+    };
+}
+
+// Update expenses when supplier information changes
+// This is called when editing a supplier to update all related expenses
+export function updateExpensesForSupplier(oldSupplier, newSupplier) {
+    if (!oldSupplier || !newSupplier) return { updated: 0 };
+
+    const allExpenses = getExpenses();
+    let updatedCount = 0;
+
+    allExpenses.forEach(expense => {
+        // Match expenses by old supplier name
+        if (expense.supplierName.toLowerCase() === oldSupplier.name.toLowerCase()) {
+            // Update supplier fields in expense
+            expense.supplierName = newSupplier.name;
+            expense.businessName = newSupplier.businessName || expense.businessName;
+            expense.tin = newSupplier.tin || expense.tin;
+            expense.address = newSupplier.address || expense.address;
+            expense.isVatRegistered = newSupplier.isVatRegistered || false;
+
+            // Recalculate VAT if supplier VAT status changed
+            if (oldSupplier.isVatRegistered !== newSupplier.isVatRegistered) {
+                if (!newSupplier.isVatRegistered) {
+                    // Supplier no longer VAT registered - clear VAT
+                    expense.vatExemptAmount = 0;
+                    expense.vatableSale = 0;
+                    expense.vatAmount = 0;
+                } else if (newSupplier.isVatRegistered && expense.vatableSale === 0) {
+                    // Supplier newly VAT registered - recalculate VAT using shared function
+                    const vatBreakdown = calculateVATFromSupplier(
+                        expense.totalAmount,
+                        expense.vatExemptAmount || 0,
+                        newSupplier
+                    );
+                    expense.vatableSale = vatBreakdown.vatableSale;
+                    expense.vatAmount = vatBreakdown.vatAmount;
+                }
+            }
+
+            // Update the expense
+            updateExpense(expense.id, expense);
+            updatedCount++;
+        }
+    });
+
+    return { updated: updatedCount };
+}
+
+// Check if supplier can be deleted (has expenses)
+export function canDeleteSupplier(supplierId) {
+    const supplier = suppliers.find(s => s.id === supplierId);
+    if (!supplier) {
+        return { canDelete: false, reason: 'Supplier not found', expenseCount: 0 };
+    }
+
+    const allExpenses = getExpenses();
+    const expenseCount = allExpenses.filter(expense =>
+        expense.supplierName.toLowerCase() === supplier.name.toLowerCase()
+    ).length;
+
+    if (expenseCount > 0) {
+        return {
+            canDelete: false,
+            reason: `Supplier has ${expenseCount} expense${expenseCount === 1 ? '' : 's'}`,
+            expenseCount: expenseCount
+        };
+    }
+
+    return { canDelete: true, reason: '', expenseCount: 0 };
+}
+
+// Item and Total Calculation Functions
+export function calculateItemTotal(quantity, price) {
+    const qty = parseFloat(quantity) || 0;
+    const prc = parseFloat(price) || 0;
+    return qty * prc;
+}
+
+export function calculateExpenseTotal(items) {
+    if (!items || !Array.isArray(items)) return 0;
+    return items.reduce((sum, item) => {
+        const itemTotal = calculateItemTotal(item.quantity, item.price);
+        return sum + itemTotal;
+    }, 0);
+}
+
 // VAT Calculation Functions
 export function calculateVatBreakdown(totalAmount, vatExemptAmount = 0, isVatRegistered = false) {
     if (!isVatRegistered || totalAmount <= 0) {
@@ -1115,6 +1684,12 @@ export function calculateVatBreakdown(totalAmount, vatExemptAmount = 0, isVatReg
         vatAmount,
         isVatRegistered: true
     };
+}
+
+// VAT Calculation with Supplier Lookup
+export function calculateVATFromSupplier(totalAmount, vatExemptAmount, supplier) {
+    const isVatRegistered = supplier?.isVatRegistered || false;
+    return calculateVatBreakdown(totalAmount, vatExemptAmount, isVatRegistered);
 }
 
 // UI Helper Functions

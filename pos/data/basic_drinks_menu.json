@@ -1,0 +1,47 @@
+{
+  "categories": [
+    {
+      "id": "matcha",
+      "name": "MATCHA"
+    },
+    {
+      "id": "hojicha",
+      "name": "HOJICHA"
+    }
+  ],
+  "items": [
+    {
+      "categoryId": "matcha",
+      "name": "Matcha Tea",
+      "description": "Freshly Whisked Matcha over Water",
+      "price": 0,
+      "type": "Matcha",
+      "shorthand": "MT"
+    },
+    {
+      "categoryId": "matcha",
+      "name": "Matcha Latte",
+      "description": "Freshly Whisked Matcha over Milk",
+      "price": 0,
+      "type": "Matcha",
+      "shorthand": "ML"
+    },
+    {
+      "categoryId": "matcha",
+      "name": "Strawberry Matcha",
+      "description": "Freshly Whisked Matcha over Milk with Strawberry Puree",
+      "price": 0,
+      "type": "Matcha",
+      "shorthand": "SM"
+    },
+    {
+      "categoryId": "hojicha",
+      "name": "Hojicha Latte",
+      "description": "Freshly Whisked Hojicha over Milk",
+      "price": 0,
+      "type": "Hojicha",
+      "shorthand": "HL"
+    }
+  ]
+}
+

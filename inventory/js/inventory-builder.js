@@ -1,9 +1,9 @@
 import { db } from './firebase-inventory.js';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where, setDoc, getDoc } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
 
-console.log('=== INVENTORY BUILDER LOADED - VERSION 22 ===');
+console.log('=== INVENTORY BUILDER LOADED - VERSION 23 ===');
 
-// Global state - CACHE BUST: v18
+// Global state - CACHE BUST: v23 (timezone fix)
 let masterItems = [];
 let availableBranches = ['sm-north', 'podium'];
 // Removed branchAssignments and branchOverrides - using new structure in master-items
@@ -24,6 +24,9 @@ let dashboardItems = [];
 let openingQuantities = {};
 let closingQuantities = {};
 let addedQuantities = {};
+let deliveryQuantities = {};
+let pullOutQuantities = {};
+let wastageQuantities = {};
 let dashboardCollapsedCategories = JSON.parse(localStorage.getItem('dashboard-collapsed-categories') || '[]');
 let branchCollapsedCategories = JSON.parse(localStorage.getItem('branch-collapsed-categories') || '[]');
 let isFilteringLowStocks = false;
@@ -67,6 +70,15 @@ function setSortableHeaders(containerId, onSort) {
   container.querySelectorAll('th').forEach((th, idx) => {
     th.addEventListener('click', () => onSort(idx));
   });
+}
+
+// Get date key in local time (not UTC) to avoid timezone issues
+function getDateKey(date = new Date()) {
+  // Use local time instead of UTC to avoid timezone issues
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`; // Returns "YYYY-MM-DD" in local time
 }
 
 document.addEventListener('DOMContentLoaded', async function () {
@@ -2042,7 +2054,7 @@ async function loadDashboardData() {
       openingQuantities = cachedQuantities.openingQuantities || {};
       closingQuantities = cachedQuantities.closingQuantities || {};
       addedQuantities = cachedQuantities.addedQuantities || {};
-      console.log('✅ Loading cached quantities for date:', dashboardDate.toISOString().split('T')[0]);
+      console.log('✅ Loading cached quantities for date:', getDateKey(dashboardDate));
     } else {
       // No cached quantities for this date, load from Firebase
       openingQuantities = {};
@@ -2136,7 +2148,7 @@ async function loadDashboardData() {
     
     
     // Load quantities for both opening and closing
-    const dateKey = dashboardDate.toISOString().split('T')[0];
+    const dateKey = getDateKey(dashboardDate);
     
     // Get daily document from branch subcollection
     const docRef = doc(db, 'inventory-quantities', dashboardBranch, 'daily-quantities', dateKey);
@@ -2169,6 +2181,28 @@ async function loadDashboardData() {
         if (itemQuantities.added && itemQuantities.added.checked) {
           addedQuantities[itemId] = itemQuantities.added.value;
         }
+        
+        // Calculate breakdown from adjustments array
+        let delivery = 0;
+        let pullOut = 0;
+        let wastage = 0;
+        
+        if (itemQuantities.adjustments && Array.isArray(itemQuantities.adjustments)) {
+          itemQuantities.adjustments.forEach(adj => {
+            const value = Math.abs(adj.value || 0);
+            if (adj.reason === 'delivery') {
+              delivery += value;
+            } else if (adj.reason === 'pulled-out') {
+              pullOut += value;
+            } else if (adj.reason === 'wastage') {
+              wastage += value;
+            }
+          });
+        }
+        
+        deliveryQuantities[itemId] = delivery;
+        pullOutQuantities[itemId] = pullOut;
+        wastageQuantities[itemId] = wastage;
       });
     } else {
       console.log('No quantities found for date:', dateKey);
@@ -2259,14 +2293,14 @@ async function loadWeeklyViewData() {
       dates.push(date);
     }
 
-    console.log('Loading data for dates:', dates.map(d => d.toISOString().split('T')[0]));
-    console.log('Today is:', today.toISOString().split('T')[0]);
+    console.log('Loading data for dates:', dates.map(d => getDateKey(d)));
+    console.log('Today is:', getDateKey(today));
     console.log('Weekly branch:', weeklyBranch);
 
     // Load usage data for each day
     weeklyData = {};
     const promises = dates.map(async (date) => {
-      const dateStr = date.toISOString().split('T')[0];
+      const dateStr = getDateKey(date);
       const docRef = doc(db, 'inventory-quantities', weeklyBranch, 'daily-quantities', dateStr);
       console.log(`Loading data for ${dateStr} from document: inventory-quantities/${weeklyBranch}/daily-quantities/${dateStr}`);
       const docSnap = await getDoc(docRef);
@@ -2385,7 +2419,7 @@ function renderWeeklyView() {
 
       // Add usage data for each day
       dates.forEach(date => {
-        const dateStr = date.toISOString().split('T')[0];
+        const dateStr = getDateKey(date);
         const dayData = weeklyData[item.id]?.[dateStr];
         const value = dayData ? dayData[weeklyQuantityType] : 0;
         const hasClosingData = dayData ? dayData.hasClosingData : false;
@@ -2537,7 +2571,7 @@ function renderDashboard() {
     // Category header
     const header = `
       <tr class="category-header" data-category="${category}">
-        <td colspan="8" style="padding: 8px 12px;">
+        <td colspan="9" style="padding: 8px 12px;">
           <div class="category-header-container">
             <div class="category-header-left">
               <button class="category-collapse-btn ${isCollapsed ? 'collapsed' : ''}" data-category="${category}">
@@ -2556,6 +2590,9 @@ function renderDashboard() {
       const openingQty = openingQuantities[item.id] || 0;
       const closingQty = closingQuantities[item.id] || 0;
       const addedQty = addedQuantities[item.id] || 0;
+      const deliveryQty = deliveryQuantities[item.id] || 0;
+      const pullOutQty = pullOutQuantities[item.id] || 0;
+      const wastageQty = wastageQuantities[item.id] || 0;
       
       // Determine which column should be bold based on data availability
       // If closing data exists, mark closing as bold; otherwise mark opening as bold
@@ -2631,11 +2668,12 @@ function renderDashboard() {
         </td>
           <td style="width:200px;">${item.name}${stockIcon}</td>
           <td style="width:150px;">${item.description || ''}</td>
-          <td style="width:180px;">${item.category || 'Other'}</td>
           <td class="quantity-cell opening ${openingClass} ${stockColorClass}">${formatNumberWithCommas(openingQty)} ${item.unit}</td>
-          <td class="quantity-cell added ${stockColorClass}">${hasAddedData ? formatNumberWithCommas(addedQty) + ' ' + item.unit : '-'}</td>
+          <td class="quantity-cell added ${stockColorClass}">${deliveryQty > 0 ? formatNumberWithCommas(deliveryQty) + ' ' + item.unit : '-'}</td>
+          <td class="quantity-cell pull-out ${stockColorClass}" style="color: #dc3545;">${pullOutQty > 0 ? formatNumberWithCommas(pullOutQty) + ' ' + item.unit : '-'}</td>
           <td class="quantity-cell closing ${closingClass} ${stockColorClass}">${hasClosingData ? formatNumberWithCommas(closingQty) + ' ' + item.unit : '-'}</td>
           <td class="quantity-cell used ${stockColorClass}">${hasClosingData ? formatNumberWithCommas(usedQty) + ' ' + item.unit : '-'}</td>
+          <td class="quantity-cell wastage ${stockColorClass}" style="color: #dc3545;">${wastageQty > 0 ? formatNumberWithCommas(wastageQty) + ' ' + item.unit : '-'}</td>
         </tr>`;
     }).join('');
     
@@ -2643,7 +2681,7 @@ function renderDashboard() {
   }).join('');
   
   // Build table
-  const headers = ['Photo', 'Item', 'Description', 'Category', 'Opening', 'Added', 'Closing', 'Used'];
+  const headers = ['Photo', 'Item', 'Description', 'Opening', 'Added', 'Pull Out', 'Closing', 'Used', 'Wastage'];
   const tableHtml = buildTable(headers, rows, 'dashboardTable');
   
   container.innerHTML = tableHtml;
@@ -2782,15 +2820,15 @@ function renderCalendar() {
   
   // Normalize dashboardDate to date-only for comparison
   const normalizedDashboardDate = new Date(dashboardDate.getFullYear(), dashboardDate.getMonth(), dashboardDate.getDate());
-  const currentDateKey = normalizedDashboardDate.toISOString().split('T')[0];
+  const currentDateKey = getDateKey(normalizedDashboardDate);
   
   for (let i = 0; i < 42; i++) {
     const date = new Date(startDate);
     date.setDate(startDate.getDate() + i);
     
-    const dateKey = date.toISOString().split('T')[0];
+    const dateKey = getDateKey(date);
     const isCurrentMonth = date.getMonth() === month;
-    const isToday = dateKey === today.toISOString().split('T')[0];
+    const isToday = dateKey === getDateKey(today);
     const isSelected = dateKey === currentDateKey;
     
     let className = 'calendar-day';
@@ -2919,13 +2957,16 @@ async function syncQuantitiesFromFirebaseInBackground() {
     console.log('Background sync: Loading quantities from Firebase');
     
     // Load quantities for both opening and closing
-    const dateKey = dashboardDate.toISOString().split('T')[0];
+    const dateKey = getDateKey(dashboardDate);
     const docRef = doc(db, 'inventory-quantities', dashboardBranch, 'daily-quantities', dateKey);
     const docSnap = await getDoc(docRef);
     
     const freshOpeningQuantities = {};
     const freshClosingQuantities = {};
     const freshAddedQuantities = {};
+    const freshDeliveryQuantities = {};
+    const freshPullOutQuantities = {};
+    const freshWastageQuantities = {};
     
     if (docSnap.exists()) {
       const data = docSnap.data();
@@ -2943,6 +2984,28 @@ async function syncQuantitiesFromFirebaseInBackground() {
         if (itemQuantities.added && itemQuantities.added.checked) {
           freshAddedQuantities[itemId] = itemQuantities.added.value;
         }
+        
+        // Calculate breakdown from adjustments array
+        let delivery = 0;
+        let pullOut = 0;
+        let wastage = 0;
+        
+        if (itemQuantities.adjustments && Array.isArray(itemQuantities.adjustments)) {
+          itemQuantities.adjustments.forEach(adj => {
+            const value = Math.abs(adj.value || 0);
+            if (adj.reason === 'delivery') {
+              delivery += value;
+            } else if (adj.reason === 'pulled-out') {
+              pullOut += value;
+            } else if (adj.reason === 'wastage') {
+              wastage += value;
+            }
+          });
+        }
+        
+        freshDeliveryQuantities[itemId] = delivery;
+        freshPullOutQuantities[itemId] = pullOut;
+        freshWastageQuantities[itemId] = wastage;
       });
     }
     
@@ -2956,6 +3019,9 @@ async function syncQuantitiesFromFirebaseInBackground() {
       openingQuantities = freshOpeningQuantities;
       closingQuantities = freshClosingQuantities;
       addedQuantities = freshAddedQuantities;
+      deliveryQuantities = freshDeliveryQuantities;
+      pullOutQuantities = freshPullOutQuantities;
+      wastageQuantities = freshWastageQuantities;
       
       // Cache the fresh quantities
       cacheQuantities(openingQuantities, closingQuantities, addedQuantities);
@@ -3003,13 +3069,16 @@ async function syncWithFirebaseInBackground() {
     });
     
     // Load quantities for both opening and closing
-    const dateKey = dashboardDate.toISOString().split('T')[0];
+    const dateKey = getDateKey(dashboardDate);
     const docRef = doc(db, 'inventory-quantities', dashboardBranch, 'daily-quantities', dateKey);
     const docSnap = await getDoc(docRef);
     
     const freshOpeningQuantities = {};
     const freshClosingQuantities = {};
     const freshAddedQuantities = {};
+    const freshDeliveryQuantities = {};
+    const freshPullOutQuantities = {};
+    const freshWastageQuantities = {};
     
     if (docSnap.exists()) {
       const data = docSnap.data();
@@ -3027,6 +3096,28 @@ async function syncWithFirebaseInBackground() {
         if (itemQuantities.added && itemQuantities.added.checked) {
           freshAddedQuantities[itemId] = itemQuantities.added.value;
         }
+        
+        // Calculate breakdown from adjustments array
+        let delivery = 0;
+        let pullOut = 0;
+        let wastage = 0;
+        
+        if (itemQuantities.adjustments && Array.isArray(itemQuantities.adjustments)) {
+          itemQuantities.adjustments.forEach(adj => {
+            const value = Math.abs(adj.value || 0);
+            if (adj.reason === 'delivery') {
+              delivery += value;
+            } else if (adj.reason === 'pulled-out') {
+              pullOut += value;
+            } else if (adj.reason === 'wastage') {
+              wastage += value;
+            }
+          });
+        }
+        
+        freshDeliveryQuantities[itemId] = delivery;
+        freshPullOutQuantities[itemId] = pullOut;
+        freshWastageQuantities[itemId] = wastage;
       });
     }
     
@@ -3042,6 +3133,9 @@ async function syncWithFirebaseInBackground() {
       openingQuantities = freshOpeningQuantities;
       closingQuantities = freshClosingQuantities;
       addedQuantities = freshAddedQuantities;
+      deliveryQuantities = freshDeliveryQuantities;
+      pullOutQuantities = freshPullOutQuantities;
+      wastageQuantities = freshWastageQuantities;
       
       // Cache the fresh data
       cacheDashboardData();
@@ -3127,17 +3221,17 @@ function invalidateInventoryCache() {
 
 function loadQuantitiesFromCache() {
   try {
-    const cacheKey = `quantities-${dashboardBranch}-${dashboardDate.toISOString().split('T')[0]}`;
+    const cacheKey = `quantities-${dashboardBranch}-${getDateKey(dashboardDate)}`;
     const cached = localStorage.getItem(cacheKey);
     if (!cached) {
-      console.log('❌ No cached quantities found for date:', dashboardDate.toISOString().split('T')[0]);
+      console.log('❌ No cached quantities found for date:', getDateKey(dashboardDate));
       return null;
     }
     
     const parseStart = performance.now();
     const cacheData = JSON.parse(cached);
     const parseTime = performance.now() - parseStart;
-    console.log(`📊 Loading quantities from cache for date: ${dashboardDate.toISOString().split('T')[0]} (parse: ${parseTime.toFixed(2)}ms)`);
+    console.log(`📊 Loading quantities from cache for date: ${getDateKey(dashboardDate)} (parse: ${parseTime.toFixed(2)}ms)`);
     return cacheData.data;
   } catch (error) {
     console.error('Error loading cached quantities:', error);
@@ -3147,7 +3241,7 @@ function loadQuantitiesFromCache() {
 
 function cacheQuantities(opening, closing, added) {
   try {
-    const cacheKey = `quantities-${dashboardBranch}-${dashboardDate.toISOString().split('T')[0]}`;
+    const cacheKey = `quantities-${dashboardBranch}-${getDateKey(dashboardDate)}`;
     const cacheData = {
       timestamp: Date.now(),
       data: {
@@ -3158,7 +3252,7 @@ function cacheQuantities(opening, closing, added) {
     };
     
     localStorage.setItem(cacheKey, JSON.stringify(cacheData));
-    console.log('Quantities cached for branch:', dashboardBranch, 'date:', dashboardDate.toISOString().split('T')[0]);
+    console.log('Quantities cached for branch:', dashboardBranch, 'date:', getDateKey(dashboardDate));
   } catch (error) {
     console.error('Error caching quantities:', error);
   }
@@ -3176,9 +3270,9 @@ function clearInventoryItemsCache() {
 
 function clearQuantitiesCache() {
   try {
-    const cacheKey = `quantities-${dashboardBranch}-${dashboardDate.toISOString().split('T')[0]}`;
+    const cacheKey = `quantities-${dashboardBranch}-${getDateKey(dashboardDate)}`;
     localStorage.removeItem(cacheKey);
-    console.log('Quantities cache cleared for branch:', dashboardBranch, 'date:', dashboardDate.toISOString().split('T')[0]);
+    console.log('Quantities cache cleared for branch:', dashboardBranch, 'date:', getDateKey(dashboardDate));
   } catch (error) {
     console.error('Error clearing quantities cache:', error);
   }
@@ -3764,7 +3858,7 @@ async function handleBulkAddSubmit() {
 
 async function loadQuantitiesForBranch(branch, date) {
   try {
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = getDateKey(date);
     const docRef = doc(db, 'inventory-quantities', branch, 'daily-quantities', dateStr);
     const docSnap = await getDoc(docRef);
     

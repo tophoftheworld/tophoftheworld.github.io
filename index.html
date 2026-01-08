@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <title>Matchanese Staff Portal</title>
     <link rel="icon" href="icons/icon-64.png" type="image/png">
     
@@ -321,6 +324,13 @@
                 </svg>
                 <span class="mobile-nav-text">Sales Reporting</span>
             </a>
+            <a href="#" class="mobile-nav-item" data-app="Expense Reporting">
+                <svg class="mobile-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="1" x2="12" y2="23"/>
+                    <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                </svg>
+                <span class="mobile-nav-text">Expense Reporting</span>
+            </a>
             <a href="#" class="mobile-nav-item" data-app="Inventory">
                 <svg class="mobile-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
@@ -427,6 +437,10 @@
             'Sales Reporting': {
                 url: 'daily-sales.html',
                 title: 'Sales Reporting'
+            },
+            'Expense Reporting': {
+                url: 'expenses/index.html',
+                title: 'Expense Reporting'
             }
         };
 

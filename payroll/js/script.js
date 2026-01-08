@@ -1,6 +1,9 @@
 // Import Firebase setup
 import { db } from '../../attendance/js/firebase-setup.js';
-import { doc, getDoc, getDocs, collection, collectionGroup, query, where } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+import { doc, getDoc, getDocs, collection, collectionGroup, query, where, addDoc, setDoc, Timestamp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+
+// Version log for cache busting verification
+console.log('✅ Payroll script loaded - Version: 20250117-payslip-fix (Payslip calculation fixed)');
 
 // Current user (will be set from parent portal or localStorage)
 let currentUser = "";
@@ -47,20 +50,46 @@ const SHIFT_SCHEDULES = {
     "Custom": { timeIn: null, timeOut: null }
 };
 
-// Initialize PayCalculator
-function getPayCalculatorPayroll(salesData = null) {
+// Get PayCalculator instance (already initialized in DOMContentLoaded)
+function getPayCalculatorPayroll() {
+    return payCalculatorPayroll;
+}
+
+// Load sales data (matching admin payroll)
+async function loadSalesData(branch = null) {
     try {
-        if (typeof window === 'undefined' || !window.PayCalculator) return null;
-        if (!payCalculatorPayroll) {
-            payCalculatorPayroll = new window.PayCalculator(HOLIDAYS_2025 || {}, salesData || {});
+        let snapshot;
+        
+        if (branch === 'podium' || branch === 'Podium') {
+            snapshot = await getDocs(collection(db, 'sales-data', 'podium', 'daily'));
+        } else if (branch === 'smnorth' || branch === 'sm-north' || branch === 'SM North') {
+            snapshot = await getDocs(collection(db, 'sales-data', 'sm-north', 'daily'));
         } else {
-            if (salesData) payCalculatorPayroll.updateSalesData(salesData);
-            if (HOLIDAYS_2025) payCalculatorPayroll.updateHolidays(HOLIDAYS_2025);
+            // Load all branches for compatibility
+            const [smNorthSnapshot, podiumSnapshot] = await Promise.all([
+                getDocs(collection(db, 'sales-data', 'sm-north', 'daily')),
+                getDocs(collection(db, 'sales-data', 'podium', 'daily'))
+            ]);
+            
+            // Combine both snapshots
+            const combinedDocs = [...smNorthSnapshot.docs, ...podiumSnapshot.docs];
+            snapshot = { docs: combinedDocs };
         }
-        return payCalculatorPayroll;
-    } catch (e) {
-        console.error('Failed to init PayCalculator for payroll:', e);
-        return null;
+        
+        const salesData = {};
+        snapshot.docs.forEach(doc => {
+            const data = doc.data();
+            // Only include sales data if it has total sales amount
+            if (data.totalSales || (data.cash || 0) + (data.gcash || 0) + (data.maya || 0) + (data.card || 0) + (data.grab || 0) > 0) {
+                salesData[doc.id] = data;
+            }
+        });
+        
+        console.log(`✅ Sales data loaded: ${Object.keys(salesData).length} days`);
+        return salesData;
+    } catch (error) {
+        console.error("Failed to load sales data:", error);
+        return {};
     }
 }
 
@@ -137,6 +166,32 @@ function getMonthIndex(monthName) {
     return months.findIndex(m => m.toLowerCase().startsWith(monthName.toLowerCase()));
 }
 
+// Helper function to create dates from parsed period, handling year boundaries correctly
+// When a period spans across years (e.g., Dec 29 - Jan 12), the start date should use the previous year
+function createPeriodDates(startMonth, startDay, endMonth, endDay, year) {
+    const startMonthIndex = getMonthIndex(startMonth);
+    const endMonthIndex = getMonthIndex(endMonth);
+    
+    // If start month comes after end month (e.g., Dec=11 > Jan=0), period spans across years
+    const spansYearBoundary = startMonthIndex > endMonthIndex;
+    const startYear = spansYearBoundary ? year - 1 : year;
+    const endYear = year;
+    
+    const startDate = new Date(startYear, startMonthIndex, parseInt(startDay));
+    const endDate = new Date(endYear, endMonthIndex, parseInt(endDay));
+    
+    if (spansYearBoundary) {
+        console.log('🔄 Year boundary detected:', {
+            startMonth, startDay, endMonth, endDay, year,
+            startYear, endYear,
+            startDate: startDate.toISOString().split('T')[0],
+            endDate: endDate.toISOString().split('T')[0]
+        });
+    }
+    
+    return { startDate, endDate };
+}
+
 // RESTORED FROM OLD - Compare times
 function compareTimes(t1, t2) {
     // Handle null or undefined times
@@ -167,6 +222,239 @@ function formatTime(timeStr) {
     }
     // No seconds: "1:15 PM" -> "1:15 PM" (no change)
     return timeStr;
+}
+
+// Convert 12-hour time to 24-hour format for time inputs
+function time12to24(time12) {
+    if (!time12 || time12 === '--') return '';
+    const [time, meridian] = time12.split(' ');
+    const [hours, minutes] = time.split(':');
+    let hours24 = parseInt(hours);
+    if (meridian === 'PM' && hours24 !== 12) hours24 += 12;
+    if (meridian === 'AM' && hours24 === 12) hours24 = 0;
+    return `${String(hours24).padStart(2, '0')}:${minutes}`;
+}
+
+// Convert 24-hour time to 12-hour format
+function time24to12(time24) {
+    if (!time24) return '';
+    const [hours, minutes] = time24.split(':');
+    let hours12 = parseInt(hours);
+    const meridian = hours12 >= 12 ? 'PM' : 'AM';
+    if (hours12 === 0) hours12 = 12;
+    if (hours12 > 12) hours12 -= 12;
+    return `${hours12}:${minutes} ${meridian}`;
+}
+
+// Normalize time string by removing seconds for comparison
+// Handles both "10:34:09 AM" and "10:34 AM" formats
+function normalizeTimeForComparison(timeStr) {
+    if (!timeStr || timeStr === '--' || timeStr === 'null') return '';
+    
+    // Remove seconds if they exist (format: "HH:MM:SS AM/PM" -> "HH:MM AM/PM")
+    // This regex matches a colon followed by two digits before the space and AM/PM
+    return timeStr.replace(/:\d{2}(\s[AP]M)/i, '$1');
+}
+
+// Cache for request statuses
+let requestStatusCache = {};
+
+// Simple toast notification function
+function showToast(message, type = 'success', duration = 3000) {
+    const toast = document.createElement('div');
+    toast.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 12px 24px;
+        border-radius: 8px;
+        color: white;
+        font-weight: 500;
+        z-index: 10000;
+        transform: translateX(400px);
+        transition: transform 0.3s ease-in-out;
+        max-width: 400px;
+        word-wrap: break-word;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    `;
+    
+    const colors = {
+        success: '#10b981',
+        error: '#ef4444',
+        warning: '#f59e0b',
+        info: '#3b82f6'
+    };
+    toast.style.backgroundColor = colors[type] || colors.success;
+    toast.textContent = message;
+    
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.style.transform = 'translateX(0)';
+    }, 100);
+    
+    setTimeout(() => {
+        toast.style.transform = 'translateX(400px)';
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.parentNode.removeChild(toast);
+            }
+        }, 300);
+    }, duration);
+}
+
+// Fetch request status for a specific date
+// This checks for requests where the date matches OR where currentData.date matches (date change requests)
+async function getRequestStatus(date) {
+    if (!currentUser || !date) return null;
+    
+    // Check cache first
+    if (requestStatusCache[date]) {
+        return requestStatusCache[date];
+    }
+    
+    try {
+        const requestsRef = collection(db, "payroll_requests");
+        // Get all requests for this employee
+        const q = query(
+            requestsRef,
+            where("employeeId", "==", currentUser)
+        );
+        const snapshot = await getDocs(q);
+        
+        if (!snapshot.empty) {
+            // Find requests that involve this date (either as main date or as currentData.date)
+            const requests = [];
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                // Check if this request involves the date we're checking
+                const requestDate = data.date;
+                const currentDataDate = data.currentData?.date;
+                
+                // Match if: request date matches OR currentData date matches (date change request)
+                if (requestDate === date || currentDataDate === date) {
+                    requests.push({ id: doc.id, ...data });
+                }
+            });
+            
+            if (requests.length > 0) {
+                // Get the most recent request
+                requests.sort((a, b) => {
+                    const aTime = a.requestedAt?.toMillis() || 0;
+                    const bTime = b.requestedAt?.toMillis() || 0;
+                    return bTime - aTime;
+                });
+                requestStatusCache[date] = requests[0];
+                return requests[0];
+            }
+        }
+        requestStatusCache[date] = null;
+        return null;
+    } catch (error) {
+        console.error("Error fetching request status:", error);
+        return null;
+    }
+}
+
+// Fetch all request history for a date
+async function loadRequestHistory(date) {
+    if (!currentUser || !date) return [];
+    
+    try {
+        const requestsRef = collection(db, "payroll_requests");
+        const q = query(
+            requestsRef,
+            where("employeeId", "==", currentUser),
+            where("date", "==", date)
+        );
+        const snapshot = await getDocs(q);
+        
+        const history = [];
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            history.push({
+                id: doc.id,
+                status: data.status,
+                requestedAt: data.requestedAt,
+                reason: data.reason || '',
+                reviewedAt: data.reviewedAt
+            });
+        });
+        
+        // Sort by requested time (newest first)
+        history.sort((a, b) => {
+            const aTime = a.requestedAt?.toMillis() || 0;
+            const bTime = b.requestedAt?.toMillis() || 0;
+            return bTime - aTime;
+        });
+        
+        return history;
+    } catch (error) {
+        console.error("Error fetching request history:", error);
+        return [];
+    }
+}
+
+// Format relative time for history (simpler version)
+function formatRelativeTimeForHistory(timestamp) {
+    if (!timestamp) return 'Unknown';
+    
+    const now = new Date();
+    const time = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    const diffMs = now - time;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    
+    return time.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+// Submit payroll request
+async function submitPayrollRequest(requestData, isNewDate = false) {
+    if (!currentUser) {
+        showToast("Please log in to submit a request.", 'error');
+        return false;
+    }
+    
+    try {
+        const requestsRef = collection(db, "payroll_requests");
+        const requestDoc = {
+            employeeId: currentUser,
+            employeeName: currentUserName || "Unknown",
+            date: requestData.date,
+            type: isNewDate ? "new_date" : (requestData.requestOT ? "ot" : "edit"),
+            status: "pending",
+            currentData: requestData.currentData || null, // null for new date requests
+            requestedData: {
+                date: requestData.date,
+                timeIn: requestData.timeIn,
+                timeOut: requestData.timeOut,
+                branch: requestData.branch,
+                shift: requestData.shift
+            },
+            requestOT: requestData.requestOT || false,
+            reason: requestData.reason || "",
+            requestedAt: Timestamp.now(),
+            requestedBy: currentUser
+        };
+        
+        await addDoc(requestsRef, requestDoc);
+        
+        // Clear cache for this date
+        delete requestStatusCache[requestData.date];
+        
+        console.log("Request submitted successfully");
+        return true;
+    } catch (error) {
+        console.error("Error submitting request:", error);
+        showToast("Failed to submit request. Please try again.", 'error');
+        return false;
+    }
 }
 
 // RESTORED FROM OLD - Calculate hours between two times
@@ -327,8 +615,35 @@ function calculateOTPay(dateEntry, baseRate) {
     return { otPay, otHours };
 }
 
-// RESTORED FROM OLD - Calculate daily pay
+// Calculate daily pay using PayCalculator (includes holiday pay)
 function calculateDailyPay(dateObj, baseRate, employee = null) {
+    if (!dateObj.timeIn || !dateObj.timeOut) {
+        return 0;
+    }
+
+    // Get PayCalculator instance
+    const calculator = getPayCalculatorPayroll();
+    if (!calculator) {
+        console.warn('PayCalculator not available, falling back to basic calculation');
+        // Fallback to basic calculation if PayCalculator not available
+        return calculateDailyPayFallback(dateObj, baseRate);
+    }
+
+    // Prepare employee data (matching admin payroll format)
+    const employeeData = employee || {
+        baseRate: baseRate,
+        salesBonusEligible: payrollEmployeeContext?.salesBonusEligible || false
+    };
+
+    // Use PayCalculator to calculate pay with detailed breakdown
+    const result = calculator.calculateDailyPay(dateObj, employeeData, 'detailed');
+    
+    // Return total pay (includes holiday pay, deductions, bonuses, etc.)
+    return result.total || 0;
+}
+
+// Fallback calculation if PayCalculator is not available
+function calculateDailyPayFallback(dateObj, baseRate) {
     const dailyMealAllowance = 150;
 
     if (!dateObj.timeIn || !dateObj.timeOut) {
@@ -419,12 +734,22 @@ async function fetchPayrollData(dates) {
         }
 
         // Filter for only the dates we need
+        console.log('🔍 Fetching payroll data for', dates.length, 'dates');
+        console.log('📅 Date range:', dates[0], 'to', dates[dates.length - 1]);
+        console.log('📊 Available attendance dates:', Object.keys(attendanceMap).length, 'total records');
+        
+        let foundCount = 0;
         dates.forEach(dateStr => {
             const data = attendanceMap[dateStr];
             
-            // Debug sales bonus loading
-            if (data?.salesBonus) {
-                console.log(`📊 Sales bonus found for ${dateStr}:`, data.salesBonus);
+            if (data) {
+                foundCount++;
+                // Debug sales bonus loading
+                if (data?.salesBonus) {
+                    console.log(`📊 Sales bonus found for ${dateStr}:`, data.salesBonus);
+                }
+            } else {
+                console.log('⚠️ No attendance data found for date:', dateStr);
             }
 
             payrollData.push({
@@ -444,6 +769,8 @@ async function fetchPayrollData(dates) {
                 photoOut: data?.clockOut?.photoURL || null
             });
         });
+        
+        console.log('✅ Found attendance records for', foundCount, 'out of', dates.length, 'dates in period');
 
         return payrollData;
     } catch (error) {
@@ -452,8 +779,85 @@ async function fetchPayrollData(dates) {
     }
 }
 
+// Fetch pending requests for the current period
+async function fetchPendingRequests(dates) {
+    if (!currentUser) return [];
+    
+    try {
+        const requestsRef = collection(db, "payroll_requests");
+        const q = query(
+            requestsRef,
+            where("employeeId", "==", currentUser),
+            where("status", "==", "pending")
+        );
+        const snapshot = await getDocs(q);
+        
+        const pendingRequests = [];
+        const dateSet = new Set(dates);
+        
+        console.log("📋 Fetching pending requests. Period dates:", dates.length, "dates");
+        
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            const requestDate = data.requestedData?.date || data.date;
+            const currentDataDate = data.currentData?.date;
+            
+            // Normalize dates to YYYY-MM-DD format for comparison
+            // Dates from Firebase are already in YYYY-MM-DD format, but ensure they match
+            let normalizedRequestDate = requestDate;
+            let normalizedCurrentDate = currentDataDate;
+            
+            // If date is already in YYYY-MM-DD format, use it directly
+            // Otherwise, try to parse and format it
+            if (requestDate && !/^\d{4}-\d{2}-\d{2}$/.test(requestDate)) {
+                try {
+                    const dateObj = new Date(requestDate);
+                    if (!isNaN(dateObj.getTime())) {
+                        normalizedRequestDate = formatDate(dateObj);
+                    }
+                } catch (e) {
+                    console.error("Error normalizing request date:", requestDate, e);
+                }
+            }
+            
+            if (currentDataDate && !/^\d{4}-\d{2}-\d{2}$/.test(currentDataDate)) {
+                try {
+                    const dateObj = new Date(currentDataDate);
+                    if (!isNaN(dateObj.getTime())) {
+                        normalizedCurrentDate = formatDate(dateObj);
+                    }
+                } catch (e) {
+                    console.error("Error normalizing current date:", currentDataDate, e);
+                }
+            }
+            
+            // For new date requests, check if requested date is in period
+            // For edit requests, check if current date is in period
+            if (data.type === "new_date") {
+                if (normalizedRequestDate && dateSet.has(normalizedRequestDate)) {
+                    console.log("✅ Found new date request:", normalizedRequestDate, data);
+                    pendingRequests.push({ id: doc.id, ...data, normalizedDate: normalizedRequestDate });
+                } else {
+                    console.log("❌ New date request not in period:", normalizedRequestDate, "in set?", dateSet.has(normalizedRequestDate));
+                }
+            } else {
+                // Edit request - check if current date is in period
+                if (normalizedCurrentDate && dateSet.has(normalizedCurrentDate)) {
+                    pendingRequests.push({ id: doc.id, ...data, normalizedDate: normalizedCurrentDate });
+                }
+            }
+        });
+        
+        console.log("📋 Total pending requests found:", pendingRequests.length);
+        return pendingRequests;
+    } catch (error) {
+        console.error("Error fetching pending requests:", error);
+        return [];
+    }
+}
+
 // RESTORED FROM OLD - Update payroll UI
-function updatePayrollUI(payrollData) {
+async function updatePayrollUI(payrollData) {
     const daysWorked = payrollData.filter(day => day.timeIn && day.timeOut).length;
 
     // RESTORED - Calculate total pay using the restored calculateDailyPay
@@ -474,6 +878,46 @@ function updatePayrollUI(payrollData) {
 
     cardsContainer.innerHTML = '';
 
+    // Get the date range from payroll data to fetch pending requests
+    // Also need to get the actual period dates for new date requests
+    const periodSelect = document.getElementById('payrollPeriod');
+    const selectedPeriod = periodSelect?.value;
+    let periodDates = payrollData.map(day => day.date);
+    
+    // If we have a period selected, get all dates in that period
+    if (selectedPeriod) {
+        try {
+            const [startMonth, startDay, endMonth, endDay, year] = parsePeriod(selectedPeriod);
+            if (startMonth && endMonth && year) {
+                const { startDate, endDate } = createPeriodDates(startMonth, startDay, endMonth, endDay, year);
+                periodDates = getDatesInRange(startDate, endDate);
+            }
+        } catch (error) {
+            console.error("Error parsing period:", error);
+        }
+    }
+    
+    const pendingRequests = await fetchPendingRequests(periodDates);
+    
+    // Create a map of dates to pending requests
+    const pendingRequestsMap = new Map();
+    pendingRequests.forEach(req => {
+        const requestDate = req.requestedData?.date || req.date;
+        const currentDataDate = req.currentData?.date;
+        
+        // For new date requests, use requested date
+        if (req.type === "new_date") {
+            if (!pendingRequestsMap.has(requestDate)) {
+                pendingRequestsMap.set(requestDate, req);
+            }
+        } else {
+            // For edit requests, use current date (the date being edited)
+            if (currentDataDate && !pendingRequestsMap.has(currentDataDate)) {
+                pendingRequestsMap.set(currentDataDate, req);
+            }
+        }
+    });
+
     const sortedPayrollData = payrollData.sort((a, b) => new Date(b.date) - new Date(a.date));
     const today = new Date();
     const isToday = (date) => formatDate(today) === date;
@@ -483,6 +927,7 @@ function updatePayrollUI(payrollData) {
 
         const card = document.createElement('div');
         card.className = 'payroll-card';
+        card.dataset.date = day.date;
 
         if (isToday(day.date)) {
             card.classList.add('today');
@@ -557,9 +1002,143 @@ function updatePayrollUI(payrollData) {
             ` : ''}
         `;
 
+        // Check if there's a pending request for this date
+        const pendingRequest = pendingRequestsMap.get(day.date);
+        if (pendingRequest) {
+            card.classList.add('pending-request');
+            card.style.opacity = '0.6';
+            card.style.cursor = 'default';
+            
+            // Add pending indicator at the top
+            const pendingText = document.createElement('div');
+            pendingText.className = 'pending-indicator';
+            pendingText.textContent = pendingRequest.type === 'new_date' ? 'Pending Date' : 'Pending Edit';
+            pendingText.style.cssText = `
+                text-align: center;
+                color: #333;
+                font-size: 0.9rem;
+                font-weight: 600;
+                margin-bottom: 1rem;
+                padding-bottom: 0.75rem;
+                border-bottom: 1px solid #e5e7eb;
+            `;
+            card.insertBefore(pendingText, card.firstChild);
+            
+            // Don't make it clickable
+        } else {
         card.addEventListener('click', () => openPayrollDetailModal(day, card));
+        }
+        
         cardsContainer.appendChild(card);
     });
+    
+    // Add pending request cards for new date requests
+    console.log("🔄 Processing new date requests. Total pending:", pendingRequests.length);
+    pendingRequests.forEach(req => {
+        if (req.type === "new_date") {
+            // Use normalized date if available, otherwise use original
+            const requestDate = req.normalizedDate || req.requestedData?.date || req.date;
+            
+            console.log("📅 Checking new date request:", requestDate);
+            
+            // Always show pending new date requests (they're requests to add a date)
+            // Check if date already has payroll data for logging
+            const existingData = payrollData.find(day => day.date === requestDate);
+            if (existingData) {
+                console.log("⚠️ Date already has payroll data, but showing pending request:", requestDate);
+            }
+            
+            console.log("✅ Creating card for new date request:", requestDate);
+            const card = createPendingRequestCard(req);
+            if (card) {
+                cardsContainer.appendChild(card);
+            } else {
+                console.error("❌ Failed to create card for request:", req);
+            }
+        }
+    });
+    
+    // Sort all cards by date (newest first)
+    const allCards = Array.from(cardsContainer.children);
+    allCards.sort((a, b) => {
+        const dateA = a.dataset.date || '';
+        const dateB = b.dataset.date || '';
+        return new Date(dateB) - new Date(dateA);
+    });
+    
+    // Re-append sorted cards
+    allCards.forEach(card => cardsContainer.appendChild(card));
+}
+
+// Create a payroll card for a pending request
+function createPendingRequestCard(request) {
+    // Use normalized date if available, otherwise use original
+    const requestDate = request.normalizedDate || request.requestedData?.date || request.date;
+    
+    // Ensure date is in correct format for Date parsing (YYYY-MM-DD)
+    const dateStr = requestDate.includes('T') ? requestDate.split('T')[0] : requestDate;
+    
+    // Parse date - dates are stored as YYYY-MM-DD strings
+    const [year, monthNum, day] = dateStr.split('-').map(Number);
+    const dateObj = new Date(year, monthNum - 1, day);
+    
+    if (isNaN(dateObj.getTime())) {
+        console.error("Invalid date for pending request:", requestDate, dateStr);
+        return null;
+    }
+    
+    const month = dateObj.toLocaleDateString('en-US', { month: 'short' });
+    const dayNum = dateObj.getDate();
+    const dayOfWeek = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
+    
+    const card = document.createElement('div');
+    card.className = 'payroll-card pending-request';
+    card.dataset.date = dateStr; // Use normalized date string (YYYY-MM-DD)
+    card.style.opacity = '0.6';
+    card.style.cursor = 'default';
+    card.style.position = 'relative';
+    
+    const requestedData = request.requestedData || {};
+    const timeIn = requestedData.timeIn || '--';
+    const timeOut = requestedData.timeOut || '--';
+    const branch = requestedData.branch || '--';
+    const shift = requestedData.shift || '--';
+    
+    card.innerHTML = `
+        <div class="pending-indicator" style="text-align: center; color: #333; font-size: 0.9rem; font-weight: 600; margin-bottom: 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid #e5e7eb;">Pending Date</div>
+        <div class="payroll-card-main">
+            <div class="payroll-date-section">
+                <div class="payroll-date">${month} ${dayNum}</div>
+                <div class="payroll-day">${dayOfWeek}</div>
+            </div>
+            <div class="payroll-branch-shift">
+                <div class="payroll-branch">${branch}</div>
+                <div class="payroll-shift">${shift}</div>
+            </div>
+        </div>
+        <div class="payroll-times">
+            <div class="payroll-time-group">
+                <div class="payroll-time-label">Time In</div>
+                <div class="payroll-time">${formatTime(timeIn)}</div>
+            </div>
+            <div class="payroll-time-group">
+                <div class="payroll-time-label">Time Out</div>
+                <div class="payroll-time">${formatTime(timeOut)}</div>
+            </div>
+        </div>
+        <div class="payroll-bottom-section">
+            <div class="payroll-late-info">
+                <div class="payroll-late-label">Late Hours</div>
+                <div class="payroll-late-value">-</div>
+            </div>
+            <div class="payroll-pay-info">
+                <div class="payroll-pay-label">Total Pay</div>
+                <div class="payroll-pay">-</div>
+            </div>
+        </div>
+    `;
+    
+    return card;
 }
 
 // RESTORED FROM OLD - Open detail modal
@@ -615,24 +1194,128 @@ function openPayrollDetailModal(dayData, clickedCard) {
         return { text, minutes: actualLateMinutes };
     };
 
-    // RESTORED - Calculate pay breakdown
+    // Calculate pay breakdown using PayCalculator
     const baseRate = dayData.baseRate || 750;
-    const isHalfDay = dayData.shift === "Closing Half-Day";
-    const dailyRate = isHalfDay ? baseRate / 2 : baseRate;
-    const mealAllowance = isHalfDay ? 75 : 150;
+    const calculator = getPayCalculatorPayroll();
+    
+    // Prepare employee data
+    const employeeData = {
+        baseRate: baseRate,
+        salesBonusEligible: payrollEmployeeContext?.salesBonusEligible || false
+    };
 
-    document.getElementById('modalBaseRate').textContent = `₱${dailyRate.toFixed(2)}`;
+    let breakdown = null;
+    let totalPay = 0;
+    let holidayBonus = 0;
+    let lateDeduction = 0;
+    let undertimeDeduction = 0;
+    let otPay = 0;
+    let otHours = 0;
+    let salesBonus = 0;
+    let baseRateDisplay = 0;
+    let mealAllowance = 0;
+
+    if (calculator) {
+        // Use PayCalculator for accurate breakdown
+        const result = calculator.calculateDailyPay(dayData, employeeData, 'detailed');
+        breakdown = result.breakdown;
+        totalPay = result.total || 0;
+
+        // Extract values from breakdown
+        if (breakdown) {
+            // Get meal allowance
+            mealAllowance = breakdown.mealAllowance || 0;
+            
+            // Get deductions
+            if (breakdown.deductions) {
+                lateDeduction = breakdown.deductions.late?.amount || 0;
+                undertimeDeduction = breakdown.deductions.undertime?.amount || 0;
+            }
+            
+            // Get values from components array
+            if (breakdown.components) {
+                // Extract base rate (before multiplier) from components
+                const baseRateComponent = breakdown.components.find(c => 
+                    c.type === 'base_rate' || c.type === 'base_pay'
+                );
+                if (baseRateComponent) {
+                    baseRateDisplay = baseRateComponent.amount || 0;
+                } else {
+                    // Fallback: calculate from adjustedBaseRate and multiplier
+                    const multiplier = getHolidayPayMultiplier(dayData.date);
+                    if (multiplier > 1.0) {
+                        baseRateDisplay = (breakdown.adjustedBaseRate || 0) / multiplier;
+                    } else {
+                        baseRateDisplay = breakdown.adjustedBaseRate || 0;
+                    }
+                }
+                
+                // Extract holiday bonus from components
+                const holidayComponent = breakdown.components.find(c => 
+                    c.type === 'holiday_bonus' || c.type === 'double_pay_bonus'
+                );
+                if (holidayComponent) {
+                    holidayBonus = holidayComponent.amount || 0;
+                }
+                
+                // Extract OT pay and hours
+                const otComponent = breakdown.components.find(c => c.type === 'overtime_pay');
+                if (otComponent) {
+                    otPay = otComponent.amount || 0;
+                    if (otComponent.metadata) {
+                        otHours = otComponent.metadata.hours || 0;
+                    }
+                }
+                
+                // Extract sales bonus
+                const salesComponent = breakdown.components.find(c => c.type === 'sales_bonus');
+                if (salesComponent) {
+                    salesBonus = salesComponent.amount || 0;
+                }
+            } else {
+                // Fallback if no components
+                const multiplier = getHolidayPayMultiplier(dayData.date);
+                if (multiplier > 1.0) {
+                    baseRateDisplay = (breakdown.adjustedBaseRate || 0) / multiplier;
+                } else {
+                    baseRateDisplay = breakdown.adjustedBaseRate || 0;
+                }
+            }
+            
+            // Also check bonuses object as fallback
+            if (breakdown.bonuses) {
+                if (!otPay) otPay = breakdown.bonuses.overtime || 0;
+                if (!salesBonus) salesBonus = breakdown.bonuses.sales || 0;
+            }
+        }
+    } else {
+        // Fallback to manual calculation if PayCalculator not available
+        const isHalfDay = dayData.shift === "Closing Half-Day" || dayData.shift === "Opening Half-Day";
+        const dailyRate = isHalfDay ? baseRate / 2 : baseRate;
+        mealAllowance = isHalfDay ? 75 : 150;
+        baseRateDisplay = dailyRate;
+        lateDeduction = calculateLateDeduction(dayData);
+        undertimeDeduction = calculateUndertimeDeduction(dayData);
+        holidayBonus = calculateHolidayBonus(dayData, dailyRate);
+        const otCalculation = calculateOTPay(dayData, baseRate);
+        otPay = otCalculation.otPay;
+        otHours = otCalculation.otHours;
+        salesBonus = dayData.salesBonus || 0;
+        totalPay = calculateDailyPay(dayData, baseRate);
+    }
+
+    // Display base rate and meal allowance
+    document.getElementById('modalBaseRate').textContent = `₱${baseRateDisplay.toFixed(2)}`;
     document.getElementById('modalMealAllow').textContent = `₱${mealAllowance.toFixed(2)}`;
 
-    // Calculate deductions and show/hide rows
-    const lateDeduction = calculateLateDeduction(dayData);
-    const undertimeDeduction = calculateUndertimeDeduction(dayData);
-    const holidayBonus = calculateHolidayBonus(dayData, dailyRate);
-
+    // Show/hide rows
     const lateDeductionRow = document.getElementById('modalLateDeductionRow');
     const undertimeDeductionRow = document.getElementById('modalUndertimeDeductionRow');
     const holidayBonusRow = document.getElementById('modalHolidayBonusRow');
+    const otBonusRow = document.getElementById('modalOTBonusRow');
+    const salesBonusRow = document.getElementById('modalSalesBonusRow');
 
+    // Late deduction
     if (lateDeduction > 0) {
         const lateInfo = formatLateTime(dayData.timeIn, dayData.scheduledIn);
         document.getElementById('modalLateHours').textContent = lateInfo.text;
@@ -642,7 +1325,7 @@ function openPayrollDetailModal(dayData, clickedCard) {
         lateDeductionRow.style.display = 'none';
     }
 
-    // Check for undertime
+    // Undertime deduction
     const undertimeMinutes = dayData.timeOut && dayData.scheduledOut ?
         compareTimes(dayData.scheduledOut, dayData.timeOut) : 0;
 
@@ -660,6 +1343,7 @@ function openPayrollDetailModal(dayData, clickedCard) {
         undertimeDeductionRow.style.display = 'none';
     }
 
+    // Holiday bonus (from PayCalculator breakdown)
     if (holidayBonus > 0) {
         const multiplier = getHolidayPayMultiplier(dayData.date);
         const holidayType = multiplier === 2.0 ? 'Regular' : 'Special';
@@ -670,22 +1354,16 @@ function openPayrollDetailModal(dayData, clickedCard) {
         holidayBonusRow.style.display = 'none';
     }
 
-    // Add OT calculation and display
-    const otCalculation = calculateOTPay(dayData, dayData.baseRate || 750);
-    const otBonusRow = document.getElementById('modalOTBonusRow');
-
-    if (otCalculation.otPay > 0) {
-        document.getElementById('modalOTHours').textContent = `${otCalculation.otHours.toFixed(1)}h`;
-        document.getElementById('modalOTBonus').textContent = `+₱${otCalculation.otPay.toFixed(2)}`;
+    // Overtime pay
+    if (otPay > 0) {
+        document.getElementById('modalOTHours').textContent = `${otHours.toFixed(1)}h`;
+        document.getElementById('modalOTBonus').textContent = `+₱${otPay.toFixed(2)}`;
         otBonusRow.style.display = 'grid';
     } else {
         otBonusRow.style.display = 'none';
     }
 
-    // Read sales bonus from data (set by admin app in Firestore)
-    const salesBonus = dayData.salesBonus || 0;
-    
-    const salesBonusRow = document.getElementById('modalSalesBonusRow');
+    // Sales bonus
     if (salesBonus > 0) {
         document.getElementById('modalSalesBonus').textContent = `+₱${salesBonus.toFixed(2)}`;
         salesBonusRow.style.display = 'grid';
@@ -693,9 +1371,78 @@ function openPayrollDetailModal(dayData, clickedCard) {
         salesBonusRow.style.display = 'none';
     }
 
-    // Calculate total pay
-    const totalPay = calculateDailyPay(dayData, baseRate);
+    // Total pay
     document.getElementById('modalTotalPay').textContent = `₱${totalPay.toFixed(2)}`;
+
+    // Check request status and update button
+    const requestBtn = document.getElementById('modalRequestEditBtn');
+    const requestBtnText = document.getElementById('modalRequestEditText');
+    const historySection = document.getElementById('requestHistorySection');
+    const historyList = document.getElementById('requestHistoryList');
+    
+    if (requestBtn) {
+        // Store dayData for button click
+        requestBtn.dataset.date = dayData.date;
+        requestBtn.dataset.timeIn = dayData.timeIn || '';
+        requestBtn.dataset.timeOut = dayData.timeOut || '';
+        requestBtn.dataset.branch = dayData.branch || '';
+        requestBtn.dataset.shift = dayData.shift || '';
+        
+        // Hide edit history section (as requested) - force hide and prevent it from showing
+        if (historySection) {
+            historySection.style.display = 'none';
+            historySection.style.visibility = 'hidden';
+        }
+        
+        // Clear cache for this date to ensure fresh data
+        delete requestStatusCache[dayData.date];
+        
+        // Initially disable button while checking
+        requestBtn.disabled = true;
+        requestBtn.classList.add('request-edit-btn-pending');
+        if (requestBtnText) {
+            requestBtnText.textContent = 'Checking...';
+        }
+        
+        // Check for pending request
+        getRequestStatus(dayData.date).then(requestStatus => {
+            if (requestStatus && requestStatus.status === 'pending') {
+                requestBtn.disabled = true;
+                requestBtn.classList.add('request-edit-btn-pending');
+                if (requestBtnText) {
+                    requestBtnText.textContent = 'Request Pending';
+                }
+            } else {
+                requestBtn.disabled = false;
+                requestBtn.classList.remove('request-edit-btn-pending');
+                if (requestBtnText) {
+                    requestBtnText.textContent = 'Request Edit';
+                }
+            }
+        }).catch(error => {
+            console.error("Error checking request status:", error);
+            // On error, enable button (better UX than leaving it disabled)
+            requestBtn.disabled = false;
+            requestBtn.classList.remove('request-edit-btn-pending');
+            if (requestBtnText) {
+                requestBtnText.textContent = 'Request Edit';
+            }
+        });
+        
+        // Add click handler
+        requestBtn.onclick = (e) => {
+            e.stopPropagation();
+            if (!requestBtn.disabled) {
+                openRequestEditModal(
+                    dayData.date,
+                    dayData.timeIn || '',
+                    dayData.timeOut || '',
+                    dayData.branch || '',
+                    dayData.shift || ''
+                );
+            }
+        };
+    }
 
     // Load photos in background
     if (dayData.photoIn) {
@@ -863,7 +1610,7 @@ function formatPeriod(start, end) {
 let currentPayrollDataForPayslip = [];
 let currentPeriodForPayslip = '';
 
-// Check if a period is the current/ongoing period
+    // Check if a period is the current/ongoing period
 function isCurrentPeriod(periodLabel) {
     const [startMonth, startDay, endMonth, endDay, year] = parsePeriod(periodLabel);
     
@@ -871,8 +1618,7 @@ function isCurrentPeriod(periodLabel) {
         return false;
     }
     
-    const startDate = new Date(year, getMonthIndex(startMonth), parseInt(startDay));
-    const endDate = new Date(year, getMonthIndex(endMonth), parseInt(endDay));
+    const { startDate, endDate } = createPeriodDates(startMonth, startDay, endMonth, endDay, year);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
@@ -905,9 +1651,16 @@ async function loadPayrollData() {
         return;
     }
     
-    const startDate = new Date(year, getMonthIndex(startMonth), parseInt(startDay));
-    const endDate = new Date(year, getMonthIndex(endMonth), parseInt(endDay));
+    const { startDate, endDate } = createPeriodDates(startMonth, startDay, endMonth, endDay, year);
+    console.log('📅 Period dates created:', {
+        period: selectedPeriod,
+        startDate: startDate.toISOString().split('T')[0],
+        endDate: endDate.toISOString().split('T')[0],
+        startYear: startDate.getFullYear(),
+        endYear: endDate.getFullYear()
+    });
     const dates = getDatesInRange(startDate, endDate);
+    console.log('📋 Date range:', dates.length, 'dates from', dates[0], 'to', dates[dates.length - 1]);
 
     const payrollData = await fetchPayrollData(dates);
     updatePayrollUI(payrollData);
@@ -986,6 +1739,13 @@ async function generatePayslipPDF() {
         const branchData = {};
         const workedDays = currentPayrollDataForPayslip.filter(day => day.timeIn && day.timeOut);
         
+        // Get PayCalculator for accurate calculations
+        const calculator = getPayCalculatorPayroll();
+        const employeeData = {
+            baseRate: baseRate,
+            salesBonusEligible: payrollEmployeeContext?.salesBonusEligible || false
+        };
+        
         workedDays.forEach(day => {
             const branch = day.branch || 'Unknown';
             if (!branchData[branch]) {
@@ -996,36 +1756,92 @@ async function generatePayslipPDF() {
                     transportAllowance: 0,
                     overtimePay: 0,
                     lateDeduction: 0,
+                    undertimeDeduction: 0,
                     holidayBonus: 0,
-                    salesBonus: 0
+                    salesBonus: 0,
+                    subtotal: 0
                 };
             }
             
-            const isHalfDay = day.shift === "Closing Half-Day" || day.shift === "Opening Half-Day";
-            const dailyRate = isHalfDay ? baseRate / 2 : baseRate;
-            const mealAllowance = isHalfDay ? 75 : 150;
-            const lateDed = calculateLateDeduction(day);
-            const holidayBonus = calculateHolidayBonus(day, dailyRate);
-            const salesBonus = day.salesBonus || 0;
-            const otCalc = calculateOTPay(day, baseRate);
-            const transpoAllowance = day.transpoAllowance || 0;
+            // Breakdown values pulled from PayCalculator to keep parity with portal
+            let basePortion = 0;
+            let mealAllowance = 0;
+            let lateDed = 0;
+            let undertimeDed = 0;
+            let holidayBonus = 0;
+            let salesBonus = 0;
+            let otPay = 0;
+            let transpoAllowance = 0;
+            let dailyTotal = 0;
+            
+            if (calculator) {
+                // Use PayCalculator for accurate breakdown
+                const result = calculator.calculateDailyPay(day, employeeData, 'detailed');
+                const breakdown = result.breakdown || {};
+                dailyTotal = result.total || 0;
+                
+                mealAllowance = breakdown.mealAllowance || 0;
+                lateDed = breakdown.deductions?.late?.amount || 0;
+                undertimeDed = breakdown.deductions?.undertime?.amount || 0;
+                transpoAllowance = breakdown.bonuses?.transportation || day.transpoAllowance || 0;
+                otPay = breakdown.bonuses?.overtime || 0;
+                salesBonus = breakdown.bonuses?.sales || 0;
+
+                if (breakdown.components) {
+                    const holidayComponent = breakdown.components.find(c =>
+                        c.type === 'holiday_bonus' || c.type === 'double_pay_bonus'
+                    );
+                    if (holidayComponent) {
+                        holidayBonus = holidayComponent.amount || 0;
+                    }
+                }
+
+                // Derive a base portion so the line items sum to the PayCalculator total
+                basePortion = dailyTotal
+                    - mealAllowance
+                    - transpoAllowance
+                    - otPay
+                    - salesBonus
+                    - holidayBonus
+                    + lateDed
+                    + undertimeDed;
+            } else {
+                // Fallback to manual calculation
+                const isHalfDay = day.shift === "Closing Half-Day" || day.shift === "Opening Half-Day";
+                const dailyRate = isHalfDay ? baseRate / 2 : baseRate;
+                mealAllowance = isHalfDay ? 75 : 150;
+                lateDed = calculateLateDeduction(day);
+                undertimeDed = calculateUndertimeDeduction(day);
+                holidayBonus = calculateHolidayBonus(day, dailyRate);
+                salesBonus = day.salesBonus || 0;
+                transpoAllowance = day.transpoAllowance || 0;
+                const otCalc = calculateOTPay(day, baseRate);
+                otPay = otCalc.otPay;
+                dailyTotal = (dailyRate + mealAllowance + transpoAllowance + otPay + holidayBonus + salesBonus) - (lateDed + undertimeDed);
+                basePortion = dailyRate;
+            }
             
             branchData[branch].days.push(day.date);
-            branchData[branch].basicPay += dailyRate;
+            branchData[branch].basicPay += basePortion;
             branchData[branch].mealAllowance += mealAllowance;
             branchData[branch].transportAllowance += transpoAllowance;
-            branchData[branch].overtimePay += otCalc.otPay;
+            branchData[branch].overtimePay += otPay;
             branchData[branch].lateDeduction += lateDed;
+            branchData[branch].undertimeDeduction += undertimeDed;
             branchData[branch].holidayBonus += holidayBonus;
             branchData[branch].salesBonus += salesBonus;
+            branchData[branch].subtotal += dailyTotal;
         });
         
         // Calculate grand total
         let grandTotal = 0;
         Object.keys(branchData).forEach(branch => {
             const data = branchData[branch];
-            const subtotal = data.basicPay + data.mealAllowance + data.transportAllowance + 
-                           data.overtimePay + data.holidayBonus + data.salesBonus - data.lateDeduction;
+            const subtotal = data.subtotal || (
+                data.basicPay + data.mealAllowance + data.transportAllowance + 
+                data.overtimePay + data.holidayBonus + data.salesBonus - data.lateDeduction - data.undertimeDeduction
+            );
+            branchData[branch].subtotal = subtotal;
             grandTotal += subtotal;
         });
         
@@ -1034,8 +1850,7 @@ async function generatePayslipPDF() {
             const [startMonth, startDay, endMonth, endDay, year] = parsePeriod(periodText);
             if (!startMonth || !endMonth) return periodText;
             
-            const startDate = new Date(year, getMonthIndex(startMonth), parseInt(startDay));
-            const endDate = new Date(year, getMonthIndex(endMonth), parseInt(endDay));
+            const { startDate, endDate } = createPeriodDates(startMonth, startDay, endMonth, endDay, year);
             
             const startFormatted = startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
             const endFormatted = endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -1071,8 +1886,7 @@ async function generatePayslipPDF() {
                 return `<li>${formatted}</li>`;
             }).join('');
             
-            const subtotal = data.basicPay + data.mealAllowance + data.transportAllowance + 
-                           data.overtimePay + data.holidayBonus + data.salesBonus - data.lateDeduction;
+            const subtotal = data.subtotal;
             
             breakdownHTML += `
 <div style="background: #f1f9f2; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
@@ -1087,6 +1901,7 @@ async function generatePayslipPDF() {
 ${data.transportAllowance > 0 ? `<p style="margin: 0.5rem 0; color: #333;">Transport Allowance <span style="float:right">₱${data.transportAllowance.toFixed(2)}</span></p>` : ''}
 ${data.overtimePay > 0 ? `<p style="margin: 0.5rem 0; color: #333;">Overtime Hours <span style="float:right">₱${data.overtimePay.toFixed(2)}</span></p>` : ''}
 ${data.lateDeduction > 0 ? `<p style="margin: 0.5rem 0; color: #333;">Late Deduction <span style="float:right">–₱${data.lateDeduction.toFixed(2)}</span></p>` : ''}
+${data.undertimeDeduction > 0 ? `<p style="margin: 0.5rem 0; color: #333;">Undertime Deduction <span style="float:right">–₱${data.undertimeDeduction.toFixed(2)}</span></p>` : ''}
 ${data.salesBonus > 0 ? `<p style="margin: 0.5rem 0; color: #2b9348;"><strong>Sales Bonus</strong> <span style="float:right">₱${data.salesBonus.toFixed(2)}</span></p>` : ''}
 ${data.holidayBonus > 0 ? `<p style="margin: 0.5rem 0; color: #2b9348;"><strong>Holiday Pay</strong> <span style="float:right">₱${data.holidayBonus.toFixed(2)}</span></p>` : ''}
 <hr style="border: none; border-top: 1px solid #ddd; margin: 1rem 0;">
@@ -1255,6 +2070,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     id: currentUser,
                     name: employeeData.nick || employeeData.name || employees[currentUser] || currentUser,
                     baseRate: employeeData.baseRate || 750,  // Use actual base rate from Firebase
+                    salesBonusEligible: employeeData.salesBonusEligible || false,
                     role: employeeData.role || 'Barista',
                     transferMode: employeeData.transferMode || employeeData.modeOfTransfer || 'GoTyme'
                 };
@@ -1265,6 +2081,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     id: currentUser,
                     name: employees[currentUser] || currentUser,
                     baseRate: 750,
+                    salesBonusEligible: false,
                     role: 'Barista',
                     transferMode: 'GoTyme'
                 };
@@ -1276,6 +2093,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 id: currentUser,
                 name: employees[currentUser] || currentUser,
                 baseRate: 750,
+                salesBonusEligible: false,
                 role: 'Barista',
                 transferMode: 'GoTyme'
             };
@@ -1284,19 +2102,33 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.error('❌ No current user found!');
     }
 
-    // Load holidays
+    // Load holidays (matching admin payroll path)
     if (!holidaysLoaded) {
         try {
-            const holidaysSnap = await getDoc(doc(db, "settings", "holidays"));
+            const holidaysSnap = await getDoc(doc(db, "config", "holidays_2025"));
             if (holidaysSnap.exists()) {
                 HOLIDAYS_2025 = holidaysSnap.data();
                 holidaysLoaded = true;
                 console.log('✅ Holidays loaded:', Object.keys(HOLIDAYS_2025).length, 'holidays');
+            } else {
+                console.warn('⚠️ Holidays document not found at config/holidays_2025');
             }
         } catch (err) {
             console.error('❌ Error loading holidays:', err);
         }
     }
+
+    // Load sales data only if employee is eligible (matching admin payroll)
+    let salesData = {};
+    if (payrollEmployeeContext && payrollEmployeeContext.salesBonusEligible) {
+        // Determine branch from attendance data or default to SM North
+        // For now, load all sales data (admin does this too when branch is 'all')
+        salesData = await loadSalesData();
+    }
+
+    // Initialize PayCalculator with holidays and sales data (matching admin payroll)
+    payCalculatorPayroll = new window.PayCalculator(HOLIDAYS_2025 || {}, salesData || {});
+    console.log('✅ PayCalculator initialized with holidays and sales data');
 
     // Populate periods
     await populatePayrollPeriods();
@@ -1324,11 +2156,492 @@ document.addEventListener('DOMContentLoaded', async () => {
         } else {
             console.error('❌ Download button not found in DOM');
         }
+        
+        // Listen for request new date button
+        const requestNewDateBtn = document.getElementById('requestNewDateBtn');
+        if (requestNewDateBtn) {
+            requestNewDateBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                openRequestNewDateModal();
+            });
+        }
     }, 100);
+    
+    // Handle new date form submission
+    const newDateForm = document.getElementById('requestNewDateForm');
+    if (newDateForm) {
+        newDateForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const date = document.getElementById('newDateDate').value;
+            const timeIn24 = document.getElementById('newDateTimeIn').value;
+            const timeOut24 = document.getElementById('newDateTimeOut').value;
+            const branch = document.getElementById('newDateBranch').value;
+            const shift = document.getElementById('newDateShift').value;
+            const requestOT = document.getElementById('newDateOT').checked;
+            const reason = document.getElementById('newDateReason').value;
+            
+            // Check for pending request on this date
+            const dateStatus = await getRequestStatus(date);
+            if (dateStatus && dateStatus.status === 'pending') {
+                showToast("You already have a pending request for this date. Please wait for it to be reviewed.", 'warning');
+                return;
+            }
+            
+            // Check if date already exists in attendance
+            try {
+                const attendanceRef = doc(db, "attendance", currentUser, "dates", date);
+                const attendanceSnap = await getDoc(attendanceRef);
+                if (attendanceSnap.exists()) {
+                    showToast("This date already has attendance data. Please use 'Request Edit' instead.", 'warning');
+                    return;
+                }
+            } catch (error) {
+                console.error("Error checking attendance:", error);
+            }
+            
+            // Convert times to 12-hour format
+            const timeIn12 = time24to12(timeIn24);
+            const timeOut12 = time24to12(timeOut24);
+            
+            const requestData = {
+                date: date,
+                timeIn: timeIn12,
+                timeOut: timeOut12,
+                branch: branch,
+                shift: shift,
+                requestOT: requestOT,
+                reason: reason
+            };
+            
+            const success = await submitPayrollRequest(requestData, true);
+            if (success) {
+                showToast("Request submitted successfully!", 'success');
+                closeRequestNewDateModal();
+                await loadPayrollData();
+            }
+        });
+    }
 });
+
+// Request Edit Modal Functions
+async function openRequestEditModal(date, timeIn, timeOut, branch = '', shift = '') {
+    const modal = document.getElementById('requestEditModal');
+    if (!modal) return;
+    
+    // Set current date
+    document.getElementById('requestDate').value = date;
+    
+    // Convert and set times (handle empty/null values)
+    const timeIn24 = timeIn ? time12to24(timeIn) : '';
+    const timeOut24 = timeOut ? time12to24(timeOut) : '';
+    document.getElementById('requestTimeIn').value = timeIn24 || '09:00';
+    document.getElementById('requestTimeOut').value = timeOut24 || '18:00';
+    
+    // Set branch and shift
+    const branchSelect = document.getElementById('requestBranch');
+    const shiftSelect = document.getElementById('requestShift');
+    if (branchSelect && branch) {
+        branchSelect.value = branch;
+    }
+    if (shiftSelect && shift) {
+        shiftSelect.value = shift;
+    }
+    
+    // Reset form
+    document.getElementById('requestReason').value = '';
+    
+    // Check if OT is already applied for this date
+    const otCheckbox = document.getElementById('requestOT');
+    const otLabel = document.getElementById('requestOTLabel');
+    const otText = document.getElementById('requestOTText');
+    const otAppliedIndicator = document.getElementById('otAppliedIndicator');
+    
+    // Fetch attendance data to check if OT is already applied
+    try {
+        const attendanceRef = doc(db, "attendance", currentUser, "dates", date);
+        const attendanceSnap = await getDoc(attendanceRef);
+        
+        if (attendanceSnap.exists()) {
+            const data = attendanceSnap.data();
+            if (data.hasOTPay) {
+                // OT is already applied - grey out checkbox
+                otCheckbox.disabled = true;
+                otCheckbox.checked = true;
+                otLabel.style.opacity = '0.6';
+                otLabel.style.cursor = 'not-allowed';
+                otText.textContent = 'OT Applied';
+                otText.style.color = '#9ca3af';
+                otAppliedIndicator.style.display = 'block';
+            } else {
+                // OT not applied - enable checkbox
+                otCheckbox.disabled = false;
+                otCheckbox.checked = false;
+                otLabel.style.opacity = '1';
+                otLabel.style.cursor = 'pointer';
+                otText.textContent = 'Request Overtime Pay';
+                otText.style.color = '#333';
+                otAppliedIndicator.style.display = 'none';
+            }
+        } else {
+            // No attendance data - enable checkbox
+            otCheckbox.disabled = false;
+            otCheckbox.checked = false;
+            otLabel.style.opacity = '1';
+            otLabel.style.cursor = 'pointer';
+            otText.textContent = 'Request Overtime Pay';
+            otText.style.color = '#333';
+            otAppliedIndicator.style.display = 'none';
+        }
+    } catch (error) {
+        console.error("Error checking OT status:", error);
+        // On error, enable checkbox
+        otCheckbox.disabled = false;
+        otLabel.style.opacity = '1';
+        otText.textContent = 'Request Overtime Pay';
+        otAppliedIndicator.style.display = 'none';
+    }
+    
+    // Store current data for comparison
+    modal.dataset.currentDate = date;
+    modal.dataset.currentTimeIn = timeIn;
+    modal.dataset.currentTimeOut = timeOut;
+    modal.dataset.currentBranch = branch || '';
+    modal.dataset.currentShift = shift || '';
+    
+    // Check and store if current date has OT pay (for date change requests)
+    let currentHasOTPay = false;
+    try {
+        const attendanceRef = doc(db, "attendance", currentUser, "dates", date);
+        const attendanceSnap = await getDoc(attendanceRef);
+        if (attendanceSnap.exists()) {
+            currentHasOTPay = attendanceSnap.data().hasOTPay || false;
+        }
+    } catch (error) {
+        console.error("Error checking OT status:", error);
+    }
+    modal.dataset.currentHasOTPay = currentHasOTPay ? 'true' : 'false';
+    
+    // Check for pending request and disable form if found
+    // Need to check BOTH the original current date and the date in the form (in case user changes it)
+    const requestForm = document.getElementById('requestEditForm');
+    const originalCurrentDate = modal.dataset.currentDate; // This is the ORIGINAL date we're changing from
+    
+    // Check both the original current date (always) and the date in the form (if different)
+    const [originalDateStatus, formDateStatus] = await Promise.all([
+        getRequestStatus(originalCurrentDate), // Always check the original date
+        date !== originalCurrentDate ? getRequestStatus(date) : Promise.resolve(null)
+    ]);
+    
+    const hasPendingRequest = (originalDateStatus && originalDateStatus.status === 'pending') || 
+                             (formDateStatus && formDateStatus.status === 'pending');
+    
+    const submitBtn = requestForm?.querySelector('button[type="submit"]');
+    
+    if (hasPendingRequest) {
+        // Disable all form inputs
+        if (requestForm) {
+            const inputs = requestForm.querySelectorAll('input, textarea, button[type="submit"]');
+            inputs.forEach(input => {
+                input.disabled = true;
+            });
+        }
+        if (submitBtn) {
+            submitBtn.textContent = 'Request Pending';
+            submitBtn.style.opacity = '0.6';
+            submitBtn.style.cursor = 'not-allowed';
+        }
+    } else {
+        // Initially disable submit button - will be enabled when changes are detected
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.style.opacity = '0.6';
+            submitBtn.style.cursor = 'not-allowed';
+            submitBtn.textContent = 'Submit Request';
+        }
+        
+        // Enable all form inputs (except OT checkbox if it's already applied and submit button)
+        if (requestForm) {
+            const inputs = requestForm.querySelectorAll('input, textarea, select');
+            inputs.forEach(input => {
+                if (input.id !== 'requestOT' || !otCheckbox?.disabled) {
+                    input.disabled = false;
+                }
+            });
+        }
+        
+        // Add change detection to enable submit button when changes are made
+        const checkForChanges = async () => {
+            const currentDate = modal.dataset.currentDate;
+            const currentTimeIn = modal.dataset.currentTimeIn;
+            const currentTimeOut = modal.dataset.currentTimeOut;
+            const currentBranch = modal.dataset.currentBranch || '';
+            const currentShift = modal.dataset.currentShift || '';
+            
+            const formDate = document.getElementById('requestDate')?.value || '';
+            const formTimeIn24 = document.getElementById('requestTimeIn')?.value || '';
+            const formTimeOut24 = document.getElementById('requestTimeOut')?.value || '';
+            const formBranch = document.getElementById('requestBranch')?.value || '';
+            const formShift = document.getElementById('requestShift')?.value || '';
+            const formOT = document.getElementById('requestOT')?.checked || false;
+            
+            // Convert times for comparison
+            const formTimeIn12 = formTimeIn24 ? time24to12(formTimeIn24) : '';
+            const formTimeOut12 = formTimeOut24 ? time24to12(formTimeOut24) : '';
+            
+            // Normalize times for comparison (remove seconds if present)
+            // This ensures "10:34 AM" matches "10:34:09 AM"
+            const normalizedFormTimeIn = normalizeTimeForComparison(formTimeIn12);
+            const normalizedFormTimeOut = normalizeTimeForComparison(formTimeOut12);
+            const normalizedCurrentTimeIn = normalizeTimeForComparison(currentTimeIn || '');
+            const normalizedCurrentTimeOut = normalizeTimeForComparison(currentTimeOut || '');
+            
+            // Check if OT checkbox is enabled (not already applied)
+            const otCheckbox = document.getElementById('requestOT');
+            const actualRequestOT = otCheckbox && !otCheckbox.disabled && formOT;
+            
+            const dateChanged = formDate !== currentDate;
+            const timeInChanged = normalizedFormTimeIn !== normalizedCurrentTimeIn;
+            const timeOutChanged = normalizedFormTimeOut !== normalizedCurrentTimeOut;
+            const branchChanged = formBranch !== currentBranch;
+            const shiftChanged = formShift !== currentShift;
+            
+            const hasChanges = dateChanged || timeInChanged || timeOutChanged || branchChanged || shiftChanged || actualRequestOT;
+            
+            // If date changed, also check for pending requests on both dates
+            let hasPendingRequest = false;
+            if (dateChanged) {
+                const [originalDateStatus, newDateStatus] = await Promise.all([
+                    getRequestStatus(currentDate),
+                    getRequestStatus(formDate)
+                ]);
+                hasPendingRequest = (originalDateStatus && originalDateStatus.status === 'pending') || 
+                                   (newDateStatus && newDateStatus.status === 'pending');
+            }
+            
+            if (submitBtn) {
+                if (hasPendingRequest) {
+                    submitBtn.disabled = true;
+                    submitBtn.style.opacity = '0.6';
+                    submitBtn.style.cursor = 'not-allowed';
+                    submitBtn.textContent = 'Request Pending';
+                } else if (hasChanges) {
+                    submitBtn.disabled = false;
+                    submitBtn.style.opacity = '1';
+                    submitBtn.style.cursor = 'pointer';
+                    submitBtn.textContent = 'Submit Request';
+                } else {
+                    submitBtn.disabled = true;
+                    submitBtn.style.opacity = '0.6';
+                    submitBtn.style.cursor = 'not-allowed';
+                    submitBtn.textContent = 'Submit Request';
+                }
+            }
+        };
+        
+        // Add listeners to all form fields
+        const formFields = ['requestDate', 'requestTimeIn', 'requestTimeOut', 'requestBranch', 'requestShift', 'requestOT'];
+        formFields.forEach(fieldId => {
+            const field = document.getElementById(fieldId);
+            if (field) {
+                field.addEventListener('change', checkForChanges);
+                field.addEventListener('input', checkForChanges);
+            }
+        });
+        
+        // Initial check
+        checkForChanges();
+    }
+    
+    
+    modal.style.display = 'flex';
+    requestAnimationFrame(() => {
+        modal.classList.add('show');
+    });
+}
+
+function closeRequestEditModal() {
+    const modal = document.getElementById('requestEditModal');
+    if (!modal) return;
+    
+    modal.classList.remove('show');
+    setTimeout(() => {
+        modal.style.display = 'none';
+    }, 300);
+}
+
+// Handle request form submission
+document.addEventListener('DOMContentLoaded', () => {
+    const requestForm = document.getElementById('requestEditForm');
+    if (requestForm) {
+        requestForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const modal = document.getElementById('requestEditModal');
+            const date = document.getElementById('requestDate').value;
+            const currentDate = modal.dataset.currentDate;
+            
+            // Check for pending request before submitting - check BOTH dates
+            const [currentStatus, requestedStatus] = await Promise.all([
+                getRequestStatus(currentDate),
+                date !== currentDate ? getRequestStatus(date) : Promise.resolve(null)
+            ]);
+            
+            if ((currentStatus && currentStatus.status === 'pending') || 
+                (requestedStatus && requestedStatus.status === 'pending')) {
+                showToast("You already have a pending request for this date. Please wait for it to be reviewed.", 'warning');
+                return;
+            }
+            
+            const timeIn24 = document.getElementById('requestTimeIn').value;
+            const timeOut24 = document.getElementById('requestTimeOut').value;
+            const requestOT = document.getElementById('requestOT').checked;
+            const reason = document.getElementById('requestReason').value;
+            
+            // Convert back to 12-hour format for storage
+            const timeIn12 = time24to12(timeIn24);
+            const timeOut12 = time24to12(timeOut24);
+            
+            // currentDate is already declared above, just get the other values
+            const currentTimeIn = modal.dataset.currentTimeIn;
+            const currentTimeOut = modal.dataset.currentTimeOut;
+            const currentBranch = modal.dataset.currentBranch || '';
+            const currentShift = modal.dataset.currentShift || '';
+            
+            // Get requested branch and shift from form
+            const requestedBranch = document.getElementById('requestBranch')?.value || '';
+            const requestedShift = document.getElementById('requestShift')?.value || '';
+            
+            // Only submit OT request if checkbox is enabled (not already applied)
+            const otCheckbox = document.getElementById('requestOT');
+            const actualRequestOT = otCheckbox && !otCheckbox.disabled && requestOT;
+            
+            // Get current OT status (for date change requests - to preserve OT)
+            const currentHasOTPay = modal.dataset.currentHasOTPay === 'true';
+            
+            // Normalize times for comparison (remove seconds if present)
+            // This ensures "10:34 AM" matches "10:34:09 AM"
+            const normalizedTimeIn12 = normalizeTimeForComparison(timeIn12);
+            const normalizedTimeOut12 = normalizeTimeForComparison(timeOut12);
+            const normalizedCurrentTimeIn = normalizeTimeForComparison(currentTimeIn || '');
+            const normalizedCurrentTimeOut = normalizeTimeForComparison(currentTimeOut || '');
+            
+            // Validate that at least one field has changed
+            const dateChanged = date !== currentDate;
+            const timeInChanged = normalizedTimeIn12 !== normalizedCurrentTimeIn;
+            const timeOutChanged = normalizedTimeOut12 !== normalizedCurrentTimeOut;
+            const branchChanged = requestedBranch !== currentBranch;
+            const shiftChanged = requestedShift !== currentShift;
+            
+            if (!dateChanged && !timeInChanged && !timeOutChanged && !branchChanged && !shiftChanged && !actualRequestOT) {
+                showToast("No changes detected. Please modify at least one field before submitting.", 'warning');
+                return;
+            }
+            
+            const requestData = {
+                date: date,
+                timeIn: timeIn12,
+                timeOut: timeOut12,
+                branch: requestedBranch,
+                shift: requestedShift,
+                requestOT: actualRequestOT,
+                reason: reason,
+                currentData: {
+                    date: currentDate,
+                    timeIn: currentTimeIn,
+                    timeOut: currentTimeOut,
+                    branch: currentBranch,
+                    shift: currentShift,
+                    hasOTPay: currentHasOTPay // Include OT status from current date
+                }
+            };
+            
+            const success = await submitPayrollRequest(requestData);
+            if (success) {
+                showToast("Request submitted successfully!", 'success');
+                closeRequestEditModal();
+                // Close detail modal and reload payroll data
+                closePayrollDetailModal();
+                await loadPayrollData();
+            }
+        });
+    }
+});
+
+// Request New Date Modal Functions
+function openRequestNewDateModal() {
+    const modal = document.getElementById('requestNewDateModal');
+    if (!modal) return;
+    
+    // Reset form
+    document.getElementById('newDateDate').value = '';
+    document.getElementById('newDateTimeIn').value = '09:00';
+    document.getElementById('newDateTimeOut').value = '18:00';
+    document.getElementById('newDateBranch').value = 'Podium';
+    document.getElementById('newDateShift').value = 'Midshift';
+    document.getElementById('newDateOT').checked = false;
+    document.getElementById('newDateReason').value = '';
+    
+    // Initially disable submit button
+    const submitBtn = document.getElementById('newDateSubmitBtn');
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.style.opacity = '0.6';
+        submitBtn.style.cursor = 'not-allowed';
+    }
+    
+    // Add change detection
+    const checkForChanges = () => {
+        const date = document.getElementById('newDateDate')?.value || '';
+        const timeIn = document.getElementById('newDateTimeIn')?.value || '';
+        const timeOut = document.getElementById('newDateTimeOut')?.value || '';
+        const hasData = date && timeIn && timeOut;
+        
+        if (submitBtn) {
+            if (hasData) {
+                submitBtn.disabled = false;
+                submitBtn.style.opacity = '1';
+                submitBtn.style.cursor = 'pointer';
+            } else {
+                submitBtn.disabled = true;
+                submitBtn.style.opacity = '0.6';
+                submitBtn.style.cursor = 'not-allowed';
+            }
+        }
+    };
+    
+    // Add listeners
+    const formFields = ['newDateDate', 'newDateTimeIn', 'newDateTimeOut'];
+    formFields.forEach(fieldId => {
+        const field = document.getElementById(fieldId);
+        if (field) {
+            field.addEventListener('change', checkForChanges);
+            field.addEventListener('input', checkForChanges);
+        }
+    });
+    
+    modal.style.display = 'flex';
+    requestAnimationFrame(() => {
+        modal.classList.add('show');
+    });
+}
+
+function closeRequestNewDateModal() {
+    const modal = document.getElementById('requestNewDateModal');
+    if (!modal) return;
+    modal.classList.remove('show');
+    setTimeout(() => {
+        modal.style.display = 'none';
+    }, 300);
+}
 
 // Make functions global for modal
 window.closePayrollDetailModal = closePayrollDetailModal;
 window.openImageModal = openImageModal;
 window.generatePayslipPDF = generatePayslipPDF;
+window.openRequestEditModal = openRequestEditModal;
+window.closeRequestEditModal = closeRequestEditModal;
+window.openRequestNewDateModal = openRequestNewDateModal;
+window.closeRequestNewDateModal = closeRequestNewDateModal;
 

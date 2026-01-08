@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Exchange Gift - Admin</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="admin-header">
+            <div class="logo-section">
+                <h1 class="app-title">🎁 Exchange Gift Raffle</h1>
+            </div>
+            <div class="controls">
+                <button class="btn btn-primary" id="randomizeBtn">🎲 Randomize Assignments</button>
+                <button class="btn btn-secondary" id="clearBtn">🗑️ Clear Assignments</button>
+            </div>
+        </div>
+
+        <div class="exclusions-section">
+            <h3>Exclude from Exchange:</h3>
+            <div class="exclusions-grid" id="exclusionsGrid">
+                <!-- Exclusions will be populated here -->
+            </div>
+        </div>
+
+        <div id="errorMessage" class="error" style="display: none;"></div>
+
+        <div class="data-table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th class="sortable" data-sort="giver">Gift Giver</th>
+                        <th style="width: 60px; text-align: center;"></th>
+                        <th class="sortable" data-sort="recipient">Gift Recipient</th>
+                    </tr>
+                </thead>
+                <tbody id="assignmentsTableBody">
+                    <!-- Table rows will be populated here -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script type="module" src="js/admin-script.js"></script>
+</body>
+</html>
+

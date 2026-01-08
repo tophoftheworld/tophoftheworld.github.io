@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Payroll Requests - Matchanese Admin</title>
+    <link rel="icon" href="data:,">
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css?v=20250117-2">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo-section">
+                <img src="../admin-payroll/img/matchanese-logo.png" class="logo" alt="Matchanese Logo">
+                <h1 class="app-title">Payroll Requests</h1>
+            </div>
+            <div class="controls">
+                <div class="control-item">
+                    <label class="control-label">Filter</label>
+                    <select id="statusFilter">
+                        <option value="all">All Requests</option>
+                        <option value="pending" selected>Pending</option>
+                        <option value="approved">Approved</option>
+                        <option value="rejected">Rejected</option>
+                    </select>
+                </div>
+                <div class="bulk-actions" id="bulkActions" style="display: none;">
+                    <button class="bulk-action-btn bulk-approve-btn" id="bulkApproveBtn">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                        Approve Selected
+                    </button>
+                    <button class="bulk-action-btn bulk-reject-btn" id="bulkRejectBtn">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                        Reject Selected
+                    </button>
+                </div>
+                <button class="refresh-btn" id="refreshBtn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 2v6h-6"></path>
+                        <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+                        <path d="M3 22v-6h6"></path>
+                        <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+                    </svg>
+                    Refresh
+                </button>
+            </div>
+        </div>
+        
+        <div class="mobile-controls">
+            <div class="control-item">
+                <label class="control-label">Filter</label>
+                <select id="statusFilterMobile">
+                    <option value="all">All Requests</option>
+                    <option value="pending" selected>Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="rejected">Rejected</option>
+                </select>
+            </div>
+            <div class="bulk-actions-mobile" id="bulkActionsMobile" style="display: none;">
+                <button class="bulk-action-btn bulk-approve-btn" id="bulkApproveBtnMobile">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                    Approve Selected
+                </button>
+                <button class="bulk-action-btn bulk-reject-btn" id="bulkRejectBtnMobile">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                    Reject Selected
+                </button>
+            </div>
+            <button class="refresh-btn" id="refreshBtnMobile">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 2v6h-6"></path>
+                    <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+                    <path d="M3 22v-6h6"></path>
+                    <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+                </svg>
+                Refresh
+            </button>
+        </div>
+
+        <div class="requests-container" id="requestsContainer">
+            <div class="requests-header" id="requestsHeader" style="display: none;">
+                <label class="select-all-checkbox">
+                    <input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this.checked)">
+                    <span>Select All</span>
+                </label>
+                <span class="selected-count" id="selectedCount">0 selected</span>
+            </div>
+            <div class="loading-state" id="loadingState">
+                <div class="spinner"></div>
+                <p>Loading requests...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Request Detail Modal -->
+    <div class="modal" id="requestDetailModal">
+        <div class="modal-content">
+            <span class="close-modal" id="closeModal">&times;</span>
+            <h2 id="modalTitle">Request Details</h2>
+            <div id="modalContent"></div>
+            <div class="modal-actions" id="modalActions"></div>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div class="modal" id="confirmModal">
+        <div class="modal-content confirm-modal-content">
+            <h2 id="confirmTitle">Confirm Action</h2>
+            <p id="confirmMessage"></p>
+            <div class="confirm-actions">
+                <button class="modal-btn modal-btn-cancel" id="confirmCancel">Cancel</button>
+                <button class="modal-btn" id="confirmOk"></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Request Modal -->
+    <div class="modal" id="editRequestModal">
+        <div class="modal-content" style="max-width: 600px;">
+            <span class="close-modal" id="closeEditModal">&times;</span>
+            <h2>Edit & Approve Request</h2>
+            <form id="editRequestForm">
+                <div class="request-detail-section" style="margin-bottom: 1rem;">
+                    <div class="request-detail-row">
+                        <div>
+                            <label class="request-detail-label">Employee</label>
+                            <div class="request-detail-value" id="editEmployeeName">--</div>
+                        </div>
+                        <div>
+                            <label class="request-detail-label">Original Date</label>
+                            <div class="request-detail-value" id="editOriginalDate">--</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="request-detail-section">
+                    <h3 style="margin-bottom: 1rem;">Edit Values</h3>
+                    <div style="margin-bottom: 1rem;">
+                        <label class="request-detail-label">Date</label>
+                        <input type="date" id="editDate" required style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; margin-top: 0.5rem;">
+                    </div>
+                    <div class="request-detail-row">
+                        <div>
+                            <label class="request-detail-label">Time In</label>
+                            <input type="time" id="editTimeIn" required style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; margin-top: 0.5rem;">
+                        </div>
+                        <div>
+                            <label class="request-detail-label">Time Out</label>
+                            <input type="time" id="editTimeOut" required style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; margin-top: 0.5rem;">
+                        </div>
+                    </div>
+                    <div class="request-detail-row" style="margin-top: 1rem;">
+                        <div>
+                            <label class="request-detail-label">Branch</label>
+                            <select id="editBranch" style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; margin-top: 0.5rem;">
+                                <option value="Podium">Podium</option>
+                                <option value="SM North">SM North</option>
+                                <option value="Pop-up">Pop-up</option>
+                                <option value="Workshop">Workshop</option>
+                                <option value="Other Events">Other Events</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="request-detail-label">Shift</label>
+                            <select id="editShift" style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; margin-top: 0.5rem;">
+                                <option value="Opening">Opening</option>
+                                <option value="Opening Half-Day">Opening Half-Day</option>
+                                <option value="Midshift">Midshift</option>
+                                <option value="Closing">Closing</option>
+                                <option value="Closing Half-Day">Closing Half-Day</option>
+                                <option value="Custom">Custom</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div style="margin-top: 1rem;">
+                        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                            <input type="checkbox" id="editOT" style="width: 18px; height: 18px; cursor: pointer;">
+                            <span style="font-weight: 600; color: #333;">Overtime Pay</span>
+                        </label>
+                    </div>
+                    <div style="margin-top: 1rem;">
+                        <label class="request-detail-label">Reason</label>
+                        <textarea id="editReason" placeholder="Reason for the request..." rows="3" style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; font-family: inherit; resize: vertical; margin-top: 0.5rem;"></textarea>
+                    </div>
+                </div>
+                
+                <div class="modal-actions">
+                    <button type="button" class="modal-btn modal-btn-cancel" onclick="closeEditModal()">Cancel</button>
+                    <button type="submit" class="modal-btn modal-btn-approve">Approve with Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script type="module" src="js/script.js?v=20250120-1"></script>
+</body>
+</html>
+
