@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Menu Creator</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Side panel: settings -->
+        <aside class="controls-panel">
+            <h1>Menu Creator</h1>
+
+            <div class="panel-tabs" role="tablist">
+                <button type="button" class="panel-tab active" data-tab="layout" role="tab" aria-selected="true">Layout</button>
+                <button type="button" class="panel-tab" data-tab="drinks" role="tab" aria-selected="false">Drinks</button>
+            </div>
+
+            <div id="layoutPanel" class="panel-content active" role="tabpanel">
+            <section class="form-section">
+                <h2>Canvas</h2>
+                <div class="form-row two-cols">
+                    <div class="form-group">
+                        <label for="orientation">Orientation</label>
+                        <select id="orientation">
+                            <option value="portrait">Portrait</option>
+                            <option value="landscape">Landscape</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="unit">Unit</label>
+                        <select id="unit">
+                            <option value="px">Pixels (digital)</option>
+                            <option value="cm">Centimeters (print)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row two-cols">
+                    <div class="form-group">
+                        <label for="margin">Margin</label>
+                        <input type="number" id="margin" min="0" step="0.5" value="12" placeholder="12">
+                    </div>
+                    <div class="form-group">
+                        <label for="tileGap">Tile spacing</label>
+                        <input type="number" id="tileGap" min="0" step="0.5" value="24" placeholder="24">
+                    </div>
+                </div>
+                <div class="form-row two-cols">
+                    <div class="form-group">
+                        <label for="canvasWidth">Width</label>
+                        <input type="number" id="canvasWidth" min="1" step="1" placeholder="1080">
+                    </div>
+                    <div class="form-group">
+                        <label for="canvasHeight">Height</label>
+                        <input type="number" id="canvasHeight" min="1" step="1" placeholder="1920">
+                    </div>
+                </div>
+                <p class="form-hint" id="canvasHint">Margin, tile spacing, width & height use the same unit.</p>
+            </section>
+
+            <section class="form-section">
+                <h2>Columns</h2>
+                <div class="form-group">
+                    <label for="columnCount">Number of columns</label>
+                    <input type="number" id="columnCount" min="1" max="12" value="2">
+                </div>
+                <div id="columnWidthsContainer">
+                    <!-- Column width % inputs rendered here -->
+                </div>
+                <p class="form-hint">Widths are in %. They auto-adjust so the total stays 100%.</p>
+            </section>
+
+            <section class="form-section" id="rowsSection">
+                <h2>Tiles per column</h2>
+                <div id="columnRowsContainer">
+                    <!-- Per-column tile count + tile height % + template + props -->
+                </div>
+                <p class="form-hint">Tile heights are in % of each column; they auto-adjust per column.</p>
+            </section>
+
+            <div class="form-section">
+                <button type="button" id="fullscreenPreviewBtn" class="btn btn-secondary">Full screen preview</button>
+                <p class="form-hint">View the menu full screen (same size/ratio). Press Esc to return.</p>
+            </div>
+            <div class="form-section">
+                <button type="button" id="exportPhotoBtn" class="btn btn-primary">Export as PNG</button>
+                <p class="form-hint">Captures the menu canvas as an image. For photo tiles with multiple images, the first photo is used.</p>
+            </div>
+            <div class="form-section">
+                <button type="button" id="resetBtn" class="btn btn-secondary">Reset to default</button>
+            </div>
+            </div><!-- /#layoutPanel -->
+
+            <div id="drinksPanel" class="panel-content" role="tabpanel" hidden>
+                <section class="form-section">
+                    <div class="drinks-header">
+                        <h2>Drinks</h2>
+                        <button type="button" id="addDrinkBtn" class="btn btn-primary">Add drink</button>
+                    </div>
+                    <div id="drinksList" class="drinks-list">
+                        <!-- Filled by JS -->
+                    </div>
+                    <p class="form-hint" id="drinksListHint">Loading…</p>
+                </section>
+            </div>
+        </aside>
+
+        <!-- Add/Edit drink modal -->
+        <div id="drinkModalBackdrop" class="modal-backdrop" hidden aria-hidden="true">
+            <div class="modal-dialog" role="dialog" aria-labelledby="drinkModalTitle" aria-modal="true">
+                <h2 id="drinkModalTitle" class="modal-title">Add drink</h2>
+                <div class="form-group">
+                    <label for="drinkName">Item name</label>
+                    <input type="text" id="drinkName" placeholder="e.g. Signature Matchanese Latte">
+                </div>
+                <div class="form-group">
+                    <label for="drinkDesc">Description</label>
+                    <input type="text" id="drinkDesc" placeholder="e.g. Matcha cold whisked with milk">
+                </div>
+                <div class="form-row two-cols">
+                    <div class="form-group">
+                        <label for="drinkPrice">Price</label>
+                        <input type="text" id="drinkPrice" placeholder="e.g. P220">
+                    </div>
+                    <div class="form-group">
+                        <label for="drinkCategory">Category</label>
+                        <input type="text" id="drinkCategory" placeholder="e.g. Matcha Lattes">
+                    </div>
+                </div>
+                <input type="hidden" id="drinkEditId" value="">
+                <div class="modal-actions">
+                    <button type="button" id="saveDrinkBtn" class="btn btn-primary">Save drink</button>
+                    <button type="button" id="cancelDrinkBtn" class="btn btn-secondary">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Preview: menu canvas with tiles -->
+        <main class="menu-preview" id="menuPreview">
+            <div class="preview-wrap" id="previewWrap">
+                <div class="canvas-fit-wrapper" id="canvasFitWrapper">
+                <div class="canvas-scaler" id="canvasScaler">
+                <div id="menuCanvas" class="menu-canvas">
+                    <div id="tileGrid" class="tile-grid">
+                        <!-- Tiles rendered by JS -->
+                    </div>
+                </div>
+                </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <script type="module" src="js/script.js"></script>
+</body>
+</html>

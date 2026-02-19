@@ -402,8 +402,30 @@
                 </form>
             </div>
     
+            <!-- Bulk Import Section -->
+            <div class="add-holiday-section" style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid #e0e0e0;">
+                <h3>Bulk Import Holidays (JSON)</h3>
+                <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                    <input type="file" id="bulkHolidayFileInput" accept=".json" style="display: none;">
+                    <label for="bulkHolidayFileInput" class="submit-btn" style="cursor: pointer; margin: 0; display: inline-block;">
+                        Add JSON
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                        <input type="checkbox" id="bulkImportOverwrite">
+                        <span>Overwrite existing holidays</span>
+                    </label>
+                </div>
+            </div>
+    
             <!-- Holidays List -->
             <div class="holidays-list-container">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                    <h3 style="margin: 0;">Holidays</h3>
+                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.9rem;">
+                        <input type="checkbox" id="showPastHolidays" style="cursor: pointer;">
+                        <span>Show past holidays</span>
+                    </label>
+                </div>
                 <table class="holidays-table" id="holidaysTable">
                     <thead>
                         <tr>
@@ -657,8 +679,8 @@
 
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="../shared/js/PayCalculator.js?v=1.04"></script>
-    <script type="module" src="js/admin-script.js?v=1.07-yearfix"></script>
+    <script src="../shared/js/PayCalculator.js?v=1.08"></script>
+    <script type="module" src="js/admin-script.js?v=1.15"></script>
 </body>
 
 </html>

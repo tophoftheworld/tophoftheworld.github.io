@@ -2119,11 +2119,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Load sales data only if employee is eligible (matching admin payroll)
+    // IMPORTANT: Sales bonus is only for SM North, so always load SM North sales data
     let salesData = {};
     if (payrollEmployeeContext && payrollEmployeeContext.salesBonusEligible) {
-        // Determine branch from attendance data or default to SM North
-        // For now, load all sales data (admin does this too when branch is 'all')
-        salesData = await loadSalesData();
+        salesData = await loadSalesData('sm-north');
     }
 
     // Initialize PayCalculator with holidays and sales data (matching admin payroll)
@@ -2180,7 +2179,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             const branch = document.getElementById('newDateBranch').value;
             const shift = document.getElementById('newDateShift').value;
             const requestOT = document.getElementById('newDateOT').checked;
-            const reason = document.getElementById('newDateReason').value;
+            const reason = (document.getElementById('newDateReason').value || '').trim();
+            if (!reason) {
+                showToast("Please add a reason/note for this request.", 'warning');
+                return;
+            }
             
             // Check for pending request on this date
             const dateStatus = await getRequestStatus(date);
@@ -2497,7 +2500,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const timeIn24 = document.getElementById('requestTimeIn').value;
             const timeOut24 = document.getElementById('requestTimeOut').value;
             const requestOT = document.getElementById('requestOT').checked;
-            const reason = document.getElementById('requestReason').value;
+            const reason = (document.getElementById('requestReason').value || '').trim();
+            if (!reason) {
+                showToast("Please add a reason/note for this request.", 'warning');
+                return;
+            }
             
             // Convert back to 12-hour format for storage
             const timeIn12 = time24to12(timeIn24);

@@ -72,8 +72,16 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// Employee data - loaded from Firebase
+// Employee data - loaded from Firebase (id -> name)
 let employees = {};
+// Profile photo URLs for scheduled shift avatars (id -> photoUrl)
+let employeePhotoUrls = {};
+// Employee IDs that are archived - excluded from schedule dropdown only (names still shown on existing shifts)
+let archivedEmployeeIds = new Set();
+function getEmployeeProfilePhotoUrl(employeeId) {
+    if (!employeeId || employeeId === 'unassigned') return null;
+    return employeePhotoUrls[employeeId] || null;
+}
 // Shift types configuration
 const SHIFT_TYPES = {
     opening: { name: "Opening", start: "09:30", end: "18:30", display: "9:30 AM - 6:30 PM" },
@@ -181,6 +189,9 @@ const customTimeGroup = document.getElementById('customTimeGroup');
 const customStartTime = document.getElementById('customStartTime');
 const customEndTime = document.getElementById('customEndTime');
 const shiftEmployee = document.getElementById('shiftEmployee');
+const shiftRole = document.getElementById('shiftRole');
+const customRoleGroup = document.getElementById('customRoleGroup');
+const shiftRoleCustom = document.getElementById('shiftRoleCustom');
 const shiftId = document.getElementById('shiftId');
 const originalDate = document.getElementById('originalDate');
 const originalBranch = document.getElementById('originalBranch');
@@ -263,6 +274,13 @@ function setupEventListeners() {
     function closeBranchModal() {
         addBranchModal.style.display = 'none';
         branchForm.reset();
+        const branchTypeEl = document.getElementById('branchType');
+        const branchKeyEl = document.getElementById('branchKey');
+        if (branchTypeEl) branchTypeEl.disabled = false;
+        if (branchKeyEl) branchKeyEl.value = '';
+        document.getElementById('branchModalTitle').textContent = 'Add New Location';
+        const submitBtn = document.getElementById('branchSubmitBtn');
+        if (submitBtn) submitBtn.textContent = 'Add Location';
     }
 
     function handleBranchDropdownChange(e) {
@@ -276,10 +294,87 @@ function setupEventListeners() {
         }
     }
 
+    function escapeHtml(s) {
+        if (s == null) return '';
+        const t = String(s);
+        return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function renderBranchList(type) {
+        const section = document.getElementById('branchListSection');
+        const listEl = document.getElementById('branchList');
+        const titleEl = document.getElementById('branchListTitle');
+        if (!section || !listEl || !titleEl) return;
+        const typeLabel = type === 'popup' ? 'Pop-ups' : 'Workshops';
+        titleEl.textContent = `Existing ${typeLabel}`;
+        const branches = allBranches.filter(b => b.type === type).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        listEl.innerHTML = '';
+        if (branches.length === 0) {
+            listEl.innerHTML = '<li class="branch-list-empty">No locations yet.</li>';
+            return;
+        }
+        branches.forEach(branch => {
+            const li = document.createElement('li');
+            li.className = 'branch-list-item';
+            li.innerHTML = `
+                <span class="branch-list-name">${escapeHtml(branch.name)}</span>
+                <span class="branch-list-actions">
+                    <button type="button" class="branch-archive-btn" data-branch-id="${escapeHtml(branch.id)}" title="Archive (hide from lists)">Archive</button>
+                    <button type="button" class="branch-delete-btn" data-branch-id="${escapeHtml(branch.id)}" data-branch-name="${escapeHtml(branch.name)}" title="Permanently delete">Delete</button>
+                </span>
+            `;
+            listEl.appendChild(li);
+        });
+        listEl.querySelectorAll('.branch-archive-btn').forEach(btn => {
+            btn.addEventListener('click', () => handleArchiveBranch(btn.getAttribute('data-branch-id')));
+        });
+        listEl.querySelectorAll('.branch-delete-btn').forEach(btn => {
+            btn.addEventListener('click', () => handleDeleteBranch(btn.getAttribute('data-branch-id'), btn.getAttribute('data-branch-name')));
+        });
+    }
+
+    async function handleArchiveBranch(branchId) {
+        if (!branchId) return;
+        try {
+            updateSyncStatus('syncing');
+            const docRef = doc(db, 'branches', branchId);
+            await updateDoc(docRef, { archived: true, archivedAt: new Date().toISOString() });
+            await loadBranchesFromFirebase();
+            renderBranchList(document.getElementById('branchType').value);
+            updateSyncStatus('synced');
+        } catch (err) {
+            updateSyncStatus('local');
+            alert('Failed to archive location.');
+        }
+    }
+
+    async function handleDeleteBranch(branchId, branchName) {
+        if (!branchId) return;
+        if (!confirm(`Permanently delete "${branchName || 'this location'}"? This cannot be undone.`)) return;
+        try {
+            updateSyncStatus('syncing');
+            const docRef = doc(db, 'branches', branchId);
+            await deleteDoc(docRef);
+            await loadBranchesFromFirebase();
+            renderBranchList(document.getElementById('branchType').value);
+            updateSyncStatus('synced');
+        } catch (err) {
+            updateSyncStatus('local');
+            alert('Failed to delete location.');
+        }
+    }
+
     function openBranchModal(type) {
         document.getElementById('branchModalTitle').textContent = `Add New ${type.charAt(0).toUpperCase() + type.slice(1)}`;
-        document.getElementById('branchType').value = type;
-        document.getElementById('branchType').disabled = true;
+        const branchTypeEl = document.getElementById('branchType');
+        branchTypeEl.value = type;
+        branchTypeEl.disabled = true;
+        document.getElementById('branchKey').value = '';
+        const submitBtn = document.getElementById('branchSubmitBtn');
+        if (submitBtn) submitBtn.textContent = 'Add Location';
+        renderBranchList(type);
+        const section = document.getElementById('branchListSection');
+        if (section) section.style.display = 'block';
         addBranchModal.style.display = 'flex';
         document.getElementById('branchName').focus();
     }
@@ -336,6 +431,7 @@ function setupEventListeners() {
     // Form events
     shiftForm.addEventListener('submit', handleShiftSubmit);
     shiftType.addEventListener('change', handleShiftTypeChange);
+    if (shiftRole) shiftRole.addEventListener('change', handleShiftRoleChange);
     deleteShiftBtn.addEventListener('click', handleShiftDelete);
 
     // Multi-select events  
@@ -510,6 +606,11 @@ function getDataForDate(dateStr, branchKey, shiftType) {
     
     // Always use auto mode - show actual attendance for past dates, scheduled for today and future
     if (isPastDate) {
+        // Role-based rows (Deliveries, Custom) only apply to scheduled shifts; past has no role data
+        if (shiftType === 'deliveries' || shiftType === 'custom') {
+            return { type: 'actual', data: [], loading: false };
+        }
+
         // Check if we have actual attendance data
         const actualData = getActualAttendanceForDate(dateStr);
         const hasActualData = Object.keys(actualData).length > 0;
@@ -562,7 +663,15 @@ function getDataForDate(dateStr, branchKey, shiftType) {
                 const minutesA = timeToMinutes(timeA);
                 const minutesB = timeToMinutes(timeB);
                 
-                return minutesA - minutesB;
+                const diff = minutesA - minutesB;
+                if (diff !== 0) return diff;
+
+                // Tie-breaker: createdAt (older first), then employeeId
+                const createdA = getCreatedAtTimestamp(a);
+                const createdB = getCreatedAtTimestamp(b);
+                if (createdA !== createdB) return createdA - createdB;
+
+                return (a.employeeId || '').localeCompare(b.employeeId || '');
             });
 
             return {
@@ -594,14 +703,24 @@ function getDataForDate(dateStr, branchKey, shiftType) {
     } else if (isToday) {
         // Today's date - show scheduled shifts, but also load attendance data
         const allShiftsForDay = getAllShiftsForDay(dateStr);
-        
+
+        // Role-based rows: show only shifts with that role (scheduled only; no role on actual)
+        if (shiftType === 'deliveries') {
+            const byRole = allShiftsForDay.filter(shift => shift.branch === branchKey && shift.role === 'deliveries');
+            return { type: 'scheduled', data: byRole, loading: false };
+        }
+        if (shiftType === 'custom') {
+            const byRole = allShiftsForDay.filter(shift => shift.branch === branchKey && shift.role === 'custom');
+            return { type: 'scheduled', data: byRole, loading: false };
+        }
+
         const scheduledShifts = allShiftsForDay.filter(shift => {
             const shiftStartTime = getShiftStartTime(shift);
             const categorizedType = categorizeShiftByTime(shift.type, shiftStartTime);
             const matchesBranch = shift.branch === branchKey;
             const matchesType = categorizedType === shiftType;
-            
-            return matchesBranch && matchesType;
+            const isBarista = !shift.role || shift.role === 'barista';
+            return matchesBranch && matchesType && isBarista;
         });
         
         // Check if we have actual attendance data for today
@@ -660,7 +779,15 @@ function getDataForDate(dateStr, branchKey, shiftType) {
                 const minutesA = timeToMinutes(timeA);
                 const minutesB = timeToMinutes(timeB);
                 
-                return minutesA - minutesB;
+                const diff = minutesA - minutesB;
+                if (diff !== 0) return diff;
+
+                // Tie-breaker: createdAt (older first), then employeeId
+                const createdA = getCreatedAtTimestamp(a);
+                const createdB = getCreatedAtTimestamp(b);
+                if (createdA !== createdB) return createdA - createdB;
+
+                return (a.employeeId || '').localeCompare(b.employeeId || '');
             });
             
             return {
@@ -687,14 +814,23 @@ function getDataForDate(dateStr, branchKey, shiftType) {
     } else {
         // Future date - always show scheduled
         const allShiftsForDay = getAllShiftsForDay(dateStr);
-        
+
+        if (shiftType === 'deliveries') {
+            const byRole = allShiftsForDay.filter(shift => shift.branch === branchKey && shift.role === 'deliveries');
+            return { type: 'scheduled', data: byRole, loading: false };
+        }
+        if (shiftType === 'custom') {
+            const byRole = allShiftsForDay.filter(shift => shift.branch === branchKey && shift.role === 'custom');
+            return { type: 'scheduled', data: byRole, loading: false };
+        }
+
         const scheduledShifts = allShiftsForDay.filter(shift => {
             const shiftStartTime = getShiftStartTime(shift);
             const categorizedType = categorizeShiftByTime(shift.type, shiftStartTime);
             const matchesBranch = shift.branch === branchKey;
             const matchesType = categorizedType === shiftType;
-            
-            return matchesBranch && matchesType;
+            const isBarista = !shift.role || shift.role === 'barista';
+            return matchesBranch && matchesType && isBarista;
         });
         return {
             type: 'scheduled',
@@ -853,12 +989,12 @@ function updateCellsForDate(dateStr) {
                         </div>
                     `;
                 } else {
-                    // Use same photo layout for scheduled shifts with white placeholder
+                    // Use same photo layout for scheduled shifts: profile photo or placeholder
                     const whitePlaceholderPhoto = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iMjAiIGZpbGw9IiNGRkZGRkYiIHN0cm9rZT0iI0NDQ0NDQyIgc3Ryb2tlLXdpZHRoPSIyIi8+CjxwYXRoIGQ9Ik0yMCAxMkMxNi42ODYzIDEyIDE0IDE0LjY4NjMgMTQgMThDMTQgMjEuMzEzNyAxNi42ODYzIDI0IDIwIDI0QzIzLjMxMzcgMjQgMjYgMjEuMzEzNyAyNiAxOEMyNiAxNC42ODYzIDIzLjMxMzcgMTIgMjAgMTJaIiBmaWxsPSIjRkZGRkZGIi8+CjxwYXRoIGQ9Ik0xMCAzNkMxMCAzMS41ODE3IDEzLjU4MTcgMjggMTggMjhIMjJDMjYuNDE4MyAyOCAzMCAzMS41ODE3IDMwIDM2VjM4SDEwVjM2WiIgZmlsbD0iI0ZGRkZGRiIvPgo8L3N2Zz4K';
-                    
+                    const scheduledPhotoSrc = getEmployeeProfilePhotoUrl(shift.employeeId) || whitePlaceholderPhoto;
                     const timeDisplay = getShiftTimeDisplayForScheduled(shift);
                     shiftBlock.innerHTML = `
-                        <img src="${whitePlaceholderPhoto}" class="shift-employee-photo" alt="Scheduled Shift" />
+                        <img src="${scheduledPhotoSrc}" class="shift-employee-photo" alt="Scheduled Shift" />
                         <div class="shift-details-container">
                             <div class="shift-employee">${shift.employeeId === 'unassigned' ? 'UNASSIGNED' : (employeeNicknames[shift.employeeId] || employees[shift.employeeId]?.split(' ')[0] || employees[shift.employeeId])}</div>
                             <div class="shift-time">${timeDisplay.startTime}</div>
@@ -882,6 +1018,8 @@ function updateCellsForDate(dateStr) {
 // Multi-select state
 let multiSelectMode = false;
 let selectedShifts = new Set();
+let employeeHighlightTimer = null;
+let employeeHighlightEmployeeId = null;
 let isSelecting = false;
 let selectionStarted = false;
 
@@ -1066,6 +1204,8 @@ async function copySelectedShiftsToNextDay() {
             employeeId: shift.employeeId,
             customStart: shift.customStart,
             customEnd: shift.customEnd,
+            role: shift.role || 'barista',
+            customRole: shift.role === 'custom' ? (shift.customRole || '') : undefined,
         };
 
         // Initialize data structures if needed
@@ -1524,9 +1664,10 @@ function renderCurrentView() {
     updateCopyPreviousWeekButton();
 }
 
-// Employee dropdown population
+// Employee dropdown population (excludes archived employees)
 function populateEmployeeDropdowns() {
     const employeeOptions = Object.entries(employees)
+        .filter(([id]) => !archivedEmployeeIds.has(id))
         .map(([id, name]) => {
             const displayName = employeeNicknames[id] || name?.split(' ')[0] || name;
             return `<option value="${id}">${displayName}</option>`;
@@ -1611,9 +1752,13 @@ async function loadAllEmployees() {
         const snapshot = await getDocs(employeesRef);
 
         employees = {};
-        snapshot.forEach(doc => {
-            const data = doc.data();
-            employees[doc.id] = data.name;
+        employeePhotoUrls = {};
+        archivedEmployeeIds = new Set();
+        snapshot.forEach(docSnap => {
+            const data = docSnap.data();
+            employees[docSnap.id] = data.name;
+            if (data.photoUrl) employeePhotoUrls[docSnap.id] = data.photoUrl;
+            if (data.archived) archivedEmployeeIds.add(docSnap.id);
         });
 
         // Re-populate dropdowns after loading employees
@@ -1758,7 +1903,9 @@ async function renderShiftView() {
     const shiftCategoryNames = {
         'opening': 'Opening',
         'midshift': 'Midshift',
-        'closing': 'Closing'
+        'closing': 'Closing',
+        'deliveries': 'Deliveries',
+        'custom': 'Custom'
     };
 
     let gridHTML = `
@@ -1841,10 +1988,13 @@ async function renderShiftView() {
             continue; // Skip this entire branch if no shifts
         }
 
-        // Add branch header
-        gridHTML += `<div class="shift-branch-section">
-            <div class="shift-branch-title">${branchName}</div>
-        </div>`;
+        // Collapsible branch block: header + rows wrapper
+        gridHTML += `<div class="shift-branch-block" data-branch-key="${branchKey}">
+            <div class="shift-branch-section shift-branch-header" role="button" tabindex="0" data-branch-key="${branchKey}" title="Click to collapse/expand">
+                <span class="shift-branch-chevron" aria-hidden="true">▼</span>
+                <span class="shift-branch-title">${branchName}</span>
+            </div>
+            <div class="shift-branch-rows">`;
 
         // Check which shift categories have content for this branch
         const categoriesWithContent = [];
@@ -1879,6 +2029,8 @@ async function renderShiftView() {
                             const shiftStartTime = getShiftStartTime(shift);
                             const category = categorizeShiftByTime(shift.type, shiftStartTime);
                             categoriesWithScheduledData.add(category);
+                            if (shift.role === 'deliveries') categoriesWithScheduledData.add('deliveries');
+                            if (shift.role === 'custom') categoriesWithScheduledData.add('custom');
                         }
                     });
                 }
@@ -1888,11 +2040,9 @@ async function renderShiftView() {
             const allCategories = new Set([...categoriesWithActualData, ...categoriesWithScheduledData]);
             
             if (allCategories.size > 0) {
-                // Sort categories in the correct order: opening, midshift, closing
-                const sortedCategories = Array.from(allCategories).sort((a, b) => {
-                    const order = ['opening', 'midshift', 'closing'];
-                    return order.indexOf(a) - order.indexOf(b);
-                });
+                // Sort categories: opening, midshift, closing, then deliveries, custom at bottom
+                const order = ['opening', 'midshift', 'closing', 'deliveries', 'custom'];
+                const sortedCategories = Array.from(allCategories).sort((a, b) => order.indexOf(a) - order.indexOf(b));
                 categoriesWithContent.push(...sortedCategories);
             } else {
                 // Fallback: show all standard categories for default branches
@@ -1922,6 +2072,19 @@ async function renderShiftView() {
                 if (hasContentThisWeek) {
                     categoriesWithContent.push(category);
                 }
+            }
+            // Role-based rows at bottom: show if any scheduled shift has that role
+            for (const roleCategory of ['deliveries', 'custom']) {
+                let hasRoleThisWeek = false;
+                for (const date of weekDates) {
+                    const dateStr = formatDate(date);
+                    const allShiftsForDay = getAllShiftsForDay(dateStr);
+                    if (allShiftsForDay.some(shift => shift.branch === branchKey && shift.role === roleCategory)) {
+                        hasRoleThisWeek = true;
+                        break;
+                    }
+                }
+                if (hasRoleThisWeek) categoriesWithContent.push(roleCategory);
             }
         }
 
@@ -1992,9 +2155,12 @@ async function renderShiftView() {
                             
                             // Always show photo layout for completed shifts, with placeholder if no photo
                             const photoSrc = shift.timeInPhoto || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iMjAiIGZpbGw9IiNGRkZGRkYiIHN0cm9rZT0iI0NDQ0NDQyIgc3Ryb2tlLXdpZHRoPSIyIi8+CjxwYXRoIGQ9Ik0yMCAxMkMxNi42ODYzIDEyIDE0IDE0LjY4NjMgMTQgMThDMTQgMjEuMzEzNyAxNi42ODYzIDI0IDIwIDI0QzIzLjMxMzcgMjQgMjYgMjEuMzEzNyAyNiAxOEMyNiAxNC42ODYzIDIzLjMxMzcgMTIgMjAgMTJaIiBmaWxsPSIjQ0NDQ0NDIi8+CjxwYXRoIGQ9Ik0xMCAzNkMxMCAzMS41ODE3IDEzLjU4MTcgMjggMTggMjhIMjJDMjYuNDE4MyAyOCAzMCAzMS41ODE3IDMwIDM2VjM4SDEwVjM2WiIgZmlsbD0iI0NDQ0NDQyIvPgo8L3N2Zz4K';
-                            
+                            const roleLabel = getShiftRoleDisplay(shift);
                             shiftContent = `
-                                <img src="${photoSrc}" class="shift-employee-photo" alt="Time In Photo" onerror="console.error('❌ Photo failed to load (grid):', this.src)" />
+                                <div class="shift-photo-wrap">
+                                    <img src="${photoSrc}" class="shift-employee-photo" alt="Time In Photo" onerror="console.error('❌ Photo failed to load (grid):', this.src)" />
+                                    <span class="shift-role-tag">${roleLabel}</span>
+                                </div>
                                 <div class="shift-details-container">
                                     <div class="shift-employee">${shift.employeeId === 'unassigned' ? 'UNASSIGNED' : (employeeNicknames[shift.employeeId] || employees[shift.employeeId]?.split(' ')[0] || employees[shift.employeeId])}</div>
                                     <div class="shift-time ${timeInClass}">${timeInDisplay}</div>
@@ -2002,12 +2168,16 @@ async function renderShiftView() {
                                 </div>
                             `;
                         } else {
-                            // Use same photo layout for scheduled shifts with white placeholder
+                            // Use same photo layout for scheduled shifts: profile photo or placeholder
                             const whitePlaceholderPhoto = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iMjAiIGZpbGw9IiNGRkZGRkYiIHN0cm9rZT0iI0NDQ0NDQyIgc3Ryb2tlLXdpZHRoPSIyIi8+CjxwYXRoIGQ9Ik0yMCAxMkMxNi42ODYzIDEyIDE0IDE0LjY4NjMgMTQgMThDMTQgMjEuMzEzNyAxNi42ODYzIDI0IDIwIDI0QzIzLjMxMzcgMjQgMjYgMjEuMzEzNyAyNiAxOEMyNiAxNC42ODYzIDIzLjMxMzcgMTIgMjAgMTJaIiBmaWxsPSIjRkZGRkZGIi8+CjxwYXRoIGQ9Ik0xMCAzNkMxMCAzMS41ODE3IDEzLjU4MTcgMjggMTggMjhIMjJDMjYuNDE4MyAyOCAzMCAzMS41ODE3IDMwIDM2VjM4SDEwVjM2WiIgZmlsbD0iI0ZGRkZGRiIvPgo8L3N2Zz4K';
-                            
+                            const scheduledPhotoSrc = getEmployeeProfilePhotoUrl(shift.employeeId) || whitePlaceholderPhoto;
                             const timeDisplay = getShiftTimeDisplayForScheduled(shift);
+                            const roleLabel = getShiftRoleDisplay(shift);
                             shiftContent = `
-                                <img src="${whitePlaceholderPhoto}" class="shift-employee-photo" alt="Scheduled Shift" />
+                                <div class="shift-photo-wrap">
+                                    <img src="${scheduledPhotoSrc}" class="shift-employee-photo" alt="Scheduled Shift" />
+                                    <span class="shift-role-tag">${roleLabel}</span>
+                                </div>
                                 <div class="shift-details-container">
                                     <div class="shift-employee">${shift.employeeId === 'unassigned' ? 'UNASSIGNED' : (employeeNicknames[shift.employeeId] || employees[shift.employeeId]?.split(' ')[0] || employees[shift.employeeId])}</div>
                                     <div class="shift-time">${timeDisplay.startTime}</div>
@@ -2018,7 +2188,7 @@ async function renderShiftView() {
                         
                         gridHTML += `
                             <div class="shift-employee-block ${shift.type} ${conflict ? 'shift-conflict' : ''} ${completedClass} ${shift.employeeId === 'unassigned' ? 'unassigned' : ''} ${selectedShifts.has(shift.id) ? 'selected' : ''}"
-                                 data-shift-id="${shift.id}">
+                                 data-shift-id="${shift.id}" data-employee-id="${shift.employeeId || ''}">
                                 ${shiftContent}
                             </div>
                         `;
@@ -2056,6 +2226,8 @@ async function renderShiftView() {
 
             gridHTML += '</div>';
         }
+        // Close shift-branch-rows and shift-branch-block
+        gridHTML += `</div></div>`;
     }
 
     // Add general "Add New Shift" row for other branches
@@ -2077,6 +2249,30 @@ async function renderShiftView() {
 
     shiftScheduleGrid.innerHTML = gridHTML;
 
+    // Restore collapsed state and add branch header click handlers
+    const collapsedKey = 'schedule-collapsed-branches';
+    let collapsedBranches = new Set(JSON.parse(sessionStorage.getItem(collapsedKey) || '[]'));
+    document.querySelectorAll('.shift-branch-block').forEach(block => {
+        const key = block.getAttribute('data-branch-key');
+        const rowsEl = block.querySelector('.shift-branch-rows');
+        const header = block.querySelector('.shift-branch-header');
+        const chevron = block.querySelector('.shift-branch-chevron');
+        if (!rowsEl || !header) return;
+        const toggle = () => {
+            const isCollapsed = block.classList.toggle('shift-branch-collapsed');
+            if (chevron) chevron.textContent = isCollapsed ? '▶' : '▼';
+            if (isCollapsed) collapsedBranches.add(key);
+            else collapsedBranches.delete(key);
+            sessionStorage.setItem(collapsedKey, JSON.stringify([...collapsedBranches]));
+        };
+        if (collapsedBranches.has(key)) {
+            block.classList.add('shift-branch-collapsed');
+            if (chevron) chevron.textContent = '▶';
+        }
+        header.addEventListener('click', toggle);
+        header.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+    });
+
     // Add event listeners
     document.querySelectorAll('.shift-cell').forEach(cell => {
         cell.addEventListener('click', handleShiftCellClick);
@@ -2084,6 +2280,45 @@ async function renderShiftView() {
 
     document.querySelectorAll('.shift-employee-block').forEach(block => {
         block.addEventListener('mousedown', handleShiftClick);
+    });
+
+    setupShiftViewEmployeeHighlight();
+}
+
+function clearEmployeeWeekHighlight() {
+    if (employeeHighlightTimer !== null) {
+        clearTimeout(employeeHighlightTimer);
+        employeeHighlightTimer = null;
+    }
+    employeeHighlightEmployeeId = null;
+    if (!shiftScheduleGrid) return;
+    shiftScheduleGrid.querySelectorAll('.shift-employee-block.same-employee-highlight').forEach(el => {
+        el.classList.remove('same-employee-highlight');
+    });
+}
+
+function setupShiftViewEmployeeHighlight() {
+    if (!shiftScheduleGrid) return;
+    shiftScheduleGrid.querySelectorAll('.shift-employee-block').forEach(block => {
+        block.addEventListener('mouseenter', function (e) {
+            const employeeId = this.getAttribute('data-employee-id') || '';
+            clearTimeout(employeeHighlightTimer);
+            employeeHighlightTimer = window.setTimeout(() => {
+                employeeHighlightTimer = null;
+                employeeHighlightEmployeeId = employeeId;
+                shiftScheduleGrid.querySelectorAll('.shift-employee-block[data-employee-id="' + CSS.escape(employeeId) + '"]').forEach(el => {
+                    el.classList.add('same-employee-highlight');
+                });
+            }, 2000);
+        });
+        block.addEventListener('mouseleave', function (e) {
+            const employeeId = this.getAttribute('data-employee-id') || '';
+            const next = e.relatedTarget;
+            const movingToSameEmployee = next && typeof next.closest === 'function' && next.closest('.shift-employee-block[data-employee-id="' + CSS.escape(employeeId) + '"]');
+            if (!movingToSameEmployee) {
+                clearEmployeeWeekHighlight();
+            }
+        });
     });
 }
 
@@ -2460,6 +2695,8 @@ function handleColumnClick(e) {
 function renderEmployeeView() {
 
     const weekDates = getWeekDates();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
     // Get all employees who have shifts this week
     const employeesWithShifts = [];
@@ -2479,8 +2716,6 @@ function renderEmployeeView() {
             ${weekDates.map(date => {
         const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
         const dayNum = date.getDate();
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
         const isCurrentDay = date.getTime() === today.getTime();
         return `<div class="shift-day-header">
                     <div class="day-name${isCurrentDay ? ' current-day' : ''}">${dayName}</div>
@@ -2514,7 +2749,9 @@ function renderEmployeeView() {
             if (shiftsForDay.length > 0) {
                 shiftsForDay.forEach(shift => {
                     const conflict = hasConflict(shift, dateStr);
-                    const completedClass = isPastDate(dateStr) ? 'completed' : '';
+                    const completedClass = isPastDate ? 'completed' : '';
+                    // In employee view, show branch in the card (row already shows employee name)
+                    const branchDisplay = shift.branch ? (BRANCHES[shift.branch] || shift.branch) : '';
                     
                     // Create layout based on whether it's a completed block
                     let shiftContent;
@@ -2535,24 +2772,31 @@ function renderEmployeeView() {
                         
                         // Always show photo layout for completed shifts, with placeholder if no photo
                         const photoSrc = shift.timeInPhoto || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iMjAiIGZpbGw9IiNGRkZGRkYiIHN0cm9rZT0iI0NDQ0NDQyIgc3Ryb2tlLXdpZHRoPSIyIi8+CjxwYXRoIGQ9Ik0yMCAxMkMxNi42ODYzIDEyIDE0IDE0LjY4NjMgMTQgMThDMTQgMjEuMzEzNyAxNi42ODYzIDI0IDIwIDI0QzIzLjMxMzcgMjQgMjYgMjEuMzEzNyAyNiAxOEMyNiAxNC42ODYzIDIzLjMxMzcgMTIgMjAgMTJaIiBmaWxsPSIjQ0NDQ0NDIi8+CjxwYXRoIGQ9Ik0xMCAzNkMxMCAzMS41ODE3IDEzLjU4MTcgMjggMTggMjhIMjJDMjYuNDE4MyAyOCAzMCAzMS41ODE3IDMwIDM2VjM4SDEwVjM2WiIgZmlsbD0iI0NDQ0NDQyIvPgo8L3N2Zz4K';
-                        
+                        const roleLabel = getShiftRoleDisplay(shift);
                         shiftContent = `
-                            <img src="${photoSrc}" class="shift-employee-photo" alt="Time In Photo" />
+                            <div class="shift-photo-wrap">
+                                <img src="${photoSrc}" class="shift-employee-photo" alt="Time In Photo" />
+                                <span class="shift-role-tag">${roleLabel}</span>
+                            </div>
                             <div class="shift-details-container">
-                                <div class="shift-employee">${shift.employeeId === 'unassigned' ? 'UNASSIGNED' : (employeeNicknames[shift.employeeId] || employees[shift.employeeId]?.split(' ')[0] || employees[shift.employeeId])}</div>
+                                <div class="shift-employee">${branchDisplay}</div>
                                 <div class="shift-time ${timeInClass}">${timeInDisplay}</div>
                                 <div class="shift-time">${timeOutWithDash}</div>
                             </div>
                         `;
                     } else {
-                        // Use same photo layout for scheduled shifts with white placeholder
+                        // Use same photo layout for scheduled shifts: profile photo or placeholder
                         const whitePlaceholderPhoto = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iMjAiIGZpbGw9IiNGRkZGRkYiIHN0cm9rZT0iI0NDQ0NDQyIgc3Ryb2tlLXdpZHRoPSIyIi8+CjxwYXRoIGQ9Ik0yMCAxMkMxNi42ODYzIDEyIDE0IDE0LjY4NjMgMTQgMThDMTQgMjEuMzEzNyAxNi42ODYzIDI0IDIwIDI0QzIzLjMxMzcgMjQgMjYgMjEuMzEzNyAyNiAxOEMyNiAxNC42ODYzIDIzLjMxMzcgMTIgMjAgMTJaIiBmaWxsPSIjRkZGRkZGIi8+CjxwYXRoIGQ9Ik0xMCAzNkMxMCAzMS41ODE3IDEzLjU4MTcgMjggMTggMjhIMjJDMjYuNDE4MyAyOCAzMCAzMS41ODE3IDMwIDM2VjM4SDEwVjM2WiIgZmlsbD0iI0ZGRkZGRiIvPgo8L3N2Zz4K';
-                        
+                        const scheduledPhotoSrc = getEmployeeProfilePhotoUrl(shift.employeeId) || whitePlaceholderPhoto;
                         const timeDisplay = getShiftTimeDisplayForScheduled(shift);
+                        const roleLabel = getShiftRoleDisplay(shift);
                         shiftContent = `
-                            <img src="${whitePlaceholderPhoto}" class="shift-employee-photo" alt="Scheduled Shift" />
+                            <div class="shift-photo-wrap">
+                                <img src="${scheduledPhotoSrc}" class="shift-employee-photo" alt="Scheduled Shift" />
+                                <span class="shift-role-tag">${roleLabel}</span>
+                            </div>
                             <div class="shift-details-container">
-                                <div class="shift-employee">${shift.employeeId === 'unassigned' ? 'UNASSIGNED' : (employeeNicknames[shift.employeeId] || employees[shift.employeeId]?.split(' ')[0] || employees[shift.employeeId])}</div>
+                                <div class="shift-employee">${branchDisplay}</div>
                                 <div class="shift-time">${timeDisplay.startTime}</div>
                                 <div class="shift-time">- ${timeDisplay.endTime}</div>
                             </div>
@@ -2588,7 +2832,7 @@ function renderEmployeeView() {
     weekDates.forEach(date => {
         const dateStr = formatDate(date);
         const isPastDate = date < today;
-        gridHTML += `<div class="shift-cell" data-date="${dateStr}" data-employee="">
+        gridHTML += `<div class="shift-cell ${isPastDate ? 'past-date' : ''}" data-date="${dateStr}" data-employee="">
         </div>`;
     });
 
@@ -2731,7 +2975,15 @@ function getAllShiftsForDay(dateStr) {
         const minutesA = timeToMinutes(timeA);
         const minutesB = timeToMinutes(timeB);
         
-        return minutesA - minutesB;
+        const diff = minutesA - minutesB;
+        if (diff !== 0) return diff;
+
+        // Tie-breaker: createdAt (older first), then employeeId
+        const createdA = getCreatedAtTimestamp(a);
+        const createdB = getCreatedAtTimestamp(b);
+        if (createdA !== createdB) return createdA - createdB;
+
+        return (a.employeeId || '').localeCompare(b.employeeId || '');
     });
 }
 
@@ -2770,6 +3022,26 @@ function timeToMinutes(timeStr) {
         // Handle 24-hour format
         const [hour, minute] = timeStr.split(':').map(Number);
         return hour * 60 + minute;
+    }
+}
+
+// Helper to normalize createdAt into a numeric timestamp for consistent sorting
+function getCreatedAtTimestamp(shift) {
+    if (!shift || !shift.createdAt) return 0;
+    
+    const value = shift.createdAt;
+    
+    try {
+        // Firestore Timestamp objects have a toDate() method
+        if (typeof value.toDate === 'function') {
+            return value.toDate().getTime();
+        }
+        
+        const date = new Date(value);
+        const time = date.getTime();
+        return Number.isNaN(time) ? 0 : time;
+    } catch (e) {
+        return 0;
     }
 }
 
@@ -2859,62 +3131,47 @@ function removeDuplicateShifts() {
 }
 
 function getShiftTimeDisplay(shift) {
-    // Handle actual attendance shifts
-    if (shift.isActual) {
-        // Check if the time already has AM/PM (12-hour format)
-        const hasAMPM = (time) => time && (time.includes('AM') || time.includes('PM'));
-        
-        const startTime = shift.customStart ? 
-            (hasAMPM(shift.customStart) ? shift.customStart : smartFormatTime(shift.customStart, shift.type, false)) : 'N/A';
-        const endTime = shift.customEnd ? 
-            (hasAMPM(shift.customEnd) ? shift.customEnd : smartFormatTime(shift.customEnd, shift.type, true)) : '';
-        return `${startTime} - ${endTime}`;
+    const fmt = (t) => (t ? convertTo12HourFormat(t) : 'N/A');
+    // Actual attendance or any shift with custom times: always 12-hour
+    if (shift.isActual || shift.customStart || shift.customEnd) {
+        const startTime = fmt(shift.customStart);
+        const endTime = shift.customEnd ? fmt(shift.customEnd) : '';
+        return endTime ? `${startTime} - ${endTime}` : startTime;
     }
-    
-    // Handle custom shifts with both start and end times
-    if (shift.customStart && shift.customEnd) {
-        const startTime = shift.customStart || 'N/A';
-        const endTime = shift.customEnd || 'N/A';
-        return `${startTime} - ${endTime}`;
-    }
-
-    // Handle regular scheduled shifts
-    if (shift.type === 'custom') {
-        const startTime = shift.customStart ? smartFormatTime(shift.customStart, shift.type, false) : 'N/A';
-        const endTime = shift.customEnd ? smartFormatTime(shift.customEnd, shift.type, true) : 'N/A';
-        return `${startTime} - ${endTime}`;
-    } else {
-        const shiftType = SHIFT_TYPES[shift.type];
-        return shiftType ? shiftType.display : 'N/A';
-    }
+    // Preset shift type
+    const shiftType = SHIFT_TYPES[shift.type];
+    return shiftType ? shiftType.display : 'N/A';
 }
 
 // New function to get shift time display for scheduled shifts (two lines)
+// Always returns 12-hour AM/PM format for consistency across shift view, employee view, calendar, mobile.
 function getShiftTimeDisplayForScheduled(shift) {
-    // Handle custom shifts with both start and end times
+    const fmt = (t) => (t ? convertTo12HourFormat(t) : 'N/A');
+
+    // Custom shifts: format start/end to 12-hour
     if (shift.customStart && shift.customEnd) {
-        const startTime = shift.customStart || 'N/A';
-        const endTime = shift.customEnd || 'N/A';
-        return { startTime, endTime };
+        return { startTime: fmt(shift.customStart), endTime: fmt(shift.customEnd) };
+    }
+    if (shift.type === 'custom') {
+        return {
+            startTime: fmt(shift.customStart),
+            endTime: fmt(shift.customEnd)
+        };
     }
 
-    // Handle regular scheduled shifts
-    if (shift.type === 'custom') {
-        const startTime = shift.customStart ? smartFormatTime(shift.customStart, shift.type, false) : 'N/A';
-        const endTime = shift.customEnd ? smartFormatTime(shift.customEnd, shift.type, true) : 'N/A';
-        return { startTime, endTime };
-    } else {
-        const shiftType = SHIFT_TYPES[shift.type];
-        if (shiftType && shiftType.display) {
-            // Parse the display format like "9:30 AM - 6:30 PM"
-            const parts = shiftType.display.split(' - ');
-            return {
-                startTime: parts[0] || 'N/A',
-                endTime: parts[1] || 'N/A'
-            };
-        }
-        return { startTime: 'N/A', endTime: 'N/A' };
+    // Preset shift types: use display string (already 12-hour) or derive from start/end
+    const shiftType = SHIFT_TYPES[shift.type];
+    if (shiftType && shiftType.display) {
+        const parts = shiftType.display.split(' - ');
+        return {
+            startTime: parts[0] ? parts[0].trim() : 'N/A',
+            endTime: parts[1] ? parts[1].trim() : 'N/A'
+        };
     }
+    if (shiftType && shiftType.start != null && shiftType.end != null) {
+        return { startTime: fmt(shiftType.start), endTime: fmt(shiftType.end) };
+    }
+    return { startTime: 'N/A', endTime: 'N/A' };
 }
 
 function formatTimeTo12Hour(time24) {
@@ -3016,6 +3273,13 @@ function hasConflict(shift, dateStr) {
 
     // console.log('  → No conflict found');
     return false;
+}
+
+function getShiftRoleDisplay(shift) {
+    if (!shift) return 'Barista';
+    if (shift.role === 'custom') return (shift.customRole && shift.customRole.trim()) ? shift.customRole.trim() : 'Custom';
+    if (shift.role === 'deliveries') return 'Deliveries';
+    return 'Barista';
 }
 
 function getShiftStartTime(shift) {
@@ -3127,12 +3391,16 @@ async function handleShiftSubmit(e) {
         date: shiftDate.value,
         branch: shiftBranch.value,
         type: shiftType.value,
-        employeeId: shiftEmployee.value || 'unassigned'
+        employeeId: shiftEmployee.value || 'unassigned',
+        role: (shiftRole && shiftRole.value) ? shiftRole.value : 'barista'
     };
 
     if (shiftType.value === 'custom') {
         shiftData.customStart = customStartTime.value;
         shiftData.customEnd = customEndTime.value;
+    }
+    if (shiftData.role === 'custom' && shiftRoleCustom) {
+        shiftData.customRole = (shiftRoleCustom.value || '').trim() || '';
     }
 
     if (isEdit) {
@@ -3150,6 +3418,11 @@ async function handleShiftSubmit(e) {
 function handleShiftTypeChange() {
     const isCustom = shiftType.value === 'custom';
     customTimeGroup.style.display = isCustom ? 'block' : 'none';
+}
+
+function handleShiftRoleChange() {
+    if (!customRoleGroup) return;
+    customRoleGroup.style.display = shiftRole && shiftRole.value === 'custom' ? 'block' : 'none';
 }
 
 async function handleShiftDelete() {
@@ -3174,6 +3447,8 @@ async function openShiftModal(mode, data) {
     // Reset form
     shiftForm.reset();
     customTimeGroup.style.display = 'none';
+    if (shiftRole) shiftRole.value = 'barista';
+    if (shiftRoleCustom) shiftRoleCustom.value = '';
     
     // Handle attendance mode (read-only)
     if (mode === 'attendance') {
@@ -3184,6 +3459,8 @@ async function openShiftModal(mode, data) {
         shiftEmployee.disabled = true;
         customStartTime.disabled = true;
         customEndTime.disabled = true;
+        if (shiftRole) shiftRole.disabled = true;
+        if (shiftRoleCustom) shiftRoleCustom.disabled = true;
         
         // Make disabled fields more visible
         shiftDate.style.backgroundColor = '#f8f9fa';
@@ -3198,6 +3475,8 @@ async function openShiftModal(mode, data) {
         shiftEmployee.style.backgroundColor = '#f8f9fa';
         shiftEmployee.style.color = '#333';
         shiftEmployee.style.borderColor = '#dee2e6';
+        if (shiftRole) shiftRole.style.backgroundColor = '#f8f9fa';
+        if (shiftRoleCustom) shiftRoleCustom.style.backgroundColor = '#f8f9fa';
         
         // Hide form actions for attendance
         document.querySelector('.form-actions').style.display = 'none';
@@ -3216,6 +3495,8 @@ async function openShiftModal(mode, data) {
         shiftEmployee.disabled = true;
         customStartTime.disabled = true;
         customEndTime.disabled = true;
+        if (shiftRole) shiftRole.disabled = true;
+        if (shiftRoleCustom) shiftRoleCustom.disabled = true;
         
         // Make disabled fields more visible
         shiftDate.style.backgroundColor = '#f8f9fa';
@@ -3230,6 +3511,8 @@ async function openShiftModal(mode, data) {
         shiftEmployee.style.backgroundColor = '#f8f9fa';
         shiftEmployee.style.color = '#333';
         shiftEmployee.style.borderColor = '#dee2e6';
+        if (shiftRole) shiftRole.style.backgroundColor = '#f8f9fa';
+        if (shiftRoleCustom) shiftRoleCustom.style.backgroundColor = '#f8f9fa';
         
         // Hide form actions for view mode
         document.querySelector('.form-actions').style.display = 'none';
@@ -3247,6 +3530,8 @@ async function openShiftModal(mode, data) {
         shiftEmployee.disabled = false;
         customStartTime.disabled = false;
         customEndTime.disabled = false;
+        if (shiftRole) shiftRole.disabled = false;
+        if (shiftRoleCustom) shiftRoleCustom.disabled = false;
         
         // Show form actions for add/edit
         document.querySelector('.form-actions').style.display = 'flex';
@@ -3262,7 +3547,10 @@ async function openShiftModal(mode, data) {
         if (data.branch) {
             shiftBranch.value = data.branch;
         }
-        if (data.shiftType) {
+        if (data.shiftType === 'deliveries' || data.shiftType === 'custom') {
+            if (shiftRole) shiftRole.value = data.shiftType;
+            handleShiftRoleChange();
+        } else if (data.shiftType) {
             shiftType.value = data.shiftType;
         }
 
@@ -3282,9 +3570,9 @@ async function openShiftModal(mode, data) {
             shiftBranch.value = shift.branch;
             shiftType.value = shift.type;
             shiftEmployee.value = shift.employeeId;
-
-
-
+            if (shiftRole) shiftRole.value = shift.role || 'barista';
+            if (shiftRoleCustom) shiftRoleCustom.value = shift.customRole || '';
+            handleShiftRoleChange();
 
 
 
@@ -3317,6 +3605,9 @@ async function loadShiftDataForView(data) {
         shiftBranch.value = shift.branch;
         shiftType.value = shift.shiftType;
         shiftEmployee.value = shift.employeeId;
+        if (shiftRole) shiftRole.value = shift.role || 'barista';
+        if (shiftRoleCustom) shiftRoleCustom.value = shift.customRole || '';
+        handleShiftRoleChange();
         
         // Handle custom time
         if (shift.shiftType === 'custom') {
@@ -3836,6 +4127,8 @@ function closeModal() {
     shiftEmployee.disabled = false;
     customStartTime.disabled = false;
     customEndTime.disabled = false;
+    if (shiftRole) shiftRole.disabled = false;
+    if (shiftRoleCustom) shiftRoleCustom.disabled = false;
     
     // Reset form field styles
     shiftDate.style.backgroundColor = '';
@@ -3850,6 +4143,8 @@ function closeModal() {
     shiftEmployee.style.backgroundColor = '';
     shiftEmployee.style.color = '';
     shiftEmployee.style.borderColor = '';
+    if (shiftRole) shiftRole.style.backgroundColor = '';
+    if (shiftRoleCustom) shiftRoleCustom.style.backgroundColor = '';
     
     // Show form actions
     document.querySelector('.form-actions').style.display = 'flex';
@@ -3869,27 +4164,45 @@ function addShift(shiftData) {
         scheduleData[weekKey][dateStr] = [];
     }
 
+    // Ensure createdAt exists so we can use it for stable manual ordering
+    if (!shiftData.createdAt) {
+        shiftData.createdAt = new Date().toISOString();
+    }
+
     scheduleData[weekKey][dateStr].push(shiftData);
 
     markLocalChanges();
 }
 
 function updateShift(shiftData) {
+    const found = findShiftByIdAndLocation(shiftData.id);
+    if (!found) return;
 
+    const { shift, weekKey: oldWeekKey, dateStr: oldDateStr } = found;
 
-
-
-    const shift = findShiftById(shiftData.id);
-    if (shift) {
-        Object.assign(shift, shiftData);
-
-
-        markLocalChanges();
-    } else {
-
+    // Preserve createdAt for stable manual ordering
+    const existingCreatedAt = shift.createdAt;
+    Object.assign(shift, shiftData);
+    if (existingCreatedAt && !shift.createdAt) {
+        shift.createdAt = existingCreatedAt;
     }
 
+    const newDateStr = shift.date;
+    const newWeekKey = getWeekKeyForDate(new Date(newDateStr + 'T00:00:00'));
 
+    // If date changed, move shift from old location to new
+    if (oldDateStr !== newDateStr || oldWeekKey !== newWeekKey) {
+        const oldArray = scheduleData[oldWeekKey][oldDateStr];
+        const idx = oldArray.findIndex(s => s.id === shiftData.id);
+        if (idx !== -1) oldArray.splice(idx, 1);
+        if (oldArray.length === 0) delete scheduleData[oldWeekKey][oldDateStr];
+
+        if (!scheduleData[newWeekKey]) scheduleData[newWeekKey] = {};
+        if (!scheduleData[newWeekKey][newDateStr]) scheduleData[newWeekKey][newDateStr] = [];
+        scheduleData[newWeekKey][newDateStr].push(shift);
+    }
+
+    markLocalChanges();
 }
 
 async function deleteShift(shiftId) {
@@ -3936,15 +4249,19 @@ async function deleteShift(shiftId) {
 }
 
 function findShiftById(shiftId) {
-    const weekKey = getWeekKey();
+    const found = findShiftByIdAndLocation(shiftId);
+    return found ? found.shift : null;
+}
 
-    if (!scheduleData[weekKey]) return null;
-
-    for (let dateStr in scheduleData[weekKey]) {
-        const shift = scheduleData[weekKey][dateStr].find(s => s.id === shiftId);
-        if (shift) return shift;
+// Find shift by id in any week; returns { shift, weekKey, dateStr } or null
+function findShiftByIdAndLocation(shiftId) {
+    for (const weekKey of Object.keys(scheduleData)) {
+        const weekData = scheduleData[weekKey] || {};
+        for (const dateStr of Object.keys(weekData)) {
+            const shift = weekData[dateStr].find(s => s.id === shiftId);
+            if (shift) return { shift, weekKey, dateStr };
+        }
     }
-
     return null;
 }
 
@@ -4187,7 +4504,11 @@ function validateAndFixShiftData(shift, fallbackDateStr) {
             return null;
         }
     }
-    
+
+    // Default role to barista if missing (backfill for existing shifts)
+    if (!validatedShift.role) validatedShift.role = 'barista';
+    if (validatedShift.role === 'custom' && validatedShift.customRole === undefined) validatedShift.customRole = '';
+
     return validatedShift;
 }
 
@@ -4252,6 +4573,12 @@ async function syncToFirebaseInternal(forceSync = false) {
                         continue;
                     }
 
+                    // Preserve createdAt so manual delete/re-add controls display order.
+                    // (Previously this was overwritten on every sync, destroying ordering.)
+                    if (!validatedShift.createdAt) {
+                        validatedShift.createdAt = new Date().toISOString();
+                    }
+
 
                     const shiftRef = doc(db, "schedules", weekKey, "shifts", validatedShift.id);
                     await setDoc(shiftRef, {
@@ -4261,7 +4588,9 @@ async function syncToFirebaseInternal(forceSync = false) {
                         employeeId: validatedShift.employeeId,
                         customStart: validatedShift.customStart || null,
                         customEnd: validatedShift.customEnd || null,
-                        createdAt: new Date(),
+                        role: validatedShift.role || 'barista',
+                        customRole: validatedShift.role === 'custom' ? (validatedShift.customRole || '') : null,
+                        createdAt: validatedShift.createdAt,
                         updatedAt: new Date()
                     });
                     totalShiftsSynced++;
@@ -4585,11 +4914,12 @@ function renderMobileBranchShiftsForCategory(container, branchKey, dateStr, cate
                 </div>
             `;
         } else {
+            // Scheduled shift: show profile photo or placeholder
             const whitePlaceholderPhoto = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iMjAiIGZpbGw9IiNGRkZGRkYiIHN0cm9rZT0iI0NDQ0NDQyIgc3Ryb2tlLXdpZHRoPSIyIi8+CjxwYXRoIGQ9Ik0yMCAxMkMxNi42ODYzIDEyIDE0IDE0LjY4NjMgMTQgMThDMTQgMjEuMzEzNyAxNi42ODYzIDI0IDIwIDI0QzIzLjMxMzcgMjQgMjYgMjEuMzEzNyAyNiAxOEMyNiAxNC42ODYzIDIzLjMxMzcgMTIgMjAgMTJaIiBmaWxsPSIjRkZGRkZGIi8+CjxwYXRoIGQ9Ik0xMCAzNkMxMCAzMS41ODE3IDEzLjU4MTcgMjggMTggMjhIMjJDMjYuNDE4MyAyOCAzMCAzMS41ODE3IDMwIDM2VjM4SDEwVjM2WiIgZmlsbD0iI0ZGRkZGRiIvPgo8L3N2Zz4K';
-            
+            const scheduledPhotoSrc = getEmployeeProfilePhotoUrl(shift.employeeId) || whitePlaceholderPhoto;
             const timeDisplay = getShiftTimeDisplayForScheduled(shift);
             shiftContent = `
-                <img src="${whitePlaceholderPhoto}" class="shift-employee-photo" alt="Scheduled Shift" />
+                <img src="${scheduledPhotoSrc}" class="shift-employee-photo" alt="Scheduled Shift" />
                 <div class="shift-details-container">
                     <div class="shift-employee">${shift.employeeId === 'unassigned' ? 'UNASSIGNED' : (employeeNicknames[shift.employeeId] || employees[shift.employeeId]?.split(' ')[0] || employees[shift.employeeId])}</div>
                     <div class="shift-time">${timeDisplay.startTime}</div>

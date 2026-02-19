@@ -548,6 +548,87 @@ button:hover {
     font-weight: 500;
 }
 
+.modal-content--branch {
+    max-width: 520px;
+}
+
+.branch-list-section {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid #eee;
+}
+
+.branch-list-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #444;
+    margin: 0 0 0.75rem 0;
+}
+
+.branch-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.branch-list-empty {
+    color: #888;
+    font-size: 0.9rem;
+    padding: 0.5rem 0;
+}
+
+.branch-list-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid #f0f0f0;
+    gap: 0.75rem;
+}
+
+.branch-list-item:last-child {
+    border-bottom: none;
+}
+
+.branch-list-name {
+    font-weight: 500;
+    color: #333;
+}
+
+.branch-list-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+.branch-archive-btn,
+.branch-delete-btn {
+    padding: 0.35rem 0.65rem;
+    font-size: 0.8rem;
+    border-radius: 4px;
+    cursor: pointer;
+    border: none;
+    font-weight: 500;
+}
+
+.branch-archive-btn {
+    background-color: #f0f0f0;
+    color: #555;
+}
+
+.branch-archive-btn:hover {
+    background-color: #e0e0e0;
+}
+
+.branch-delete-btn {
+    background-color: #fee;
+    color: #c33;
+}
+
+.branch-delete-btn:hover {
+    background-color: #fdd;
+}
+
 .danger-btn {
     background-color: #e74c3c;
     color: white;
@@ -853,6 +934,53 @@ button:hover {
     flex-direction: column;
 }
 
+.shift-branch-block {
+    /* Wrapper for collapsible branch section */
+}
+
+.shift-branch-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    user-select: none;
+    text-align: center;
+    padding: 1rem 1.5rem;
+    font-weight: 600;
+    font-size: 1.1rem;
+    color: #1a5d2e;
+    background: #e8f5e8;
+    transition: background-color 0.15s ease;
+}
+
+.shift-branch-header:hover {
+    background: #d4edd4;
+}
+
+.shift-branch-chevron {
+    font-size: 0.7rem;
+    opacity: 0.9;
+    flex-shrink: 0;
+}
+
+.shift-branch-block.shift-branch-collapsed .shift-branch-chevron {
+    transform: none;
+}
+
+.shift-branch-header .shift-branch-title {
+    padding: 0;
+    background: none;
+}
+
+.shift-branch-rows {
+    /* Rows container; hidden when collapsed */
+}
+
+.shift-branch-block.shift-branch-collapsed .shift-branch-rows {
+    display: none;
+}
+
 .shift-branch-title {
     text-align: center;
     padding: 1rem 1.5rem;
@@ -941,6 +1069,15 @@ button:hover {
 
 .shift-employee-block:hover {
     z-index: 10;
+}
+
+/* After ~2s hover: highlight all shifts for that employee in the week */
+.shift-employee-block.same-employee-highlight {
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.95);
+    z-index: 8;
+}
+.shift-employee-block.same-employee-highlight.completed {
+    box-shadow: 0 0 0 2px #1f7a38;
 }
 
 .shift-employee-block .shift-employee {
@@ -1085,6 +1222,24 @@ button:hover {
 }
 
 /* Photo layout styles for completed shifts */
+.shift-photo-wrap {
+    position: relative;
+    width: 55px;
+    height: 55px;
+    flex-shrink: 0;
+    margin-right: 16px;
+}
+
+.shift-photo-wrap .shift-employee-photo {
+    width: 100%;
+    height: 100%;
+    margin-right: 0;
+}
+
+.shift-role-tag {
+    display: none; /* Hidden for now – role still saved; remove this line to show tags again */
+}
+
 .shift-employee-photo {
     width: 55px;
     height: 55px;
@@ -1098,6 +1253,11 @@ button:hover {
 
 /* Responsive photo sizing based on available width */
 @media (max-width: 1600px) {
+    .shift-photo-wrap {
+        width: 50px;
+        height: 50px;
+        margin-right: 14px;
+    }
     .shift-employee-photo {
         width: 50px;
         height: 50px;
@@ -1106,6 +1266,11 @@ button:hover {
 }
 
 @media (max-width: 1400px) {
+    .shift-photo-wrap {
+        width: 48px;
+        height: 48px;
+        margin-right: 12px;
+    }
     .shift-employee-photo {
         width: 48px;
         height: 48px;
@@ -1114,6 +1279,11 @@ button:hover {
 }
 
 @media (max-width: 1200px) {
+    .shift-photo-wrap {
+        width: 45px;
+        height: 45px;
+        margin-right: 14px;
+    }
     .shift-employee-photo {
         width: 45px;
         height: 45px;
@@ -1122,6 +1292,11 @@ button:hover {
 }
 
 @media (max-width: 1000px) {
+    .shift-photo-wrap {
+        width: 42px;
+        height: 42px;
+        margin-right: 12px;
+    }
     .shift-employee-photo {
         width: 42px;
         height: 42px;

@@ -1,6 +1,6 @@
 import { menuData } from './menu-data.js';
 import { syncOrderToFirebase, syncAllPendingOrders, initializeMenuItems, loadEventsFromFirebase, saveEventToFirebase } from './firebase-sync.js';
-import { db, collection, doc, getDocs, deleteDoc } from './firebase-setup.js';
+import { db, collection, doc, getDocs, deleteDoc, setDoc, getDoc, serverTimestamp } from './firebase-setup.js';
 
 
 // Customization options
@@ -29,8 +29,16 @@ const customizationOptions = {
     'senior': -0.2,  // 20% discount
     'pwd': -0.2,     // 20% discount
     'custom': 0      // Custom discount (will be set dynamically)
+  },
+  strengthLevel: {
+    '1': 0,
+    '2': 40,
+    '3': 80
   }
 };
+
+// Hide size in customization modal (data/logic kept for possible future use)
+const HIDE_SIZE_CUSTOMIZATION = true;
 
 let customerName = '';
 
@@ -50,7 +58,7 @@ async function loadAvailableEvents() {
 
     if (cachedEvents.length > 0) {
       console.log('Loading cached events for immediate display');
-      availableEvents = ['pop-up', ...cachedEvents.filter(event => !event.archived).map(event => event.key)];
+      availableEvents = cachedEvents.filter(event => !event.archived).map(event => event.key);
       localStorage.setItem('availableEvents', JSON.stringify(availableEvents));
 
       // Update UI immediately with cached data
@@ -72,7 +80,7 @@ async function loadAvailableEvents() {
 
       // Filter out archived events for POS - only keep active events
       const activeEvents = firebaseEvents.filter(event => !event.archived);
-      availableEvents = ['pop-up', ...activeEvents.map(event => event.key)];
+      availableEvents = activeEvents.map(event => event.key);
       localStorage.setItem('availableEvents', JSON.stringify(availableEvents));
 
       // Update UI with new data
@@ -85,7 +93,7 @@ async function loadAvailableEvents() {
     return availableEvents;
   } catch (error) {
     console.error('Error loading events:', error);
-    return ['pop-up'];
+    return [];
   }
 }
 
@@ -126,18 +134,13 @@ function updateEventSelector() {
   // Clear existing options
   eventSelector.innerHTML = '';
 
-  // Add default pop-up option
-  const defaultOption = document.createElement('option');
-  defaultOption.value = 'pop-up';
-  defaultOption.textContent = 'Legacy Data';
-  eventSelector.appendChild(defaultOption);
-
   loadEventsFromFirebase().then(firebaseEvents => {
     // Filter out archived events for POS (only show active events)
     const activeEvents = firebaseEvents.filter(event => !event.archived);
 
     console.log('Active events loaded:', activeEvents);
 
+    // Add active events only (Legacy Data is dashboard-only, not shown in POS)
     activeEvents.forEach(event => {
       console.log('Processing event in updateEventSelector:', event);
       const option = document.createElement('option');
@@ -148,15 +151,26 @@ function updateEventSelector() {
       eventSelector.appendChild(option);
     });
 
-    // Restore selection if it's still valid (not archived)
-    const isCurrentEventActive = activeEvents.some(event => event.key === currentEvent) || currentEvent === 'pop-up';
+    const hasActiveEvents = activeEvents.length > 0;
+    const isCurrentEventActive = activeEvents.some(event => event.key === currentValue);
 
-    if (isCurrentEventActive) {
-      eventSelector.value = currentEvent;
+    if (hasActiveEvents) {
+      if (isCurrentEventActive) {
+        eventSelector.value = currentValue;
+      } else {
+        // Switch to first active (e.g. when previously on Legacy Data or archived event)
+        currentEvent = activeEvents[0].key;
+        eventSelector.value = currentEvent;
+        window.currentEvent = currentEvent;
+        localStorage.setItem('currentEvent', currentEvent);
+      }
     } else {
-      // Current event was archived, default to Legacy Data
-      eventSelector.value = 'pop-up';
-      currentEvent = 'pop-up';
+      const noEventsOption = document.createElement('option');
+      noEventsOption.value = '';
+      noEventsOption.textContent = 'No events available';
+      noEventsOption.disabled = true;
+      eventSelector.appendChild(noEventsOption);
+      currentEvent = '';
       window.currentEvent = currentEvent;
       localStorage.setItem('currentEvent', currentEvent);
     }
@@ -221,10 +235,13 @@ function updateDisplayMode() {
 }
 
 function getEventDisplayName(eventKey) {
-  if (eventKey === 'pop-up') return 'Legacy Data';
-
+  const key = eventKey !== undefined ? eventKey : currentEvent;
+  const cached = JSON.parse(localStorage.getItem('cachedEvents') || '[]');
+  const found = cached.find(e => e.key === key);
+  if (found && found.name) return found.name;
+  if (key === 'pop-up') return 'Legacy Data';
   // Remove 'popup-' prefix and format nicely
-  return eventKey.replace('popup-', '').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  return key.replace('popup-', '').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 }
 
 function createCategoryElement(category) {
@@ -270,6 +287,27 @@ function getItemShorthand(item) {
   return generateAcronym(item.name);
 }
 
+// Format digits in text with styled spans, but ONLY in plain text (not inside HTML tags).
+// This prevents corrupting names like 'signature <span class="text-span-2">matchanese</span> latte'
+// where the "2" in the class name would otherwise break the HTML.
+function formatDigitsInText(str, spanStyle = 'font-family: Poppins, sans-serif; font-weight: 600;') {
+  if (!str || typeof str !== 'string') return str;
+  const tagRegex = /(<[^>]+>)/g;
+  return str.split(tagRegex).map(part =>
+    part.startsWith('<') ? part : part.replace(/(\d+)/g, `<span style="${spanStyle}">$1</span>`)
+  ).join('');
+}
+
+// Add matchanese class to spans containing "matchanese" for extra weight (works with any menu source)
+function ensureMatchaneseClass(element) {
+  if (!element) return;
+  element.querySelectorAll('.text-span-2').forEach(span => {
+    if (span.textContent.toLowerCase().trim() === 'matchanese') {
+      span.classList.add('matchanese');
+    }
+  });
+}
+
 function createMenuItemElement(item) {
   // Create menu item div
   const menuItemDiv = document.createElement('div');
@@ -303,9 +341,9 @@ function createListMenuItemElement(item) {
   const itemName = document.createElement('h1');
   itemName.className = 'menu-item-name';
   
-  // Format item name with Montserrat font for numerical digits
-  const formattedName = item.name.replace(/(\d+)/g, '<span style="font-family: Montserrat, sans-serif; font-weight: 600;">$1</span>');
+  const formattedName = formatDigitsInText(item.name);
   itemName.innerHTML = formattedName;
+  ensureMatchaneseClass(itemName);
   firstLine.appendChild(itemName);
 
   // Add tags if any
@@ -333,8 +371,7 @@ function createListMenuItemElement(item) {
     const desc = document.createElement('h1');
     desc.className = 'menu-item-desc';
     
-    // Format description with Montserrat font for numerical digits
-    const formattedDescription = item.description.replace(/(\d+)/g, '<span style="font-family: Montserrat, sans-serif; font-weight: 600;">$1</span>');
+    const formattedDescription = formatDigitsInText(item.description);
     desc.innerHTML = formattedDescription;
     secondLine.appendChild(desc);
   }
@@ -363,19 +400,16 @@ function createGridMenuItemElement(item) {
   menuItemDiv.addEventListener('click', () => showCustomizationModal(item));
   menuItemDiv.style.cursor = 'pointer';
 
-  // Create shorthand element with Montserrat font for numerical digits
   const shorthand = document.createElement('h1');
   shorthand.className = 'menu-item-shorthand';
   const shorthandText = getItemShorthand(item);
-  const formattedShorthand = shorthandText.replace(/(\d+)/g, '<span style="font-family: Montserrat, sans-serif; font-weight: 600;">$1</span>');
-  shorthand.innerHTML = formattedShorthand;
+  shorthand.innerHTML = formatDigitsInText(shorthandText);
   menuItemDiv.appendChild(shorthand);
 
-  // Create name element with Montserrat font for numerical digits
   const itemName = document.createElement('h1');
   itemName.className = 'menu-item-name';
-  const formattedName = item.name.replace(/(\d+)/g, '<span style="font-family: Montserrat, sans-serif; font-weight: 600;">$1</span>');
-  itemName.innerHTML = formattedName;
+  itemName.innerHTML = formatDigitsInText(item.name);
+  ensureMatchaneseClass(itemName);
   menuItemDiv.appendChild(itemName);
 
   return menuItemDiv;
@@ -494,16 +528,18 @@ function updateOrderDisplay() {
 
       const customDisplay = [];
       if (item.customizations.variant) customDisplay.push(item.customizations.variant);
-      if (item.customizations.size) customDisplay.push(item.customizations.size);
+      if (!HIDE_SIZE_CUSTOMIZATION && item.customizations.size) customDisplay.push(item.customizations.size);
       if (item.customizations.serving) customDisplay.push(item.customizations.serving);
       if (item.customizations.sweetness) {
         const sweetnessSpan = document.createElement('span');
-        sweetnessSpan.style.fontFamily = 'Montserrat, sans-serif';
+        sweetnessSpan.style.fontFamily = 'Poppins, sans-serif';
         sweetnessSpan.style.fontWeight = '700';
         sweetnessSpan.textContent = item.customizations.sweetness;
         customDisplay.push(sweetnessSpan.outerHTML);
       }
       if (item.customizations.milk) customDisplay.push(item.customizations.milk);
+      if (item.customizations.strengthLevel) customDisplay.push(`Strength ${item.customizations.strengthLevel}`);
+      if (item.customizations.matchaStrength) customDisplay.push(`Strength ${String(item.customizations.matchaStrength).replace('Level ', '')}`);
 
       if (item.customizations.discount && item.customizations.discount !== 'none') {
         const discountBadge = document.createElement('span');
@@ -941,7 +977,7 @@ function createOrderCard(order, isCompleted, isVoided = false) {
     itemName.className = 'item-name';
 
     const quantitySpan = document.createElement('span');
-    quantitySpan.style.fontFamily = 'Montserrat, sans-serif';
+    quantitySpan.style.fontFamily = 'Poppins, sans-serif';
     quantitySpan.textContent = `${item.quantity}x `;
 
     const nameSpan = document.createElement('span');
@@ -962,16 +998,18 @@ function createOrderCard(order, isCompleted, isVoided = false) {
       const customDisplay = [];
 
       if (item.customizations.variant) customDisplay.push(item.customizations.variant);
-      if (item.customizations.size) customDisplay.push(item.customizations.size);
+      if (!HIDE_SIZE_CUSTOMIZATION && item.customizations.size) customDisplay.push(item.customizations.size);
       if (item.customizations.serving) customDisplay.push(item.customizations.serving);
       if (item.customizations.sweetness) {
         const sweetnessSpan = document.createElement('span');
-        sweetnessSpan.style.fontFamily = 'Montserrat, sans-serif';
+        sweetnessSpan.style.fontFamily = 'Poppins, sans-serif';
         sweetnessSpan.style.fontWeight = '700';
         sweetnessSpan.textContent = item.customizations.sweetness;
         customDisplay.push(sweetnessSpan.outerHTML);
       }
       if (item.customizations.milk) customDisplay.push(item.customizations.milk);
+      if (item.customizations.strengthLevel) customDisplay.push(`Strength ${item.customizations.strengthLevel}`);
+      if (item.customizations.matchaStrength) customDisplay.push(`Strength ${String(item.customizations.matchaStrength).replace('Level ', '')}`);
 
       customizations.innerHTML = customDisplay.join(' | ');
       itemContent.appendChild(customizations);
@@ -1308,7 +1346,7 @@ function showConfirmationModal(action, orderId, title, message) {
   padding: 20px;
   border-radius: 8px;
   background: #fff;
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
 `;
 
@@ -1319,7 +1357,7 @@ function showConfirmationModal(action, orderId, title, message) {
 
   const messageText = document.createElement('p');
   messageText.style.cssText = `
-    font-family: 'Montserrat', sans-serif;
+    font-family: 'Poppins', sans-serif;
     font-size: 14px;
     text-align: center;
     margin: 20px 0;
@@ -1406,10 +1444,29 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
   const allowedCustomizations = item.customizations || null;
   const showAll = !allowedCustomizations;
 
-  if (!allowedCustomizations || allowedCustomizations.size) {
+  // Size customization (hidden from UI; data/logic preserved)
+  if (!HIDE_SIZE_CUSTOMIZATION && (!allowedCustomizations || allowedCustomizations.size)) {
     const sizeSection = createOptionSection('Size', ['regular', 'large'], currentCustomizations.size || 'large');
     optionsGrid.appendChild(sizeSection);
   }
+
+  // Strength Level (1–3) for all items – drinks, ice cream, etc.
+  const strengthLevelSection = createOptionSection(
+    'Strength Level',
+    ['1', '2', '3'],
+    currentCustomizations.strengthLevel || (currentCustomizations.matchaStrength ? String(currentCustomizations.matchaStrength).replace('Level ', '') : '1')
+  );
+  // Keep strength buttons on one row for clarity
+  const strengthButtons = strengthLevelSection.querySelector('.modal-buttons');
+  if (strengthButtons) {
+    strengthButtons.style.flexWrap = 'nowrap';
+    strengthButtons.style.justifyContent = 'flex-start';
+  }
+  const strengthBtns = strengthLevelSection.querySelectorAll('.option-button');
+  strengthBtns.forEach(btn => {
+    btn.style.minWidth = '60px';
+  });
+  optionsGrid.appendChild(strengthLevelSection);
 
   // Don't show serving option for brew bar items since preparation includes hot/iced
   if ((!allowedCustomizations || allowedCustomizations.serving) && !item.customizations?.preparation) {
@@ -1644,6 +1701,9 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
   if (currentCustomizations.milk && customizationOptions.milk[currentCustomizations.milk]) {
     basePrice += customizationOptions.milk[currentCustomizations.milk];
   }
+  if (currentCustomizations.strengthLevel && customizationOptions.strengthLevel[currentCustomizations.strengthLevel] !== undefined) {
+    basePrice += customizationOptions.strengthLevel[currentCustomizations.strengthLevel];
+  }
   if (currentCustomizations.discount && customizationOptions.discount[currentCustomizations.discount]) {
     basePrice = basePrice * (1 + customizationOptions.discount[currentCustomizations.discount]);
   }
@@ -1777,6 +1837,11 @@ function updateCustomizedItemInOrder(baseItem, editIndex, overlay) {
     additionalPrice += customizationOptions.milk[options.milk];
   }
 
+  // Strength level adjustment
+  if (options.strengthLevel && customizationOptions.strengthLevel[options.strengthLevel] !== undefined) {
+    additionalPrice += customizationOptions.strengthLevel[options.strengthLevel];
+  }
+
   // Add preparation adjustment for brew bar items
   if (options.preparation && baseItem.customizations && baseItem.customizations.preparation) {
     const preparationPrice = baseItem.customizations.preparation[options.preparation];
@@ -1886,6 +1951,12 @@ function updateItemTotal() {
     basePrice += customizationOptions.milk[milkOption.dataset.option];
   }
 
+  // Apply strength level adjustment
+  const strengthLevelOption = document.querySelector('.option-button.active[data-group="strength level"]');
+  if (strengthLevelOption && customizationOptions.strengthLevel[strengthLevelOption.dataset.option] !== undefined) {
+    basePrice += customizationOptions.strengthLevel[strengthLevelOption.dataset.option];
+  }
+
   // Apply preparation adjustment for brew bar items
   const preparationOption = document.querySelector('.option-button.active[data-group="preparation"]');
   if (preparationOption) {
@@ -1940,9 +2011,9 @@ function updateItemTotal() {
   // Clear button and add properly formatted elements
   addButton.innerHTML = '';
 
-  // Add button text with Cocogoose font
+  // Add button text with Poppins font
   const buttonTextSpan = document.createElement('span');
-  buttonTextSpan.style.fontFamily = "'Cocogoose pro trial', sans-serif";
+  buttonTextSpan.style.fontFamily = "'Poppins', sans-serif";
   buttonTextSpan.textContent = addButton.textContent.includes('UPDATE') ? 'UPDATE ORDER ' : 'ADD TO ORDER ';
   addButton.appendChild(buttonTextSpan);
 
@@ -1952,7 +2023,7 @@ function updateItemTotal() {
 
           if (!isPackageMode) {
           const priceSpan = document.createElement('span');
-          priceSpan.style.fontFamily = 'Montserrat, sans-serif';
+          priceSpan.style.fontFamily = 'Poppins, sans-serif';
           priceSpan.style.fontWeight = '600';
           priceSpan.textContent = `(₱${finalPrice.toFixed(2)})`;
           addButton.appendChild(priceSpan);
@@ -2023,6 +2094,12 @@ function getSelectedOptions() {
   const variantButton = document.querySelector('.option-button.active[data-group="flavor"]');
   if (variantButton) options.variant = variantButton.dataset.option;
 
+  const strengthLevelButton = document.querySelector('.option-button.active[data-group="strength level"]');
+  if (strengthLevelButton) options.strengthLevel = strengthLevelButton.dataset.option;
+
+  // When size is hidden, default to 'large' so price and order logic still work
+  if (HIDE_SIZE_CUSTOMIZATION && !options.size) options.size = 'large';
+
   return options;
 }
 
@@ -2041,6 +2118,11 @@ function addCustomizedItemToOrder(baseItem, overlay) {
   // Add milk adjustment
   if (options.milk && customizationOptions.milk[options.milk]) {
     additionalPrice += customizationOptions.milk[options.milk];
+  }
+
+  // Add strength level adjustment
+  if (options.strengthLevel && customizationOptions.strengthLevel[options.strengthLevel] !== undefined) {
+    additionalPrice += customizationOptions.strengthLevel[options.strengthLevel];
   }
 
   // Add preparation adjustment for brew bar items
@@ -2080,12 +2162,13 @@ function addCustomizedItemToOrder(baseItem, overlay) {
   const existingItemIndex = currentOrder.findIndex(orderItem =>
     orderItem.name === baseItem.name &&
     orderItem.customizations &&
-    orderItem.customizations.size === options.size &&
+    (HIDE_SIZE_CUSTOMIZATION || orderItem.customizations.size === options.size) &&
     orderItem.customizations.serving === options.serving &&
     orderItem.customizations.sweetness === options.sweetness &&
     orderItem.customizations.milk === options.milk &&
     orderItem.customizations.discount === options.discount &&
-    orderItem.customizations.variant === options.variant
+    orderItem.customizations.variant === options.variant &&
+    orderItem.customizations.strengthLevel === options.strengthLevel
   );
 
   if (existingItemIndex > -1) {
@@ -2157,172 +2240,471 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 });
 
-function showEndOfDayModal() {
-  // Get today's sales data
-  const salesData = calculateSalesByPaymentMethod(selectedDate);
+function formatEventSalesCurrency(val) {
+  const num = val ?? 0;
+  const absVal = Math.abs(num).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return num < 0 ? `-₱${absVal}` : `₱${absVal}`;
+}
 
-  // Get existing cash flow data for this specific date and event
+function formatEventSalesDate(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+function buildEventSalesSummaryHTML(record, eventName, dateStr) {
+  const fmt = formatEventSalesCurrency;
+  const variance = record.cashVariance ?? 0;
+  const varianceColor = variance < 0 ? '#d9534f' : variance > 0 ? '#2b9348' : '#333';
+  const formatVariance = (v) => {
+    const n = typeof v === 'number' ? v : 0;
+    if (Math.abs(n) < 0.0005) return '₱0.00';
+    const absVal = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return n < 0 ? `-₱${absVal}` : `₱${absVal}`;
+  };
+  const formattedDate = formatEventSalesDate(dateStr);
+  let html = `<div style="font-size: 0.95rem;">`;
+  html += `<div style="margin-bottom: 0.4rem; padding-bottom: 0.2rem; border-bottom: 1px solid #eee;">`;
+  html += `<strong>Date:</strong> ${formattedDate}<br>`;
+  html += `<strong>Event:</strong> ${eventName}`;
+  html += `</div>`;
+  html += `<div style="margin-bottom: 0.48rem;">`;
+  html += `<strong style="display: block; margin: 0 0 0.06rem 0;">Sales Breakdown</strong>`;
+  html += `<table style="width: 100%; border-collapse: collapse;">`;
+  html += `<tr><td style="padding: 0.06rem 0.5rem;">Cash:</td><td style="text-align: right;">${fmt(record.cash)}</td></tr>`;
+  html += `<tr><td style="padding: 0.06rem 0.5rem;">GCash:</td><td style="text-align: right;">${fmt(record.gcash)}</td></tr>`;
+  html += `<tr><td style="padding: 0.06rem 0.5rem;">Maya:</td><td style="text-align: right;">${fmt(record.maya)}</td></tr>`;
+  html += `<tr><td style="padding: 0.06rem 0.5rem;"><strong>Total Sales:</strong></td><td style="text-align: right;"><strong>${fmt(record.totalSales)}</strong></td></tr>`;
+  html += `</table></div>`;
+  html += `<div style="margin-bottom: 0.48rem;">`;
+  html += `<strong style="display: block; margin: 0 0 0.06rem 0;">Expenses</strong>`;
+  html += `<table style="width: 100%; border-collapse: collapse;">`;
+  html += `<tr><td style="padding: 0.06rem 0.5rem;">Cash Expenses:</td><td style="text-align: right;">${fmt(record.expenses)}</td></tr>`;
+  html += `</table></div>`;
+  html += `<div style="margin-bottom: 0.48rem;">`;
+  html += `<strong style="display: block; margin: 0 0 0.06rem 0;">Cash Left</strong>`;
+  html += `<table style="width: 100%; border-collapse: collapse;">`;
+  html += `<tr><td style="padding: 0.06rem 0.5rem;">Calculated:</td><td style="text-align: right;">${fmt(record.calculatedCashLeft)}</td></tr>`;
+  html += `<tr><td style="padding: 0.06rem 0.5rem;">Actual:</td><td style="text-align: right;">${fmt(record.actualCashLeft)}</td></tr>`;
+  html += `<tr><td style="padding: 0.06rem 0.5rem;">Variance:</td><td style="text-align: right; color: ${varianceColor};">${formatVariance(variance)}</td></tr>`;
+  html += `</table></div>`;
+  html += `</div>`;
+  return html;
+}
+
+async function sendEventSalesEmail(record, eventName, dateStr) {
+  if (typeof emailjs === 'undefined') return;
+  const EMAILJS_SERVICE_ID = 'service_1085n74';
+  const EMAILJS_TEMPLATE_ID = 'template_6zh5mq8';
+  const EMAILJS_PUBLIC_KEY = 'Jxzqofh9mPAsb9V0M';
+  const RECIPIENT_EMAIL = 'hi@matchanese.com';
+  emailjs.init(EMAILJS_PUBLIC_KEY);
+  const formattedDate = formatEventSalesDate(dateStr);
+  const d = new Date(dateStr + 'T00:00:00');
+  const subjectDate = `${d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} (${d.toLocaleDateString('en-US', { weekday: 'long' })})`;
+  const fmt = formatEventSalesCurrency;
+  const variance = record.cashVariance ?? 0;
+  const varianceColor = variance < 0 ? '#d9534f' : variance > 0 ? '#2b9348' : '#333';
+  const formatVariance = (v) => {
+    const n = typeof v === 'number' ? v : 0;
+    if (Math.abs(n) < 0.0005) return '₱0.00';
+    const absVal = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return n < 0 ? `-₱${absVal}` : `₱${absVal}`;
+  };
+  const emailContent = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin: 0; padding: 20px; font-family: Arial, sans-serif; background-color: #f5f5f5;">
+    <div style="max-width: 600px; margin: 0 auto; background-color: #fff; padding: 20px; border-radius: 8px;">
+    <div style="background: linear-gradient(135deg, #2b9348 0%, #238636 100%); color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; text-align: center;">
+      <div style="font-size: 14px; opacity: 0.9;">Matchanese – Event: ${eventName}</div>
+      <div style="font-size: 32px; font-weight: bold;">${fmt(record.totalSales)}</div>
+      <div style="font-size: 12px; opacity: 0.8;">Total Sales for ${formattedDate}</div>
+    </div>
+    <div style="font-size: 0.95rem;">
+    <div style="margin-bottom: 0.4rem; padding-bottom: 0.2rem; border-bottom: 1px solid #eee;"><strong>Date:</strong> ${formattedDate}<br><strong>Event:</strong> ${eventName}</div>
+    <div style="margin-bottom: 0.48rem;"><strong>Sales Breakdown</strong><table style="width: 100%; border-collapse: collapse;">
+    <tr><td style="padding: 0.06rem 0.5rem;">Cash:</td><td style="text-align: right;">${fmt(record.cash)}</td></tr>
+    <tr><td style="padding: 0.06rem 0.5rem;">GCash:</td><td style="text-align: right;">${fmt(record.gcash)}</td></tr>
+    <tr><td style="padding: 0.06rem 0.5rem;">Maya:</td><td style="text-align: right;">${fmt(record.maya)}</td></tr>
+    <tr><td style="padding: 0.06rem 0.5rem;"><strong>Total Sales:</strong></td><td style="text-align: right;"><strong>${fmt(record.totalSales)}</strong></td></tr></table></div>
+    <div style="margin-bottom: 0.48rem;"><strong>Expenses</strong><table style="width: 100%; border-collapse: collapse;">
+    <tr><td style="padding: 0.06rem 0.5rem;">Cash Expenses:</td><td style="text-align: right;">${fmt(record.expenses)}</td></tr></table></div>
+    <div style="margin-bottom: 0.48rem;"><strong>Cash Left</strong><table style="width: 100%; border-collapse: collapse;">
+    <tr><td style="padding: 0.06rem 0.5rem;">Calculated:</td><td style="text-align: right;">${fmt(record.calculatedCashLeft)}</td></tr>
+    <tr><td style="padding: 0.06rem 0.5rem;">Actual:</td><td style="text-align: right;">${fmt(record.actualCashLeft)}</td></tr>
+    <tr><td style="padding: 0.06rem 0.5rem;">Variance:</td><td style="text-align: right; color: ${varianceColor};">${formatVariance(variance)}</td></tr></table></div>
+    </div></div></body></html>`;
+  try {
+    await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+      to_email: RECIPIENT_EMAIL,
+      from_name: `Matchanese - ${eventName}`,
+      subject: `Event Sales Report - ${subjectDate} - ${eventName}`,
+      message: emailContent,
+      branch: eventName,
+      date: formattedDate
+    });
+    console.log('✅ Event sales email sent');
+  } catch (err) {
+    console.error('❌ Event sales email failed:', err);
+  }
+}
+
+function showEndOfDayModal() {
+  const salesData = calculateSalesByPaymentMethod(selectedDate);
   const dateStr = getLocalDateString(selectedDate);
+  const eventName = getEventDisplayName();
   const cashFlowKey = `cashFlow_${currentEvent}_${dateStr}`;
   const existingCashData = JSON.parse(localStorage.getItem(cashFlowKey) || '{"startingCash": 0, "expenses": 0}');
-
-  // Calculate expected cash
   const expectedCash = existingCashData.startingCash + salesData.cash - existingCashData.expenses;
+  const formattedDate = formatEventSalesDate(dateStr);
 
-  // Create modal HTML with minimal design
-  const modalContent = `
-    <h2 class="modal-header">End of Day Summary</h2>
-    
-    <div class="eod-simple-section">
-      <h3 class="eod-simple-title">Sales Breakdown</h3>
-      <div class="eod-summary-row">
-        <div class="eod-label">Total Sales</div>
-        <div class="eod-value">₱${formatWithCommas(salesData.total.toFixed(2))}</div>
+  const reportModalStyles = `
+    .eod-daily-container { font-family: 'Inter', sans-serif; max-width: 520px; width: 100%; background: #fff; padding: 1.25rem 1.5rem; border-radius: 16px; box-shadow: 0 8px 20px rgba(0,0,0,0.08); box-sizing: border-box; }
+    .eod-daily-container label { font-weight: 600; font-size: 0.9rem; display: block; margin: 0.2rem 0 0.35rem; color: #333; }
+    .eod-daily-container .eod-total-display { background-color: #dbffe6; font-size: 1.35rem; font-weight: 800; text-align: center; color: #137a2f; border: 2px solid #b6e8c1; border-radius: 10px; padding: 0.5rem 0.75rem; margin-bottom: 0; }
+    .eod-daily-container .eod-split-row { display: flex; gap: 10px; margin-bottom: 0.5rem; }
+    .eod-daily-container .eod-split-column { flex: 1; min-width: 0; }
+    .eod-daily-container .eod-readonly-box { background-color: #eaffea; font-size: 1.05rem; font-weight: 800; text-align: center; color: #208f34; border: 2px solid #b6e8c1; border-radius: 10px; padding: 0.5rem 0.75rem; }
+    .eod-daily-container .eod-group-card { background: #f9f9f9; padding: 0.5rem 1rem; border-radius: 10px; margin-bottom: 0.5rem; margin-top: 0.4rem; }
+    .eod-daily-container .eod-subheader { font-weight: 600; font-size: 0.95rem; margin-bottom: 0.4rem; margin-top: 0.25rem; color: #444; }
+    .eod-daily-container .eod-input-inline { display: flex; align-items: center; gap: 0.5rem; }
+    .eod-daily-container .eod-input-inline .peso { color: #555; font-size: 0.95rem; }
+    .eod-daily-container .eod-input-inline input { flex: 1; min-width: 0; padding: 0.45rem 0.6rem; font-size: 0.95rem; border: 1px solid #ccc; border-radius: 8px; background: #fff; box-sizing: border-box; }
+    .eod-daily-container .eod-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem; gap: 0.75rem; }
+    .eod-daily-container .eod-row label { margin: 0; min-width: 0; }
+    .eod-daily-container .eod-row .eod-val { font-weight: 700; text-align: right; }
+    .eod-daily-container .eod-btn-row { display: flex; gap: 0.75rem; margin-top: 1rem; }
+    .eod-daily-container .eod-btn-cancel { flex: 1; padding: 0.7rem; font-size: 1rem; background: #e0e0e0; color: #333; border: none; border-radius: 10px; cursor: pointer; font-weight: 600; }
+    .eod-daily-container .eod-btn-submit { flex: 1; padding: 0.7rem; font-size: 1rem; background: #2b9348; color: #fff; border: none; border-radius: 10px; cursor: pointer; font-weight: 600; }
+    .eod-report-overwrite { background: #fff3cd; border: 1px solid #ffc107; padding: 0.6rem; border-radius: 8px; margin: 0.75rem 0; font-size: 0.85rem; color: #856404; }
+  `;
+
+  const formContent = `
+    <style>${reportModalStyles}</style>
+    <div class="eod-daily-container" id="eodReportModal">
+      <div class="eod-split-row">
+        <div class="eod-split-column">
+          <label>Date</label>
+          <div class="eod-readonly-box" style="font-size: 1rem; font-weight: 600;">${formattedDate}</div>
+        </div>
+        <div class="eod-split-column">
+          <label>Event</label>
+          <div class="eod-readonly-box" style="font-size: 0.95rem; font-weight: 600;">${eventName}</div>
+        </div>
       </div>
-      
-      <div class="eod-summary-row">
-        <div class="eod-label">Cash Sales</div>
-        <div class="eod-value">₱${formatWithCommas(salesData.cash.toFixed(2))}</div>
+      <label>Total Sales</label>
+      <div class="eod-total-display" id="eodTotalDisplay">₱${formatWithCommas(salesData.total.toFixed(2))}</div>
+      <div class="eod-split-row">
+        <div class="eod-split-column">
+          <label>Walk-In Sales</label>
+          <div class="eod-readonly-box">₱${formatWithCommas(salesData.total.toFixed(2))}</div>
+        </div>
+        <div class="eod-split-column">
+          <label>Cash Left</label>
+          <div class="eod-readonly-box" id="eodCashLeft">₱${formatWithCommas(expectedCash.toFixed(2))}</div>
+        </div>
       </div>
-      
-      <div class="eod-summary-row">
-        <div class="eod-label">GCash Sales</div>
-        <div class="eod-value">₱${formatWithCommas(salesData.gcash.toFixed(2))}</div>
+      <div class="eod-group-card">
+        <div class="eod-subheader">Sales Breakdown (from POS)</div>
+        <div class="eod-row"><label>Cash</label><span class="eod-val">₱${formatWithCommas(salesData.cash.toFixed(2))}</span></div>
+        <div class="eod-row"><label>GCash</label><span class="eod-val">₱${formatWithCommas(salesData.gcash.toFixed(2))}</span></div>
+        <div class="eod-row"><label>Maya</label><span class="eod-val">₱${formatWithCommas(salesData.maya.toFixed(2))}</span></div>
       </div>
-      
-      <div class="eod-summary-row">
-        <div class="eod-label">Maya Sales</div>
-        <div class="eod-value">₱${formatWithCommas(salesData.maya.toFixed(2))}</div>
-      </div>
-    </div>
-    
-    <div class="eod-simple-section">
-      <h3 class="eod-simple-title">Cash Management</h3>
-      <div class="eod-summary-row">
-        <div class="eod-label">Starting Cash</div>
-        <div class="eod-value">
-          <div class="eod-input-wrapper">
-            <span class="peso-symbol">₱</span>
-            <input type="number" id="startingCash" class="eod-input" value="${existingCashData.startingCash}" step="0.01" placeholder="0.00">
+      <div class="eod-group-card">
+        <div class="eod-subheader">Cash Expenses</div>
+        <div class="eod-row">
+          <label>Cash Expenses</label>
+          <div class="eod-input-inline" style="flex: 1; max-width: 140px;">
+            <span class="peso">₱</span>
+            <input type="number" id="eodExpenses" value="${existingCashData.expenses}" step="0.01" placeholder="0">
           </div>
         </div>
       </div>
-      
-      <div class="eod-summary-row">
-        <div class="eod-label">Expenses</div>
-        <div class="eod-value">
-          <div class="eod-input-wrapper">
-            <span class="peso-symbol">₱</span>
-            <input type="number" id="expenses" class="eod-input" value="${existingCashData.expenses}" step="0.01" placeholder="0.00">
+      <div class="eod-group-card">
+        <div class="eod-subheader">Cash Reconciliation</div>
+        <div class="eod-row">
+          <label>Starting Cash</label>
+          <div class="eod-input-inline" style="flex: 1; max-width: 140px;">
+            <span class="peso">₱</span>
+            <input type="number" id="eodStartingCash" value="${existingCashData.startingCash}" step="0.01" placeholder="0">
           </div>
         </div>
-      </div>
-      
-      <div class="eod-summary-row">
-        <div class="eod-label">Expected Cash</div>
-        <div class="eod-value" id="expectedCash">₱${formatWithCommas(expectedCash.toFixed(2))}</div>
-      </div>
-
-      <div class="eod-summary-row">
-        <div class="eod-label">Actual Cash Count</div>
-        <div class="eod-value">
-          <div class="eod-input-wrapper">
-            <span class="peso-symbol">₱</span>
-            <input type="number" id="actualCash" class="eod-input" value="${existingCashData.actualCash || expectedCash}" step="0.01" placeholder="0.00">
+        <div class="eod-row"><label>Expected Cash</label><span class="eod-val" id="eodExpectedCash">₱${formatWithCommas(expectedCash.toFixed(2))}</span></div>
+        <div class="eod-row">
+          <label>Actual Cash Count</label>
+          <div class="eod-input-inline" style="flex: 1; max-width: 140px;">
+            <span class="peso">₱</span>
+            <input type="number" id="eodActualCash" value="${existingCashData.actualCash || expectedCash}" step="0.01" placeholder="0">
           </div>
         </div>
+        <div class="eod-row"><label>Variance</label><span class="eod-val" id="eodVariance">₱0.00</span></div>
       </div>
-    </div>
-
-    <div class="eod-summary-row">
-      <div class="eod-label">Cash Variance</div>
-      <div class="eod-value" id="cashVariance">₱0.00</div>
+      <div class="eod-btn-row">
+        <button type="button" class="eod-btn-cancel" id="eodCancelBtn">Cancel</button>
+        <button type="button" class="eod-btn-submit" id="eodNextBtn">Next</button>
+      </div>
     </div>
   `;
 
-  // Show the modal with save functionality
-  showModal(modalContent, function () {
-    saveCashFlowData();
-  }, true);
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay eod-sales-overlay';
+  overlay.id = 'eodReportOverlay';
+  const modal = document.createElement('div');
+  modal.style.maxWidth = '560px';
+  modal.style.width = '100%';
+  modal.style.maxHeight = '90vh';
+  modal.style.overflowY = 'auto';
+  modal.style.overflowX = 'hidden';
+  modal.style.boxSizing = 'border-box';
+  modal.innerHTML = formContent;
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
 
-  // Add event listeners with peso formatting
-  const startingCashInput = document.getElementById('startingCash');
-  const expensesInput = document.getElementById('expenses');
-  const actualCashInput = document.getElementById('actualCash');
+  const startingInput = document.getElementById('eodStartingCash');
+  const expensesInput = document.getElementById('eodExpenses');
+  const actualInput = document.getElementById('eodActualCash');
 
-  function updateCalculations() {
-    const startingCash = parseFloat(startingCashInput.value) || 0;
-    const expenses = parseFloat(expensesInput.value) || 0;
-    const actualCash = parseFloat(actualCashInput.value) || 0;
-
-    const expectedCash = startingCash + salesData.cash - expenses;
-    const variance = actualCash - expectedCash;
-
-    document.getElementById('expectedCash').textContent = `₱${formatWithCommas(expectedCash.toFixed(2))}`;
-
-    const varianceElement = document.getElementById('cashVariance');
-
-    if (variance > 0) {
-      varianceElement.style.color = '#1d8a00';
-      varianceElement.textContent = `+₱${formatWithCommas(variance.toFixed(2))}`;
-    } else if (variance < 0) {
-      varianceElement.style.color = '#ff4444';
-      varianceElement.textContent = `-₱${formatWithCommas(Math.abs(variance).toFixed(2))}`;
-    } else {
-      varianceElement.style.color = '#333';
-      varianceElement.textContent = `₱${formatWithCommas(variance.toFixed(2))}`;
-    }
+  function updateEodCalculations() {
+    const start = parseFloat(startingInput.value) || 0;
+    const exp = parseFloat(expensesInput.value) || 0;
+    const actual = parseFloat(actualInput.value) || 0;
+    const expected = start + salesData.cash - exp;
+    const variance = actual - expected;
+    const cashLeftEl = document.getElementById('eodCashLeft');
+    if (cashLeftEl) cashLeftEl.textContent = `₱${formatWithCommas(expected.toFixed(2))}`;
+    document.getElementById('eodExpectedCash').textContent = `₱${formatWithCommas(expected.toFixed(2))}`;
+    const el = document.getElementById('eodVariance');
+    if (variance > 0) { el.style.color = '#1d8a00'; el.textContent = `+₱${formatWithCommas(variance.toFixed(2))}`; }
+    else if (variance < 0) { el.style.color = '#ff4444'; el.textContent = `-₱${formatWithCommas(Math.abs(variance).toFixed(2))}`; }
+    else { el.style.color = '#333'; el.textContent = `₱${formatWithCommas(variance.toFixed(2))}`; }
   }
+  startingInput.addEventListener('input', updateEodCalculations);
+  expensesInput.addEventListener('input', updateEodCalculations);
+  actualInput.addEventListener('input', updateEodCalculations);
+  updateEodCalculations();
 
-  startingCashInput.addEventListener('input', updateCalculations);
-  expensesInput.addEventListener('input', updateCalculations);
-  actualCashInput.addEventListener('input', updateCalculations);
+  document.getElementById('eodCancelBtn').addEventListener('click', () => overlay.remove());
 
-  // Initial calculation
-  updateCalculations();
+  document.getElementById('eodNextBtn').addEventListener('click', async () => {
+    const startingCash = parseFloat(startingInput.value) || 0;
+    const expenses = parseFloat(expensesInput.value) || 0;
+    const actualCash = parseFloat(actualInput.value) || 0;
+    const calculatedCashLeft = startingCash + salesData.cash - expenses;
+    const variance = actualCash - calculatedCashLeft;
+    const record = {
+      eventKey: currentEvent,
+      eventName,
+      date: dateStr,
+      cash: salesData.cash,
+      gcash: salesData.gcash,
+      maya: salesData.maya,
+      totalSales: salesData.total,
+      walkInSales: salesData.total,
+      grab: 0,
+      expenses,
+      startingCash,
+      actualCashLeft: actualCash,
+      calculatedCashLeft,
+      cashVariance: variance,
+      source: 'pos'
+    };
+
+    const salesRef = doc(db, 'event-sales', currentEvent, 'daily', dateStr);
+    const existingSnap = await getDoc(salesRef);
+    const hasExisting = existingSnap.exists();
+
+    const summaryHTML = buildEventSalesSummaryHTML(record, eventName, dateStr);
+    const confirmContent = `
+      <style>${reportModalStyles}</style>
+      <div class="eod-daily-container">
+        <h2 style="font-size: 1.25rem; margin: 0 0 0.75rem; color: #2b9348; font-weight: 600;">Confirm Submission</h2>
+        <div id="eodConfirmSummary" style="line-height: 1.56;"></div>
+        <div id="eodOverwriteWarning" class="eod-report-overwrite" style="display: ${hasExisting ? 'block' : 'none'};">
+          <strong>⚠️ Warning:</strong> A record already exists for this date and event. Submitting will overwrite it.
+        </div>
+        <div class="eod-btn-row">
+          <button type="button" class="eod-btn-cancel" id="eodBackBtn">Back</button>
+          <button type="button" class="eod-btn-submit" id="eodConfirmBtn">Confirm</button>
+        </div>
+      </div>
+    `;
+    modal.innerHTML = confirmContent;
+    document.getElementById('eodConfirmSummary').innerHTML = summaryHTML;
+
+    document.getElementById('eodBackBtn').addEventListener('click', () => {
+      modal.innerHTML = formContent;
+      const startInp = document.getElementById('eodStartingCash');
+      const expInp = document.getElementById('eodExpenses');
+      const actInp = document.getElementById('eodActualCash');
+      startInp.value = startingCash;
+      expInp.value = expenses;
+      actInp.value = actualCash;
+      function up() {
+        const s = parseFloat(startInp.value) || 0, e = parseFloat(expInp.value) || 0, a = parseFloat(actInp.value) || 0;
+        const expected = s + salesData.cash - e, variance = a - expected;
+        document.getElementById('eodExpectedCash').textContent = `₱${formatWithCommas(expected.toFixed(2))}`;
+        const el = document.getElementById('eodVariance');
+        if (variance > 0) { el.style.color = '#1d8a00'; el.textContent = `+₱${formatWithCommas(variance.toFixed(2))}`; }
+        else if (variance < 0) { el.style.color = '#ff4444'; el.textContent = `-₱${formatWithCommas(Math.abs(variance).toFixed(2))}`; }
+        else { el.style.color = '#333'; el.textContent = `₱${formatWithCommas(variance.toFixed(2))}`; }
+      }
+      startInp.addEventListener('input', up);
+      expInp.addEventListener('input', up);
+      actInp.addEventListener('input', up);
+      up();
+      document.getElementById('eodCancelBtn').addEventListener('click', () => overlay.remove());
+      document.getElementById('eodNextBtn').addEventListener('click', function goConfirm() {
+        const sc = parseFloat(document.getElementById('eodStartingCash').value) || 0;
+        const ex = parseFloat(document.getElementById('eodExpenses').value) || 0;
+        const ac = parseFloat(document.getElementById('eodActualCash').value) || 0;
+        const calcLeft = sc + salesData.cash - ex;
+        const rec = {
+          eventKey: currentEvent, eventName, date: dateStr,
+          cash: salesData.cash, gcash: salesData.gcash, maya: salesData.maya,
+          totalSales: salesData.total, walkInSales: salesData.total, grab: 0,
+          expenses: ex, startingCash: sc, actualCashLeft: ac, calculatedCashLeft: calcLeft,
+          cashVariance: ac - calcLeft, source: 'pos'
+        };
+        getDoc(salesRef).then(existingSnap2 => {
+          const summaryHTML2 = buildEventSalesSummaryHTML(rec, eventName, dateStr);
+          const confirmContent2 = `
+            <style>${reportModalStyles}</style>
+            <div class="eod-daily-container">
+              <h2 style="font-size: 1.25rem; margin: 0 0 0.75rem; color: #2b9348; font-weight: 600;">Confirm Submission</h2>
+              <div id="eodConfirmSummary" style="line-height: 1.56;"></div>
+              <div id="eodOverwriteWarning" class="eod-report-overwrite" style="display: ${existingSnap2.exists() ? 'block' : 'none'};">
+                <strong>⚠️ Warning:</strong> A record already exists for this date and event. Submitting will overwrite it.
+              </div>
+              <div class="eod-btn-row">
+                <button type="button" class="eod-btn-cancel" id="eodBackBtn">Back</button>
+                <button type="button" class="eod-btn-submit" id="eodConfirmBtn">Confirm</button>
+              </div>
+            </div>
+          `;
+          modal.innerHTML = confirmContent2;
+          document.getElementById('eodConfirmSummary').innerHTML = summaryHTML2;
+          document.getElementById('eodBackBtn').addEventListener('click', () => {
+            modal.innerHTML = formContent;
+            const s2 = document.getElementById('eodStartingCash');
+            const e2 = document.getElementById('eodExpenses');
+            const a2 = document.getElementById('eodActualCash');
+            s2.value = sc;
+            e2.value = ex;
+            a2.value = ac;
+            function up2() {
+              const s = parseFloat(s2.value) || 0, e = parseFloat(e2.value) || 0, a = parseFloat(a2.value) || 0;
+              const expected = s + salesData.cash - e, variance = a - expected;
+              document.getElementById('eodExpectedCash').textContent = `₱${formatWithCommas(expected.toFixed(2))}`;
+              const el = document.getElementById('eodVariance');
+              if (variance > 0) { el.style.color = '#1d8a00'; el.textContent = `+₱${formatWithCommas(variance.toFixed(2))}`; }
+              else if (variance < 0) { el.style.color = '#ff4444'; el.textContent = `-₱${formatWithCommas(Math.abs(variance).toFixed(2))}`; }
+              else { el.style.color = '#333'; el.textContent = `₱${formatWithCommas(variance.toFixed(2))}`; }
+            }
+            s2.addEventListener('input', up2);
+            e2.addEventListener('input', up2);
+            a2.addEventListener('input', up2);
+            up2();
+            document.getElementById('eodCancelBtn').addEventListener('click', () => overlay.remove());
+            document.getElementById('eodNextBtn').addEventListener('click', goConfirm);
+          });
+          document.getElementById('eodConfirmBtn').addEventListener('click', async () => {
+            overlay.remove();
+            try {
+              await setDoc(salesRef, { ...rec, timestamp: serverTimestamp() });
+              sendEventSalesEmail(rec, eventName, dateStr).catch(e => console.error(e));
+              const cashFlowData = { date: dateStr, event: currentEvent, startingCash: sc, expenses: ex, actualCash: ac, expectedCash: calcLeft, variance: ac - calcLeft, salesData, savedAt: new Date().toISOString() };
+              localStorage.setItem(cashFlowKey, JSON.stringify(cashFlowData));
+              const summaries = JSON.parse(localStorage.getItem('eodSummaries') || '[]');
+              const filtered = summaries.filter(s => !(s.date === dateStr && s.event === currentEvent));
+              filtered.push(cashFlowData);
+              localStorage.setItem('eodSummaries', JSON.stringify(filtered));
+              showPosSuccessModal(rec, eventName, dateStr, summaryHTML2);
+            } catch (e) {
+              console.error('Failed to save event sales:', e);
+              alert('Failed to submit. Please try again.');
+            }
+          });
+        });
+      });
+    });
+
+    document.getElementById('eodConfirmBtn').addEventListener('click', async () => {
+      overlay.remove();
+      try {
+        const payload = { ...record, timestamp: serverTimestamp() };
+        await setDoc(salesRef, payload);
+        sendEventSalesEmail(record, eventName, dateStr).catch(e => console.error(e));
+        const cashFlowData = { date: dateStr, event: currentEvent, startingCash, expenses, actualCash, expectedCash: calculatedCashLeft + variance, variance, salesData, savedAt: new Date().toISOString() };
+        localStorage.setItem(cashFlowKey, JSON.stringify(cashFlowData));
+        const summaries = JSON.parse(localStorage.getItem('eodSummaries') || '[]');
+        const filtered = summaries.filter(s => !(s.date === dateStr && s.event === currentEvent));
+        filtered.push(cashFlowData);
+        localStorage.setItem('eodSummaries', JSON.stringify(filtered));
+        showPosSuccessModal(record, eventName, dateStr, summaryHTML);
+      } catch (e) {
+        console.error('Failed to save event sales:', e);
+        alert('Failed to submit. Please try again.');
+      }
+    });
+  });
 }
 
-function saveCashFlowData() {
-  const dateStr = getLocalDateString(selectedDate);
-  const cashFlowKey = `cashFlow_${currentEvent}_${dateStr}`;
+function showPosSuccessModal(record, eventName, dateStr, summaryHTML) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay eod-sales-overlay';
+  overlay.id = 'posSuccessOverlay';
+  const modal = document.createElement('div');
+  modal.id = 'posSuccessModal';
+  modal.style.width = '100%';
+  modal.style.maxWidth = '560px';
+  modal.style.background = '#fff';
+  modal.style.borderRadius = '16px';
+  modal.style.padding = '1.25rem 1.5rem';
+  modal.style.boxShadow = '0 8px 20px rgba(0,0,0,0.08)';
+  modal.style.boxSizing = 'border-box';
+  modal.innerHTML = `
+    <h2 style="margin:0 0 0.5rem; color: #2b9348; font-size: 1rem; text-align: center;">✅ Sales Submitted Successfully!</h2>
+    <div id="posSuccessSummary" style="line-height: 1.56; margin: 0;"></div>
+    <div style="text-align: center; margin-top: 1rem; display: flex; gap: 0.75rem; justify-content: center;">
+      <button type="button" id="posDownloadBtn" style="padding: 0.75rem 1.5rem; background: #4a90e2; color: #fff; border: none; border-radius: 8px; font-weight: 600; cursor: pointer;">Download</button>
+      <button type="button" id="posCloseSuccessBtn" style="padding: 0.75rem 1.5rem; background: #e0e0e0; color: #333; border: none; border-radius: 8px; font-weight: 600; cursor: pointer;">Close</button>
+    </div>
+  `;
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+  document.getElementById('posSuccessSummary').innerHTML = summaryHTML;
 
-  const startingCash = parseFloat(document.getElementById('startingCash').value) || 0;
-  const expenses = parseFloat(document.getElementById('expenses').value) || 0;
-  const actualCash = parseFloat(document.getElementById('actualCash').value) || 0;
+  window._posSuccessDownloadContext = { record, eventName, dateStr, summaryHTML, modal };
 
-  const salesData = calculateSalesByPaymentMethod(selectedDate);
-  const expectedCash = startingCash + salesData.cash - expenses;
-  const variance = actualCash - expectedCash;
+  document.getElementById('posDownloadBtn').addEventListener('click', async () => {
+    const ctx = window._posSuccessDownloadContext;
+    if (!ctx || typeof html2canvas === 'undefined') return;
+    const btn = document.getElementById('posDownloadBtn');
+    const origText = btn.textContent;
+    btn.textContent = 'Generating...';
+    btn.disabled = true;
+    try {
+      const clone = ctx.modal.cloneNode(true);
+      const summaryEl = clone.querySelector('#posSuccessSummary');
+      if (summaryEl) summaryEl.innerHTML = ctx.summaryHTML;
+      clone.querySelector('#posDownloadBtn')?.remove();
+      clone.querySelector('#posCloseSuccessBtn')?.remove();
+      clone.querySelector('h2')?.remove();
+      clone.style.position = 'absolute';
+      clone.style.left = '-9999px';
+      document.body.appendChild(clone);
+      const canvas = await html2canvas(clone, { backgroundColor: '#ffffff', scale: 2, logging: false, useCORS: true });
+      document.body.removeChild(clone);
+      const link = document.createElement('a');
+      link.download = `event-sales-${(ctx.eventName || 'event').replace(/\s+/g, '-')}-${ctx.dateStr}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+      btn.textContent = origText;
+    } catch (err) {
+      console.error(err);
+      btn.textContent = origText;
+    }
+    btn.disabled = false;
+  });
 
-  const cashFlowData = {
-    date: dateStr,
-    event: currentEvent,
-    startingCash,
-    expenses,
-    actualCash,
-    expectedCash,
-    variance,
-    salesData,
-    savedAt: new Date().toISOString()
-  };
-
-  // Save to localStorage
-  localStorage.setItem(cashFlowKey, JSON.stringify(cashFlowData));
-
-  // Also save to a summary for dashboard access
-  const summaryKey = 'eodSummaries';
-  const existingSummaries = JSON.parse(localStorage.getItem(summaryKey) || '[]');
-
-  // Remove existing entry for this date/event if exists
-  const filteredSummaries = existingSummaries.filter(
-    summary => !(summary.date === dateStr && summary.event === currentEvent)
-  );
-
-  // Add new entry
-  filteredSummaries.push(cashFlowData);
-  localStorage.setItem(summaryKey, JSON.stringify(filteredSummaries));
-
-  alert('End of day summary saved successfully!');
+  document.getElementById('posCloseSuccessBtn').addEventListener('click', () => overlay.remove());
 }
 
 function showModal(content, onClose, showSaveButton = false) {
@@ -2504,12 +2886,12 @@ function showCashPaymentModal() {
   totalDisplay.className = 'payment-total';
       totalDisplay.innerHTML = '';
     
-    // Format total with Montserrat font for numerical digits
+    // Format total with Poppins font for numerical digits
     const totalLabelSpan = document.createElement('span');
     totalLabelSpan.textContent = 'Total: ₱';
     
     const priceSpan = document.createElement('span');
-    priceSpan.style.fontFamily = 'Montserrat, sans-serif';
+    priceSpan.style.fontFamily = 'Poppins, sans-serif';
     priceSpan.style.fontWeight = '600';
     priceSpan.textContent = formatWithCommas(total.toFixed(2));
     
@@ -2871,9 +3253,9 @@ function showOrderConfirmation() {
       successMessage.style.cssText = `
         width: 100%;
         text-align: center;
-        font-family: "Cocogoose pro trial", sans-serif;
+        font-family: "Poppins", sans-serif;
         font-size: 20px;
-        font-weight: 200px;
+        font-weight: 200;
         color: #1d8a00;
         opacity: 0;
         transition: opacity 0.3s ease;
@@ -2923,14 +3305,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Call migration before other initialization
   migrateExistingOrders();
 
-  initializeMenu(document.getElementById('menuContent'));
+  // Load events and event menu BEFORE first render so we show the correct menu from the start
+  // (initializeEventSelector -> loadAvailableEvents -> loadEventMenu -> refreshMenuDisplay already renders the menu once)
+  await initializeEventSelector();
+
   updateOrderDisplay();
   initializePaymentHandlers();
   initializeDatePicker();
-  updateEventDisplay();
-
-  // Load events before initializing selector
-  await initializeEventSelector();
   updateEventDisplay();
 
   // Initialize menu items in Firebase on first run
@@ -2944,6 +3325,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Schedule periodic sync
   setInterval(syncOrdersWithFirebase, 60000);
+
+  // Add window resize listener to recalculate grid columns
+  let resizeTimeout;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(() => {
+      if (isGridView) {
+        const menuContainer = document.getElementById('menuContent');
+        const menuDataToUse = currentMenuData || menuData;
+        if (menuContainer && menuDataToUse) {
+          calculateOptimalGridColumns(menuContainer, menuDataToUse.items.length);
+        }
+      }
+    }, 150);
+  });
 
   // Order header event listener
   const orderHeader = document.getElementById('orderHeader');
@@ -3218,16 +3614,16 @@ function updateDateDisplay() {
   // Update display
   if (isToday) {
     dateDisplay.textContent = 'TODAY';
-    // Keep "TODAY" in Cocogoose
-    dateDisplay.style.fontFamily = "'Cocogoose pro trial', sans-serif";
+    // Keep "TODAY" in Poppins
+    dateDisplay.style.fontFamily = "'Poppins', sans-serif";
     dateDisplay.style.fontWeight = '300';
   } else {
     dateDisplay.textContent = selectedDate.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric'
     });
-    // Change to Montserrat for dates
-    dateDisplay.style.fontFamily = "'Montserrat', sans-serif";
+    // Change to Poppins for dates
+    dateDisplay.style.fontFamily = "'Poppins', sans-serif";
     dateDisplay.style.fontWeight = '600';
   }
 
@@ -3480,7 +3876,7 @@ function showPackageOrderConfirmation() {
   const successMessage = document.createElement('div');
   successMessage.innerHTML = 'ORDER<br>SUBMITTED!';
   successMessage.style.cssText = `
-    font-family: "Cocogoose pro trial", sans-serif;
+    font-family: "Poppins", sans-serif;
     font-size: 24px;
     color: #1d8a00;
     line-height: 1.2;
@@ -3551,6 +3947,14 @@ function refreshMenuDisplay() {
   const menuContainer = document.getElementById('menuContent');
   menuContainer.innerHTML = ''; // Clear existing menu
   initializeMenu(menuContainer); // Rebuild menu with current data
+  
+  // Recalculate grid columns after refresh if in grid view
+  if (isGridView) {
+    setTimeout(() => {
+      const menuDataToUse = currentMenuData || menuData;
+      calculateOptimalGridColumns(menuContainer, menuDataToUse.items.length);
+    }, 100);
+  }
 }
 
 // Function to toggle between list and grid view
@@ -3574,6 +3978,55 @@ function toggleView() {
     }
   
   refreshMenuDisplay();
+  
+  // Recalculate grid columns after switching to grid view
+  if (isGridView) {
+    setTimeout(() => {
+      const menuDataToUse = currentMenuData || menuData;
+      calculateOptimalGridColumns(menuContainer, menuDataToUse.items.length);
+    }, 100);
+  }
+}
+
+// Calculate optimal number of grid columns based on available space and item count
+function calculateOptimalGridColumns(container, itemCount) {
+  if (!container || !isGridView) return;
+  
+  // Get container dimensions
+  const containerRect = container.getBoundingClientRect();
+  const containerWidth = containerRect.width - 16; // Account for padding (8px * 2)
+  
+  // Minimum and maximum tile widths
+  const minTileWidth = 140; // Minimum width for readability
+  const maxTileWidth = 250; // Maximum width before tiles get too large
+  const gap = 8; // Gap between items
+  
+  // Calculate maximum possible columns based on minimum tile width
+  const maxColumnsByMinWidth = Math.floor((containerWidth + gap) / (minTileWidth + gap));
+  
+  // Calculate optimal columns based on item count and available space
+  // Try to balance: not too many columns (small tiles) and not too few (large tiles)
+  let optimalColumns = maxColumnsByMinWidth;
+  
+  // If we have fewer items than max columns, use item count (but at least 2 columns)
+  if (itemCount < maxColumnsByMinWidth) {
+    optimalColumns = Math.max(2, itemCount);
+  }
+  
+  // Check if tiles would be too large with this column count
+  const tileWidth = (containerWidth - (optimalColumns - 1) * gap) / optimalColumns;
+  if (tileWidth > maxTileWidth && optimalColumns < itemCount) {
+    // Increase columns to reduce tile size
+    optimalColumns = Math.min(itemCount, Math.ceil((containerWidth + gap) / (maxTileWidth + gap)));
+  }
+  
+  // Ensure we have at least 2 columns and at most 8 columns for very large screens
+  optimalColumns = Math.max(2, Math.min(8, optimalColumns));
+  
+  // Set CSS custom property
+  container.style.setProperty('--grid-columns', optimalColumns);
+  
+  return optimalColumns;
 }
 
 // Update the initializeMenu function to use currentMenuData instead of importing menuData
@@ -3586,6 +4039,13 @@ function initializeMenu(container) {
       const menuItemElement = createMenuItemElement(item);
       container.appendChild(menuItemElement);
     });
+    
+    // Calculate and set optimal grid columns after items are added
+    // Use setTimeout to ensure DOM is updated
+    setTimeout(() => {
+      const itemCount = menuDataToUse.items.length;
+      calculateOptimalGridColumns(container, itemCount);
+    }, 0);
   } else {
     // In list view, show items organized by categories
     menuDataToUse.categories.forEach(category => {

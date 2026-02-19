@@ -1,4 +1,4 @@
-const APP_VERSION = "1.07"; // Bump this to clear cache - Year boundary handling verified
+const APP_VERSION = "1.09"; // Bump this to clear cache - Fixed sales data to always load SM North only
 console.log('✅ Admin Payroll script loaded - Version:', APP_VERSION);
 
 // Import Firebase modules
@@ -899,9 +899,10 @@ async function loadSingleEmployeeData(employeeId, periodId = null) {
         await loadHolidays();
         
         // Load sales data only if employee is eligible
+        // IMPORTANT: Sales bonus is only for SM North, so always load SM North sales data
         let salesData = {};
         if (employeeDoc.exists() && employeeDoc.data().salesBonusEligible) {
-            salesData = await loadSalesData(branch);
+            salesData = await loadSalesData('sm-north');
         }
         
         // Initialize PayCalculator with minimal data
@@ -1092,7 +1093,9 @@ async function loadData(selectedPeriodId = null) {
         await loadAllEmployees();
 
         // Load sales data for bonus calculations
-        const salesData = await loadSalesData(branchId);
+        // IMPORTANT: Sales bonus is only for SM North, so always load SM North sales data
+        // regardless of branch filter (branch filter is for attendance, not sales)
+        const salesData = await loadSalesData('sm-north');
         window.salesDataCache = salesData;
 
         // Initialize PayCalculator with current data
@@ -2256,7 +2259,7 @@ function getLatnessColorClass(avgLateness) {
 
 async function uploadHolidaysToFirebase() {
     try {
-        await setDoc(doc(db, "settings", "holidays_2025"), HOLIDAYS_2025);
+        await setDoc(doc(db, "config", "holidays_2025"), HOLIDAYS_2025);
         console.log("Holidays uploaded to Firebase");
     } catch (error) {
         console.error("Error uploading holidays:", error);
@@ -4334,9 +4337,37 @@ function loadPayBreakdown(employeeId, dateStr, detailRow) {
     if (employee.salesBonusEligible) {
         const salesData = window.salesDataCache[dateStr];
         if (salesData) {
-            const totalSales = salesData.totalSales ||
-                ((salesData.cash || 0) + (salesData.gcash || 0) + (salesData.maya || 0) +
-                    (salesData.card || 0) + (salesData.grab || 0));
+            // Debug: Log the raw sales data to verify what we're reading
+            console.log(`[Sales Debug] Date: ${dateStr}`, {
+                cash: salesData.cash,
+                gcash: salesData.gcash,
+                maya: salesData.maya,
+                card: salesData.card,
+                grab: salesData.grab,
+                totalSales: salesData.totalSales,
+                hasGrab: 'grab' in salesData,
+                grabUndefined: salesData.grab === undefined
+            });
+            
+            // Use the same calculation as sales dashboard
+            // Fallback to inline calculation if method doesn't exist (for cache compatibility)
+            let totalSales;
+            if (payCalculator.calculateTotalSalesFromData) {
+                totalSales = payCalculator.calculateTotalSalesFromData(salesData);
+            } else {
+                // Fallback: match sales dashboard logic exactly
+                const hasGrabData = 'grab' in salesData && salesData.grab !== undefined;
+                if (hasGrabData) {
+                    const walkInSales = (salesData.cash || 0) + (salesData.gcash || 0) + 
+                                       (salesData.maya || 0) + (salesData.card || 0);
+                    totalSales = walkInSales + (salesData.grab || 0);
+                } else {
+                    totalSales = salesData.totalSales || 0;
+                }
+            }
+            
+            console.log(`[Sales Debug] Calculated totalSales: ${totalSales} for ${dateStr}`);
+            
             const date = new Date(dateStr);
             const staffCount = payCalculator.getStaffingLevel(date, attendanceData);
             const quota = payCalculator.getQuotaForStaffing(staffCount);
@@ -5540,6 +5571,14 @@ document.addEventListener('DOMContentLoaded', async function () {
     closeHolidaysModal.addEventListener('click', closeHolidaysModalFunc);
     closeHolidaysBtn.addEventListener('click', closeHolidaysModalFunc);
     addHolidayForm.addEventListener('submit', saveNewHoliday);
+    
+    // Toggle for past holidays
+    const showPastHolidaysCheckbox = document.getElementById('showPastHolidays');
+    if (showPastHolidaysCheckbox) {
+        showPastHolidaysCheckbox.addEventListener('change', renderHolidaysTable);
+    }
+    
+    // Bulk import event listeners - will be set up when modal opens
 
     // Add event listener for fixed pay checkbox
     editShiftFixedPay.addEventListener('change', function () {
@@ -5588,6 +5627,24 @@ document.addEventListener('DOMContentLoaded', async function () {
 function openHolidaysModal() {
     renderHolidaysTable();
     holidaysModal.style.display = 'flex';
+    
+    // Setup bulk import listener when modal opens
+    const bulkHolidayFileInput = document.getElementById('bulkHolidayFileInput');
+    
+    if (bulkHolidayFileInput) {
+        // Remove old listener
+        const newInput = bulkHolidayFileInput.cloneNode(true);
+        bulkHolidayFileInput.replaceWith(newInput);
+        
+        // Get fresh reference and add listener
+        const input = document.getElementById('bulkHolidayFileInput');
+        input.onchange = function(e) {
+            console.log('File selected:', this.files);
+            if (this.files && this.files[0]) {
+                importBulkHolidays();
+            }
+        };
+    }
 }
 
 function closeHolidaysModalFunc() {
@@ -5597,10 +5654,25 @@ function closeHolidaysModalFunc() {
 function renderHolidaysTable() {
     holidaysTableBody.innerHTML = '';
 
+    // Get toggle state
+    const showPastHolidays = document.getElementById('showPastHolidays')?.checked || false;
+    
+    // Get today's date (start of day for comparison)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
     // Convert HOLIDAYS_2025 object to array and sort by date
-    const holidayArray = Object.entries(HOLIDAYS_2025)
+    let holidayArray = Object.entries(HOLIDAYS_2025)
         .map(([date, holiday]) => ({ date, ...holiday }))
         .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    // Filter out past holidays if toggle is off
+    if (!showPastHolidays) {
+        holidayArray = holidayArray.filter(holiday => {
+            const holidayDate = new Date(holiday.date + 'T00:00:00');
+            return holidayDate >= today;
+        });
+    }
 
     holidayArray.forEach(holiday => {
         const row = document.createElement('tr');
@@ -5711,6 +5783,148 @@ async function deleteHoliday(dateStr) {
     } catch (error) {
         console.error('Error deleting holiday:', error);
         alert('Failed to delete holiday. Please try again.');
+    }
+}
+
+// Bulk import functions
+async function importBulkHolidays() {
+    const bulkHolidayFileInput = document.getElementById('bulkHolidayFileInput');
+    const overwrite = document.getElementById('bulkImportOverwrite').checked;
+    
+    // Check if file is selected
+    if (!bulkHolidayFileInput || !bulkHolidayFileInput.files || !bulkHolidayFileInput.files[0]) {
+        alert('Please select a JSON file.');
+        return;
+    }
+    
+    const file = bulkHolidayFileInput.files[0];
+    
+    // Read file
+    let jsonText;
+    try {
+        jsonText = await file.text();
+    } catch (error) {
+        alert('Failed to read file: ' + error.message);
+        return;
+    }
+    
+    let holidays;
+    try {
+        holidays = JSON.parse(jsonText);
+    } catch (error) {
+        alert('Invalid JSON format. Please check your JSON syntax.');
+        console.error('JSON parse error:', error);
+        return;
+    }
+    
+    if (!Array.isArray(holidays)) {
+        alert('JSON must be an array of holiday objects.');
+        return;
+    }
+    
+    if (holidays.length === 0) {
+        alert('Holiday array is empty.');
+        return;
+    }
+    
+    // Validate each holiday object
+    const validHolidays = [];
+    const errors = [];
+    
+    holidays.forEach((holiday, index) => {
+        if (!holiday.date || !holiday.name || !holiday.type) {
+            errors.push(`Holiday at index ${index}: Missing required fields (date, name, or type)`);
+            return;
+        }
+        
+        // Validate date format (YYYY-MM-DD)
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        if (!dateRegex.test(holiday.date)) {
+            errors.push(`Holiday at index ${index}: Invalid date format "${holiday.date}". Use YYYY-MM-DD format.`);
+            return;
+        }
+        
+        // Validate type
+        if (holiday.type !== 'regular' && holiday.type !== 'special') {
+            errors.push(`Holiday at index ${index}: Invalid type "${holiday.type}". Must be "regular" or "special".`);
+            return;
+        }
+        
+        // Check for duplicates in import
+        if (validHolidays.some(h => h.date === holiday.date)) {
+            errors.push(`Holiday at index ${index}: Duplicate date "${holiday.date}" in import data.`);
+            return;
+        }
+        
+        // Check if holiday already exists (unless overwrite is enabled)
+        if (!overwrite && HOLIDAYS_2025[holiday.date]) {
+            errors.push(`Holiday at index ${index}: "${holiday.name}" already exists on ${holiday.date}. Enable "Overwrite" to replace.`);
+            return;
+        }
+        
+        validHolidays.push({
+            date: holiday.date,
+            name: holiday.name.trim(),
+            type: holiday.type
+        });
+    });
+    
+    if (errors.length > 0) {
+        const errorMessage = `Validation errors:\n\n${errors.slice(0, 10).join('\n')}${errors.length > 10 ? `\n\n... and ${errors.length - 10} more errors.` : ''}`;
+        if (!confirm(`${errorMessage}\n\nDo you want to import the ${validHolidays.length} valid holidays anyway?`)) {
+            return;
+        }
+    }
+    
+    if (validHolidays.length === 0) {
+        alert('No valid holidays to import.');
+        return;
+    }
+    
+    try {
+        // Add holidays to local object
+        let addedCount = 0;
+        let updatedCount = 0;
+        
+        validHolidays.forEach(holiday => {
+            const existed = HOLIDAYS_2025[holiday.date] ? true : false;
+            HOLIDAYS_2025[holiday.date] = {
+                name: holiday.name,
+                type: holiday.type
+            };
+            
+            if (existed) {
+                updatedCount++;
+            } else {
+                addedCount++;
+            }
+        });
+        
+        // Save to Firebase
+        await setDoc(doc(db, "config", "holidays_2025"), HOLIDAYS_2025);
+        
+        // Clear the file input
+        if (bulkHolidayFileInput) {
+            bulkHolidayFileInput.value = '';
+        }
+        
+        // Refresh the table
+        renderHolidaysTable();
+        
+        // Update summary cards
+        updateSummaryCards();
+        
+        // Show success message
+        const message = `Successfully imported ${validHolidays.length} holidays (${addedCount} added, ${updatedCount} updated)`;
+        showToast(message);
+        console.log(message);
+        
+        if (errors.length > 0) {
+            console.warn('Import completed with errors:', errors);
+        }
+    } catch (error) {
+        console.error('Error importing holidays:', error);
+        alert('Failed to import holidays: ' + error.message);
     }
 }
 
@@ -5934,6 +6148,27 @@ async function saveNewShift(e) {
 
 // Add these functions
 async function openPaymentModal(employeeId) {
+    console.log('[Payment] openPaymentModal called, employeeId:', employeeId);
+    const modal = document.getElementById('paymentModal');
+    const paymentForm = document.getElementById('paymentForm');
+    const closeBtn = document.getElementById('closePaymentModal');
+    const overlay = document.getElementById('paymentModalLoadingOverlay');
+    // Force clean state every time we open: ensure overlay hidden and not blocking clicks
+    if (overlay) {
+        overlay.style.display = 'none';
+        overlay.style.visibility = 'hidden';
+        overlay.style.pointerEvents = 'none';
+    }
+    if (paymentForm) {
+        paymentForm.querySelectorAll('input, select, textarea, button').forEach(el => { el.disabled = false; });
+    }
+    if (closeBtn) closeBtn.style.pointerEvents = 'auto';
+    // Move modal to end of body so it stays on top after table re-renders (fixes second-open stuck)
+    if (modal) {
+        document.body.appendChild(modal);
+    }
+    console.log('[Payment] openPaymentModal: reset overlay/form/closeBtn');
+
     const employee = employees[employeeId];
     const currentPeriod = periodSelect.options[periodSelect.selectedIndex].text;
     const periodId = periodSelect.value;
@@ -6026,7 +6261,8 @@ async function openPaymentModal(employeeId) {
         console.error('Error checking existing payment:', error);
     }
 
-    document.getElementById('paymentModal').style.display = 'flex';
+    if (modal) modal.style.display = 'flex';
+    console.log('[Payment] openPaymentModal done, modal visible');
 }
 
 function showUpdateForm() {
@@ -6050,10 +6286,13 @@ function getTransferMethodText(method) {
 }
 
 function closePaymentModal() {
+    console.log('[Payment] closePaymentModal called');
     const modal = document.getElementById('paymentModal');
     const loadingOverlay = document.getElementById('paymentModalLoadingOverlay');
     if (loadingOverlay) {
         loadingOverlay.style.display = 'none';
+        loadingOverlay.style.visibility = 'hidden';
+        loadingOverlay.style.pointerEvents = 'none';
     }
     if (modal) {
         modal.style.display = 'none';
@@ -6062,6 +6301,7 @@ function closePaymentModal() {
 
 async function savePaymentConfirmation(e) {
     e.preventDefault();
+    console.log('[Payment] savePaymentConfirmation called (form submit)');
 
     const employeeId = document.getElementById('paymentEmployeeId').value;
     const periodId = periodSelect.value;
@@ -6071,14 +6311,17 @@ async function savePaymentConfirmation(e) {
     const paymentAmount = parseFloat(document.getElementById('paymentAmount').value) || 0;
 
     if (!transferMethod) {
+        console.log('[Payment] savePaymentConfirmation: validation failed - no transfer method');
         showToast('Please select a transfer method', 'error');
         return;
     }
 
     if (paymentAmount <= 0) {
+        console.log('[Payment] savePaymentConfirmation: validation failed - invalid amount', paymentAmount);
         showToast('Please enter a valid payment amount', 'error');
         return;
     }
+    console.log('[Payment] savePaymentConfirmation: validation ok, disabling form and showing overlay');
 
     // Note: Screenshot and note are now optional - you can mark as paid without them
 
@@ -6086,6 +6329,8 @@ async function savePaymentConfirmation(e) {
     const paymentModalLoadingOverlay = document.getElementById('paymentModalLoadingOverlay');
     if (paymentModalLoadingOverlay) {
         paymentModalLoadingOverlay.style.display = 'flex';
+        paymentModalLoadingOverlay.style.visibility = 'visible';
+        paymentModalLoadingOverlay.style.pointerEvents = 'auto';
     }
     
     // Disable form inputs and buttons during loading
@@ -6093,11 +6338,13 @@ async function savePaymentConfirmation(e) {
     const submitBtn = paymentForm.querySelector('button[type="submit"]');
     const cancelBtn = document.getElementById('cancelPaymentBtn');
     const closeBtn = document.getElementById('closePaymentModal');
+    const originalButtonHTML = submitBtn ? submitBtn.innerHTML : '';
     
     // Disable all form inputs
     const formInputs = paymentForm.querySelectorAll('input, select, textarea, button');
     formInputs.forEach(input => input.disabled = true);
     if (closeBtn) closeBtn.style.pointerEvents = 'none';
+    console.log('[Payment] savePaymentConfirmation: form disabled, starting save...');
 
     try {
         let downloadURL = null;
@@ -6157,10 +6404,16 @@ async function savePaymentConfirmation(e) {
         const cacheKey = `payment_confirmations_${periodId}`;
         localStorage.removeItem(cacheKey);
 
-        console.log('Payment confirmation saved successfully');
+        console.log('[Payment] savePaymentConfirmation: Firestore save ok, reloading table...');
         
         // Refresh payment status indicators and reload table
         await loadPaymentDataAndRender();
+        console.log('[Payment] savePaymentConfirmation: loadPaymentDataAndRender done');
+        
+        // Re-enable form and close button so modal works again for next employee
+        formInputs.forEach(input => input.disabled = false);
+        if (closeBtn) closeBtn.style.pointerEvents = 'auto';
+        console.log('[Payment] savePaymentConfirmation: form re-enabled, closing modal');
         
         // Hide loading overlay and close modal after successful save
         if (paymentModalLoadingOverlay) {
@@ -6180,9 +6433,11 @@ async function savePaymentConfirmation(e) {
         // Re-enable form inputs on error
         formInputs.forEach(input => input.disabled = false);
         if (closeBtn) closeBtn.style.pointerEvents = 'auto';
-        submitBtn.innerHTML = originalButtonHTML;
-        submitBtn.style.opacity = '1';
-        submitBtn.style.cursor = 'pointer';
+        if (submitBtn && originalButtonHTML) submitBtn.innerHTML = originalButtonHTML;
+        if (submitBtn) {
+            submitBtn.style.opacity = '1';
+            submitBtn.style.cursor = 'pointer';
+        }
     }
 }
 
@@ -6208,10 +6463,17 @@ async function uploadPaymentScreenshot(imageDataUrl, employeeId, periodId) {
     }
 }
 
-// Add event listeners
+// Add event listeners (once)
+const paymentFormEl = document.getElementById('paymentForm');
+if (paymentFormEl) {
+    paymentFormEl.addEventListener('submit', function paymentFormSubmit(e) {
+        console.log('[Payment] paymentForm submit event fired');
+        savePaymentConfirmation(e);
+    });
+    console.log('[Payment] paymentForm submit listener attached');
+}
 document.getElementById('closePaymentModal').addEventListener('click', closePaymentModal);
 document.getElementById('cancelPaymentBtn').addEventListener('click', closePaymentModal);
-document.getElementById('paymentForm').addEventListener('submit', savePaymentConfirmation);
 window.showUpdateForm = showUpdateForm;
 
 // Payment amount field event listener to update hint

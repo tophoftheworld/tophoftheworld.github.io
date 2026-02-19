@@ -1000,11 +1000,24 @@
       text-overflow: ellipsis;
     }
     
-    .weekly-table th:nth-child(n+4),
-    .weekly-table td:nth-child(n+4) {
-      width: 10%; /* Each day column - increased from 9% to 10% */
+    .weekly-table th:nth-child(n+4):not(:last-child),
+    .weekly-table td:nth-child(n+4):not(:last-child) {
+      width: 9%; /* Each day column - adjusted to accommodate total column */
       text-align: center; /* Changed from right to center */
       font-weight: 500;
+    }
+    
+    /* Total column styling (only in usage mode) */
+    .weekly-table th.total-column-header {
+      width: 10%; /* Total column */
+      text-align: center;
+      font-weight: 600; /* Slightly bolder for emphasis */
+      background-color: #f8f9fa !important; /* Subtle background to distinguish */
+    }
+    
+    .weekly-table td.total-column {
+      background-color: #f8f9fa;
+      font-weight: 600; /* Slightly bolder for emphasis */
     }
     
     /* Segmented Control Styles (from sales dashboard) */
@@ -1146,6 +1159,13 @@
                 <option value="sm-north">SM North</option>
                 <option value="podium" selected>Podium</option>
               </select>
+            </div>
+            <div class="control-group">
+              <div class="date-picker">
+                <button class="date-nav-btn" id="weeklyPrevDate">‹</button>
+                <div class="date-display" id="weeklyDateDisplay"></div>
+                <button class="date-nav-btn" id="weeklyNextDate">›</button>
+              </div>
             </div>
             <div class="control-group">
               <div class="segmented-control">
@@ -1384,6 +1404,6 @@
   </div>
 
 
-  <script type="module" src="js/inventory-builder.js?v=40&t=1736000015"></script>
+  <script type="module" src="js/inventory-builder.js?v=43&t=1738600000"></script>
 </body>
 </html>

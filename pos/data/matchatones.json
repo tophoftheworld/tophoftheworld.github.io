@@ -1,0 +1,42 @@
+{
+  "categories": [
+    {
+      "id": "matcha-tones",
+      "name": "Matcha Tones"
+    }
+  ],
+  "items": [
+    {
+      "categoryId": "matcha-tones",
+      "name": "Pure Matcha",
+      "description": "HOT | ICED",
+      "price": 200,
+      "type": "Hot or Iced",
+      "shorthand": "PM"
+    },
+    {
+      "categoryId": "matcha-tones",
+      "name": "Matcha Latte",
+      "description": "ICED",
+      "price": 220,
+      "type": "Iced",
+      "shorthand": "ML"
+    },
+    {
+      "categoryId": "matcha-tones",
+      "name": "Earl Grey Matcha Latte",
+      "description": "ICED",
+      "price": 250,
+      "type": "Iced",
+      "shorthand": "EGML"
+    },
+    {
+      "categoryId": "matcha-tones",
+      "name": "Strawberry Matcha Latte",
+      "description": "ICED",
+      "price": 250,
+      "type": "Iced",
+      "shorthand": "STML"
+    }
+  ]
+}

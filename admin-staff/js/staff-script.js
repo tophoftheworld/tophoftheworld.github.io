@@ -1,5 +1,9 @@
 // Staff Management Script
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+import {
+    getAuth,
+    onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
 import { 
     getFirestore, 
     collection, 
@@ -23,6 +27,9 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-storage.js";
 
 // Firebase configuration
+// Use the same storage bucket as the rest of the app so CORS / rules are consistent.
+// Other modules (e.g. menu-creator, POS) use "matchanese-attendance.firebasestorage.app"
+// and have working uploads, so we align with that here.
 const firebaseConfig = {
     apiKey: "AIzaSyA6ikBMsQACcUpn4Jff7PQFeWLN8wv18EE",
     authDomain: "matchanese-attendance.firebaseapp.com",
@@ -35,6 +42,9 @@ const firebaseConfig = {
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
+// IMPORTANT: initialize Auth so Storage requests include the user's token.
+// Without importing firebase-auth, Storage uploads may be anonymous and get blocked by rules.
+const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
 
@@ -63,10 +73,36 @@ document.addEventListener('DOMContentLoaded', async () => {
         modal.style.display = 'none';
     });
     
+    // Ensure we're signed in before doing Storage operations.
+    // This page relies on the existing Firebase Auth session created by the admin dashboard/login.
+    const user = await waitForAuthReady();
+    if (!user) {
+        // Redirect to admin login if not authenticated
+        window.location.href = '../admin-login.html';
+        return;
+    }
+
     await loadEmployees();
     setupEventListeners();
     renderEmployeeTable();
 });
+
+function waitForAuthReady() {
+    return new Promise((resolve) => {
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
+            unsubscribe();
+            resolve(user || null);
+        });
+
+        // Fallback: don't hang forever if the callback is delayed
+        setTimeout(() => {
+            try {
+                unsubscribe();
+            } catch (_) {}
+            resolve(auth.currentUser || null);
+        }, 2500);
+    });
+}
 
 // Load employees from Firebase
 async function loadEmployees() {
@@ -120,10 +156,36 @@ async function loadEmployees() {
     }
 }
 
+// Get next account code: last stored (numeric) code + 1, or 1 if none
+function getNextAccountCode() {
+    const ids = Object.keys(employees);
+    let maxNum = 0;
+    for (const id of ids) {
+        const n = parseInt(id, 10);
+        if (!Number.isNaN(n) && n > maxNum) maxNum = n;
+    }
+    return String(maxNum + 1);
+}
+
+// Open add employee modal with next account code pre-filled
+function openAddEmployeeModal() {
+    const nextCode = getNextAccountCode();
+    const addEmployeeIdInput = document.getElementById('addEmployeeId');
+    if (addEmployeeIdInput) {
+        addEmployeeIdInput.value = nextCode;
+        addEmployeeIdInput.removeAttribute('readonly'); // ensure editable if they want to override
+    }
+    openModal(addEmployeeModal);
+    // Set again after modal is shown in case anything cleared it
+    requestAnimationFrame(() => {
+        if (addEmployeeIdInput) addEmployeeIdInput.value = nextCode;
+    });
+}
+
 // Setup event listeners
 function setupEventListeners() {
     // Buttons
-    addEmployeeBtn.addEventListener('click', () => openModal(addEmployeeModal));
+    addEmployeeBtn.addEventListener('click', openAddEmployeeModal);
     refreshBtn.addEventListener('click', loadEmployees);
     
     // Modal close buttons
@@ -467,13 +529,14 @@ async function handleAddEmployee(e) {
     
     const employeeId = document.getElementById('addEmployeeId').value;
     const name = document.getElementById('addEmployeeName').value;
+    const role = document.getElementById('addRoleSelect').value;
     const nickname = document.getElementById('addNickname').value;
     const baseRate = parseFloat(document.getElementById('addBaseRate').value) || 0;
     const photoFile = document.getElementById('addPhoto').files[0];
     
-    // Check if employee ID already exists
+    // Check if account code already exists
     if (employees[employeeId]) {
-        alert('Employee ID already exists. Please use a different ID.');
+        alert('Account code already exists. Please use a different code.');
         return;
     }
     
@@ -494,19 +557,19 @@ async function handleAddEmployee(e) {
             nickname: nickname,
             baseRate: baseRate,
             active: true,
-            role: 'staff',
+            role: role,
             photoUrl: photoUrl,
             createdAt: new Date()
         });
         
-        // Add to local data
+        // Add to local data (manager permissions can be set later via Manage Role)
         employees[employeeId] = {
             id: employeeId,
             name: name,
             nickname: nickname,
             baseRate: baseRate,
             active: true,
-            role: 'staff',
+            role: role,
             photoUrl: photoUrl,
             permissions: {}
         };
@@ -514,7 +577,7 @@ async function handleAddEmployee(e) {
         const provisionResult = await provisionEmployeeAccount(
             employeeId,
             name,
-            'staff',
+            role,
             employees[employeeId].permissions || {}
         );
         
@@ -656,8 +719,8 @@ async function provisionEmployeeAccount(employeeId, employeeName, role = 'staff'
     const email = `${employeeId}@matchanese.local`.toLowerCase();
     const password = employeeId;
     const readableErrors = {
-        EMAIL_EXISTS: 'An account already exists for this employee code.',
-        INVALID_PASSWORD: 'The existing account has a different password. Please reset it to the employee code in Firebase Console.',
+        EMAIL_EXISTS: 'An account already exists for this account code.',
+        INVALID_PASSWORD: 'The existing account has a different password. Please reset it to the account code in Firebase Console.',
         USER_DISABLED: 'The account is disabled in Firebase Authentication.',
         OPERATION_NOT_ALLOWED: 'Password sign-in is disabled for this project.',
         TOO_MANY_ATTEMPTS_TRY_LATER: 'Too many attempts. Please wait a few minutes before trying again.'
@@ -758,6 +821,62 @@ async function saveAdminUserRecord(localId, employeeId, employeeName, role = 'st
     }
 }
 
+// Compress image before upload (resize + JPEG quality) to avoid failures and save space
+function compressImage(file) {
+    return new Promise((resolve, reject) => {
+        if (!file.type.startsWith('image/')) {
+            reject(new Error('Not an image'));
+            return;
+        }
+        const maxWidth = 1200;
+        const maxHeight = 1200;
+        const jpegQuality = 0.82;
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+            URL.revokeObjectURL(url);
+            let { width, height } = img;
+            if (width <= maxWidth && height <= maxHeight && file.size < 500 * 1024) {
+                // Already small enough, use original (but ensure we have a blob for upload)
+                resolve(file);
+                return;
+            }
+            const scale = Math.min(maxWidth / width, maxHeight / height, 1);
+            width = Math.round(width * scale);
+            height = Math.round(height * scale);
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                resolve(file);
+                return;
+            }
+            ctx.drawImage(img, 0, 0, width, height);
+            try {
+                canvas.toBlob(
+                    (blob) => {
+                        if (blob && blob.size < file.size) {
+                            resolve(blob);
+                        } else {
+                            resolve(file);
+                        }
+                    },
+                    'image/jpeg',
+                    jpegQuality
+                );
+            } catch (err) {
+                resolve(file);
+            }
+        };
+        img.onerror = () => {
+            URL.revokeObjectURL(url);
+            resolve(file); // fallback to original
+        };
+        img.src = url;
+    });
+}
+
 // Photo upload and management functions
 window.uploadPhoto = function(employeeId) {
     const input = document.createElement('input');
@@ -835,37 +954,48 @@ async function handlePhotoUpload(employeeId, file) {
             return;
         }
         
-        // Validate file size (max 5MB)
-        if (file.size > 5 * 1024 * 1024) {
-            alert('File size must be less than 5MB.');
+        // Validate file size (max 10MB before compression)
+        if (file.size > 10 * 1024 * 1024) {
+            alert('File size must be less than 10MB.');
             return;
         }
         
-        // Create storage reference
+        // Compress image to reduce size and avoid upload failures
+        const data = await compressImage(file);
+        const contentType = data.type || 'image/jpeg';
+        const metadata = { contentType };
+        
+        // Create storage reference (use .jpg for compressed uploads so URL is consistent)
         const storageRef = ref(storage, `staff-photos/${employeeId}`);
         
-        // Upload file
-        const snapshot = await uploadBytes(storageRef, file);
-        
-        // Get download URL
+        const snapshot = await uploadBytes(storageRef, data, metadata);
         const photoUrl = await getDownloadURL(snapshot.ref);
         
-        // Update employee record in Firestore
         const employeeRef = doc(db, "employees", employeeId);
         await updateDoc(employeeRef, {
             photoUrl: photoUrl,
             photoUpdatedAt: new Date()
         });
         
-        // Update local data
-        employees[employeeId].photoUrl = photoUrl;
-        
+        if (employees[employeeId]) {
+            employees[employeeId].photoUrl = photoUrl;
+        }
         renderEmployeeTable();
         alert('Photo uploaded successfully!');
         
     } catch (error) {
         console.error("Error uploading photo:", error);
-        alert("Failed to upload photo. Please try again.");
+        const code = error?.code || '';
+        const msg = error?.message || String(error);
+        let hint = "Please try again.";
+        if (code === 'storage/unauthorized' || msg.includes('permission') || msg.includes('Permission')) {
+            hint = "Storage rules may be blocking uploads. In Firebase Console → Storage → Rules, ensure staff-photos allows write. If you use a different origin (e.g. localhost), you may need to set CORS on the bucket (see Firebase Storage CORS docs).";
+        } else if (code === 'storage/unknown' || msg.includes('CORS') || msg.includes('fetch')) {
+            hint = "This can be a CORS issue. Configure CORS on your Storage bucket for your site's origin (e.g. http://localhost:8080) using gsutil cors set.";
+        } else if (msg.includes('quota')) {
+            hint = "Storage quota may be exceeded. Check Firebase Console → Usage.";
+        }
+        alert("Failed to upload photo: " + (msg || code) + "\n\n" + hint);
     } finally {
         showLoading(false);
     }
@@ -873,25 +1003,20 @@ async function handlePhotoUpload(employeeId, file) {
 
 // Upload employee photo (for modal forms)
 async function uploadEmployeePhoto(employeeId, file) {
-    // Validate file type
     if (!file.type.startsWith('image/')) {
         throw new Error('Please select a valid image file.');
     }
-    
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-        throw new Error('File size must be less than 5MB.');
+    if (file.size > 10 * 1024 * 1024) {
+        throw new Error('File size must be less than 10MB.');
     }
     
-    // Create storage reference
+    const data = await compressImage(file);
+    const contentType = data.type || 'image/jpeg';
+    const metadata = { contentType };
+    
     const storageRef = ref(storage, `staff-photos/${employeeId}`);
-    
-    // Upload file
-    const snapshot = await uploadBytes(storageRef, file);
-    
-    // Get download URL
+    const snapshot = await uploadBytes(storageRef, data, metadata);
     const photoUrl = await getDownloadURL(snapshot.ref);
-    
     return photoUrl;
 }
 

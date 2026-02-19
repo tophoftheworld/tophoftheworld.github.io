@@ -61,7 +61,7 @@ let holdInterval = null;
 let isHolding = false;
 
 let currentBranch = localStorage.getItem('selected-branch') || 'sm-north';
-let availableBranches = ['sm-north', 'podium'];
+let availableBranches = ['sm-north', 'podium', 'moa'];
 let allBranches = []; // Will be loaded from Firebase
 
 let syncTimeouts = new Map(); // Store timeout IDs per item
@@ -611,11 +611,49 @@ function handleBranchChange(event) {
         localStorage.setItem('selected-branch', currentBranch);
         console.log('Selected branch:', currentBranch);
 
-        // Load inventory for this branch
+        // Immediately load this branch's local data so UI doesn't show previous branch's values
+        loadCurrentBranchLocalData();
+        renderInventory();
+
+        // Then sync with Firebase (items + quantities) for this branch
         loadBranchInventory();
 
         const branchName = getBranchDisplayName(currentBranch);
         showSyncIndicator(`Switched to ${branchName}`, 'info');
+    }
+}
+
+/** Load inventory items and quantities from localStorage for currentBranch. Call after switching branch so UI shows the right data. */
+function loadCurrentBranchLocalData() {
+    // Load items from cache for this branch (same key as cacheInventoryItems uses)
+    const cachedItems = loadInventoryItemsFromCache();
+    if (cachedItems && Array.isArray(cachedItems)) {
+        inventoryItems = cachedItems;
+    } else {
+        const savedItems = localStorage.getItem(`${STORAGE_KEYS.INVENTORY}-${currentBranch}`);
+        if (savedItems) {
+            try {
+                const parsed = JSON.parse(savedItems);
+                inventoryItems = Array.isArray(parsed) ? parsed : [];
+            } catch (_) {
+                inventoryItems = [];
+            }
+        } else {
+            inventoryItems = [];
+        }
+    }
+
+    // Load quantities from localStorage for this branch so we don't show the previous branch's values
+    const savedQuantities = localStorage.getItem(`${STORAGE_KEYS.QUANTITIES}-${currentBranch}`);
+    if (savedQuantities) {
+        try {
+            quantities = JSON.parse(savedQuantities);
+            migrateQuantityData();
+        } catch (_) {
+            quantities = {};
+        }
+    } else {
+        quantities = {};
     }
 }
 
@@ -662,9 +700,9 @@ async function saveBranchToFirebase(branchData) {
 }
 
 function getBranchDisplayName(branchKey) {
-    // Only two branches visible for now
     if (branchKey === 'sm-north') return 'SM North';
     if (branchKey === 'podium') return 'Podium';
+    if (branchKey === 'moa') return 'MOA';
     return branchKey;
 }
 
@@ -685,6 +723,11 @@ function updateBranchDropdown() {
     podiumOption.value = 'podium';
     podiumOption.textContent = 'Podium';
     branchSelect.appendChild(podiumOption);
+
+    const moaOption = document.createElement('option');
+    moaOption.value = 'moa';
+    moaOption.textContent = 'MOA';
+    branchSelect.appendChild(moaOption);
 
     // Set the current branch value
     branchSelect.value = currentBranch;
@@ -809,13 +852,21 @@ async function loadQuantitiesFromFirebase() {
         }
 
         const dateKey = getDateKey();
-        
+
+        // Start with a clean slate for this branch/date so we never show another branch's data
+        quantities[dateKey] = {};
+        inventoryItems.forEach(item => {
+            quantities[dateKey][item.id] = {
+                opening: { value: 0, checked: false },
+                closing: { value: 0, checked: false },
+                added: { value: 0, checked: false },
+                adjustments: []
+            };
+        });
+
         // Get daily document from branch subcollection
         const docRef = doc(db, 'inventory-quantities', currentBranch, 'daily-quantities', dateKey);
         const docSnap = await getDoc(docRef);
-
-        // Get current quantities to merge with
-        const currentQuantities = getCurrentDateQuantities();
 
         if (docSnap.exists()) {
             const data = docSnap.data();
@@ -824,8 +875,8 @@ async function loadQuantitiesFromFirebase() {
             // Merge Firebase quantities with current quantities
             Object.keys(firebaseQuantities).forEach(itemId => {
                 // Initialize item if it doesn't exist
-                if (!currentQuantities[itemId]) {
-                    currentQuantities[itemId] = {
+                if (!quantities[dateKey][itemId]) {
+                    quantities[dateKey][itemId] = {
                         opening: { value: 0, checked: false },
                         closing: { value: 0, checked: false },
                         added: { value: 0, checked: false }
@@ -833,27 +884,27 @@ async function loadQuantitiesFromFirebase() {
                 }
 
                 // Ensure added field exists
-                if (!currentQuantities[itemId].added) {
-                    currentQuantities[itemId].added = { value: 0, checked: false };
+                if (!quantities[dateKey][itemId].added) {
+                    quantities[dateKey][itemId].added = { value: 0, checked: false };
                 }
                 // Ensure adjustments array exists
-                if (!currentQuantities[itemId].adjustments) {
-                    currentQuantities[itemId].adjustments = [];
+                if (!quantities[dateKey][itemId].adjustments) {
+                    quantities[dateKey][itemId].adjustments = [];
                 }
 
                 // Update from Firebase data
                 if (firebaseQuantities[itemId].opening) {
-                    currentQuantities[itemId].opening = firebaseQuantities[itemId].opening;
+                    quantities[dateKey][itemId].opening = firebaseQuantities[itemId].opening;
                 }
                 if (firebaseQuantities[itemId].closing) {
-                    currentQuantities[itemId].closing = firebaseQuantities[itemId].closing;
+                    quantities[dateKey][itemId].closing = firebaseQuantities[itemId].closing;
                 }
                 if (firebaseQuantities[itemId].added) {
-                    currentQuantities[itemId].added = firebaseQuantities[itemId].added;
+                    quantities[dateKey][itemId].added = firebaseQuantities[itemId].added;
                 }
                 // Load adjustments array if it exists
                 if (firebaseQuantities[itemId].adjustments && Array.isArray(firebaseQuantities[itemId].adjustments)) {
-                    currentQuantities[itemId].adjustments = firebaseQuantities[itemId].adjustments;
+                    quantities[dateKey][itemId].adjustments = firebaseQuantities[itemId].adjustments;
                 }
             });
 
@@ -1166,7 +1217,7 @@ function loadLocalData() {
         renderInventory();
     }
 
-    // Load quantities for current branch
+    // Load quantities for current branch (never use another branch's data)
     const savedQuantities = localStorage.getItem(`${STORAGE_KEYS.QUANTITIES}-${currentBranch}`);
     if (savedQuantities) {
         try {
@@ -1176,6 +1227,8 @@ function loadLocalData() {
             console.error('Error parsing quantities from localStorage:', error);
             quantities = {};
         }
+    } else {
+        quantities = {};
     }
 }
 
@@ -2191,7 +2244,7 @@ async function sendInventoryReportEmail(branch, date, data) {
 
     emailjs.init(EMAILJS_PUBLIC_KEY);
 
-    const branchLabel = branch === 'sm-north' ? 'SM North' : 'Podium';
+    const branchLabel = branch === 'sm-north' ? 'SM North' : branch === 'podium' ? 'Podium' : 'MOA';
     
     // Count items with closing quantities
     const closingItems = Object.keys(data.quantities || {}).filter(itemId => {
@@ -3298,7 +3351,7 @@ window.downloadRunningLowReport = async function downloadRunningLowReport() {
         
         // Generate filename with date and branch
         const dateKey = getDateKey(currentDate);
-        const branchKey = currentBranch === 'sm-north' ? 'SM-North' : 'Podium';
+        const branchKey = currentBranch === 'sm-north' ? 'SM-North' : currentBranch === 'podium' ? 'Podium' : 'MOA';
         link.download = `running-low-report-${branchKey}-${dateKey}.png`;
         
         link.href = imageData;
@@ -3543,7 +3596,7 @@ window.downloadStockAdjustmentReport = async function downloadStockAdjustmentRep
         
         // Generate filename with date and branch
         const dateKey = getDateKey(currentDate);
-        const branchKey = currentBranch === 'sm-north' ? 'SM-North' : 'Podium';
+        const branchKey = currentBranch === 'sm-north' ? 'SM-North' : currentBranch === 'podium' ? 'Podium' : 'MOA';
         link.download = `stock-adjustment-report-${branchKey}-${dateKey}.png`;
         
         link.href = imageData;

@@ -1,0 +1,378 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Arial', sans-serif;
+    background: #f5f5f5;
+    padding: 20px;
+    min-height: 100vh;
+}
+
+.container {
+    max-width: 1400px;
+    margin: 0 auto;
+    display: flex;
+    gap: 30px;
+    align-items: stretch;
+}
+
+.controls-panel {
+    background: white;
+    padding: 30px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    width: 350px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-self: stretch;
+}
+
+.controls-panel h1 {
+    font-size: 24px;
+    margin-bottom: 25px;
+    color: #1d8a00;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: #333;
+    font-size: 14px;
+}
+
+.form-group input {
+    width: 100%;
+    padding: 10px;
+    border: 2px solid #e0e0e0;
+    border-radius: 4px;
+    font-size: 14px;
+    transition: border-color 0.3s;
+    font-family: 'Arial', sans-serif;
+}
+
+.form-group input:focus {
+    outline: none;
+    border-color: #1d8a00;
+}
+
+.form-hint {
+    display: block;
+    margin-top: 5px;
+    font-size: 12px;
+    color: #666;
+    font-style: italic;
+}
+
+.button-group {
+    margin-top: 30px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.btn {
+    padding: 12px 24px;
+    border: none;
+    border-radius: 4px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.btn-primary {
+    background: #1d8a00;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #166600;
+}
+
+.btn-secondary {
+    background: #6c757d;
+    color: white;
+}
+
+.btn-secondary:hover {
+    background: #5a6268;
+}
+
+.proposal-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+    background: #e8e8e8;
+    border-radius: 8px;
+    gap: 15px;
+    align-self: stretch;
+    min-height: 0;
+}
+
+.proposal {
+    width: 1280px;
+    height: 720px; /* 16:9 aspect ratio */
+    max-width: 100%;
+    max-height: 100%;
+    background: white;
+    position: relative;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    border-radius: 6px;
+    overflow: hidden;
+    display: flex;
+}
+
+/* Left Section */
+.proposal-left {
+    width: 45%;
+    display: flex;
+    flex-direction: column;
+    background: #f9f9f9;
+    padding: 20px;
+}
+
+.title-banner {
+    background: #1d8a00;
+    padding: 16px 20px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+
+.title-banner h1 {
+    color: white;
+    font-size: 24px;
+    font-weight: 700;
+    text-align: center;
+    margin: 0;
+}
+
+.image-placeholder {
+    flex: 1;
+    background: #e0e0e0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    border: 2px dashed #999;
+    min-height: 0;
+}
+
+.placeholder-content {
+    text-align: center;
+    color: #666;
+}
+
+.placeholder-content span {
+    display: block;
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.placeholder-content small {
+    display: block;
+    font-size: 12px;
+    color: #999;
+}
+
+/* Right Section */
+.proposal-right {
+    width: 55%;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    overflow-y: auto;
+    height: 100%;
+}
+
+/* Inclusions Section */
+.inclusions-section {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    flex: 0 0 40%;
+    min-height: 0;
+}
+
+.inclusion-card {
+    background: #f0f0f0;
+    padding: 12px 16px;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    width: 100%;
+    min-width: 0;
+    height: 100%;
+}
+
+.inclusion-card.span-2 {
+    grid-column: span 2;
+}
+
+.inclusion-card .free-label {
+    color: #333;
+    font-size: 11px;
+    margin-bottom: 2px;
+}
+
+.inclusion-card h3 {
+    color: #1d8a00;
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.inclusion-card p {
+    color: #333;
+    font-size: 12px;
+    margin: 0;
+}
+
+/* Pricing Section */
+.pricing-section {
+    flex: 0 0 60%;
+    padding-top: 10px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+}
+
+.pricing-options {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    flex: 1;
+    justify-content: space-between;
+}
+
+.pricing-option {
+    background: #f0f0f0;
+    padding: 24px 28px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex: 1;
+}
+
+.pricing-option-left {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.pricing-option-left .pax-count {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1d8a00;
+    margin-bottom: 4px;
+}
+
+.pricing-option-left .price-per-pax {
+    font-size: 13px;
+    color: #333;
+}
+
+.pricing-option-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    text-align: right;
+}
+
+.pricing-option-right .duration {
+    font-size: 12px;
+    color: #333;
+    margin-bottom: 8px;
+}
+
+.pricing-option-total {
+    font-size: 24px;
+    font-weight: 700;
+    color: #1d8a00;
+}
+
+/* Responsive adjustments */
+@media print {
+    .controls-panel {
+        display: none;
+    }
+    
+    .proposal-container {
+        background: transparent;
+        padding: 0;
+    }
+    
+    body {
+        background: white;
+        padding: 0;
+    }
+}
+
+@media (max-width: 900px) {
+    .container {
+        flex-direction: column;
+    }
+    
+    .controls-panel {
+        width: 100%;
+    }
+    
+    .proposal-container {
+        padding: 15px;
+    }
+    
+    .proposal {
+        width: 100%;
+        max-width: 100%;
+        height: auto;
+        flex-direction: column;
+        aspect-ratio: 21 / 14.8;
+    }
+    
+    .proposal-left,
+    .proposal-right {
+        width: 100%;
+    }
+    
+    .proposal-left {
+        min-height: 300px;
+    }
+}
+
+@media (max-width: 1200px) and (min-width: 901px) {
+    .controls-panel {
+        width: 280px;
+        padding: 20px;
+    }
+    
+    .proposal-container {
+        padding: 15px;
+    }
+    
+    .proposal {
+        width: 100%;
+        max-width: 100%;
+        height: auto;
+        aspect-ratio: 21 / 14.8;
+        transform: scale(0.85);
+        transform-origin: center;
+    }
+}

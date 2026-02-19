@@ -696,6 +696,30 @@ class PayCalculator {
     }
 
     /**
+     * Calculate total sales from sales data (matching sales dashboard logic)
+     * If grab field exists, calculate as: (cash + gcash + maya + card) + grab
+     * Otherwise, use totalSales field
+     */
+    calculateTotalSalesFromData(salesData) {
+        if (!salesData) {
+            return 0;
+        }
+
+        // Match sales dashboard logic exactly: check if grab exists AND is not undefined
+        const hasGrabData = 'grab' in salesData && salesData.grab !== undefined;
+        
+        if (hasGrabData) {
+            // Calculate walk-in sales (cash + gcash + maya + card) + grab
+            const walkInSales = (salesData.cash || 0) + (salesData.gcash || 0) + 
+                               (salesData.maya || 0) + (salesData.card || 0);
+            return walkInSales + (salesData.grab || 0);
+        } else {
+            // Use totalSales field if grab doesn't exist or is undefined
+            return salesData.totalSales || 0;
+        }
+    }
+
+    /**
      * Calculate sales bonus for a specific date
      */
     calculateSalesBonus(dateStr, employee) {
@@ -720,9 +744,8 @@ class PayCalculator {
             return 0; // No sales data = no bonus
         }
 
-        const totalSales = salesData.totalSales ||
-            ((salesData.cash || 0) + (salesData.gcash || 0) + (salesData.maya || 0) +
-                (salesData.card || 0) + (salesData.grab || 0));
+        // Use the same calculation as sales dashboard
+        const totalSales = this.calculateTotalSalesFromData(salesData);
 
         const date = new Date(dateStr);
         const staffingLevel = this.getStaffingLevel(date, window.attendanceData);

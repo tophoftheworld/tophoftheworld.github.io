@@ -6,7 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Matchanese Pop-up Sales Dashboard</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/dashboard.css">
+    <link rel="stylesheet" href="css/dashboard.css?v=8">
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"
         integrity="sha512-ElRFoEQdI5Ht6kZvyzXhYG9NqjtkmlkfYk0wr6wHxU9JEHakS7UJZNeml5ALk+8IKlU6jDgMabC3vkumRokgJA=="
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
@@ -18,9 +19,14 @@
             <h1>Matchanese Pop-up Sales Dashboard</h1>
             <div class="header-controls">
                 <select id="eventSelector" class="event-selector">
-                    <option value="pop-up">Pop-up (Main)</option>
+                    <option value="">Loading...</option>
                 </select>
                 <input type="date" id="dateSelector" class="date-selector">
+                <div class="scope-toggle" role="group" aria-label="Data scope">
+                    <button type="button" class="scope-toggle-btn active" data-scope="daily">Daily</button>
+                    <button type="button" class="scope-toggle-btn" data-scope="week">Week</button>
+                    <button type="button" class="scope-toggle-btn" data-scope="month">Month</button>
+                </div>
                 <button id="manageEventsBtn" class="manage-events-btn">Manage Events</button>
                 <button id="refreshBtn" class="refresh-btn">Refresh Data</button>
             </div>
@@ -39,10 +45,6 @@
                 <h3>Cups Sold</h3>
                 <div class="stat-value" id="todayCups">0</div>
             </div>
-            <div class="stat-card">
-                <h3>Pop-up Total (All Time)</h3>
-                <div class="stat-value" id="weekSales">₱0.00</div>
-            </div>
         </div>
         
         <!-- Add proper spacing and structure for EOD section -->
@@ -56,8 +58,8 @@
         <div class="dashboard-grid">
             <div class="chart-section">
                 <div class="chart-header">
-                    <h3>Daily Sales</h3>
-                    <div class="chart-toggle-buttons">
+                    <h3 id="chartSectionTitle">Peak Hours (Selected Day)</h3>
+                    <div id="chartToggleWrap" class="chart-toggle-buttons" style="display: none;">
                         <button class="chart-toggle-btn active" data-chart="daily">All Days</button>
                         <button class="chart-toggle-btn" data-chart="hourly">Peak Hours</button>
                     </div>
@@ -71,7 +73,7 @@
             </div>
 
             <div class="payment-breakdown">
-                <h3>Payment Methods (Selected Day)</h3>
+                <h3 id="paymentSectionTitle">Payment Methods (Selected Day)</h3>
                 <div class="payment-stats" id="paymentStats">
                     <div class="payment-item">
                         <span class="payment-method">Cash</span>
@@ -89,17 +91,27 @@
             </div>
 
             <div class="recent-orders">
-                <h3>Orders (Selected Day)</h3>
+                <h3 id="ordersSectionTitle">Orders (Selected Day)</h3>
                 <div class="orders-list" id="recentOrdersList">
                     <div class="loading">Loading orders...</div>
                 </div>
             </div>
 
             <div class="top-items">
-                <h3>Top Items (Selected Day)</h3>
+                <h3 id="topItemsSectionTitle">Top Items (Selected Day)</h3>
                 <div class="items-list" id="topItemsList">
                     <div class="loading">Loading items...</div>
                 </div>
+            </div>
+        </div>
+
+        <div id="salesByItemReportSection" class="sales-by-item-section">
+            <div class="sales-by-item-header">
+                <h3 id="salesByItemTitle">Sales by Item Report (Selected Day)</h3>
+                <button id="downloadSalesReportBtn" class="download-report-btn" type="button">Download Screenshot</button>
+            </div>
+            <div id="salesByItemReport" class="sales-by-item-report">
+                <div class="loading">Loading report...</div>
             </div>
         </div>
 
@@ -111,7 +123,7 @@
         </div>
     </div>
 
-    <script type="module" src="js/dashboard.js"></script>
+    <script type="module" src="js/dashboard.js?v=8"></script>
 </body>
 
 </html>

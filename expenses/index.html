@@ -8,8 +8,34 @@
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
     <title>Expense Tracker</title>
-    <link rel="stylesheet" href="css/style.css?v=1.5.16">
-    <script type="module" src="js/script.js?v=1.5.16"></script>
+    <!-- CRITICAL: Define closeMergeSupplierModal IMMEDIATELY before any HTML that might use it -->
+    <script>
+        // This MUST execute before any HTML with onclick handlers is parsed
+        // Define function immediately so it's available even if HTML has onclick before module loads
+        (function() {
+            window.closeMergeSupplierModal = function() {
+                try {
+                    const modal = document.getElementById('mergeSupplierModalOverlay');
+                    if (modal) {
+                        modal.classList.remove('show');
+                        if (document.body) {
+                            document.body.style.overflow = '';
+                            document.body.style.position = '';
+                            document.body.style.width = '';
+                        }
+                    }
+                } catch(e) {
+                    console.error('Error closing merge modal:', e);
+                }
+            };
+            // Also make it available globally immediately
+            if (typeof window !== 'undefined') {
+                window.closeMergeSupplierModal = window.closeMergeSupplierModal;
+            }
+        })();
+    </script>
+    <link rel="stylesheet" href="css/style.css?v=1.5.30">
+    <script type="module" src="js/script.js?v=1.5.39"></script>
 </head>
 
 <body>
@@ -25,6 +51,11 @@
                 <select class="branch-select" id="branchSelect">
                     <option value="SM North">SM North</option>
                     <option value="Podium">Podium</option>
+                    <option value="Mall of Asia">Mall of Asia</option>
+                    <option value="General">General</option>
+                    <option value="Workshop">Workshop</option>
+                    <option value="Popup">Popup</option>
+                    <option value="Bar Service">Bar Service</option>
                 </select>
             </div>
         </div>
@@ -110,6 +141,33 @@
                         </div>
                     </div>
 
+                    <!-- Date and Allocation Section -->
+                    <div class="form-section minimal">
+                        <div class="form-group">
+                            <label for="expenseDate">Date</label>
+                            <input type="date" id="expenseDate" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="allocationSelect">Allocation</label>
+                            <select id="allocationSelect" required onchange="handleAllocationChange()">
+                                <option value="Store" selected>Store</option>
+                                <option value="General">General</option>
+                                <option value="Workshop">Workshop</option>
+                                <option value="Popup">Popup</option>
+                                <option value="Bar Service">Bar Service</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="branchFieldGroup" style="display: block;">
+                            <label for="branchSelect">Branch</label>
+                            <select id="branchSelect">
+                                <option value="">-</option>
+                                <option value="SM North" selected>SM North</option>
+                                <option value="Podium">Podium</option>
+                                <option value="Mall of Asia">Mall of Asia</option>
+                            </select>
+                        </div>
+                    </div>
+
                     <!-- Items Section -->
                     <div class="form-section minimal">
                         <h3 class="section-title">Items Purchased</h3>
@@ -130,7 +188,7 @@
                     <!-- Receipt Photo Section -->
                     <div class="form-section minimal">
                         <div class="form-group">
-                            <h3 class="section-title">Receipt Photo <span class="optional">(optional)</span></h3>
+                            <h3 class="section-title">Receipt Photo <span style="color: #dc3545;">*</span></h3>
                             <div class="receipt-upload" onclick="document.getElementById('receiptInput').click()">
                                 <input type="file" id="receiptInput" accept="image/*" capture="environment"
                                     style="display: none;" onchange="handleReceiptUpload(this)">
@@ -214,43 +272,35 @@
                         <div class="form-group">
                             <label for="expenseCategory">Expense Category</label>
                             <select id="expenseCategory" required>
-                                <option value="General">General</option>
-                                <option value="Matcha">Matcha</option>
-                                <option value="Suppliers">Suppliers</option>
-                                <option value="Leasing">Leasing</option>
-                                <option value="Salaries">Salaries</option>
+                                <option value="Supplies" selected>Supplies</option>
+                                <option value="Staff">Staff</option>
+                                <option value="Rent & Utilities">Rent & Utilities</option>
                                 <option value="Marketing">Marketing</option>
-                                <option value="Maintenance">Maintenance</option>
                                 <option value="Equipment">Equipment</option>
+                                <option value="Operations">Operations</option>
                             </select>
                         </div>
                     </div>
 
-                    <!-- Payment Section -->
-                    <div class="form-section minimal">
+                    <!-- Paid By Section (only for Store allocation) -->
+                    <div class="form-section minimal" id="paidBySection" style="display: none;">
                         <div class="form-group">
-                            <label for="paymentMethod">Payment Method</label>
-                            <select id="paymentMethod" required>
-                                <option value="Cash">Cash</option>
-                                <option value="GCash">GCash</option>
-                                <option value="Credit Card">Credit Card</option>
-                                <option value="Debit Card">Debit Card</option>
-                                <option value="Bank Transfer">Bank Transfer</option>
+                            <label for="paidBy">Paid By</label>
+                            <select id="paidBy" required>
+                                <option value="Store Cash">Store Cash</option>
+                                <option value="Company">Company</option>
                             </select>
                         </div>
-                        <div class="form-group">
-                            <label for="paidBy">Logged By <span class="optional">(optional)</span></label>
-                            <input type="text" id="paidBy" placeholder="Person who paid">
-                        </div>
+                    </div>
+
+                    <!-- Notes Section -->
+                    <div class="form-section minimal">
                         <div class="form-group">
                             <label for="notes">Notes <span class="optional">(optional)</span></label>
                             <textarea id="notes" rows="2" placeholder="Additional notes..."></textarea>
                         </div>
                     </div>
 
-                    <!-- Hidden fields with defaults -->
-                    <input type="hidden" id="expenseDate" value="">
-                    <input type="hidden" id="branch" value="SM North">
 
                     <div style="padding: 20px;">
                         <button type="submit" class="save-btn">Save Expense</button>
@@ -382,7 +432,7 @@
             <div class="modal-header">
                 <h1 class="modal-title">Merge Suppliers</h1>
                 <div class="modal-header-actions">
-                    <button class="modal-close-btn" onclick="closeMergeSupplierModal()">
+                    <button class="modal-close-btn" id="mergeModalCloseBtn">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <line x1="18" y1="6" x2="6" y2="18"></line>
                             <line x1="6" y1="6" x2="18" y2="18"></line>

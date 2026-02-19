@@ -183,7 +183,9 @@
         }
 
         .mobile-dropdown.open {
-            max-height: 500px;
+            max-height: min(85vh, 600px);
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
         }
 
         .mobile-nav-item {
@@ -339,6 +341,12 @@
                 </svg>
                 <span class="mobile-nav-text">Inventory</span>
             </a>
+            <a href="#" class="mobile-nav-item" data-app="2025 Wrapped">
+                <svg class="mobile-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                </svg>
+                <span class="mobile-nav-text">2025 Wrapped</span>
+            </a>
             <div class="mobile-nav-divider"></div>
             <a 
                 href="profile/index.html" 
@@ -441,6 +449,10 @@
             'Expense Reporting': {
                 url: 'expenses/index.html',
                 title: 'Expense Reporting'
+            },
+            '2025 Wrapped': {
+                url: 'wrapped-analysis/wrapped.html',
+                title: '2025 Wrapped'
             }
         };
 
@@ -537,8 +549,15 @@
             const iframe = document.createElement('iframe');
             
             // Add cache-busting parameter to force reload
-            const cacheBuster = '?v=' + Date.now();
-            iframe.src = config.url + cacheBuster;
+            let iframeUrl = config.url + '?v=' + Date.now();
+            // Pass logged-in user to 2025 Wrapped so it can show their stats
+            if (appName === '2025 Wrapped' && typeof getCurrentUserData === 'function') {
+                const userData = getCurrentUserData();
+                if (userData && userData.employeeCode) {
+                    iframeUrl += '&employeeId=' + encodeURIComponent(userData.employeeCode);
+                }
+            }
+            iframe.src = iframeUrl;
             
             iframe.className = 'w-full h-full border-0';
             iframe.setAttribute('width', '100%');

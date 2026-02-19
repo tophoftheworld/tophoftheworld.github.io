@@ -1,11 +1,11 @@
 import { db } from './firebase-inventory.js';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where, setDoc, getDoc } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
 
-console.log('=== INVENTORY BUILDER LOADED - VERSION 23 ===');
+console.log('=== INVENTORY BUILDER LOADED - VERSION 24 ===');
 
-// Global state - CACHE BUST: v23 (timezone fix)
+// Global state - CACHE BUST: v24 (MOA branch, admin branch list fix)
 let masterItems = [];
-let availableBranches = ['sm-north', 'podium'];
+let availableBranches = ['sm-north', 'podium', 'moa'];
 // Removed branchAssignments and branchOverrides - using new structure in master-items
 let selectedBranch = 'sm-north';
 let editingMasterItemId = null;
@@ -33,8 +33,17 @@ let isFilteringLowStocks = false;
 
 // Weekly View state
 let weeklyBranch = localStorage.getItem('weekly-selected-branch') || 'podium';
+let weeklyDate = (() => {
+  const saved = localStorage.getItem('weekly-selected-date');
+  if (saved) {
+    const date = new Date(saved);
+    if (!isNaN(date.getTime())) return date;
+  }
+  return new Date(); // Default to today
+})();
 let weeklyData = {}; // Will store 7 days of usage data
 let weeklyQuantityType = localStorage.getItem('weekly-quantity-type') || 'used'; // 'used' or 'closing'
+let isWeeklyDatePickerActive = false; // Track if weekly date picker is active
 let dashboardLoading = false; // Track if dashboard is currently loading data
 let isMovingItems = false; // Track if we're currently moving items to prevent background sync override
 let isTogglingBranch = false; // Track if we're currently toggling branch enabled status to prevent background sync override
@@ -124,13 +133,15 @@ async function loadBranches() {
       const data = d.data();
       const key = (data && (data.key || data.id)) ? (data.key || data.id) : (data && data.name ? String(data.name).toLowerCase().replace(/\s+/g, '-') : '');
       const isPopup = (data && (data.type === 'popup' || /popup/i.test(data.name || '') || /pop[- ]?up/i.test(key)));
-      if (key && !isPopup && (key === 'sm-north' || key === 'podium')) {
+      if (key && !isPopup && (key === 'sm-north' || key === 'podium' || key === 'moa')) {
         names.push(key);
       }
     });
-    availableBranches = names.length > 0 ? names : ['sm-north', 'podium'];
+    // Always include known branches so MOA shows in admin even if not yet in Firestore 'branches'
+    const knownBranches = ['sm-north', 'podium', 'moa'];
+    availableBranches = [...new Set([...knownBranches, ...names])];
   } catch (_) {
-    availableBranches = ['sm-north', 'podium'];
+    availableBranches = ['sm-north', 'podium', 'moa'];
   }
   // No longer need to initialize old variables
   selectedBranch = availableBranches[0];
@@ -432,6 +443,32 @@ function setupEventListeners() {
     });
   }
 
+  // Weekly date picker controls
+  const weeklyPrevDateBtn = document.getElementById('weeklyPrevDate');
+  const weeklyNextDateBtn = document.getElementById('weeklyNextDate');
+  const weeklyDateDisplay = document.getElementById('weeklyDateDisplay');
+  
+  if (weeklyPrevDateBtn) {
+    weeklyPrevDateBtn.addEventListener('click', () => {
+      changeWeeklyDate(-7); // Go back one week
+    });
+  }
+  
+  if (weeklyNextDateBtn) {
+    weeklyNextDateBtn.addEventListener('click', () => {
+      changeWeeklyDate(7); // Go forward one week
+    });
+  }
+  
+  if (weeklyDateDisplay) {
+    weeklyDateDisplay.addEventListener('click', () => {
+      isWeeklyDatePickerActive = true;
+      openDateModal();
+    });
+    // Initialize the date display
+    updateWeeklyDateDisplay();
+  }
+
   const weeklyRefreshBtn = document.getElementById('weeklyRefreshBtn');
   if (weeklyRefreshBtn) {
     weeklyRefreshBtn.addEventListener('click', async () => {
@@ -535,6 +572,7 @@ function switchToTask(task) {
   loadDashboardData();
   }
   if (task === 'weekly-view') {
+    updateWeeklyDateDisplay(); // Ensure date display is up to date
     loadWeeklyViewData();
   }
   if (task === 'master-items') renderMasterItems();
@@ -951,7 +989,7 @@ async function migrateToNewStructure() {
         categoryOrder: categoryOrder, // Fix the inconsistent categoryOrder
         // Remove old fields if they exist
         restockAmount: undefined,
-        enabledBranches: data.enabledBranches || ['podium', 'sm-north'], // Default to all branches
+        enabledBranches: data.enabledBranches || ['podium', 'sm-north', 'moa'], // Default to all branches
         branchOverrides: data.branchOverrides || {}
       };
       
@@ -1695,7 +1733,7 @@ async function normalizeCategoryOrder(category) {
 // Utilities
 function getBranchDisplayName(branch) {
   if (!branch) return '';
-  const map = { 'sm-north': 'SM North', 'podium': 'Podium' };
+  const map = { 'sm-north': 'SM North', 'podium': 'Podium', 'moa': 'MOA' };
   return map[branch] || branch.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
@@ -1964,7 +2002,7 @@ window.testCacheInvalidation = function() {
   console.log('✅ Cache invalidation completed');
   
   // Test if cache is cleared
-  const branches = ['sm-north', 'podium'];
+  const branches = ['sm-north', 'podium', 'moa'];
   branches.forEach(branch => {
     const cacheKey = `inventory-items-${branch}`;
     const cached = localStorage.getItem(cacheKey);
@@ -2284,17 +2322,17 @@ async function loadWeeklyViewData() {
       
       console.log('Found', dashboardItems.length, 'inventory items for weekly view branch:', weeklyBranch);
     }
-    // Get the past 7 days
-    const today = new Date();
+    // Get the 7 days starting from weeklyDate
+    const startDate = new Date(weeklyDate);
     const dates = [];
-    for (let i = 6; i >= 0; i--) {
-      const date = new Date(today);
-      date.setDate(date.getDate() - i);
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(startDate);
+      date.setDate(startDate.getDate() + i);
       dates.push(date);
     }
 
     console.log('Loading data for dates:', dates.map(d => getDateKey(d)));
-    console.log('Today is:', getDateKey(today));
+    console.log('Start date:', getDateKey(weeklyDate));
     console.log('Weekly branch:', weeklyBranch);
 
     // Load usage data for each day
@@ -2359,12 +2397,12 @@ function renderWeeklyView() {
     return;
   }
 
-  // Get the past 7 days for headers
-  const today = new Date();
+  // Get the 7 days starting from weeklyDate
+  const startDate = new Date(weeklyDate);
   const dates = [];
-  for (let i = 6; i >= 0; i--) {
-    const date = new Date(today);
-    date.setDate(date.getDate() - i);
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(startDate);
+    date.setDate(startDate.getDate() + i);
     dates.push(date);
   }
 
@@ -2376,6 +2414,11 @@ function renderWeeklyView() {
     const dateStr = `<strong>${dayOfWeek}</strong><br>${monthDay}`;
     headers.push(dateStr);
   });
+  
+  // Add Total column only for usage mode
+  if (weeklyQuantityType === 'used') {
+    headers.push('<strong>Total</strong>');
+  }
 
   // Group items by category
   const categoryMap = new Map();
@@ -2418,6 +2461,7 @@ function renderWeeklyView() {
       };
 
       // Add usage data for each day
+      let weekTotal = 0; // Track total for usage mode
       dates.forEach(date => {
         const dateStr = getDateKey(date);
         const dayData = weeklyData[item.id]?.[dateStr];
@@ -2436,11 +2480,21 @@ function renderWeeklyView() {
           } else {
             const unit = item.unit || '';
             row.cells.push(value.toString() + (unit ? ` ${unit}` : ''));
+            // Add to total only if we have a valid value (for usage mode)
+            if (weeklyQuantityType === 'used' && hasClosingData) {
+              weekTotal += value;
+            }
           }
         } else {
           row.cells.push('-');
         }
       });
+      
+      // Add total column for usage mode
+      if (weeklyQuantityType === 'used') {
+        const unit = item.unit || '';
+        row.cells.push(weekTotal > 0 ? formatNumberWithCommas(weekTotal) + (unit ? ` ${unit}` : '') : '-');
+      }
 
       rows.push(row);
     });
@@ -2461,10 +2515,15 @@ function buildWeeklyTable(headers, rows) {
   
   // Header row
   html += '<thead><tr>';
-  headers.forEach(header => {
-    const isDateColumn = headers.indexOf(header) >= 3;
-    const align = isDateColumn ? 'right' : 'left';
-    html += `<th style="text-align: ${align};">${header}</th>`;
+  headers.forEach((header, index) => {
+    const isDateColumn = index >= 3 && index < headers.length - (headers[headers.length - 1].includes('Total') ? 1 : 0);
+    const isTotalColumn = header.includes('Total');
+    let align = 'left';
+    if (isDateColumn || isTotalColumn) {
+      align = 'center';
+    }
+    const headerClass = isTotalColumn ? 'total-column-header' : '';
+    html += `<th style="text-align: ${align};" class="${headerClass}">${header}</th>`;
   });
   html += '</tr></thead>';
 
@@ -2485,9 +2544,19 @@ function buildWeeklyTable(headers, rows) {
     } else if (row.type === 'item') {
       html += `<tr class="inventory-row category-item-row" data-category="${row.category}">`;
       row.cells.forEach((cell, index) => {
-        const isDateColumn = index >= 3;
-        const align = isDateColumn ? 'center' : 'left';
-        const cellClass = isDateColumn ? 'quantity-cell used' : '';
+        const isDateColumn = index >= 3 && index < row.cells.length - (weeklyQuantityType === 'used' ? 1 : 0);
+        const isTotalColumn = index === row.cells.length - 1 && weeklyQuantityType === 'used';
+        let align = 'left';
+        if (isDateColumn || isTotalColumn) {
+          align = 'center';
+        }
+        let cellClass = '';
+        if (isDateColumn || isTotalColumn) {
+          cellClass = 'quantity-cell used';
+        }
+        if (isTotalColumn) {
+          cellClass += ' total-column';
+        }
         html += `<td style="text-align: ${align};" class="${cellClass}">${cell}</td>`;
       });
       html += '</tr>';
@@ -2784,19 +2853,51 @@ function openDateModal() {
   }
 }
 
+function changeWeeklyDate(delta) {
+  weeklyDate.setDate(weeklyDate.getDate() + delta);
+  localStorage.setItem('weekly-selected-date', weeklyDate.toISOString());
+  updateWeeklyDateDisplay();
+  loadWeeklyViewData();
+}
+
+function updateWeeklyDateDisplay() {
+  const dateDisplay = document.getElementById('weeklyDateDisplay');
+  if (dateDisplay) {
+    // Show the date range (first day to last day)
+    const startDate = new Date(weeklyDate);
+    const endDate = new Date(weeklyDate);
+    endDate.setDate(startDate.getDate() + 6);
+    
+    const startStr = startDate.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric' 
+    });
+    const endStr = endDate.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric',
+      year: 'numeric'
+    });
+    
+    dateDisplay.textContent = `${startStr} - ${endStr}`;
+  }
+}
+
 function closeDateModal() {
   const modal = document.getElementById('dateModalOverlay');
   if (modal) {
     modal.style.display = 'none';
   }
+  isWeeklyDatePickerActive = false;
 }
 
 function renderCalendar() {
   const container = document.getElementById('calendarContainer');
   if (!container) return;
   
-  const year = dashboardDate.getFullYear();
-  const month = dashboardDate.getMonth();
+  // Use the appropriate date based on which view is active
+  const activeDate = isWeeklyDatePickerActive ? weeklyDate : dashboardDate;
+  const year = activeDate.getFullYear();
+  const month = activeDate.getMonth();
   const today = new Date();
   
   const firstDay = new Date(year, month, 1);
@@ -2818,9 +2919,9 @@ function renderCalendar() {
     <div class="calendar-grid">
   `;
   
-  // Normalize dashboardDate to date-only for comparison
-  const normalizedDashboardDate = new Date(dashboardDate.getFullYear(), dashboardDate.getMonth(), dashboardDate.getDate());
-  const currentDateKey = getDateKey(normalizedDashboardDate);
+  // Normalize activeDate to date-only for comparison
+  const normalizedActiveDate = new Date(activeDate.getFullYear(), activeDate.getMonth(), activeDate.getDate());
+  const currentDateKey = getDateKey(normalizedActiveDate);
   
   for (let i = 0; i < 42; i++) {
     const date = new Date(startDate);
@@ -2836,8 +2937,9 @@ function renderCalendar() {
     if (isToday) className += ' today';
     if (isSelected) className += ' selected';
     
+    const selectFunction = isWeeklyDatePickerActive ? 'selectWeeklyDate' : 'selectDashboardDate';
     calendarHtml += `
-      <div class="${className}" onclick="selectDashboardDate('${dateKey}')">
+      <div class="${className}" onclick="${selectFunction}('${dateKey}')">
         ${date.getDate()}
       </div>
     `;
@@ -2857,6 +2959,16 @@ function selectDashboardDate(dateKey) {
   // Clear quantities cache when changing dates (items stay cached)
   clearQuantitiesCache();
   loadDashboardData();
+}
+
+function selectWeeklyDate(dateKey) {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  weeklyDate = new Date(year, month - 1, day);
+  localStorage.setItem('weekly-selected-date', weeklyDate.toISOString());
+  updateWeeklyDateDisplay();
+  closeDateModal();
+  isWeeklyDatePickerActive = false;
+  loadWeeklyViewData();
 }
 
 // Placeholder table is now in HTML - no need for this function
@@ -3208,7 +3320,7 @@ function cacheInventoryItems(items) {
 // Unified cache invalidation - clears cache for all branches
 function invalidateInventoryCache() {
   try {
-    const branches = ['sm-north', 'podium'];
+    const branches = ['sm-north', 'podium', 'moa'];
     branches.forEach(branch => {
       const cacheKey = `inventory-items-${branch}`;
       localStorage.removeItem(cacheKey);

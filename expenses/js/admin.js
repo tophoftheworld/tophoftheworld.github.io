@@ -102,7 +102,7 @@ function renderTable() {
             <td>${vatText}</td>
              <td>
                  <button onclick="window.viewExpense('${expense.id}')">View</button>
-             </td>
+            </td>
         `;
 
         tbody.appendChild(row);
@@ -338,23 +338,23 @@ function createDateShortcuts() {
     allDataBtn.onclick = () => setDateRangeShortcut("All Data");
     shortcutsContainer.appendChild(allDataBtn);
 
-    // Populate month dropdown with months that have data
+// Populate month dropdown with months that have data
     if (monthDropdown) {
-        monthDropdown.innerHTML = '<option value="">Select Month</option>';
-        
-        const monthsWithData = getMonthsWithData();
-        
-        monthsWithData.forEach(month => {
-            const option = document.createElement("option");
-            // Create a proper date string that won't cause timezone issues
-            const year = month.date.getFullYear();
-            const monthNum = month.date.getMonth() + 1; // Convert to 1-indexed for display
-            const day = month.date.getDate();
-            option.value = `${year}-${monthNum.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
-            option.textContent = month.label;
-            monthDropdown.appendChild(option);
-        });
-        
+    monthDropdown.innerHTML = '<option value="">Select Month</option>';
+    
+    const monthsWithData = getMonthsWithData();
+    
+    monthsWithData.forEach(month => {
+        const option = document.createElement("option");
+        // Create a proper date string that won't cause timezone issues
+        const year = month.date.getFullYear();
+        const monthNum = month.date.getMonth() + 1; // Convert to 1-indexed for display
+        const day = month.date.getDate();
+        option.value = `${year}-${monthNum.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+        option.textContent = month.label;
+        monthDropdown.appendChild(option);
+    });
+    
         // Add event listener for month selection
         monthDropdown.addEventListener('change', (e) => {
             if (e.target.value) {
@@ -516,7 +516,7 @@ function setMonthRange(monthDate) {
     // Remove custom range styling
     dateRangeInput.classList.remove('custom-range');
 
-    filterAndRender();
+        filterAndRender();
 }
 
 function findEarliestDataDate() {
@@ -1080,7 +1080,7 @@ function renderFilteredTable(filteredExpenses) {
             <td>${vatText}</td>
              <td>
                  <button onclick="window.viewExpense('${expense.id}')">View</button>
-             </td>
+            </td>
         `;
 
         tbody.appendChild(row);
@@ -1617,20 +1617,20 @@ window.editExpenseFromDetail = function(expenseId) {
 window.deleteExpenseFromDetail = function(expenseId) {
     if (confirm('Are you sure you want to delete this expense? This action cannot be undone.')) {
         const success = shared.deleteExpense(expenseId);
-        if (success) {
-            shared.showToast('Expense deleted successfully');
+                if (success) {
+                    shared.showToast('Expense deleted successfully');
             shared.closeExpenseDetailModal();
             
             // Refresh the admin interface
             const activeBtn = document.querySelector('.date-shortcut-btn.active');
             if (activeBtn) {
                 activeBtn.click();
-            } else {
-                const expenses = shared.getExpenses();
+                    } else {
+    const expenses = shared.getExpenses();
                 renderFilteredTable(expenses);
                 updateFilteredSummary(expenses);
             }
-        } else {
+                } else {
             shared.showToast('Failed to delete expense');
         }
     }
@@ -1845,18 +1845,18 @@ window.applyBulkEdit = function() {
 // Select all functionality - only selects items on current page
 window.toggleSelectAll = function() {
     const selectAllCheckbox = document.getElementById('selectAllExpenses');
-    const checkboxes = document.querySelectorAll('#expenseTableBody input[type="checkbox"]');
+        const checkboxes = document.querySelectorAll('#expenseTableBody input[type="checkbox"]');
     
     if (!selectAllCheckbox) {
         console.error('Select all checkbox not found');
         return;
     }
     
-    checkboxes.forEach(checkbox => {
-        if (checkbox) {
+        checkboxes.forEach(checkbox => {
+            if (checkbox) {
             checkbox.checked = selectAllCheckbox.checked;
-        }
-    });
+            }
+        });
     
     updateBulkEditButton();
 };
@@ -1967,54 +1967,54 @@ window.viewSupplierDetails = function(supplierName) {
                 <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem;">
                     <span style="font-weight: 500; color: #666;">Supplier Name</span>
                     <span style="font-weight: 600; color: #333;">${supplier.name}</span>
-                </div>
-                ${supplier.businessName ? `
+            </div>
+            ${supplier.businessName ? `
                 <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem;">
                     <span style="font-weight: 500; color: #666;">Business Name</span>
                     <span style="font-weight: 600; color: #333;">${supplier.businessName}</span>
-                </div>
-                ` : ''}
-                ${supplier.tin ? `
+            </div>
+            ` : ''}
+            ${supplier.tin ? `
                 <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem;">
                     <span style="font-weight: 500; color: #666;">TIN</span>
                     <span style="font-weight: 600; color: #333;">${supplier.tin}</span>
-                </div>
-                ` : ''}
-                ${supplier.address ? `
+            </div>
+            ` : ''}
+            ${supplier.address ? `
                 <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem;">
                     <span style="font-weight: 500; color: #666;">Address</span>
                     <span style="font-weight: 600; color: #333; text-align: right; max-width: 60%;">${supplier.address}</span>
-                </div>
-                ` : ''}
+            </div>
+            ` : ''}
                 <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem;">
                     <span style="font-weight: 500; color: #666;">VAT Status</span>
                     <span style="font-weight: 600; color: #333;">${supplier.isVatRegistered ? 'VAT Registered' : 'Not VAT Registered'}</span>
+                        </div>
                 </div>
-            </div>
             <div style="margin-bottom: 1.5rem;">
                 <h3 style="font-size: 1.1rem; font-weight: 600; color: #2b9348; margin: 0 0 1rem 0; padding-bottom: 0.5rem; border-bottom: 2px solid rgba(43, 147, 72, 0.2);">Transaction Summary</h3>
                 <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem;">
                     <span style="font-weight: 500; color: #666;">Total Transactions</span>
                     <span style="font-weight: 600; color: #333;">${supplierExpenses.length}</span>
-                </div>
+            </div>
                 <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem;">
                     <span style="font-weight: 500; color: #666;">Total Amount</span>
                     <span style="font-weight: 600; color: #2b9348; font-size: 1.1rem;">₱${totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                </div>
+        </div>
             </div>
         </div>
     `;
     
     modal.appendChild(modalContent);
     document.body.appendChild(modal);
-    
+
     // Close on overlay click
     modal.addEventListener('click', (e) => {
         if (e.target === modal) {
             document.body.removeChild(modal);
         }
-    });
-};
+        });
+    };
 
 // View expense details function with inline editing
 window.viewExpense = function(expenseId) {
@@ -2116,66 +2116,6 @@ function showExpenseModal(expense, isNew = false) {
     modal.appendChild(modalContent);
     document.body.appendChild(modal);
     
-    // Add calculation functions for existing items if editing
-    if (isEditing && expense.items) {
-        expense.items.forEach((item, index) => {
-            window[`calculateItemTotal_${index}`] = function() {
-                const qtyInput = document.querySelector(`input[name="itemQty_${index}"]`);
-                const priceInput = document.querySelector(`input[name="itemPrice_${index}"]`);
-                const totalInput = document.querySelector(`input[name="itemTotal_${index}"]`);
-                if (qtyInput && priceInput && totalInput) {
-                    const qty = parseFloat(qtyInput.value) || 0;
-                    const price = parseFloat(priceInput.value) || 0;
-                    const total = shared.calculateItemTotal(qty, price);
-                    totalInput.value = total.toFixed(2);
-                }
-                // Recalculate overall total when item prices change
-                if (typeof calculateOverallTotal === 'function') {
-                    calculateOverallTotal();
-                }
-            };
-        });
-    }
-    
-    // Add overall total calculation function (must be defined before modal is shown)
-    window.calculateOverallTotal = function() {
-        const itemRows = document.querySelectorAll('#itemsContainer .item-row');
-        const items = [];
-        let hasAnyPrice = false;
-        
-        itemRows.forEach((row, index) => {
-            const nameInput = row.querySelector(`input[name="itemName_${index}"]`);
-            const qtyInput = row.querySelector(`input[name="itemQty_${index}"]`);
-            const priceInput = row.querySelector(`input[name="itemPrice_${index}"]`);
-            
-            if (nameInput && nameInput.value.trim()) {
-                const qty = parseFloat(qtyInput?.value) || 1;
-                const price = parseFloat(priceInput?.value) || 0;
-                
-                if (price > 0) {
-                    hasAnyPrice = true;
-                }
-                
-                items.push({ quantity: qty, price: price });
-            }
-        });
-        
-        const overallTotalInput = document.getElementById('overallTotalAmountInput');
-        if (overallTotalInput) {
-            // Only auto-calculate if at least one item has a price
-            if (hasAnyPrice && items.length > 0) {
-                const calculatedTotal = shared.calculateExpenseTotal(items);
-                overallTotalInput.value = calculatedTotal.toFixed(2);
-            }
-            // If no prices, keep manual entry (don't overwrite)
-        }
-        
-        // Update VAT display
-        if (typeof updateVatDisplay === 'function') {
-            updateVatDisplay();
-        }
-    };
-    
     // Close on overlay click
     modal.addEventListener('click', (e) => {
         if (e.target === modal) {
@@ -2199,20 +2139,20 @@ function generateExpenseForm(expense, isEditing) {
                 <h3 style="font-size: 1.1rem; font-weight: 600; color: #2b9348; margin: 0 0 1rem 0; padding-bottom: 0.5rem; border-bottom: 2px solid rgba(43, 147, 72, 0.2);">Basic Information</h3>
                 
                 <div style="margin-bottom: 1rem;">
-                    <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.5rem;">Date</label>
-                    <input type="date" name="date" value="${formatDate(expense.date)}" required style="width: 100%; padding: 0.75rem; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 0.9rem;" ${!isEditing ? 'readonly' : ''}>
-                </div>
-                
+                        <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.5rem;">Date</label>
+                        <input type="date" name="date" value="${formatDate(expense.date)}" required style="width: 100%; padding: 0.75rem; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 0.9rem;" ${!isEditing ? 'readonly' : ''}>
+                    </div>
+                    
                 <div style="margin-bottom: 1rem;">
-                    <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.5rem;">Branch</label>
+                        <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.5rem;">Branch</label>
                     <select name="branch" required style="width: 100%; padding: 0.75rem; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 0.9rem; ${!isEditing ? 'background-color: #f8f9fa; color: #666;' : ''}" ${!isEditing ? 'disabled' : ''}>
-                        <option value="SM North" ${expense.branch === 'SM North' ? 'selected' : ''}>SM North</option>
-                        <option value="Podium" ${expense.branch === 'Podium' ? 'selected' : ''}>Podium</option>
+                            <option value="SM North" ${expense.branch === 'SM North' ? 'selected' : ''}>SM North</option>
+                            <option value="Podium" ${expense.branch === 'Podium' ? 'selected' : ''}>Podium</option>
                         <option value="BGC" ${expense.branch === 'BGC' ? 'selected' : ''}>BGC</option>
                         <option value="Makati" ${expense.branch === 'Makati' ? 'selected' : ''}>Makati</option>
-                    </select>
-                </div>
-                
+                        </select>
+                    </div>
+                    
                 <div style="margin-bottom: 1rem;">
                     <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.5rem;">Expense Category</label>
                     <select name="expenseCategory" required style="width: 100%; padding: 0.75rem; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 0.9rem; ${!isEditing ? 'background-color: #f8f9fa; color: #666;' : ''}" ${!isEditing ? 'disabled' : ''}>
@@ -2224,9 +2164,9 @@ function generateExpenseForm(expense, isEditing) {
                         <option value="Marketing" ${(expense.expenseCategory || 'General') === 'Marketing' ? 'selected' : ''}>Marketing</option>
                         <option value="Maintenance" ${(expense.expenseCategory || 'General') === 'Maintenance' ? 'selected' : ''}>Maintenance</option>
                         <option value="Equipment" ${(expense.expenseCategory || 'General') === 'Equipment' ? 'selected' : ''}>Equipment</option>
-                    </select>
-                </div>
-                
+                        </select>
+                    </div>
+                    
                 <div style="margin-bottom: 1rem;">
                     <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.5rem;">Payment Method</label>
                     <select name="paymentMethod" required style="width: 100%; padding: 0.75rem; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 0.9rem; ${!isEditing ? 'background-color: #f8f9fa; color: #666;' : ''}" ${!isEditing ? 'disabled' : ''}>
@@ -2235,17 +2175,17 @@ function generateExpenseForm(expense, isEditing) {
                         <option value="Credit Card" ${expense.paymentMethod === 'Credit Card' ? 'selected' : ''}>Credit Card</option>
                         <option value="Debit Card" ${expense.paymentMethod === 'Debit Card' ? 'selected' : ''}>Debit Card</option>
                         <option value="Bank Transfer" ${expense.paymentMethod === 'Bank Transfer' ? 'selected' : ''}>Bank Transfer</option>
-                    </select>
-                </div>
-                
+                        </select>
+                    </div>
+                    
                 <div style="margin-bottom: 1rem;">
                     <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.5rem;">Paid By</label>
                     <input type="text" name="paidBy" value="${expense.paidBy || ''}" placeholder="Person who paid" style="width: 100%; padding: 0.75rem; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 0.9rem;" ${!isEditing ? 'readonly' : ''}>
                 </div>
                 
                 <div style="margin-bottom: 1rem;">
-                    <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.5rem;">Invoice Number</label>
-                    <input type="text" name="invoiceNumber" value="${expense.invoiceNumber || ''}" placeholder="Invoice/reference number" style="width: 100%; padding: 0.75rem; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 0.9rem;" ${!isEditing ? 'readonly' : ''}>
+                        <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.5rem;">Invoice Number</label>
+                        <input type="text" name="invoiceNumber" value="${expense.invoiceNumber || ''}" placeholder="Invoice/reference number" style="width: 100%; padding: 0.75rem; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 0.9rem;" ${!isEditing ? 'readonly' : ''}>
                 </div>
             </div>
 
@@ -2258,18 +2198,18 @@ function generateExpenseForm(expense, isEditing) {
                     <input type="text" name="supplierName" value="${expense.supplierName || ''}" required placeholder="Enter supplier name" style="width: 100%; padding: 0.75rem; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 0.9rem;" ${!isEditing ? 'readonly' : ''}>
                 </div>
                 
-                <div style="margin-bottom: 1rem;">
-                    <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.5rem;">Business Name</label>
+                    <div style="margin-bottom: 1rem;">
+                        <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.5rem;">Business Name</label>
                     <input type="text" name="businessName" value="${expense.businessName || ''}" placeholder="Enter business name" style="width: 100%; padding: 0.75rem; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 0.9rem;" ${!isEditing ? 'readonly' : ''}>
-                </div>
-                
-                <div style="margin-bottom: 1rem;">
-                    <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.5rem;">TIN</label>
+                    </div>
+                    
+                    <div style="margin-bottom: 1rem;">
+                        <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.5rem;">TIN</label>
                     <input type="text" name="tin" value="${expense.tin || ''}" placeholder="Tax Identification Number" style="width: 100%; padding: 0.75rem; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 0.9rem;" ${!isEditing ? 'readonly' : ''}>
-                </div>
-                
-                <div style="margin-bottom: 1rem;">
-                    <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.5rem;">Address</label>
+                    </div>
+                    
+                    <div style="margin-bottom: 1rem;">
+                        <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.5rem;">Address</label>
                     <textarea name="address" placeholder="Supplier address" style="width: 100%; padding: 0.75rem; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 0.9rem; min-height: 60px; resize: vertical;" ${!isEditing ? 'readonly' : ''}>${expense.address || ''}</textarea>
                 </div>
             </div>
@@ -2286,16 +2226,16 @@ function generateExpenseForm(expense, isEditing) {
                             </div>
                             <div style="flex: 1;">
                                 <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.25rem; font-size: 0.8rem;">Qty</label>
-                                <input type="number" name="itemQty_${index}" value="${item.quantity}" min="1" step="1" style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem;" ${!isEditing ? 'readonly' : `onchange="calculateItemTotal_${index}()" oninput="calculateItemTotal_${index}()"`}>
-                            </div>
+                                <input type="number" name="itemQty_${index}" value="${item.quantity}" min="1" step="1" style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem;" ${!isEditing ? 'readonly' : ''}>
+                                </div>
                             <div style="flex: 1;">
                                 <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.25rem; font-size: 0.8rem;">Price</label>
-                                <input type="number" name="itemPrice_${index}" value="${item.price}" min="0" step="0.01" style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem;" ${!isEditing ? 'readonly' : `onchange="calculateItemTotal_${index}()" oninput="calculateItemTotal_${index}()"`}>
-                            </div>
+                                <input type="number" name="itemPrice_${index}" value="${item.price}" min="0" step="0.01" style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem;" ${!isEditing ? 'readonly' : ''}>
+                                </div>
                             <div style="flex: 1;">
                                 <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.25rem; font-size: 0.8rem;">Total</label>
-                                <input type="number" name="itemTotal_${index}" value="${item.total}" min="0" step="0.01" readonly style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem; background-color: ${!isEditing ? '#f8f9fa' : '#f8f9fa'};">
-                            </div>
+                                <input type="number" name="itemTotal_${index}" value="${item.total}" min="0" step="0.01" style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem;" ${!isEditing ? 'readonly' : ''}>
+                                    </div>
                             ${isEditing ? `<button type="button" onclick="removeItem(this)" style="background: #dc3545; color: white; border: none; border-radius: 4px; padding: 0.5rem; cursor: pointer; height: fit-content;">×</button>` : ''}
                         </div>
                     `).join('')}
@@ -2305,49 +2245,10 @@ function generateExpenseForm(expense, isEditing) {
                 <div style="margin-top: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 6px;">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <span style="font-weight: 600; color: #333;">Total Amount:</span>
-                        ${isEditing ? `
-                            <input type="number" id="overallTotalAmountInput" name="totalAmount" value="${(expense.totalAmount || 0).toFixed(2)}" min="0" step="0.01" style="width: 150px; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 1.1rem; font-weight: 600; color: #2b9348; text-align: right;" onchange="calculateOverallTotal()" oninput="calculateOverallTotal()">
-                        ` : `
-                            <span style="font-weight: 600; color: #2b9348; font-size: 1.1rem;">₱${(expense.totalAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                        `}
+                        <span style="font-weight: 600; color: #2b9348; font-size: 1.1rem;">₱${(expense.totalAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
-                    ${isEditing ? `
-                        <small style="color: #999; font-size: 0.85rem; margin-top: 0.5rem; display: block;">
-                            ${expense.items && expense.items.some(item => item.price > 0) ? 
-                                'Total auto-calculates from items. Enter item prices to update.' : 
-                                'No item prices entered. Enter total manually or add prices to items.'}
-                        </small>
-                    ` : ''}
-                </div>
-            </div>
-
-            <!-- VAT Information (show if expense has VAT or if editing) -->
-            ${(expense.isVatRegistered || expense.vatAmount > 0 || expense.vatableSale > 0 || isEditing) ? `
-            <div style="margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid #f0f0f0;">
-                <h3 style="font-size: 1.1rem; font-weight: 600; color: #2b9348; margin: 0 0 1rem 0; padding-bottom: 0.5rem; border-bottom: 2px solid rgba(43, 147, 72, 0.2);">VAT Information</h3>
-                <div style="margin-bottom: 1rem;">
-                    <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.5rem;">VAT Exempt Amount</label>
-                    <input type="number" name="vatExemptAmount" value="${expense.vatExemptAmount || 0}" min="0" step="0.01" style="width: 100%; padding: 0.75rem; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 0.9rem;" ${!isEditing ? 'readonly' : ''}>
-                    <small style="color: #999; font-size: 0.85rem; margin-top: 0.25rem; display: block;">Amount that is exempt from VAT (if any)</small>
-                </div>
-                ${expense.isVatRegistered && expense.vatAmount > 0 ? `
-                <div style="margin-top: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 6px;">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
-                        <span style="color: #666;">VATable Sale:</span>
-                        <span style="font-weight: 500;">₱${(expense.vatableSale || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
-                        <span style="color: #666;">VAT Amount (12%):</span>
-                        <span style="font-weight: 500; color: #2b9348;">₱${(expense.vatAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
-                    <div style="display: flex; justify-content: space-between; padding-top: 0.5rem; border-top: 1px solid #e5e5e5; margin-top: 0.5rem;">
-                        <span style="font-weight: 600; color: #333;">VAT Registered:</span>
-                        <span style="font-weight: 600; color: #2b9348;">Yes</span>
-                    </div>
-                </div>
-                ` : ''}
-            </div>
-            ` : ''}
 
             <!-- Notes -->
             <div style="margin-bottom: 1.5rem;">
@@ -2393,43 +2294,20 @@ window.addItem = function() {
         </div>
         <div style="flex: 1;">
             <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.25rem; font-size: 0.8rem;">Qty</label>
-            <input type="number" name="itemQty_${itemCount}" value="1" min="1" step="1" style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem;" onchange="calculateItemTotal_${itemCount}()" oninput="calculateItemTotal_${itemCount}()">
-        </div>
+            <input type="number" name="itemQty_${itemCount}" value="1" min="1" step="1" style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem;">
+            </div>
         <div style="flex: 1;">
             <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.25rem; font-size: 0.8rem;">Price</label>
-            <input type="number" name="itemPrice_${itemCount}" value="0" min="0" step="0.01" style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem;" onchange="calculateItemTotal_${itemCount}()" oninput="calculateItemTotal_${itemCount}()">
-        </div>
+            <input type="number" name="itemPrice_${itemCount}" value="0" min="0" step="0.01" style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem;">
+            </div>
         <div style="flex: 1;">
             <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.25rem; font-size: 0.8rem;">Total</label>
-            <input type="number" name="itemTotal_${itemCount}" value="0" min="0" step="0.01" readonly style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem; background-color: #f8f9fa;">
-        </div>
+            <input type="number" name="itemTotal_${itemCount}" value="0" min="0" step="0.01" style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem;">
+                </div>
         <button type="button" onclick="removeItem(this)" style="background: #dc3545; color: white; border: none; border-radius: 4px; padding: 0.5rem; cursor: pointer; height: fit-content;">×</button>
     `;
     
-    // Create calculation function for this item using shared function
-    window[`calculateItemTotal_${itemCount}`] = function() {
-        const qtyInput = document.querySelector(`input[name="itemQty_${itemCount}"]`);
-        const priceInput = document.querySelector(`input[name="itemPrice_${itemCount}"]`);
-        const totalInput = document.querySelector(`input[name="itemTotal_${itemCount}"]`);
-        
-        if (qtyInput && priceInput && totalInput) {
-            const qty = parseFloat(qtyInput.value) || 0;
-            const price = parseFloat(priceInput.value) || 0;
-            const total = shared.calculateItemTotal(qty, price);
-            totalInput.value = total.toFixed(2);
-        }
-        // Recalculate overall total when item prices change
-        if (typeof calculateOverallTotal === 'function') {
-            calculateOverallTotal();
-        }
-    };
-    
     container.appendChild(itemRow);
-    
-    // Recalculate overall total after adding item
-    if (typeof calculateOverallTotal === 'function') {
-        calculateOverallTotal();
-    }
 };
 
 // Remove item function
@@ -2443,57 +2321,53 @@ window.saveExpense = function(event, expenseId) {
     
     const formData = new FormData(event.target);
     const isNew = !shared.getExpenses().find(e => e.id === expenseId);
-    const existingExpense = isNew ? null : shared.getExpenses().find(e => e.id === expenseId);
     
-    // Collect items using shared calculation
+    // Collect items
     const items = [];
     const itemRows = document.querySelectorAll('.item-row');
-    let hasAnyPrice = false;
     
     itemRows.forEach((row, index) => {
         const name = formData.get(`itemName_${index}`);
+        const qty = parseFloat(formData.get(`itemQty_${index}`)) || 1;
+        const price = parseFloat(formData.get(`itemPrice_${index}`)) || 0;
+        const total = parseFloat(formData.get(`itemTotal_${index}`)) || 0;
+        
         if (name && name.trim()) {
-            const qty = parseFloat(formData.get(`itemQty_${index}`)) || 1;
-            const price = parseFloat(formData.get(`itemPrice_${index}`)) || 0;
-            
-            if (price > 0) {
-                hasAnyPrice = true;
-            }
-            
-            items.push({
+                items.push({
                 name: name.trim(),
-                quantity: qty,
-                price: price,
-                total: shared.calculateItemTotal(qty, price)
+                    quantity: qty,
+                    price: price,
+                total: total
             });
         }
     });
     
-    // Add items to formData for createExpenseObject
-    formData.items = items;
+    // Calculate total amount
+    const totalAmount = items.reduce((sum, item) => sum + item.total, 0);
     
-    // Only auto-calculate total from items if at least one item has a price
-    // If all items have price = 0, use manual total input
-    const calculateTotalFromItems = hasAnyPrice && items.length > 0;
-    
-    // Create expense using shared function
-    const result = shared.createExpenseObject(formData, {
-        existingExpense: existingExpense,
-        isEditing: !isNew,
-        calculateTotalFromItems: calculateTotalFromItems, // Only calculate if items have prices
-        autoCalculateVAT: true,
-        validate: true
-    });
-    
-    // Check for validation errors
-    if (!result.success) {
-        shared.showToast(result.errors.join(', '));
-        return;
-    }
-    
-    const expenseData = result.expense;
-    // Ensure ID matches (form might have different ID structure)
-    expenseData.id = expenseId;
+    const expenseData = {
+        id: expenseId,
+        date: formData.get('date'),
+        branch: formData.get('branch'),
+        supplierName: formData.get('supplierName'),
+        businessName: formData.get('businessName'),
+        tin: formData.get('tin'),
+        address: formData.get('address'),
+        invoiceNumber: formData.get('invoiceNumber'),
+        expenseCategory: formData.get('expenseCategory') || 'General',
+        items: items,
+        totalAmount: totalAmount,
+        vatExemptAmount: 0,
+        vatableSale: 0,
+        vatAmount: 0,
+        isVatRegistered: false,
+        paymentMethod: formData.get('paymentMethod'),
+        paidBy: formData.get('paidBy'),
+        notes: formData.get('notes'),
+        receiptImage: null,
+        createdAt: isNew ? new Date().toISOString() : shared.getExpenses().find(e => e.id === expenseId)?.createdAt,
+        updatedAt: new Date().toISOString()
+    };
     
     if (isNew) {
         shared.addExpense(expenseData);
@@ -2505,15 +2379,15 @@ window.saveExpense = function(event, expenseId) {
     
     // Close modal and refresh table
     event.target.closest('div').parentElement.parentElement.remove();
-    
-    // Refresh the admin interface
-    const activeBtn = document.querySelector('.date-shortcut-btn.active');
-    if (activeBtn) {
-        activeBtn.click();
-    } else {
-        const expenses = shared.getExpenses();
-        renderFilteredTable(expenses);
-        updateFilteredSummary(expenses);
+        
+        // Refresh the admin interface
+        const activeBtn = document.querySelector('.date-shortcut-btn.active');
+        if (activeBtn) {
+            activeBtn.click();
+        } else {
+            const expenses = shared.getExpenses();
+            renderFilteredTable(expenses);
+            updateFilteredSummary(expenses);
     }
 };
 

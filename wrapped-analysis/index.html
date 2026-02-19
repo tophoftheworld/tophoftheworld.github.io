@@ -1,0 +1,74 @@
+    <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2025 Wrapped Analysis Tool</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎵 2025 Matchanese Wrapped Analysis</h1>
+            <p class="subtitle">Analyze attendance and payroll data for company-wide and branch statistics</p>
+        </header>
+
+        <div class="controls">
+            <button id="startBtn" class="btn btn-primary">Start Analysis</button>
+            <button id="pushToFirebaseBtn" class="btn btn-primary" disabled>Push to Firebase</button>
+            <button id="exportBtn" class="btn btn-secondary" disabled>Export JSON</button>
+            <button id="importBtn" class="btn btn-secondary">Import JSON</button>
+            <input type="file" id="importFile" accept=".json" style="display: none;">
+        </div>
+        
+        <div id="pushStatus" style="display: none; margin-top: 15px; padding: 15px; background: #f8f9fa; border-radius: 8px;"></div>
+
+        <div id="progressSection" class="progress-section" style="display: none;">
+            <h2>Analysis Progress</h2>
+            <div class="progress-bar-container">
+                <div class="progress-bar" id="overallProgress">
+                    <div class="progress-fill" id="overallProgressFill"></div>
+                </div>
+                <div class="progress-text" id="overallProgressText">0%</div>
+            </div>
+        </div>
+
+        <div id="resultsSection" class="results-section">
+            <!-- Company-Wide Stats -->
+            <section class="stats-section">
+                <h2>🏆 Company-Wide Stats</h2>
+                <div id="companyWideStats" class="stats-grid">
+                    <!-- Stats will be populated here -->
+                </div>
+            </section>
+
+            <!-- Branch vs Branch Stats -->
+            <section class="stats-section">
+                <h2>⚔️ Branch vs Branch</h2>
+                <div id="branchStats" class="stats-grid">
+                    <!-- Stats will be populated here -->
+                </div>
+            </section>
+
+            <!-- Individual Employee Stats -->
+            <section class="stats-section">
+                <h2>👤 Individual Employee Stats</h2>
+                <div class="employee-selector">
+                    <label for="employeeSelect">Select Employee:</label>
+                    <select id="employeeSelect" class="employee-dropdown">
+                        <option value="">-- Select an employee --</option>
+                    </select>
+                </div>
+                <div id="individualStats" class="individual-stats-container" style="display: none;">
+                    <!-- Individual stats will be populated here -->
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <script src="../admin-payroll/js/PayCalculator.js"></script>
+    <script type="module" src="script.js"></script>
+</body>
+</html>
+

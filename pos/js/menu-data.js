@@ -24,31 +24,34 @@ export const menuData = {
     items: [
         {
             categoryId: "matcha-lattes",
-            name: "signature <span class=\"text-span-2\">matchanese</span> latte",
+            name: "signature <span class=\"text-span-2 matchanese\">matchanese</span> latte",
             description: "Hand-whisked Ceremonial Matcha over Milk",
             price: 200,
             // tags: ["signature"],
-            type: "Iced"
+            type: "Iced",
+            customizations: { size: true, serving: true, sweetness: true, milk: true, discount: true, strengthLevel: true }
         },
         {
             categoryId: "matcha-lattes",
-            name: "<span class=\"text-span-2\">matchanese</span> sea salt latte",
+            name: "<span class=\"text-span-2 matchanese\">matchanese</span> sea salt latte",
             description: "Our Signature Matchanese Latte topped with Salted Cream",
             price: 240,
             tags: ["Best Seller"],
-            type: "Iced"
+            type: "Iced",
+            customizations: { size: true, serving: true, sweetness: true, milk: true, discount: true, strengthLevel: true }
         },
         {
             categoryId: "matcha-lattes",
-            name: "strawberry <span class=\"text-span-2\">matchanese</span> latte",
+            name: "strawberry <span class=\"text-span-2 matchanese\">matchanese</span> latte",
             description: "Our Signature Matchanese Latte topped with Strawberry Puree",
             price: 250,
             tags: ["Must-Try!"],
-            type: "Iced"
+            type: "Iced",
+            customizations: { size: true, serving: true, sweetness: true, milk: true, discount: true, strengthLevel: true }
         },
         {
             categoryId: "matcha-lite",
-            name: "<span class=\"text-span-2\">matchanese</span> tea",
+            name: "<span class=\"text-span-2 matchanese\">matchanese</span> tea",
             description: "Hand-Whisked Ceremonial Matcha",
             price: 190,
             // tags: ["classic"],
@@ -58,12 +61,13 @@ export const menuData = {
                 serving: true,   // Can customize serving
                 sweetness: false, // Can customize sweetness
                 milk: false,     // Cannot customize milk
-                discount: true
+                discount: true,
+                strengthLevel: true
             }
         },
         {
             categoryId: "matcha-lite",
-            name: "<span class=\"text-span-2\">matchanese</span> coconut",
+            name: "<span class=\"text-span-2 matchanese\">matchanese</span> coconut",
             description: "Hand-whisked Ceremonial Matcha over Coconut Juice",
             price: 200,
             type: "Iced",
@@ -72,12 +76,13 @@ export const menuData = {
                 serving: true,   // Can customize serving
                 sweetness: false, // Can customize sweetness
                 milk: false,
-                discount: true
+                discount: true,
+                strengthLevel: true
             }
         },
         {
             categoryId: "matcha-lite",
-            name: "<span class=\"text-span-2\">matchanese</span> dalandan",
+            name: "<span class=\"text-span-2 matchanese\">matchanese</span> dalandan",
             description: "Hand-whisked Ceremonial Matcha over Dalandan Juice",
             price: 200,
             type: "Iced",
@@ -86,12 +91,13 @@ export const menuData = {
                 serving: true,   // Can customize serving
                 sweetness: false, // Can customize sweetness
                 milk: false,
-                discount: true
+                discount: true,
+                strengthLevel: true
             }
         },
         {
             categoryId: "specials",
-            name: "<span class=\"text-span-2\">matchanese</span> coconut cloud",
+            name: "<span class=\"text-span-2 matchanese\">matchanese</span> coconut cloud",
             description: "Coconut Juice Topped with matcha Cream and Matcha Powder",
             price: 250,
             tags: ["Limited Time"],
@@ -101,31 +107,35 @@ export const menuData = {
                 serving: true,   // Can customize serving
                 sweetness: false, // Can customize sweetness
                 milk: false,
-                discount: true
+                discount: true,
+                strengthLevel: true
             }
         },
         {
             categoryId: "specials",
-            name: "<span class=\"text-span-2\">matchanese</span> float",
+            name: "<span class=\"text-span-2 matchanese\">matchanese</span> float",
             description: "Our Signature Matchanese Latte with a Scoope of our Matcha Ice Cream",
             tags: ["Limited Time"],
             price: 290,
-            type: "Iced"
+            type: "Iced",
+            customizations: { size: true, serving: true, sweetness: true, milk: true, discount: true, strengthLevel: true }
         },
         {
             categoryId: "specials",
-            name: "earl grey <span class=\"text-span-2\">matchanese</span> latte",
+            name: "earl grey <span class=\"text-span-2 matchanese\">matchanese</span> latte",
             description: "Our Signature Matchanese Latte with Earl Grey Syrup",
             tags: ["Limited Time"],
             price: 250,
-            type: "Iced"
+            type: "Iced",
+            customizations: { size: true, serving: true, sweetness: true, milk: true, discount: true, strengthLevel: true }
         },
         {
             categoryId: "specials",
-            name: "<span class=\"text-span-2\">matchanese</span> yama latte",
+            name: "<span class=\"text-span-2 matchanese\">matchanese</span> yama latte",
             description: "Our Signature Matchanese Latte topped with Matcha Whipped Cream and Matcha Syrup",
             price: 270,
-            type: "Iced"
+            type: "Iced",
+            customizations: { size: true, serving: true, sweetness: true, milk: true, discount: true, strengthLevel: true }
         },
         {
             categoryId: "beyond-matcha",

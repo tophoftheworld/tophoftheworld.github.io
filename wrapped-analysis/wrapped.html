@@ -1,0 +1,2075 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Matchanese Wrapped 2025</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            overflow: hidden;
+            background: #000;
+            touch-action: pan-y;
+        }
+
+        .carousel-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .carousel-track {
+            display: flex;
+            width: 1300vw; /* 13 pages * 100vw */
+            height: 100vh;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            will-change: transform;
+        }
+
+        .story-page {
+            width: 100vw;
+            height: 100vh;
+            flex-shrink: 0;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .story-page.stats-page {
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .story-background {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .story-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(180deg, rgba(34, 197, 94, 0.3) 0%, rgba(34, 197, 94, 0.5) 100%);
+            z-index: 1;
+        }
+
+        .story-content {
+            position: relative;
+            z-index: 2;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 2rem;
+            text-align: center;
+            color: white;
+        }
+
+        .wrapped-title {
+            font-size: 3rem;
+            font-weight: 700;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+            margin-bottom: 1rem;
+        }
+
+        .wrapped-year {
+            font-size: 1.5rem;
+            font-weight: 400;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+            opacity: 0.9;
+        }
+
+        .placeholder-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .placeholder-text {
+            font-size: 2rem;
+            font-weight: 600;
+            color: white;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Stats page styles */
+        .stats-page {
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 1.5rem;
+            overflow-y: auto;
+            min-height: 100vh;
+            position: relative;
+        }
+
+        .stats-page::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            animation: gradientShift 20s ease-in-out infinite;
+        }
+
+        .stats-page > * {
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Different gradient variations per page - all using darker green tones matching the image */
+        .stats-page[data-page="2"]::before {
+            background: linear-gradient(180deg, rgba(20, 83, 45, 0.6) 0%, rgba(22, 101, 52, 0.7) 50%, rgba(20, 83, 45, 0.65) 100%);
+            background-size: 300% 300%;
+        }
+
+        .stats-page[data-page="3"]::before {
+            background: linear-gradient(135deg, rgba(22, 101, 52, 0.55) 0%, rgba(20, 83, 45, 0.75) 50%, rgba(22, 101, 52, 0.65) 100%);
+            background-size: 300% 300%;
+        }
+
+        .stats-page[data-page="4"]::before {
+            background: linear-gradient(225deg, rgba(20, 83, 45, 0.6) 0%, rgba(34, 197, 94, 0.5) 50%, rgba(22, 101, 52, 0.7) 100%);
+            background-size: 300% 300%;
+        }
+
+        .stats-page[data-page="5"]::before {
+            background: linear-gradient(90deg, rgba(22, 101, 52, 0.65) 0%, rgba(20, 83, 45, 0.6) 50%, rgba(22, 101, 52, 0.75) 100%);
+            background-size: 300% 300%;
+        }
+
+        .stats-page[data-page="6"]::before {
+            background: linear-gradient(135deg, rgba(34, 197, 94, 0.3) 0%, rgba(16, 185, 129, 0.3) 50%, rgba(5, 150, 105, 0.3) 100%);
+            background-size: 300% 300%;
+        }
+
+        .stats-page[data-page="7"]::before {
+            background: linear-gradient(225deg, rgba(20, 83, 45, 0.6) 0%, rgba(34, 197, 94, 0.5) 50%, rgba(22, 101, 52, 0.7) 100%);
+            background-size: 300% 300%;
+        }
+
+        /* Store stats (branch stats) pages 8 & 9 - same green gradient as earlier stats, slightly lighter */
+        .stats-page[data-page="8"]::before,
+        .stats-page[data-page="9"]::before {
+            background: linear-gradient(180deg, rgba(34, 197, 94, 0.35) 0%, rgba(22, 101, 52, 0.6) 50%, rgba(20, 83, 45, 0.55) 100%);
+            background-size: 300% 300%;
+        }
+
+        /* My Stats title page (10) and individual stat pages (11-13) */
+        .stats-page[data-page="10"]::before,
+        .stats-page[data-page="11"]::before,
+        .stats-page[data-page="12"]::before,
+        .stats-page[data-page="13"]::before {
+            background: linear-gradient(180deg, rgba(34, 197, 94, 0.35) 0%, rgba(22, 101, 52, 0.6) 50%, rgba(20, 83, 45, 0.55) 100%);
+            background-size: 300% 300%;
+        }
+
+        .my-stats-page .story-content {
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: center;
+            padding: 2rem;
+            min-height: 100%;
+        }
+
+        /* Vertically center the My Stats title block in the space above the buttons */
+        .my-stats-text-block {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            min-height: 0;
+        }
+
+        .my-stats-title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: white;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+            margin-bottom: 0.5rem;
+            text-align: center;
+        }
+
+        .my-stats-subtitle {
+            font-size: 1rem;
+            color: rgba(187, 247, 208, 0.9);
+            margin-bottom: 1.25rem;
+            text-align: center;
+        }
+
+        .staff-select-wrap {
+            width: 100%;
+            max-width: 280px;
+            margin-bottom: 0.5rem;
+        }
+
+        .staff-select-wrap label {
+            display: block;
+            font-size: 0.9rem;
+            color: rgba(187, 247, 208, 0.9);
+            margin-bottom: 0.5rem;
+            text-align: left;
+        }
+
+        .staff-select {
+            width: 100%;
+            padding: 0.85rem 1rem;
+            font-size: 1rem;
+            border-radius: 12px;
+            border: 2px solid rgba(187, 247, 208, 0.3);
+            background: rgba(20, 83, 45, 0.5);
+            color: white;
+            cursor: pointer;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23bbf7d0' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            padding-right: 36px;
+        }
+
+        .staff-select option {
+            background: #14532d;
+            color: white;
+        }
+
+        /* Buttons above bottom (20% up from bottom), same width */
+        .my-stats-photo-actions-wrap {
+            margin-top: auto;
+            margin-bottom: 20vh;
+            padding-top: 2rem;
+            width: 100%;
+            max-width: 280px;
+            display: flex;
+            justify-content: center;
+        }
+        .my-stats-photo-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            align-items: stretch;
+            width: 100%;
+            min-width: 200px;
+        }
+        .my-stats-photo-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            width: 100%;
+            min-width: 0;
+            padding: 0.65rem 1rem;
+            font-size: 0.9rem;
+            color: rgba(187, 247, 208, 0.95);
+            background: rgba(20, 83, 45, 0.6);
+            border: 1px solid rgba(187, 247, 208, 0.35);
+            border-radius: 999px;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .my-stats-photo-btn:hover, .my-stats-photo-btn:active {
+            background: rgba(22, 101, 52, 0.7);
+        }
+        .my-stats-btn-icon {
+            width: 1.125rem;
+            height: 1.125rem;
+            flex-shrink: 0;
+        }
+
+        /* My Stats page: random selfie background (below gradient overlay) */
+        .my-stats-bg {
+            position: absolute;
+            inset: 0;
+            z-index: 0;
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+        }
+        .stats-page[data-page="10"]::before {
+            z-index: 1;
+        }
+
+        /* Individual employee stat cards (My Stats content pages) */
+        .individual-stats-grid {
+            display: grid;
+            gap: 1.5rem;
+            width: 100%;
+            max-width: 420px;
+            padding: 0 0.5rem;
+        }
+
+        /* My Stats cards use same .stat-card format as company/branch pages */
+        .individual-stats-grid .stat-card:nth-child(1) {
+            animation-delay: 0.1s;
+        }
+        .individual-stats-grid .stat-card:nth-child(2) {
+            animation-delay: 0.4s;
+        }
+        .individual-stats-grid .stat-card:nth-child(3) {
+            animation-delay: 0.7s;
+        }
+
+        /* Page 13: 3-card layout – align content to top so third card isn’t clipped, ensure it scrolls and animates */
+        .stats-page[data-page="13"] .story-content {
+            justify-content: flex-start;
+            padding-top: 1.5rem;
+        }
+        .stats-page[data-page="13"] .individual-stats-grid .stat-card {
+            animation-name: fadeInUp;
+            animation-duration: 0.6s;
+            animation-timing-function: ease-out;
+            animation-fill-mode: forwards;
+        }
+        .stats-page[data-page="13"] .individual-stats-grid .stat-card:nth-child(3) {
+            animation-delay: 0.7s;
+            visibility: visible;
+        }
+
+        @keyframes gradientShift {
+            0% {
+                background-position: 0% 0%;
+                transform: scale(1) rotate(0deg);
+            }
+            25% {
+                background-position: 100% 0%;
+                transform: scale(1.08) rotate(2deg);
+            }
+            50% {
+                background-position: 100% 100%;
+                transform: scale(1.1) rotate(0deg);
+            }
+            75% {
+                background-position: 0% 100%;
+                transform: scale(1.08) rotate(-2deg);
+            }
+            100% {
+                background-position: 0% 0%;
+                transform: scale(1) rotate(0deg);
+            }
+        }
+
+        .stat-card {
+            background: rgba(20, 83, 45, 0.4);
+            border-radius: 20px;
+            padding: 1.5rem;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(34, 197, 94, 0.2);
+        }
+
+        .stat-header {
+            margin-bottom: 1.25rem;
+        }
+
+        .stat-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: white;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .stat-description {
+            font-size: 0.85rem;
+            color: rgba(187, 247, 208, 0.7);
+            margin-top: 0.25rem;
+        }
+
+        .stat-winner {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .stat-winner-photo {
+            width: 70px;
+            height: 70px;
+            border-radius: 12px;
+            object-fit: cover;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            flex-shrink: 0;
+        }
+
+        .stat-winner-info {
+            flex: 1;
+        }
+
+        .stat-winner-name {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: white;
+            margin-bottom: 0.25rem;
+            text-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .stat-winner-value {
+            font-size: 1rem;
+            color: rgba(187, 247, 208, 0.9);
+            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+        }
+
+        .stat-ranks {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            margin-top: 1rem;
+        }
+
+        .stat-rank {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 0.9rem;
+            color: rgba(187, 247, 208, 0.8);
+            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+        }
+
+        .stat-rank-number {
+            font-weight: 600;
+            width: 24px;
+            flex-shrink: 0;
+            color: white;
+        }
+
+        .stat-rank-name {
+            flex: 1;
+        }
+
+        .stat-rank-value {
+            color: rgba(187, 247, 208, 0.7);
+        }
+
+        /* Animations */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeInScale {
+            from {
+                opacity: 0;
+                transform: scale(0.9);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        .stat-card {
+            animation: none;
+            opacity: 0;
+            visibility: hidden;
+        }
+        
+        .stat-card.data-loaded {
+            animation: fadeInUp 0.6s ease-out forwards;
+            visibility: visible;
+        }
+
+        .stat-card:nth-child(1) {
+            animation-delay: 0.1s;
+        }
+
+        .stat-card:nth-child(2) {
+            animation-delay: 1.5s;
+        }
+
+        /* Winners animate after their card appears */
+        .stat-card:nth-child(1) .stat-winner {
+            animation: fadeInScale 0.5s ease-out forwards;
+            opacity: 0;
+            animation-delay: 0.7s;
+        }
+
+        .stat-card:nth-child(2) .stat-winner {
+            animation: fadeInScale 0.5s ease-out forwards;
+            opacity: 0;
+            animation-delay: 2.1s;
+        }
+
+        /* Ranks animate after their winner appears */
+        .stat-card:nth-child(1) .stat-rank:nth-child(1) {
+            animation: fadeInUp 0.4s ease-out forwards;
+            opacity: 0;
+            animation-delay: 1.2s;
+        }
+
+        .stat-card:nth-child(1) .stat-rank:nth-child(2) {
+            animation: fadeInUp 0.4s ease-out forwards;
+            opacity: 0;
+            animation-delay: 1.4s;
+        }
+
+        .stat-card:nth-child(2) .stat-rank:nth-child(1) {
+            animation: fadeInUp 0.4s ease-out forwards;
+            opacity: 0;
+            animation-delay: 2.6s;
+        }
+
+        .stat-card:nth-child(2) .stat-rank:nth-child(2) {
+            animation: fadeInUp 0.4s ease-out forwards;
+            opacity: 0;
+            animation-delay: 2.8s;
+        }
+
+        /* Branch Stats Card Styles */
+        .branch-stat-card {
+            background: rgba(22, 101, 52, 0.4);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 1.5rem;
+            border: 1px solid rgba(187, 247, 208, 0.2);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            opacity: 0;
+            visibility: hidden;
+            animation: none;
+        }
+        
+        .branch-stat-card.data-loaded {
+            animation: fadeInUp 0.6s ease-out forwards;
+            visibility: visible;
+        }
+        
+        .branch-stat-card:nth-child(1) {
+            animation-delay: 0.1s;
+        }
+        
+        .branch-stat-card:nth-child(2) {
+            animation-delay: 1.5s;
+        }
+        
+        .stats-page[data-page="8"] .branch-stat-card,
+        .stats-page[data-page="9"] .branch-stat-card {
+            display: block;
+        }
+        
+        .branch-stat-header {
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+        
+        .branch-stat-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: white;
+            margin-bottom: 0.5rem;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+        }
+        
+        .branch-stat-description {
+            font-size: 0.9rem;
+            color: rgba(187, 247, 208, 0.7);
+        }
+        
+        .branch-comparison {
+            display: flex;
+            align-items: stretch;
+            justify-content: space-between;
+            gap: 0.75rem;
+        }
+        
+        .branch-item {
+            flex: 1 1 0;
+            min-width: 0;
+            text-align: center;
+            padding: 1rem;
+            background: rgba(22, 101, 52, 0.3);
+            border-radius: 16px;
+            border: 2px solid rgba(187, 247, 208, 0.2);
+            transition: all 0.3s ease;
+        }
+        
+        .branch-item.winner {
+            border-color: rgba(187, 247, 208, 0.6);
+            background: rgba(34, 197, 94, 0.3);
+            box-shadow: 0 4px 16px rgba(187, 247, 208, 0.3);
+        }
+        
+        .branch-name {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: rgba(187, 247, 208, 0.9);
+            margin-bottom: 0.75rem;
+        }
+        
+        .branch-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: white;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+            word-break: break-word;
+            overflow-wrap: break-word;
+        }
+        
+        .branch-vs {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: rgba(187, 247, 208, 0.8);
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+            flex-shrink: 0;
+        }
+
+        .page-indicator {
+            position: fixed;
+            top: 2rem;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            display: flex;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: rgba(20, 83, 45, 0.5);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+        }
+
+        .indicator-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: rgba(20, 83, 45, 0.8);
+            transition: all 0.3s ease;
+        }
+
+        .indicator-dot.active {
+            background: white;
+            width: 24px;
+            border-radius: 4px;
+        }
+
+        /* Swipe hint */
+        .swipe-hint {
+            position: fixed;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            color: rgba(187, 247, 208, 0.7);
+            font-size: 0.9rem;
+            opacity: 0.7;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.7; }
+            50% { opacity: 0.3; }
+        }
+
+        .edge-zone {
+            position: fixed;
+            top: 0;
+            width: 30%;
+            height: 100vh;
+            z-index: 5;
+            cursor: pointer;
+        }
+
+        .edge-zone-left {
+            left: 0;
+        }
+
+        .edge-zone-right {
+            right: 0;
+        }
+
+        @media (max-width: 480px) {
+            .wrapped-title {
+                font-size: 2.5rem;
+            }
+            .wrapped-year {
+                font-size: 1.25rem;
+            }
+            .branch-value {
+                font-size: 1.35rem;
+            }
+            .branch-item {
+                padding: 0.75rem;
+            }
+        }
+
+        /* Loading overlay when Firebase data hasn't loaded yet */
+        .wrapped-loading-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 20;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .wrapped-loading-overlay.hidden {
+            display: none;
+        }
+
+        .wrapped-loading-spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid rgba(255, 255, 255, 0.25);
+            border-top-color: rgba(187, 247, 208, 0.95);
+            border-radius: 50%;
+            animation: wrapped-spin 0.8s linear infinite;
+        }
+
+        @keyframes wrapped-spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Tap-to-start overlay: fixed and on top so it receives touches on mobile (iOS/Android) */
+        .video-tap-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 15;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.4);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+        }
+
+        .video-tap-overlay.hidden {
+            display: none !important;
+            pointer-events: none;
+        }
+
+        .video-tap-overlay .tap-label {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+        }
+
+        .video-tap-overlay .tap-hint {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <div id="wrappedLoadingOverlay" class="wrapped-loading-overlay hidden">
+        <div class="wrapped-loading-spinner"></div>
+    </div>
+    <div id="videoTapOverlay" class="video-tap-overlay">
+        <span class="tap-label">Tap to start</span>
+        <span class="tap-hint">Swipe when ready</span>
+    </div>
+    <div class="carousel-container">
+        <div class="page-indicator" id="pageIndicator"></div>
+        <div class="swipe-hint">← Swipe to continue →</div>
+        
+        <!-- Clickable edge zones for navigation -->
+        <div class="edge-zone edge-zone-left" id="leftZone"></div>
+        <div class="edge-zone edge-zone-right" id="rightZone"></div>
+        
+        <div class="carousel-track" id="carouselTrack">
+            <!-- Page 1: Timelapse Video -->
+            <div class="story-page" data-page="1">
+                <video class="story-background" id="timelapseVideo" muted loop playsinline preload="metadata" webkit-playsinline>
+                    <source src="timelapse-test.mp4" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
+                <div class="story-overlay"></div>
+                <div class="story-content">
+                    <div class="wrapped-title">Matchanese Wrapped</div>
+                    <div class="wrapped-year">2025</div>
+                </div>
+            </div>
+
+            <!-- Pages 2-7: Stats (2 stats per page) -->
+            <!-- Page 2: Early Bird & Most Workaholic -->
+            <div class="story-page stats-page" data-page="2">
+                <!-- Stat Card 1 -->
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <div class="stat-title"></div>
+                        <div class="stat-description"></div>
+                    </div>
+                    <div class="stat-winner">
+                        <img src="" alt="" class="stat-winner-photo" style="display: none;">
+                        <div class="stat-winner-info">
+                            <div class="stat-winner-name"></div>
+                            <div class="stat-winner-value"></div>
+                        </div>
+                    </div>
+                    <div class="stat-ranks">
+                        <div class="stat-rank">
+                            <span class="stat-rank-number">2</span>
+                            <span class="stat-rank-name"></span>
+                            <span class="stat-rank-value"></span>
+                        </div>
+                        <div class="stat-rank">
+                            <span class="stat-rank-number">3</span>
+                            <span class="stat-rank-name"></span>
+                            <span class="stat-rank-value"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stat Card 2 -->
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <div class="stat-title"></div>
+                        <div class="stat-description"></div>
+                    </div>
+                    <div class="stat-winner">
+                        <img src="" alt="" class="stat-winner-photo" style="display: none;">
+                        <div class="stat-winner-info">
+                            <div class="stat-winner-name"></div>
+                            <div class="stat-winner-value"></div>
+                        </div>
+                    </div>
+                    <div class="stat-ranks">
+                        <div class="stat-rank">
+                            <span class="stat-rank-number">2</span>
+                            <span class="stat-rank-name"></span>
+                            <span class="stat-rank-value"></span>
+                        </div>
+                        <div class="stat-rank">
+                            <span class="stat-rank-number">3</span>
+                            <span class="stat-rank-name"></span>
+                            <span class="stat-rank-value"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Page 3: Placeholder stats -->
+            <div class="story-page stats-page" data-page="3">
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <div class="stat-title">The Punctual One</div>
+                        <div class="stat-description">Lowest average late time</div>
+                    </div>
+                    <div class="stat-winner">
+                        <img src="" alt="" class="stat-winner-photo" style="display: none;">
+                        <div class="stat-winner-info">
+                            <div class="stat-winner-name">Employee Name</div>
+                            <div class="stat-winner-value">15 minutes average</div>
+                        </div>
+                    </div>
+                    <div class="stat-ranks">
+                        <div class="stat-rank">
+                            <span class="stat-rank-number">2</span>
+                            <span class="stat-rank-name">Second Place</span>
+                            <span class="stat-rank-value">18 minutes</span>
+                        </div>
+                        <div class="stat-rank">
+                            <span class="stat-rank-number">3</span>
+                            <span class="stat-rank-name">Third Place</span>
+                            <span class="stat-rank-value">20 minutes</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <div class="stat-title">OT Champion</div>
+                        <div class="stat-description">Most OT hours worked</div>
+                    </div>
+                    <div class="stat-winner">
+                        <img src="" alt="" class="stat-winner-photo" style="display: none;">
+                        <div class="stat-winner-info">
+                            <div class="stat-winner-name">Employee Name</div>
+                            <div class="stat-winner-value">125.5 hours of OT</div>
+                        </div>
+                    </div>
+                    <div class="stat-ranks">
+                        <div class="stat-rank">
+                            <span class="stat-rank-number">2</span>
+                            <span class="stat-rank-name">Second Place</span>
+                            <span class="stat-rank-value">98.2 hours</span>
+                        </div>
+                        <div class="stat-rank">
+                            <span class="stat-rank-number">3</span>
+                            <span class="stat-rank-name">Third Place</span>
+                            <span class="stat-rank-value">87.3 hours</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pages 4-7: More placeholder stats -->
+            <div class="story-page stats-page" data-page="4">
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <div class="stat-title">Weekend Warrior</div>
+                        <div class="stat-description">Most weekend shifts worked</div>
+                    </div>
+                    <div class="stat-winner">
+                        <img src="" alt="" class="stat-winner-photo" style="display: none;">
+                        <div class="stat-winner-info">
+                            <div class="stat-winner-name">Employee Name</div>
+                            <div class="stat-winner-value">45 weekend shifts</div>
+                        </div>
+                    </div>
+                    <div class="stat-ranks">
+                        <div class="stat-rank">
+                            <span class="stat-rank-number">2</span>
+                            <span class="stat-rank-name">Second Place</span>
+                            <span class="stat-rank-value">38 shifts</span>
+                        </div>
+                        <div class="stat-rank">
+                            <span class="stat-rank-number">3</span>
+                            <span class="stat-rank-name">Third Place</span>
+                            <span class="stat-rank-value">32 shifts</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <div class="stat-title">Holiday Hero</div>
+                        <div class="stat-description">Most holiday shifts worked</div>
+                    </div>
+                    <div class="stat-winner">
+                        <img src="" alt="" class="stat-winner-photo" style="display: none;">
+                        <div class="stat-winner-info">
+                            <div class="stat-winner-name">Employee Name</div>
+                            <div class="stat-winner-value">12 holiday shifts</div>
+                        </div>
+                    </div>
+                    <div class="stat-ranks">
+                        <div class="stat-rank">
+                            <span class="stat-rank-number">2</span>
+                            <span class="stat-rank-name">Second Place</span>
+                            <span class="stat-rank-value">10 shifts</span>
+                        </div>
+                        <div class="stat-rank">
+                            <span class="stat-rank-number">3</span>
+                            <span class="stat-rank-name">Third Place</span>
+                            <span class="stat-rank-value">8 shifts</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="story-page stats-page" data-page="5">
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <div class="stat-title">Most Flexible</div>
+                        <div class="stat-description">Most balanced across shift types</div>
+                    </div>
+                    <div class="stat-winner">
+                        <img src="" alt="" class="stat-winner-photo" style="display: none;">
+                        <div class="stat-winner-info">
+                            <div class="stat-winner-name">Employee Name</div>
+                            <div class="stat-winner-value">Most balanced</div>
+                        </div>
+                    </div>
+                    <div class="stat-ranks">
+                        <div class="stat-rank">
+                            <span class="stat-rank-number">2</span>
+                            <span class="stat-rank-name">Second Place</span>
+                            <span class="stat-rank-value"></span>
+                        </div>
+                        <div class="stat-rank">
+                            <span class="stat-rank-number">3</span>
+                            <span class="stat-rank-name">Third Place</span>
+                            <span class="stat-rank-value"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <div class="stat-title">Branch Hopper</div>
+                        <div class="stat-description">Most even split between branches</div>
+                    </div>
+                    <div class="stat-winner">
+                        <img src="" alt="" class="stat-winner-photo" style="display: none;">
+                        <div class="stat-winner-info">
+                            <div class="stat-winner-name">Employee Name</div>
+                            <div class="stat-winner-value">Score: 180</div>
+                        </div>
+                    </div>
+                    <div class="stat-ranks">
+                        <div class="stat-rank">
+                            <span class="stat-rank-number">2</span>
+                            <span class="stat-rank-name">Second Place</span>
+                            <span class="stat-rank-value">Score: 165</span>
+                        </div>
+                        <div class="stat-rank">
+                            <span class="stat-rank-number">3</span>
+                            <span class="stat-rank-name">Third Place</span>
+                            <span class="stat-rank-value">Score: 152</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pages 6-12: Placeholders for future content -->
+            <!-- Page 6: Stats -->
+            <div class="story-page stats-page" data-page="6">
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <div class="stat-title"></div>
+                        <div class="stat-description"></div>
+                    </div>
+                    <div class="stat-winner">
+                        <img src="" alt="" class="stat-winner-photo" style="display: none;">
+                        <div class="stat-winner-info">
+                            <div class="stat-winner-name"></div>
+                            <div class="stat-winner-value"></div>
+                        </div>
+                    </div>
+                    <div class="stat-ranks">
+                        <div class="stat-rank">
+                            <span class="stat-rank-number">2</span>
+                            <span class="stat-rank-name"></span>
+                            <span class="stat-rank-value"></span>
+                        </div>
+                        <div class="stat-rank">
+                            <span class="stat-rank-number">3</span>
+                            <span class="stat-rank-name"></span>
+                            <span class="stat-rank-value"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <div class="stat-title"></div>
+                        <div class="stat-description"></div>
+                    </div>
+                    <div class="stat-winner">
+                        <img src="" alt="" class="stat-winner-photo" style="display: none;">
+                        <div class="stat-winner-info">
+                            <div class="stat-winner-name"></div>
+                            <div class="stat-winner-value"></div>
+                        </div>
+                    </div>
+                    <div class="stat-ranks">
+                        <div class="stat-rank">
+                            <span class="stat-rank-number">2</span>
+                            <span class="stat-rank-name"></span>
+                            <span class="stat-rank-value"></span>
+                        </div>
+                        <div class="stat-rank">
+                            <span class="stat-rank-number">3</span>
+                            <span class="stat-rank-name"></span>
+                            <span class="stat-rank-value"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Page 7: Stats -->
+            <div class="story-page stats-page" data-page="7">
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <div class="stat-title"></div>
+                        <div class="stat-description"></div>
+                    </div>
+                    <div class="stat-winner">
+                        <img src="" alt="" class="stat-winner-photo" style="display: none;">
+                        <div class="stat-winner-info">
+                            <div class="stat-winner-name"></div>
+                            <div class="stat-winner-value"></div>
+                        </div>
+                    </div>
+                    <div class="stat-ranks">
+                        <div class="stat-rank">
+                            <span class="stat-rank-number">2</span>
+                            <span class="stat-rank-name"></span>
+                            <span class="stat-rank-value"></span>
+                        </div>
+                        <div class="stat-rank">
+                            <span class="stat-rank-number">3</span>
+                            <span class="stat-rank-name"></span>
+                            <span class="stat-rank-value"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <div class="stat-title"></div>
+                        <div class="stat-description"></div>
+                    </div>
+                    <div class="stat-winner">
+                        <img src="" alt="" class="stat-winner-photo" style="display: none;">
+                        <div class="stat-winner-info">
+                            <div class="stat-winner-name"></div>
+                            <div class="stat-winner-value"></div>
+                        </div>
+                    </div>
+                    <div class="stat-ranks">
+                        <div class="stat-rank">
+                            <span class="stat-rank-number">2</span>
+                            <span class="stat-rank-name"></span>
+                            <span class="stat-rank-value"></span>
+                        </div>
+                        <div class="stat-rank">
+                            <span class="stat-rank-number">3</span>
+                            <span class="stat-rank-name"></span>
+                            <span class="stat-rank-value"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- Page 8: Branch Stats -->
+            <div class="story-page stats-page" data-page="8">
+                <div class="branch-stat-card">
+                    <div class="branch-stat-header">
+                        <div class="branch-stat-title"></div>
+                        <div class="branch-stat-description"></div>
+                    </div>
+                    <div class="branch-comparison">
+                        <div class="branch-item branch-podium">
+                            <div class="branch-name">Podium</div>
+                            <div class="branch-value"></div>
+                        </div>
+                        <div class="branch-vs">VS</div>
+                        <div class="branch-item branch-smnorth">
+                            <div class="branch-name">SM North</div>
+                            <div class="branch-value"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="branch-stat-card">
+                    <div class="branch-stat-header">
+                        <div class="branch-stat-title"></div>
+                        <div class="branch-stat-description"></div>
+                    </div>
+                    <div class="branch-comparison">
+                        <div class="branch-item branch-podium">
+                            <div class="branch-name">Podium</div>
+                            <div class="branch-value"></div>
+                        </div>
+                        <div class="branch-vs">VS</div>
+                        <div class="branch-item branch-smnorth">
+                            <div class="branch-name">SM North</div>
+                            <div class="branch-value"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Page 9: Branch Stats -->
+            <div class="story-page stats-page" data-page="9">
+                <div class="branch-stat-card">
+                    <div class="branch-stat-header">
+                        <div class="branch-stat-title"></div>
+                        <div class="branch-stat-description"></div>
+                    </div>
+                    <div class="branch-comparison">
+                        <div class="branch-item branch-podium">
+                            <div class="branch-name">Podium</div>
+                            <div class="branch-value"></div>
+                        </div>
+                        <div class="branch-vs">VS</div>
+                        <div class="branch-item branch-smnorth">
+                            <div class="branch-name">SM North</div>
+                            <div class="branch-value"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="branch-stat-card">
+                    <div class="branch-stat-header">
+                        <div class="branch-stat-title"></div>
+                        <div class="branch-stat-description"></div>
+                    </div>
+                    <div class="branch-comparison">
+                        <div class="branch-item branch-podium">
+                            <div class="branch-name">Podium</div>
+                            <div class="branch-value"></div>
+                        </div>
+                        <div class="branch-vs">VS</div>
+                        <div class="branch-item branch-smnorth">
+                            <div class="branch-name">SM North</div>
+                            <div class="branch-value"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- Page 10: My Stats title + staff selector -->
+            <div class="story-page stats-page my-stats-page" data-page="10">
+                <div class="my-stats-bg" id="myStatsBg"></div>
+                <div class="story-content">
+                    <div class="my-stats-text-block">
+                        <h2 class="my-stats-title">My Stats</h2>
+                        <p class="my-stats-subtitle">Your 2025 in numbers</p>
+                        <div class="staff-select-wrap">
+                            <label for="staffSelect">Select staff</label>
+                            <select id="staffSelect" class="staff-select">
+                                <option value="">-- Choose a staff member --</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="my-stats-photo-actions-wrap" id="myStatsPhotoActionsWrap" style="display: none;">
+                        <div class="my-stats-photo-actions" id="myStatsPhotoActions" style="display: none;">
+                            <button type="button" class="my-stats-photo-btn" id="myStatsRandomizePhoto" aria-label="Randomize photo">
+                                <svg class="my-stats-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M4 20L21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/></svg>
+                                Randomize Photo
+                            </button>
+                            <button type="button" class="my-stats-photo-btn" id="myStatsDownloadPhoto" aria-label="Download photo">
+                                <svg class="my-stats-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                Download
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- Page 11: Individual stats (first 2 cards) -->
+            <div class="story-page stats-page" data-page="11">
+                <div class="story-content">
+                    <div class="individual-stats-grid" id="individualStatsPage1"></div>
+                </div>
+            </div>
+            <!-- Page 12: Individual stats (next 2 cards) -->
+            <div class="story-page stats-page" data-page="12">
+                <div class="story-content">
+                    <div class="individual-stats-grid" id="individualStatsPage2"></div>
+                </div>
+            </div>
+            <!-- Page 13: Individual stats (last 3 cards) -->
+            <div class="story-page stats-page" data-page="13">
+                <div class="story-content">
+                    <div class="individual-stats-grid" id="individualStatsPage3"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // Firebase setup
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+        import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyA6ikBMsQACcUpn4Jff7PQFeWLN8wv18EE",
+            authDomain: "matchanese-attendance.firebaseapp.com",
+            projectId: "matchanese-attendance",
+            storageBucket: "matchanese-attendance.firebasestorage.app",
+            messagingSenderId: "339591618451",
+            appId: "1:339591618451:web:23f9d95833ee5010bbd266",
+            measurementId: "G-YEK4GML6SJ"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // Logged-in user: from employee app URL param (?employeeId=xxx) or parent portal getCurrentUserData()
+        function getLoggedInEmployeeId() {
+            const params = new URLSearchParams(window.location.search);
+            const fromUrl = params.get('employeeId');
+            if (fromUrl) return fromUrl.trim();
+            try {
+                if (window.parent && window.parent !== window && typeof window.parent.getCurrentUserData === 'function') {
+                    const userData = window.parent.getCurrentUserData();
+                    if (userData && userData.employeeCode) return userData.employeeCode;
+                }
+            } catch (e) { /* cross-origin or unavailable */ }
+            return null;
+        }
+
+        // Load wrapped data from Firebase (from separate documents)
+        let wrappedData = null;
+        
+        function showLoadingOverlay() {
+            const el = document.getElementById('wrappedLoadingOverlay');
+            if (el) el.classList.remove('hidden');
+        }
+
+        function hideLoadingOverlay() {
+            const el = document.getElementById('wrappedLoadingOverlay');
+            if (el) el.classList.add('hidden');
+        }
+
+        async function loadWrappedData() {
+            try {
+                // 1. Load metadata to know how many batches
+                const metadataRef = doc(db, 'wrapped', '2025_metadata');
+                const metadataSnap = await getDoc(metadataRef);
+                
+                if (!metadataSnap.exists()) {
+                    console.warn('No wrapped metadata found in Firebase');
+                    hideLoadingOverlay();
+                    return;
+                }
+                
+                const metadata = metadataSnap.data();
+                console.log('Loading wrapped data:', metadata);
+                
+                // 2. Load company stats
+                const companyRef = doc(db, 'wrapped', '2025_company');
+                const companySnap = await getDoc(companyRef);
+                
+                if (!companySnap.exists()) {
+                    console.warn('No company stats found in Firebase');
+                    hideLoadingOverlay();
+                    return;
+                }
+                
+                const companyData = companySnap.data();
+                
+                // 3. Load employee stats from all batches
+                const employeeBatches = [];
+                for (let i = 1; i <= metadata.totalBatches; i++) {
+                    const batchRef = doc(db, 'wrapped', `2025_employees_batch_${i}`);
+                    const batchSnap = await getDoc(batchRef);
+                    if (batchSnap.exists()) {
+                        const batchData = batchSnap.data();
+                        employeeBatches.push(...batchData.employees);
+                    }
+                }
+                
+                // Combine all data
+                wrappedData = {
+                    year: metadata.year,
+                    generatedAt: metadata.generatedAt,
+                    companyWideStats: companyData.companyWideStats,
+                    branchStats: companyData.branchStats || {},
+                    employeeStats: employeeBatches
+                };
+                
+                console.log('Wrapped data loaded:', wrappedData);
+                populateStatsPages();
+                populateStaffDropdown();
+            } catch (error) {
+                console.error('Error loading wrapped data:', error);
+            } finally {
+                hideLoadingOverlay();
+            }
+        }
+
+        // Minutes since midnight to "h:mm AM/PM"
+        function minutesToTime(minutes) {
+            if (minutes == null || minutes === undefined) return 'N/A';
+            const h = Math.floor(minutes / 60);
+            const m = Math.round(minutes % 60);
+            const period = h >= 12 ? 'PM' : 'AM';
+            const hour = h % 12 || 12;
+            return `${hour}:${String(m).padStart(2, '0')} ${period}`;
+        }
+
+        // Populate staff dropdown, or auto-select logged-in user when opened from employee app
+        function populateStaffDropdown() {
+            const select = document.getElementById('staffSelect');
+            const staffSelectWrap = document.querySelector('.staff-select-wrap');
+            const loggedInId = getLoggedInEmployeeId();
+
+            if (!wrappedData || !wrappedData.employeeStats || !wrappedData.employeeStats.length) return;
+
+            if (loggedInId) {
+                const emp = wrappedData.employeeStats.find(e => e.employeeId === loggedInId);
+                if (emp) {
+                    if (staffSelectWrap) staffSelectWrap.style.display = 'none';
+                    populateIndividualStatsPages(emp);
+                } else {
+                    if (staffSelectWrap) staffSelectWrap.style.display = '';
+                    fillDropdown(select);
+                }
+            } else {
+                if (staffSelectWrap) staffSelectWrap.style.display = '';
+                fillDropdown(select);
+            }
+        }
+
+        function fillDropdown(select) {
+            if (!select) return;
+            select.innerHTML = '<option value="">-- Choose a staff member --</option>';
+            if (!wrappedData || !wrappedData.employeeStats) return;
+            const sorted = [...wrappedData.employeeStats].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+            sorted.forEach(emp => {
+                const opt = document.createElement('option');
+                opt.value = emp.employeeId;
+                opt.textContent = emp.name || emp.employeeId;
+                select.appendChild(opt);
+            });
+        }
+
+        function onStaffSelect() {
+            const select = document.getElementById('staffSelect');
+            const id = select && select.value;
+            if (!id || !wrappedData || !wrappedData.employeeStats) return;
+            const emp = wrappedData.employeeStats.find(e => e.employeeId === id);
+            if (emp) populateIndividualStatsPages(emp);
+        }
+
+        const INDIVIDUAL_STAT_DEFS = [
+            { label: 'Average Late Time', photoKey: 'averageLateTime', desc: 'Average time past scheduled time (all late arrivals)', format: (e) => e.averageLateMinutes > 0 ? `${Math.floor(e.averageLateMinutes)} minutes` : 'N/A (no late arrivals)' },
+            { label: 'Longest Streak', photoKey: 'longestStreak', desc: 'Consecutive days worked', format: (e) => `${e.longestStreak || 0} days` },
+            { label: 'Times Arrived Early', photoKey: 'earlyCount', desc: 'Before scheduled time', format: (e) => `${e.earlyCount || 0} times` },
+            { label: 'Events Worked', photoKey: 'eventCount', desc: 'Workshops, pop-ups, custom events', format: (e) => `${e.eventCount || 0} events` },
+            { label: 'Total Days Worked', photoKey: 'daysWorked', desc: 'Total attendance in 2025', format: (e) => `${e.daysWorked || 0} days` },
+            { label: 'Earliest Clock-In', photoKey: 'earliestIn', desc: 'Your earliest arrival time', format: (e) => minutesToTime(e.earliestIn) },
+            { label: 'Latest Clock-Out', photoKey: 'latestOut', desc: 'Your latest departure time', format: (e) => minutesToTime(e.latestOut) }
+        ];
+
+        function renderIndividualStatCard(emp, def) {
+            const ind = emp.individualPhotos || {};
+            const photo = ind[def.photoKey];
+            const value = def.format(emp);
+            return `
+                <div class="stat-card data-loaded">
+                    <div class="stat-header">
+                        <div class="stat-title">${def.label}</div>
+                        <div class="stat-description">${def.desc}</div>
+                    </div>
+                    <div class="stat-winner">
+                        ${photo ? `<img src="${photo}" alt="" class="stat-winner-photo" />` : ''}
+                        <div class="stat-winner-info">
+                            <div class="stat-winner-value">${value}</div>
+                        </div>
+                    </div>
+                </div>`;
+        }
+
+        let currentMyStatsEmployee = null;
+        let currentMyStatsPhotoUrl = null;
+
+        function setMyStatsPageBackground(employee) {
+            const bgEl = document.getElementById('myStatsBg');
+            const actionsEl = document.getElementById('myStatsPhotoActions');
+            if (!bgEl) return;
+            const urls = [];
+            const ind = employee.individualPhotos || {};
+            const photos = employee.photos || {};
+            Object.values(ind).forEach(v => { if (v && typeof v === 'string') urls.push(v); });
+            Object.values(photos).forEach(v => { if (v && typeof v === 'string') urls.push(v); });
+            if (urls.length === 0) {
+                bgEl.style.backgroundImage = '';
+                currentMyStatsPhotoUrl = null;
+                const wrapEl = document.getElementById('myStatsPhotoActionsWrap');
+                if (wrapEl) wrapEl.style.display = 'none';
+                if (actionsEl) actionsEl.style.display = 'none';
+                return;
+            }
+            const randomUrl = urls[Math.floor(Math.random() * urls.length)];
+            currentMyStatsPhotoUrl = randomUrl;
+            bgEl.style.backgroundImage = `url(${randomUrl})`;
+            const wrapEl = document.getElementById('myStatsPhotoActionsWrap');
+            if (wrapEl) wrapEl.style.display = 'flex';
+            if (actionsEl) {
+                actionsEl.style.display = 'flex';
+                const randomBtn = document.getElementById('myStatsRandomizePhoto');
+                if (randomBtn) randomBtn.style.display = urls.length > 1 ? 'inline-flex' : 'none';
+            }
+        }
+
+        function downloadMyStatsPhoto() {
+            if (!currentMyStatsPhotoUrl) return;
+            const a = document.createElement('a');
+            a.href = currentMyStatsPhotoUrl;
+            a.download = 'wrapped-selfie-2025.jpg';
+            a.rel = 'noopener';
+            a.target = '_blank';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        function populateIndividualStatsPages(employee) {
+            currentMyStatsEmployee = employee;
+            setMyStatsPageBackground(employee);
+            const page1 = document.getElementById('individualStatsPage1');
+            const page2 = document.getElementById('individualStatsPage2');
+            const page3 = document.getElementById('individualStatsPage3');
+            if (!page1 || !page2 || !page3) return;
+            const defs = INDIVIDUAL_STAT_DEFS;
+            page1.innerHTML = defs.slice(0, 2).map(d => renderIndividualStatCard(employee, d)).join('');
+            page2.innerHTML = defs.slice(2, 4).map(d => renderIndividualStatCard(employee, d)).join('');
+            page3.innerHTML = defs.slice(4, 7).map(d => renderIndividualStatCard(employee, d)).join('');
+        }
+
+        // Populate stats pages with real data
+        function populateStatsPages() {
+            if (!wrappedData || !wrappedData.companyWideStats) return;
+            
+            const statsOrder = [
+                'earlyBird',
+                'punctualOne',
+                'gracePeriodMaster',
+                'mostConsistentlyLate',
+                'weekendWarrior',
+                'holidayHero',
+                'mostFlexible',
+                'eventSpecialist',
+                'perfectStreak',
+                'otChampion',
+                'mostWorkaholic',
+                'earningsChampion'
+            ];
+            
+            // Update each stats page (pages 2-7, 2 stats per page = 6 pages for 12 stats)
+            let statIndex = 0;
+            for (let pageNum = 2; pageNum <= 7 && statIndex < statsOrder.length; pageNum++) {
+                const pageEl = document.querySelector(`[data-page="${pageNum}"]`);
+                if (!pageEl) {
+                    console.warn(`Page ${pageNum} not found`);
+                    continue;
+                }
+                
+                const cards = pageEl.querySelectorAll('.stat-card');
+                
+                // Update first card
+                if (cards[0] && statIndex < statsOrder.length) {
+                    const statId = statsOrder[statIndex];
+                    const statData = wrappedData.companyWideStats[statId];
+                    if (statData) {
+                        updateStatCard(cards[0], statId, statData);
+                        // Mark card as data-loaded to trigger animation
+                        cards[0].classList.add('data-loaded');
+                    }
+                    statIndex++;
+                }
+                
+                // Update second card
+                if (cards[1] && statIndex < statsOrder.length) {
+                    const statId = statsOrder[statIndex];
+                    const statData = wrappedData.companyWideStats[statId];
+                    if (statData) {
+                        updateStatCard(cards[1], statId, statData);
+                        // Mark card as data-loaded to trigger animation
+                        cards[1].classList.add('data-loaded');
+                    }
+                    statIndex++;
+                }
+            }
+            
+            // Reset animations for current page if we're already on a stats page
+            if (currentPage > 0) {
+                resetAnimations();
+            }
+            
+            // Populate branch stats pages
+            populateBranchStatsPages();
+        }
+        
+        // Populate branch stats pages (pages 8-9)
+        function populateBranchStatsPages() {
+            if (!wrappedData) {
+                console.warn('No wrappedData available for branch stats');
+                return;
+            }
+            
+            if (!wrappedData.branchStats) {
+                console.warn('No branchStats in wrappedData:', wrappedData);
+                return;
+            }
+            
+            console.log('Populating branch stats pages with data:', wrappedData.branchStats);
+            
+            const branchStatsOrder = [
+                'punctuality',
+                'otBattle',
+                'workaholicBattle',
+                'earningsBattle'
+            ];
+            
+            let statIndex = 0;
+            for (let pageNum = 8; pageNum <= 9 && statIndex < branchStatsOrder.length; pageNum++) {
+                const pageEl = document.querySelector(`[data-page="${pageNum}"]`);
+                if (!pageEl) {
+                    console.warn(`Page ${pageNum} not found`);
+                    continue;
+                }
+                
+                const cards = pageEl.querySelectorAll('.branch-stat-card');
+                console.log(`Page ${pageNum}: Found ${cards.length} branch stat cards`);
+                
+                // Update first card
+                if (cards[0] && statIndex < branchStatsOrder.length) {
+                    const statId = branchStatsOrder[statIndex];
+                    const statData = wrappedData.branchStats[statId];
+                    console.log(`Updating card 1 on page ${pageNum} with stat ${statId}:`, statData);
+                    if (statData) {
+                        updateBranchStatCard(cards[0], statId, statData);
+                        cards[0].classList.add('data-loaded');
+                    } else {
+                        console.warn(`No data for stat ${statId}`);
+                    }
+                    statIndex++;
+                }
+                
+                // Update second card
+                if (cards[1] && statIndex < branchStatsOrder.length) {
+                    const statId = branchStatsOrder[statIndex];
+                    const statData = wrappedData.branchStats[statId];
+                    console.log(`Updating card 2 on page ${pageNum} with stat ${statId}:`, statData);
+                    if (statData) {
+                        updateBranchStatCard(cards[1], statId, statData);
+                        cards[1].classList.add('data-loaded');
+                    } else {
+                        console.warn(`No data for stat ${statId}`);
+                    }
+                    statIndex++;
+                }
+            }
+        }
+        
+        // Update a branch stat card
+        function updateBranchStatCard(cardEl, statId, statData) {
+            if (!statData) return;
+            
+            // Update title and description
+            const titleEl = cardEl.querySelector('.branch-stat-title');
+            const descEl = cardEl.querySelector('.branch-stat-description');
+            if (titleEl) titleEl.textContent = statData.title;
+            if (descEl) descEl.textContent = statData.description;
+            
+            // Update podium branch
+            const podiumEl = cardEl.querySelector('.branch-podium');
+            if (podiumEl) {
+                const podiumName = podiumEl.querySelector('.branch-name');
+                const podiumValue = podiumEl.querySelector('.branch-value');
+                if (podiumName) podiumName.textContent = 'Podium';
+                if (podiumValue) {
+                    podiumValue.textContent = formatBranchStatValue(statId, statData.podium);
+                }
+                if (statData.winner === 'Podium') {
+                    podiumEl.classList.add('winner');
+                } else {
+                    podiumEl.classList.remove('winner');
+                }
+            }
+            
+            // Update SM North branch
+            const smNorthEl = cardEl.querySelector('.branch-smnorth');
+            if (smNorthEl) {
+                const smNorthName = smNorthEl.querySelector('.branch-name');
+                const smNorthValue = smNorthEl.querySelector('.branch-value');
+                if (smNorthName) smNorthName.textContent = 'SM North';
+                if (smNorthValue) {
+                    smNorthValue.textContent = formatBranchStatValue(statId, statData.smNorth);
+                }
+                if (statData.winner === 'SM North') {
+                    smNorthEl.classList.add('winner');
+                } else {
+                    smNorthEl.classList.remove('winner');
+                }
+            }
+        }
+        
+        // Format branch stat value
+        function formatBranchStatValue(statId, value) {
+            if (statId === 'earningsBattle') {
+                return `₱${parseFloat(value).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+            } else if (statId === 'punctuality') {
+                return parseFloat(value).toFixed(1);
+            } else if (statId === 'otBattle') {
+                return parseFloat(value).toFixed(1) + ' hours';
+            } else if (statId === 'workaholicBattle') {
+                return parseFloat(value).toFixed(1) + ' days';
+            }
+            return value;
+        }
+
+        // Update a stat card with real data
+        function updateStatCard(cardEl, statId, statData) {
+            if (!statData) return;
+            
+            // Update title and description
+            const titleEl = cardEl.querySelector('.stat-title');
+            const descEl = cardEl.querySelector('.stat-description');
+            if (titleEl) titleEl.textContent = statData.title;
+            if (descEl) descEl.textContent = statData.description;
+            
+            // Update first place
+            if (statData.first) {
+                const winnerEl = cardEl.querySelector('.stat-winner');
+                if (winnerEl) {
+                    const photoEl = winnerEl.querySelector('.stat-winner-photo');
+                    const nameEl = winnerEl.querySelector('.stat-winner-name');
+                    const valueEl = winnerEl.querySelector('.stat-winner-value');
+                    
+                    const firstEntry = Array.isArray(statData.first) ? statData.first[0] : statData.first;
+                    
+                    if (photoEl) {
+                        if (firstEntry && firstEntry.photo) {
+                            photoEl.src = firstEntry.photo;
+                            photoEl.alt = firstEntry.name || 'Winner';
+                            photoEl.style.display = 'block';
+                            photoEl.onerror = function() {
+                                console.warn('Failed to load photo:', firstEntry.photo);
+                                this.style.display = 'none';
+                            };
+                            photoEl.onload = function() {
+                                this.style.display = 'block';
+                            };
+                        } else {
+                            photoEl.style.display = 'none';
+                        }
+                    }
+                    if (nameEl) {
+                        nameEl.textContent = Array.isArray(statData.first) 
+                            ? statData.first.map(e => e.name).join(', ')
+                            : statData.first.name;
+                    }
+                    if (valueEl) {
+                        valueEl.textContent = formatStatValue(statId, firstEntry.value, firstEntry);
+                    }
+                }
+            }
+            
+            // Update second and third place
+            const ranksEl = cardEl.querySelector('.stat-ranks');
+            if (ranksEl) {
+                const rankItems = ranksEl.querySelectorAll('.stat-rank');
+                
+                if (statData.second && rankItems[0]) {
+                    updateRankItem(rankItems[0], 2, statData.second, statId);
+                }
+                if (statData.third && rankItems[1]) {
+                    updateRankItem(rankItems[1], 3, statData.third, statId);
+                }
+            }
+        }
+
+        // Update a rank item (2nd or 3rd place)
+        function updateRankItem(rankEl, rankNum, rankData, statId) {
+            const nameEl = rankEl.querySelector('.stat-rank-name');
+            const valueEl = rankEl.querySelector('.stat-rank-value');
+            
+            const rankEntry = Array.isArray(rankData) ? rankData[0] : rankData;
+            
+            if (nameEl) {
+                nameEl.textContent = Array.isArray(rankData) 
+                    ? rankData.map(e => e.name).join(', ')
+                    : rankData.name;
+            }
+            if (valueEl) {
+                valueEl.textContent = formatStatValue(statId, rankEntry.value, rankEntry);
+            }
+        }
+
+        // Format stat value based on stat type
+        function formatStatValue(statId, value, entry) {
+            switch(statId) {
+                case 'earlyBird':
+                case 'gracePeriodMaster':
+                case 'mostConsistentlyLate':
+                case 'weekendWarrior':
+                case 'holidayHero':
+                case 'eventSpecialist':
+                case 'mostWorkaholic':
+                    return `${Math.round(value)} ${getStatUnit(statId)}`;
+                case 'punctualOne':
+                    return `${Math.floor(value)} minutes average`;
+                case 'mostFlexible':
+                    return 'Most balanced';
+                case 'perfectStreak':
+                    return `${Math.round(value)} consecutive days`;
+                case 'otChampion':
+                    return `${value.toFixed(1)} hours of OT`;
+                case 'earningsChampion':
+                    // Format as ₱XXX,XXX (placeholder, not actual value)
+                    return `₱XXX,XXX`;
+                default:
+                    return value;
+            }
+        }
+
+        function getStatUnit(statId) {
+            if (statId === 'weekendWarrior') return 'weekend shifts';
+            if (statId === 'holidayHero') return 'holiday shifts';
+            if (statId === 'eventSpecialist') return 'events worked';
+            if (statId === 'mostWorkaholic') return 'days worked';
+            return 'times';
+        }
+
+        const TOTAL_PAGES = 13;
+        let currentPage = 0;
+        let startX = 0;
+        let currentX = 0;
+        let isDragging = false;
+        let startTime = 0;
+        let hasUserStarted = false; // must tap to start before swiping from first page
+
+        const carouselTrack = document.getElementById('carouselTrack');
+        const pageIndicator = document.getElementById('pageIndicator');
+        const timelapseVideo = document.getElementById('timelapseVideo');
+        const leftZone = document.getElementById('leftZone');
+        const rightZone = document.getElementById('rightZone');
+
+        // Initialize page indicators
+        function initIndicators() {
+            pageIndicator.innerHTML = '';
+            for (let i = 0; i < TOTAL_PAGES; i++) {
+                const dot = document.createElement('div');
+                dot.className = 'indicator-dot';
+                if (i === 0) dot.classList.add('active');
+                pageIndicator.appendChild(dot);
+            }
+        }
+
+        // Update page indicators
+        function updateIndicators(page) {
+            const dots = pageIndicator.querySelectorAll('.indicator-dot');
+            dots.forEach((dot, index) => {
+                if (index === page) {
+                    dot.classList.add('active');
+                } else {
+                    dot.classList.remove('active');
+                }
+            });
+        }
+
+        // Reset animations for stats pages
+        function resetAnimations() {
+            const currentPageEl = document.querySelector(`[data-page="${currentPage + 1}"]`);
+            if (currentPageEl && currentPageEl.classList.contains('stats-page')) {
+                const cards = currentPageEl.querySelectorAll('.stat-card, .branch-stat-card');
+                const winners = currentPageEl.querySelectorAll('.stat-winner');
+                const ranks = currentPageEl.querySelectorAll('.stat-rank');
+                
+                // Reset all animations - only animate if data is loaded
+                [...cards, ...winners, ...ranks].forEach(el => {
+                    el.style.animation = 'none';
+                    el.style.opacity = '0';
+                    // Force reflow
+                    el.offsetHeight;
+                    // Re-enable animation only if card has data-loaded class
+                    if ((el.classList.contains('stat-card') || el.classList.contains('branch-stat-card')) && el.classList.contains('data-loaded')) {
+                        el.style.animation = null;
+                        el.style.opacity = null; // let animation control opacity (fixes 3rd card on page 13)
+                    } else if (!el.classList.contains('stat-card') && !el.classList.contains('branch-stat-card')) {
+                        // For winners and ranks, check if parent card has data-loaded
+                        const parentCard = el.closest('.stat-card, .branch-stat-card');
+                        if (parentCard && parentCard.classList.contains('data-loaded')) {
+                            el.style.animation = null;
+                            el.style.opacity = null;
+                        }
+                    }
+                });
+            }
+        }
+
+        // Move to specific page
+        function goToPage(page) {
+            if (page < 0 || page >= TOTAL_PAGES) return;
+
+            // Hide target page cards immediately (same frame) so they don't flash full opacity on mobile before resetAnimations runs
+            const targetPageEl = document.querySelector(`[data-page="${page + 1}"]`);
+            if (targetPageEl) {
+                const targetCards = targetPageEl.querySelectorAll('.stat-card, .branch-stat-card');
+                const targetWinners = targetPageEl.querySelectorAll('.stat-winner');
+                const targetRanks = targetPageEl.querySelectorAll('.stat-rank');
+                [...targetCards, ...targetWinners, ...targetRanks].forEach(el => {
+                    el.style.opacity = '0';
+                    el.style.animation = 'none';
+                });
+            }
+
+            currentPage = page;
+            const translateX = -page * 100;
+            carouselTrack.style.transform = `translateX(${translateX}vw)`;
+            updateIndicators(page);
+
+            // Show spinner only on data pages (2+) when data hasn't loaded yet; never on first page
+            if (page >= 1 && !wrappedData) {
+                showLoadingOverlay();
+            } else {
+                hideLoadingOverlay();
+            }
+            
+            // Reset animations when navigating to a stats page (then re-enable so they animate in)
+            setTimeout(resetAnimations, 50);
+        }
+
+        // Touch/Mouse event handlers
+        function handleStart(e) {
+            isDragging = true;
+            startTime = Date.now();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            startX = clientX;
+            currentX = clientX;
+            carouselTrack.style.transition = 'none';
+        }
+
+        function handleMove(e) {
+            if (!isDragging) return;
+            e.preventDefault();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            currentX = clientX;
+            const diff = currentX - startX;
+            const translateX = -currentPage * 100 + (diff / window.innerWidth) * 100;
+            carouselTrack.style.transform = `translateX(${translateX}vw)`;
+        }
+
+        function handleEnd(e) {
+            if (!isDragging) return;
+            isDragging = false;
+            carouselTrack.style.transition = 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)';
+            
+            const diff = currentX - startX;
+            const threshold = window.innerWidth * 0.2; // 20% of screen width
+            const timeDiff = Date.now() - startTime;
+            const isQuickSwipe = timeDiff < 300;
+
+            if (Math.abs(diff) > threshold || (isQuickSwipe && Math.abs(diff) > 50)) {
+                if (diff > 0 && currentPage > 0) {
+                    goToPage(currentPage - 1);
+                } else if (diff < 0 && currentPage < TOTAL_PAGES - 1) {
+                    if (currentPage === 0 && !hasUserStarted) {
+                        goToPage(0);
+                    } else {
+                        goToPage(currentPage + 1);
+                    }
+                } else {
+                    goToPage(currentPage);
+                }
+            } else {
+                goToPage(currentPage);
+            }
+        }
+
+        // Event listeners
+        carouselTrack.addEventListener('touchstart', handleStart, { passive: false });
+        carouselTrack.addEventListener('touchmove', handleMove, { passive: false });
+        carouselTrack.addEventListener('touchend', handleEnd);
+
+        carouselTrack.addEventListener('mousedown', handleStart);
+        carouselTrack.addEventListener('mousemove', handleMove);
+        carouselTrack.addEventListener('mouseup', handleEnd);
+        carouselTrack.addEventListener('mouseleave', handleEnd);
+
+        // Edge zone click handlers
+        leftZone.addEventListener('click', () => handleEdgeClick(true));
+        leftZone.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            handleEdgeClick(true);
+        });
+
+        rightZone.addEventListener('click', () => handleEdgeClick(false));
+        rightZone.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            handleEdgeClick(false);
+        });
+
+        function handleEdgeClick(isLeft) {
+            if (currentPage === 0 && !hasUserStarted) return;
+            if (isLeft && currentPage > 0) {
+                goToPage(currentPage - 1);
+            } else if (!isLeft && currentPage < TOTAL_PAGES - 1) {
+                goToPage(currentPage + 1);
+            }
+        }
+
+        // Keyboard navigation (for testing)
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft' && currentPage > 0) {
+                goToPage(currentPage - 1);
+            } else if (e.key === 'ArrowRight' && currentPage < TOTAL_PAGES - 1) {
+                goToPage(currentPage + 1);
+            }
+        });
+
+        // Initialize
+        initIndicators();
+        goToPage(0);
+
+        // Tap-to-start: overlay must receive touch (fixed, high z-index). Play only in same gesture on mobile.
+        function setupVideo() {
+            const video = timelapseVideo;
+            const overlay = document.getElementById('videoTapOverlay');
+            if (!video) return;
+
+            video.setAttribute('playsinline', '');
+            video.setAttribute('webkit-playsinline', '');
+            video.muted = true;
+
+            function hideTapOverlay() {
+                if (overlay) overlay.classList.add('hidden');
+            }
+
+            function onOverlayTap(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                hasUserStarted = true;
+                hideTapOverlay();
+                if (overlay) {
+                    overlay.removeEventListener('touchstart', onOverlayTap);
+                    overlay.removeEventListener('click', onOverlayTap);
+                }
+                video.load();
+                video.play().catch(() => {});
+            }
+
+            video.addEventListener('playing', () => { hideTapOverlay(); }, { once: true });
+            video.addEventListener('error', () => {
+                hideTapOverlay();
+                if (overlay) {
+                    overlay.classList.remove('hidden');
+                    overlay.innerHTML = '<span class="tap-label">Video unavailable</span><span class="tap-hint">Swipe to continue</span>';
+                    hasUserStarted = true;
+                }
+            }, { once: true });
+
+            if (overlay) {
+                overlay.addEventListener('touchstart', onOverlayTap, { passive: false });
+                overlay.addEventListener('click', onOverlayTap);
+            }
+
+            // Desktop: try autoplay; if it works, allow swiping without tap
+            function attemptAutoplay() {
+                video.play().then(() => {
+                    hasUserStarted = true;
+                    hideTapOverlay();
+                }).catch(() => {});
+            }
+            if (video.readyState >= 2) {
+                attemptAutoplay();
+            } else {
+                video.addEventListener('canplay', attemptAutoplay, { once: true });
+            }
+        }
+
+        if (timelapseVideo) {
+            setupVideo();
+        }
+        
+        // Staff selector: when user picks someone, fill My Stats pages (future: will be pre-selected by logged-in user)
+        const staffSelect = document.getElementById('staffSelect');
+        if (staffSelect) {
+            staffSelect.addEventListener('change', onStaffSelect);
+        }
+
+        const myStatsRandomizePhoto = document.getElementById('myStatsRandomizePhoto');
+        if (myStatsRandomizePhoto) {
+            myStatsRandomizePhoto.addEventListener('click', () => {
+                if (currentMyStatsEmployee) setMyStatsPageBackground(currentMyStatsEmployee);
+            });
+        }
+        const myStatsDownloadPhoto = document.getElementById('myStatsDownloadPhoto');
+        if (myStatsDownloadPhoto) {
+            myStatsDownloadPhoto.addEventListener('click', downloadMyStatsPhoto);
+        }
+
+        // Load wrapped data from Firebase
+        loadWrappedData();
+    </script>
+</body>
+</html>
+

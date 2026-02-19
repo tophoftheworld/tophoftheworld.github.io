@@ -1,0 +1,50 @@
+{
+  "categories": [
+    {
+      "id": "matcha-drinks",
+      "name": "Matcha Drinks"
+    }
+  ],
+  "items": [
+    {
+      "categoryId": "matcha-drinks",
+      "name": "Cereal Killer",
+      "description": "Honey Flakes, Sweet Cream, Matcha, Oatmilk, Honey Syrup",
+      "price": 250,
+      "type": "Iced",
+      "shorthand": "CK"
+    },
+    {
+      "categoryId": "matcha-drinks",
+      "name": "Sea Salt M²",
+      "description": "Sea Salt Cream, Double Matcha, Oatmilk, Vanilla Syrup",
+      "price": 240,
+      "type": "Iced",
+      "shorthand": "SSM"
+    },
+    {
+      "categoryId": "matcha-drinks",
+      "name": "The OG Matcha",
+      "description": "Matcha, Oat Milk, Classic Syrup",
+      "price": 220,
+      "type": "Iced",
+      "shorthand": "OG"
+    },
+    {
+      "categoryId": "matcha-drinks",
+      "name": "Earth Day",
+      "description": "Butterfly Pea Tea, Sweet Cream, Matcha, Oatmilk, Lavender Syrup",
+      "price": 250,
+      "type": "Iced",
+      "shorthand": "ED"
+    },
+    {
+      "categoryId": "matcha-drinks",
+      "name": "Campfire Night",
+      "description": "Toasted Mallows, Cocoa Cream, Matcha, Oatmilk, Choco Syrup",
+      "price": 270,
+      "type": "Iced",
+      "shorthand": "CFN"
+    }
+  ]
+}

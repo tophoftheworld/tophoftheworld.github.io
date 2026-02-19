@@ -259,6 +259,7 @@
                 <select id="branchSelect" onchange="handleBranchChange()">
                     <option value="sm-north">SM North</option>
                     <option value="podium">Podium</option>
+                    <option value="moa">MOA</option>
                 </select>
             </div>
             <div class="split-column">
@@ -402,6 +403,14 @@
         let currentUserNickname = localStorage.getItem("loggedInUser") || "";
         let currentBranch = "sm-north";
 
+        // Helper: human-readable branch label
+        function getBranchLabel(branch) {
+            if (branch === "sm-north") return "SM North";
+            if (branch === "podium") return "Podium";
+            if (branch === "moa") return "MOA";
+            return branch || "Unknown";
+        }
+
         // Function to map attendance branch names to sales branch values
         function mapBranchNameToValue(branchName) {
             if (!branchName) return null;
@@ -410,6 +419,8 @@
                 return "sm-north";
             } else if (lower.includes("podium")) {
                 return "podium";
+            } else if (lower.includes("moa")) {
+                return "moa";
             }
             return null;
         }
@@ -870,7 +881,7 @@
                 let dateStr = window.existingDate || new Date().toISOString().split('T')[0];
                 let branch = "Unknown";
                 if (window.existingBranch) {
-                    branch = window.existingBranch === "sm-north" ? "SM-North" : "Podium";
+                    branch = getBranchLabel(window.existingBranch).replace(/\s+/g, '-');
                 }
                 
                 link.download = `sales-report-${branch}-${dateStr}.png`;
@@ -1063,7 +1074,7 @@
             // Initialize expenses fields based on branch
             const expensesContainer = document.getElementById("expensesContainer");
             const cashReconciliationContainer = document.getElementById("cashReconciliationContainer");
-            if (branch === "podium") {
+            if (branch === "podium" || branch === "moa") {
                 expensesContainer.innerHTML = `
         <label for="expenses">Cash Expenses</label>
         <div class="input-wrapper">
@@ -1106,7 +1117,7 @@
         };
 
         function initializeInputListeners() {
-            const inputIds = currentBranch === "sm-north" 
+            const inputIds = currentBranch === "sm-north"
                 ? ['cash', 'card', 'gcash', 'maya', 'grab', 'expenses', 'actualCashLeft']
                 : ['cash', 'card', 'qr', 'giftCard', 'grab', 'expenses', 'nonCashExpenses', 'actualCashLeft'];
             
@@ -1274,7 +1285,7 @@
 
         function generateDisplaySummaryHTML(data, branch, dateDisplay, recordDate) {
             const dateInfo = formatDateForDisplay(dateDisplay, recordDate);
-            const branchLabel = branch === "sm-north" ? "SM North" : "Podium";
+            const branchLabel = getBranchLabel(branch);
             const formatCurrency = (val) => {
                 const num = val ?? 0;
                 const absVal = Math.abs(num).toLocaleString('en-US', {
@@ -1327,7 +1338,7 @@
             let html = `<div style="font-size: 0.95rem;">`;
             html += `<div style="margin-bottom: 0.4rem; padding-bottom: 0.2rem; border-bottom: 1px solid #eee;">`;
             html += `<strong>Date:</strong> ${formattedDate}<br>`;
-            html += `<strong>Branch:</strong> ${branch === "sm-north" ? "SM North" : "Podium"}`;
+            html += `<strong>Branch:</strong> ${getBranchLabel(branch)}`;
             html += `</div>`;
             
             html += `<div style="margin-bottom: 0.48rem;">`;
@@ -1351,7 +1362,7 @@
             html += `<strong style="display: block; margin: 0 0 0.06rem 0;">Expenses</strong>`;
             html += `<table style="width: 100%; border-collapse: collapse;">`;
             html += `<tr><td style="padding: 0.06rem 0.5rem;">Cash Expenses:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(data.expenses)}</td></tr>`;
-            if (branch === "podium" && data.nonCashExpenses) {
+            if ((branch === "podium" || branch === "moa") && data.nonCashExpenses) {
                 html += `<tr><td style="padding: 0.06rem 0.5rem;">Non-Cash Expenses:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(data.nonCashExpenses)}</td></tr>`;
             }
             html += `</table>`;
@@ -1395,7 +1406,7 @@
 
             emailjs.init(EMAILJS_PUBLIC_KEY);
 
-            const branchLabel = branch === 'sm-north' ? 'SM North' : 'Podium';
+            const branchLabel = getBranchLabel(branch);
             const formatCurrency = (val) => `₱${(val || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
             const formattedDate = formatSummaryDate(record.dateDisplay || date);
             
@@ -1465,7 +1476,7 @@
             emailContent += `<strong style="display: block; margin: 0 0 0.06rem 0;">Expenses</strong>`;
             emailContent += `<table style="width: 100%; border-collapse: collapse;">`;
             emailContent += `<tr><td style="padding: 0.06rem 0.5rem;">Cash Expenses:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(record.expenses)}</td></tr>`;
-            if (branch === "podium" && record.nonCashExpenses) {
+            if ((branch === "podium" || branch === "moa") && record.nonCashExpenses) {
                 emailContent += `<tr><td style="padding: 0.06rem 0.5rem;">Non-Cash Expenses:</td><td style="text-align: right; padding: 0.06rem 0.5rem;">${formatCurrency(record.nonCashExpenses)}</td></tr>`;
             }
             emailContent += `</table>`;
@@ -1788,13 +1799,14 @@
                 let branch = "Unknown";
                 
                 if (window.downloadBranch) {
-                    branch = window.downloadBranch === "sm-north" ? "SM-North" : "Podium";
+                    branch = getBranchLabel(window.downloadBranch).replace(/\s+/g, '-');
                 } else {
                     // Try to extract from summary text as fallback
                     const summarySource = window.downloadSummaryHTML || document.getElementById("successSummary")?.textContent || "";
                     const summaryText = typeof summarySource === "string" ? summarySource : "";
                     if (summaryText.includes("SM North")) branch = "SM-North";
                     else if (summaryText.includes("Podium")) branch = "Podium";
+                    else if (summaryText.includes("MOA")) branch = "MOA";
                 }
                 
                 link.download = `sales-report-${branch}-${dateStr}.png`;

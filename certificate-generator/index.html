@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Certificate Generator - Matchanese</title>
+    <link rel="stylesheet" href="css/style.css">
+    <!-- Google Fonts for certificate text -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400;1,600;1,700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <div class="controls-panel">
+            <h1>Certificate Generator</h1>
+            <div class="form-group">
+                <label for="participantName">Participant Name(s):</label>
+                <textarea id="participantName" placeholder="Enter participant name(s), one per line" rows="5">Adrian Louis Saladaga</textarea>
+                <small class="form-hint">Enter one name per line. Each name will generate a separate certificate.</small>
+            </div>
+            <div class="form-group">
+                <label for="certificateDate">Date:</label>
+                <input type="date" id="certificateDate">
+            </div>
+            <div class="form-group">
+                <label for="venue">Venue:</label>
+                <input type="text" id="venue" placeholder="Enter venue" value="Benny and Cherie, Katipunan Ave., Quezon City">
+            </div>
+            <div class="button-group">
+                <button id="downloadPNG" class="btn btn-primary">Download PNG</button>
+                <button id="downloadPDF" class="btn btn-secondary">Download PDF</button>
+            </div>
+        </div>
+
+        <div class="certificate-container">
+            <div class="gallery-controls">
+                <button id="prevBtn" class="gallery-btn" disabled>‹ Previous</button>
+                <span id="galleryCounter" class="gallery-counter">1 / 1</span>
+                <button id="nextBtn" class="gallery-btn" disabled>Next ›</button>
+            </div>
+            <div id="certificate" class="certificate">
+                <!-- Background pattern/texture -->
+                <div class="certificate-background" style="background-image: url('img/background-texture.png'), url('img/background-texture.svg');"></div>
+                
+                <!-- Main content -->
+                <div class="certificate-content">
+                    <div class="main-content-area">
+                        <!-- Title -->
+                        <h1 class="certificate-title">Certificate of Participation</h1>
+                        
+                        <!-- Introductory text -->
+                        <p class="certificate-intro">THIS CERTIFICATE IS PROUDLY PRESENTED TO</p>
+                        
+                        <!-- Participant name -->
+                        <h2 class="participant-name" id="displayParticipantName">Adrian Louis Saladaga</h2>
+                        
+                        <!-- Recognition text -->
+                        <p class="recognition-text">
+                            in recognition of their active engagement and participation in the Matcha Workshop, 
+                            hosted by matchanese this <span id="displayDate">26th Day of April</span>, 
+                            at <span id="displayVenue">Benny and Cherie, Katipunan Ave., Quezon City</span>.
+                        </p>
+                    </div>
+                    
+                    <!-- Signatures section -->
+                    <div class="signatures-section">
+                        <div class="signature-block">
+                            <img src="img/signature1.png" alt="Signature 1" class="signature-image" id="signature1" onerror="this.onerror=null; this.src='img/signature1.svg';">
+                            <p class="signature-name">Bea Boldo</p>
+                            <p class="signature-title">Facilitator/Co-Owner</p>
+                            <p class="signature-company">matchanese</p>
+                        </div>
+                        <div class="signature-block">
+                            <img src="img/signature2.png" alt="Signature 2" class="signature-image" id="signature2" onerror="this.onerror=null; this.src='img/signature2.svg';">
+                            <p class="signature-name">Cristopher David</p>
+                            <p class="signature-title">Facilitator/Co-Owner</p>
+                            <p class="signature-company">matchanese</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Company logo -->
+                    <div class="logo-container">
+                        <img src="img/logo.png" alt="Matchanese Logo" class="company-logo" id="companyLogo" onerror="this.onerror=null; this.src='img/logo.svg';">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="js/script.js"></script>
+</body>
+</html>
+

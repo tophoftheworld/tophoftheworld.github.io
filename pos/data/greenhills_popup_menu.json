@@ -1,0 +1,92 @@
+{
+  "categories": [
+    { "id": "matcha-lattes", "name": "Matcha Lattes" },
+    { "id": "matcha-lite", "name": "Matcha Lite" },
+    { "id": "hojicha", "name": "Hojicha" }
+  ],
+  "items": [
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Signature Matchanese Latte",
+      "description": "Matcha Cold Whisked with Milk",
+      "price": 220,
+      "type": "Iced",
+      "shorthand": "SML",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Spanish Matchanese Latte",
+      "description": "Our Signature Matcha Latte with Sweetened Milk",
+      "price": 230,
+      "type": "Iced",
+      "shorthand": "SPML",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Matchanese Seasalt Latte",
+      "description": "Our Signature Matcha Latte topped with Seasalt Cream",
+      "price": 250,
+      "tags": ["Best Seller"],
+      "type": "Iced",
+      "shorthand": "MSL",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Strawberry Matchanese Latte",
+      "description": "Our Signature Matcha Latte with Strawberry Puree and Syrup",
+      "price": 250,
+      "type": "Iced",
+      "shorthand": "STML",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Mango Matchanese Latte",
+      "description": "Our Signature Matcha Latte with Fresh Mango Chunks",
+      "price": 250,
+      "tags": ["New!"],
+      "type": "Iced",
+      "shorthand": "MML",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "matcha-lite",
+      "name": "Matchanese Tea",
+      "description": "Freshly Whisked Pure Matcha",
+      "price": 190,
+      "type": "Iced",
+      "shorthand": "MT",
+      "customizations": { "sweetness": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "matcha-lite",
+      "name": "Matchanese Coconut",
+      "description": "Freshly Whisked Matcha with Coconut Water",
+      "price": 200,
+      "type": "Iced",
+      "shorthand": "MC",
+      "customizations": { "sweetness": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "matcha-lite",
+      "name": "Matchanese Sunrise",
+      "description": "Freshly Whisked Matcha with Dalandan Juice",
+      "price": 200,
+      "type": "Iced",
+      "shorthand": "MS",
+      "customizations": { "sweetness": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "hojicha",
+      "name": "Hojicha Latte",
+      "description": "Freshly Whisked Roasted Matcha",
+      "price": 190,
+      "type": "Iced",
+      "shorthand": "HL",
+      "customizations": { "sweetness": true, "milk": true, "discount": true }
+    }
+  ]
+}

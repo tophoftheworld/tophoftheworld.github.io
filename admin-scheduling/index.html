@@ -76,7 +76,7 @@
 
     <!-- Add Location Modal -->
     <div class="modal" id="addBranchModal">
-        <div class="modal-content">
+        <div class="modal-content modal-content--branch">
             <span class="close-modal" id="closeBranchModal">&times;</span>
             <h2 id="branchModalTitle">Add New Location</h2>
             <form id="branchForm">
@@ -94,10 +94,14 @@
                 </div>
                 <input type="hidden" id="branchKey">
                 <div class="form-actions">
-                    <button type="submit" class="submit-btn">Add Location</button>
+                    <button type="submit" class="submit-btn" id="branchSubmitBtn">Add Location</button>
                     <button type="button" class="cancel-btn" id="cancelBranchBtn">Cancel</button>
                 </div>
             </form>
+            <div class="branch-list-section" id="branchListSection">
+                <h3 class="branch-list-title" id="branchListTitle">Existing pop-ups</h3>
+                <ul class="branch-list" id="branchList"></ul>
+            </div>
         </div>
     </div>
 

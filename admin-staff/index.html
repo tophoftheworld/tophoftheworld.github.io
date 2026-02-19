@@ -139,12 +139,20 @@
             <h2>Add New Employee</h2>
             <form id="addEmployeeForm">
                 <div class="form-group">
-                    <label for="addEmployeeId">Employee ID</label>
-                    <input type="text" id="addEmployeeId" required placeholder="e.g., 131929">
+                    <label for="addEmployeeId">Account Code</label>
+                    <input type="text" id="addEmployeeId" required placeholder="Filled automatically">
                 </div>
                 <div class="form-group">
                     <label for="addEmployeeName">Full Name</label>
                     <input type="text" id="addEmployeeName" required placeholder="e.g., John Doe">
+                </div>
+                <div class="form-group">
+                    <label for="addRoleSelect">Role</label>
+                    <select id="addRoleSelect" required>
+                        <option value="staff">Staff - No Admin Access</option>
+                        <option value="manager">Manager - Select Access</option>
+                        <option value="admin">Admin - Full Access</option>
+                    </select>
                 </div>
                 <div class="form-group">
                     <label for="addNickname">Nickname (Optional)</label>
@@ -212,7 +220,7 @@
                 <thead>
                     <tr>
                         <th>Photo</th>
-                        <th>Employee Code</th>
+                        <th>Account Code</th>
                         <th>Name</th>
                         <th>Role</th>
                         <th>Status</th>
@@ -231,7 +239,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-    <script type="module" src="js/staff-script.js?v=20251110-1"></script>
+    <script type="module" src="js/staff-script.js?v=20250208-1"></script>
 </body>
 
 </html>

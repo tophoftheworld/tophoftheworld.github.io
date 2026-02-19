@@ -888,20 +888,13 @@ button:hover {
 /* Edit Modal Styles */
 #editRequestModal .modal-content {
     max-width: 600px;
-}
-
-#editRequestModal form {
+}#editRequestModal form {
     margin-top: 1rem;
-}
-
-#editRequestModal input[type="date"],
+}#editRequestModal input[type="date"],
 #editRequestModal input[type="time"],
 #editRequestModal select,
 #editRequestModal textarea {
     font-family: inherit;
-}
-
-#editRequestModal input[type="checkbox"] {
+}#editRequestModal input[type="checkbox"] {
     cursor: pointer;
 }
-

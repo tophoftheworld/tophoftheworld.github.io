@@ -18,25 +18,41 @@ body {
 
 .dashboard-header {
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
     align-items: center;
+    gap: 1rem;
     margin-bottom: 2rem;
     background: white;
     padding: 1rem;
     border-radius: 10px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    max-width: 100%;
+    min-width: 0;
 }
 
 .dashboard-header h1 {
     color: #2b9348;
-    font-size: 1.5rem;
+    font-size: 1.25rem;
     font-weight: 600;
+    flex-shrink: 0;
+    min-width: 0;
 }
 
 .header-controls {
     display: flex;
-    gap: 0.75rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
     align-items: center;
+    min-width: 0;
+    flex: 1 1 auto;
+    justify-content: flex-end;
+}
+
+.header-controls .event-selector,
+.header-controls .date-selector {
+    min-width: 120px;
+    max-width: 160px;
 }
 
 .event-selector,
@@ -90,7 +106,7 @@ body {
 
 .stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    grid-template-columns: repeat(3, 1fr);
     gap: 1rem;
     margin-bottom: 2rem;
 }
@@ -702,6 +718,65 @@ body {
     color: white;
 }
 
+.scope-toggle {
+    display: inline-flex;
+    flex-direction: row;
+    flex-shrink: 0;
+    gap: 0;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.scope-toggle-btn {
+    -webkit-appearance: none;
+    appearance: none;
+    margin: 0;
+    padding: 0.6rem 1rem;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    font-family: 'Inter', sans-serif;
+    font-weight: 500;
+    font-size: 0.85rem;
+    color: #555;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    white-space: nowrap;
+    box-shadow: none;
+}
+
+.scope-toggle-btn:first-child {
+    border-radius: 8px 0 0 8px;
+    border-right-width: 0;
+}
+
+.scope-toggle-btn:last-child {
+    border-radius: 0 8px 8px 0;
+}
+
+.scope-toggle-btn:not(:first-child):not(:last-child) {
+    border-radius: 0;
+    border-right-width: 0;
+}
+
+.scope-toggle-btn:hover {
+    background: #f5f5f5;
+    border-color: #2b9348;
+    color: #2b9348;
+}
+
+.scope-toggle-btn.active {
+    background: #2b9348;
+    border-color: #2b9348;
+    color: #fff;
+}
+
+.scope-toggle-btn.active:hover {
+    background: #247a3d;
+    border-color: #247a3d;
+    color: #fff;
+}
+
 /* Event Management Modal Styles */
 .event-management {
     padding: 20px 0;
@@ -1258,4 +1333,100 @@ select option[style*="color: #999"] {
     text-align: right;
     font-size: 18px;
     color: #2b9348;
+}
+
+/* Sales by Item Report */
+.sales-by-item-section {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    margin-bottom: 2rem;
+    border-left: 4px solid #2b9348;
+}
+
+.sales-by-item-header {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.sales-by-item-header h3 {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0;
+    color: #333;
+}
+
+.download-report-btn {
+    background: #2b9348;
+    color: white;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    font-family: 'Inter', sans-serif;
+    font-weight: 500;
+    font-size: 0.9rem;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.download-report-btn:hover {
+    background: #1f7038;
+}
+
+.download-report-btn:disabled {
+    background: #999;
+    cursor: not-allowed;
+}
+
+.sales-by-item-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+    color: #666;
+}
+
+.sales-by-item-report {
+    overflow-x: auto;
+}
+
+.sales-by-item-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'Inter', sans-serif;
+}
+
+.sales-by-item-table th,
+.sales-by-item-table td {
+    padding: 10px 16px;
+    border-bottom: 1px solid #eee;
+    text-align: left;
+}
+
+.sales-by-item-table th {
+    background: #f8f9fa;
+    font-weight: 600;
+    color: #333;
+}
+
+.sales-by-item-table th.align-right,
+.sales-by-item-table td.align-right {
+    text-align: right;
+}
+
+.sales-by-item-table tfoot td {
+    border-top: 2px solid #2b9348;
+    background: #f8f9fa;
+    font-weight: 600;
+    color: #2b9348;
+}
+
+.sales-by-item-table tbody tr:hover {
+    background: #fafafa;
 }

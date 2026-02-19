@@ -1,14 +1,22 @@
 rules_version = '2';
-
-// Firebase Storage rules for Matchanese staff management
 service firebase.storage {
   match /b/{bucket}/o {
-    // Allow staff photo uploads and reads
+
+    // Staff management profile photos
     match /staff-photos/{employeeId} {
-      allow read, write: if true; // Allow public access for staff photos
+      allow read, write: if true;
     }
-    
-    // Keep existing rules for other paths
+
+    match /menu-creator-photos/{fileName} {
+      allow read, write: if true;
+    }
+
+    // Allow access to payment_confirmations folder
+    match /payment_confirmations/{allPaths=**} {
+      allow read, write: if true;
+    }
+
+    // Default rule for other paths
     match /{allPaths=**} {
       allow read, write: if false;
     }

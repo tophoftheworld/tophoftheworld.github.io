@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Random Selfie Generator</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 500px;
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 1.8rem;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 0.9rem;
+            margin-bottom: 30px;
+        }
+
+        .employee-selector {
+            margin-bottom: 30px;
+        }
+
+        .employee-selector label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: 600;
+            color: #333;
+            text-align: left;
+        }
+
+        .employee-dropdown {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #667eea;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-family: 'Inter', sans-serif;
+            background: white;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .employee-dropdown:focus {
+            outline: none;
+            border-color: #764ba2;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .selfie-container {
+            position: relative;
+            width: 100%;
+            margin-bottom: 20px;
+            border-radius: 15px;
+            overflow: hidden;
+            background: #f0f0f0;
+            min-height: 400px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .selfie-container:active {
+            transform: scale(0.98);
+        }
+
+        .selfie-container.loading {
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: loading 1.5s infinite;
+        }
+
+        @keyframes loading {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        .selfie-image {
+            width: 100%;
+            height: auto;
+            max-height: 70vh;
+            object-fit: contain;
+            display: block;
+        }
+
+        .selfie-placeholder {
+            color: #999;
+            font-size: 1.2rem;
+            padding: 40px;
+        }
+
+        .selfie-info {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            color: #666;
+        }
+
+        .selfie-info strong {
+            color: #333;
+        }
+
+        .tap-hint {
+            margin-top: 15px;
+            color: #667eea;
+            font-size: 0.85rem;
+            font-weight: 500;
+            opacity: 0.8;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .stats {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            font-size: 0.85rem;
+            color: #666;
+        }
+
+        .error-message {
+            color: #dc3545;
+            padding: 15px;
+            background: #ffe6e6;
+            border-radius: 10px;
+            margin-top: 15px;
+        }
+
+        .download-section {
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        .btn-download {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-family: 'Inter', sans-serif;
+            width: 100%;
+        }
+
+        .btn-download:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-download:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .download-progress {
+            margin-top: 15px;
+        }
+
+        .progress-text {
+            font-size: 0.9rem;
+            color: #666;
+            margin-bottom: 8px;
+        }
+
+        .progress-bar-small {
+            width: 100%;
+            height: 6px;
+            background: #e0e0e0;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .progress-fill-small {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📸 Random Selfie Generator</h1>
+        <p class="subtitle">Tap the image for a new random selfie!</p>
+
+        <div class="employee-selector">
+            <button id="randomTimelapseBtn" class="btn btn-random" style="width: 100%; margin-bottom: 20px; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 10px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: all 0.3s;">
+                🎬 Create Random 10s Timelapse (All Employees)
+            </button>
+            <label for="employeeSelect">Select Employee:</label>
+            <select id="employeeSelect" class="employee-dropdown">
+                <option value="">-- Loading employees --</option>
+            </select>
+        </div>
+
+        <div id="selfieContainer" class="selfie-container" style="display: none;">
+            <div class="selfie-placeholder">Select an employee to start</div>
+        </div>
+
+        <div id="selfieInfo" class="selfie-info" style="display: none;"></div>
+        <div id="tapHint" class="tap-hint" style="display: none;">👆 Tap image for another selfie</div>
+        <div id="stats" class="stats" style="display: none;"></div>
+        <div id="downloadSection" class="download-section" style="display: none;">
+            <button id="downloadVideoBtn" class="btn btn-download">
+                📹 Download Timelapse Video
+            </button>
+            <div id="downloadProgress" class="download-progress" style="display: none;">
+                <div class="progress-text">Creating video...</div>
+                <div class="progress-bar-small">
+                    <div class="progress-fill-small" id="videoProgressFill"></div>
+                </div>
+            </div>
+        </div>
+        <div id="errorMessage" class="error-message" style="display: none;"></div>
+    </div>
+
+    <script src="../admin-payroll/js/PayCalculator.js"></script>
+    <script type="module" src="selfie-generator.js"></script>
+</body>
+</html>
+

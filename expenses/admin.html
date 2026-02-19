@@ -12,7 +12,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"
         integrity="sha512-ElRFoEQdI5Ht6kZvyzXhYG9NqjtkmlkfYk0wr6wHxU9JEHakS7UJZNeml5ALk+8IKlU6jDgMabC3vkumRokgJA=="
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <link rel="stylesheet" href="css/admin.css?v=1006">
+    <link rel="stylesheet" href="css/admin.css?v=1013">
 </head>
 
 <body>
@@ -98,7 +98,7 @@
                         </svg>
                         Add Expense
                     </button>
-                    <button class="action-btn secondary" id="exportBtn">
+                    <button class="action-btn secondary" id="exportBtn" style="display: none;">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                             <polyline points="7,10 12,15 17,10"></polyline>
@@ -106,7 +106,7 @@
                         </svg>
                         Export CSV
                     </button>
-                    <button class="action-btn secondary" id="importBtn">
+                    <button class="action-btn secondary" id="importBtn" style="display: none;">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                             <polyline points="17,8 12,3 7,8"></polyline>
@@ -120,6 +120,21 @@
                             <path d="m18.5 2.5 a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z"></path>
                         </svg>
                         Bulk Edit
+                    </button>
+                    <button class="action-btn secondary" id="bulkMergeBtn" onclick="showBulkMergeModal()" title="Merge selected suppliers" style="display: none; background: #2b9348; color: white;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+                        </svg>
+                        Merge
+                    </button>
+                    <button class="action-btn secondary" id="bulkDeleteBtn" onclick="showBulkDeleteModal()" title="Delete selected items" style="display: none; background: #dc3545; color: white;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3,6 5,6 21,6"></polyline>
+                            <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"></path>
+                            <line x1="10" y1="11" x2="10" y2="17"></line>
+                            <line x1="14" y1="11" x2="14" y2="17"></line>
+                        </svg>
+                        Delete
                     </button>
                 </div>
             </div>
@@ -222,9 +237,62 @@
     <!-- Toast for notifications -->
     <div id="toast" class="toast"></div>
 
+    <!-- Merge Supplier Modal -->
+    <div class="merge-supplier-modal-overlay" id="mergeSupplierModalOverlay">
+        <div class="merge-supplier-modal">
+            <div class="modal-header">
+                <h1 class="modal-title">Merge Suppliers</h1>
+                <div class="modal-header-actions">
+                    <button class="modal-close-btn" id="mergeModalCloseBtn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+    
+            <div class="modal-content" id="mergeSupplierContent">
+                <!-- Content will be populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div class="confirmation-modal-overlay" id="confirmationModalOverlay">
+        <div class="confirmation-modal">
+            <h3 id="confirmationTitle">Confirm Action</h3>
+            <p id="confirmationMessage">Are you sure you want to proceed?</p>
+            <div class="confirmation-modal-actions">
+                <button class="confirmation-btn cancel" id="confirmationCancelBtn">Cancel</button>
+                <button class="confirmation-btn delete" id="confirmationActionBtn">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Merge Suppliers Modal -->
+    <div class="merge-supplier-modal-overlay" id="bulkMergeModalOverlay">
+        <div class="merge-supplier-modal">
+            <div class="modal-header">
+                <h1 class="modal-title">Merge Selected Suppliers</h1>
+                <div class="modal-header-actions">
+                    <button class="modal-close-btn" id="bulkMergeModalCloseBtn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+    
+            <div class="modal-content" id="bulkMergeContent">
+                <!-- Content will be populated by JavaScript -->
+            </div>
+        </div>
+    </div>
 
     <!-- Load admin script at the bottom to ensure DOM is ready -->
-    <script type="module" src="./js/admin.js?v=1009"></script>
+    <script type="module" src="./js/admin.js?v=1024"></script>
 
 </body>
 

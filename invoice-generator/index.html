@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invoice Generator - Matchanese</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <div class="controls-panel">
+            <h1>Invoice Generator</h1>
+            
+            <!-- Invoice Details -->
+            <div class="form-section">
+                <h2>Invoice Details</h2>
+                <div class="form-group">
+                    <label for="invoiceNumber">Invoice Number:</label>
+                    <input type="text" id="invoiceNumber" placeholder="INV-2025-001">
+                </div>
+                <div class="form-group">
+                    <label for="invoiceDate">Invoice Date:</label>
+                    <input type="date" id="invoiceDate">
+                </div>
+            </div>
+
+            <!-- Client Details -->
+            <div class="form-section">
+                <h2>Client Details</h2>
+                <div class="form-group">
+                    <label for="clientName">Billed to:</label>
+                    <input type="text" id="clientName" placeholder="Enter client/company name">
+                </div>
+                <div class="form-group">
+                    <label for="clientAddress">Address:</label>
+                    <textarea id="clientAddress" rows="2" placeholder="Enter client address"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="clientTIN">TIN:</label>
+                    <input type="text" id="clientTIN" placeholder="Enter TIN (optional)">
+                </div>
+            </div>
+
+            <!-- Invoice Items -->
+            <div class="form-section">
+                <h2>Package & Services</h2>
+                <div class="form-group">
+                    <label for="eventVenue">Venue:</label>
+                    <input type="text" id="eventVenue" placeholder="e.g., Sunken Garden, Greenbelt 5">
+                </div>
+                <div class="form-group">
+                    <label for="eventDate">Event Date:</label>
+                    <input type="date" id="eventDate">
+                </div>
+                <div class="form-group">
+                    <label for="packageType">Package:</label>
+                    <select id="packageType">
+                        <option value="">Select Package</option>
+                        <option value="starter">Starter Package</option>
+                        <option value="signature">Signature Package</option>
+                        <option value="special">Special Package</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="numberOfPax">Number of Cups:</label>
+                    <select id="numberOfPax">
+                        <option value="">Select Number of Cups</option>
+                        <option value="50">50 cups</option>
+                        <option value="100">100 cups</option>
+                        <option value="150">150 cups</option>
+                    </select>
+                </div>
+                <div id="invoiceItems">
+                    <!-- Items will be added dynamically -->
+                </div>
+            </div>
+
+            <!-- Additional Line Items -->
+            <div class="form-section">
+                <h2>Additional Line Items</h2>
+                <div id="customLineItems">
+                    <!-- Custom line items will be added here -->
+                </div>
+                <button type="button" id="addLineItemBtn" class="btn btn-secondary" style="margin-top: 1rem;">+ Add Line Item</button>
+            </div>
+
+            <!-- Payment Terms -->
+            <div class="form-section">
+                <h2>Payment Terms</h2>
+                <div id="paymentMilestones">
+                    <!-- Payment milestones will be added dynamically -->
+                </div>
+                <button type="button" id="addMilestoneBtn" class="btn btn-secondary" style="display: none;">+ Add Payment Milestone</button>
+            </div>
+
+            <!-- Notes -->
+            <div class="form-section">
+                <h2>Additional Notes</h2>
+                <div class="form-group">
+                    <label for="notes">Notes:</label>
+                    <textarea id="notes" rows="3" placeholder="Additional notes or terms (optional)"></textarea>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="button-group">
+                <div class="button-row">
+                    <button id="clearForm" class="btn btn-flat">New</button>
+                    <button id="loadFromCloud" class="btn btn-flat">Load</button>
+                </div>
+                <div class="button-row">
+                    <button id="downloadPDF" class="btn btn-primary">Download PDF</button>
+                    <button id="saveToCloud" class="btn btn-outline">Save</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="invoice-preview">
+            <div id="invoice" class="invoice">
+                <!-- Header with Logo -->
+                <div class="invoice-header-logo">
+                    <img src="img/logo.png" alt="Matchanese Logo" class="company-logo">
+                </div>
+
+                <!-- Company Info -->
+                <div class="company-info">
+                    <div class="company-name">MATCHANESE, INC.</div>
+                    <div class="company-address">Unit 4506, Edades Tower, Amorsolo Drive, Rockwell, Makati City, Philippines</div>
+                    <div class="company-tin">TIN: 010-757-989-000</div>
+                </div>
+
+                <!-- Invoice Title and Client Info -->
+                <div class="invoice-title-section">
+                    <div class="invoice-title-row">
+                        <div class="invoice-title-left">
+                            <h1 class="invoice-title">BILLING INVOICE</h1>
+                        </div>
+                        <div class="invoice-title-right">
+                            <div class="invoice-date">
+                                <span class="date-label">Date:</span>
+                                <span class="date-value" id="displayInvoiceDate"></span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="client-details">
+                        <div class="client-line">
+                            <span class="client-label">Billed to:</span>
+                            <span class="client-value" id="displayClientName"></span>
+                        </div>
+                        <div class="client-line">
+                            <span class="client-label">Address:</span>
+                            <span class="client-value" id="displayClientAddress"></span>
+                        </div>
+                        <div class="client-line">
+                            <span class="client-label">TIN:</span>
+                            <span class="client-value" id="displayClientTIN"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Items Table -->
+                <div class="items-section">
+                    <table class="items-table">
+                        <thead>
+                            <tr>
+                                <th class="col-description">DESCRIPTION</th>
+                                <th class="col-subtotal">Subtotal</th>
+                            </tr>
+                        </thead>
+                        <tbody id="displayItems">
+                            <tr>
+                                <td colspan="2" class="empty-state">No items added yet</td>
+                            </tr>
+                        </tbody>
+                        <tfoot>
+                            <tr class="total-row">
+                                <td class="total-label"><strong>TOTAL AMOUNT DUE:</strong></td>
+                                <td class="total-amount text-right"><strong id="displayTotal">Php 0.00</strong></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+
+                <!-- Footer -->
+                <div class="invoice-footer">
+                    <div class="footer-content">
+                        <div class="footer-company">Matchanese, Inc.</div>
+                        <div class="footer-address">Unit 4506, Edades Tower,<br>Amorsolo Drive, Rockwell,<br>Makati City, Philippines</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Payment Terms Page -->
+            <div id="paymentTermsPage" class="invoice payment-terms-page">
+                <!-- Header with Logo -->
+                <div class="invoice-header-logo">
+                    <img src="img/logo.png" alt="Matchanese Logo" class="company-logo">
+                </div>
+
+                <!-- Payment Terms Section -->
+                <div class="payment-terms-section">
+                    <h2 class="section-title">PAYMENT TERMS</h2>
+                    <table class="payment-table">
+                        <thead>
+                            <tr>
+                                <th>MILESTONE</th>
+                                <th>DATE</th>
+                                <th>PERCENTAGE</th>
+                                <th>AMOUNT</th>
+                            </tr>
+                        </thead>
+                        <tbody id="displayPaymentMilestones">
+                            <tr>
+                                <td colspan="4" class="empty-state">No payment milestones added</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Payment Details Section -->
+                <div class="payment-details-section">
+                    <h2 class="section-title">PAYMENT DETAILS</h2>
+                    <p class="payment-subtitle">Cash/check/bank deposit payable to:</p>
+                    <div class="bank-details">
+                        <div class="bank-column">
+                            <div class="bank-item">
+                                <strong>BDO</strong><br>
+                                Account Name: MATCHANESE INC<br>
+                                Account Number: 000251640035
+                            </div>
+                            <div class="bank-item">
+                                <strong>Unionbank</strong><br>
+                                Account Name: Cristopher David<br>
+                                Account Number: 109420972821
+                            </div>
+                        </div>
+                        <div class="bank-column">
+                            <div class="bank-item">
+                                <strong>BPI</strong><br>
+                                Account Name: Beatrice Grace Boldo<br>
+                                Account Number: 0779138739
+                            </div>
+                            <div class="bank-item">
+                                <strong>GCash</strong><br>
+                                Account Name: Cristopher David<br>
+                                GCash Number: 09496471857
+                            </div>
+                        </div>
+                    </div>
+                    <p class="paypal-note"><em>Online Card Payment option via PayPal is also available via request.</em></p>
+                </div>
+
+                <!-- Prepared By Section -->
+                <div class="prepared-by-section">
+                    <div class="prepared-by-content">
+                        <p class="prepared-by-label">Prepared by:</p>
+                        <div class="signature-space">
+                            <img src="img/sign.png" alt="Signature" class="signature-image">
+                        </div>
+                        <p class="prepared-by-name"><strong>Cristopher David</strong></p>
+                        <p class="prepared-by-company">Matchanese, Inc.</p>
+                    </div>
+                </div>
+
+                <!-- Footer -->
+                <div class="invoice-footer">
+                    <div class="footer-content">
+                        <div class="footer-company">Matchanese, Inc.</div>
+                        <div class="footer-address">Unit 4506, Edades Tower,<br>Amorsolo Drive, Rockwell,<br>Makati City, Philippines</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load from Cloud Modal -->
+    <div id="cloudModal" class="cloud-modal-overlay" style="display:none;">
+        <div class="cloud-modal">
+            <div class="cloud-modal-header">
+                <h2>Saved Invoices</h2>
+                <button id="closeCloudModal" class="cloud-modal-close">&times;</button>
+            </div>
+            <div class="cloud-modal-search">
+                <input type="text" id="invoiceSearchInput" placeholder="Search by client, invoice #, or package..." />
+            </div>
+            <div class="cloud-modal-body" id="cloudInvoiceList">
+                <div class="cloud-modal-loading">Loading...</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="js/script.js"></script>
+</body>
+</html>

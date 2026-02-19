@@ -5,6 +5,14 @@ let selectedDate = new Date();
 let allEventsData = {};
 let currentChartType = 'daily';
 let salesChart = null;
+/** 'daily' | 'week' | 'month' */
+let dataScope = 'daily';
+/** For package service, order.total = cups (not pesos). Used by payment/orders/modal/chart. */
+let currentEventIsPackage = false;
+/** Cached range data for chart when scope is week/month */
+let lastRangeChartData = null;
+let lastRangeStart = '';
+let lastRangeEnd = '';
 
 // Initialize dashboard
 document.addEventListener('DOMContentLoaded', async () => {
@@ -18,20 +26,19 @@ function setupEventListeners() {
     const dateSelector = document.getElementById('dateSelector');
     const refreshBtn = document.getElementById('refreshBtn');
 
-    // Set default date to today
-    dateSelector.value = getLocalDateString(selectedDate);
+    if (dateSelector) dateSelector.value = getLocalDateString(selectedDate);
 
-    eventSelector.addEventListener('change', async (e) => {
+    if (eventSelector) eventSelector.addEventListener('change', async (e) => {
         currentEvent = e.target.value;
         await loadDashboardData();
     });
 
-    dateSelector.addEventListener('change', async (e) => {
+    if (dateSelector) dateSelector.addEventListener('change', async (e) => {
         selectedDate = new Date(e.target.value + 'T00:00:00');
         await loadDashboardData();
     });
 
-    refreshBtn.addEventListener('click', async () => {
+    if (refreshBtn) refreshBtn.addEventListener('click', async () => {
         refreshBtn.disabled = true;
         refreshBtn.textContent = 'Loading...';
         await loadDashboardData();
@@ -40,26 +47,42 @@ function setupEventListeners() {
     });
 
     const manageEventsBtn = document.getElementById('manageEventsBtn');
-    manageEventsBtn.addEventListener('click', showEventManagementModal);
+    if (manageEventsBtn) manageEventsBtn.addEventListener('click', showEventManagementModal);
+
+    setupSalesReportDownloadListener();
+
+    // Data scope toggle: Daily vs Week/Month
+    document.querySelectorAll('.scope-toggle-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const scope = e.target.dataset.scope;
+            if (scope === dataScope) return;
+            dataScope = scope;
+            document.querySelectorAll('.scope-toggle-btn').forEach(b => {
+                b.classList.toggle('active', b.dataset.scope === dataScope);
+            });
+            loadDashboardData();
+        });
+    });
 
     // Chart toggle buttons
     document.querySelectorAll('.chart-toggle-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const chartType = e.target.dataset.chart;
 
-            // Update button states
             document.querySelectorAll('.chart-toggle-btn').forEach(b => {
                 b.classList.toggle('active', b.dataset.chart === chartType);
             });
 
             currentChartType = chartType;
 
-            // Update chart based on current data
-            if (chartType === 'daily') {
-                loadAllDaysChartData(currentEvent).then(chartData => {
-                    updateSalesChart(chartData);
-                });
+            if (dataScope === 'week' || dataScope === 'month') {
+                if (chartType === 'daily' && lastRangeChartData) {
+                    updateSalesChartFromRange(lastRangeChartData, lastRangeStart, lastRangeEnd);
+                } else {
+                    updateHourlySalesChart();
+                }
             } else {
+                // Daily tab: only selected day. No 60-day load; always show hourly for selected day.
                 updateHourlySalesChart();
             }
         });
@@ -85,23 +108,28 @@ async function loadAvailableEvents() {
             eventSelector.appendChild(option);
         });
 
-        // Add archived events at the bottom (greyed out)
-        if (archivedEvents.length > 0) {
-            // Add separator
-            const separator = document.createElement('option');
-            separator.disabled = true;
-            separator.textContent = '--- Archived ---';
-            eventSelector.appendChild(separator);
+        // Add archived section (Legacy Data + any archived Firebase events)
+        const separator = document.createElement('option');
+        separator.disabled = true;
+        separator.textContent = '--- Archived ---';
+        eventSelector.appendChild(separator);
 
-            archivedEvents.forEach(event => {
-                const option = document.createElement('option');
-                option.value = event.key;
-                option.textContent = `[${event.serviceType === 'package' ? 'Package' : 'Popup'}] ${event.name} (Archived)`;
-                option.style.color = '#999';
-                option.style.fontStyle = 'italic';
-                eventSelector.appendChild(option);
-            });
-        }
+        archivedEvents.forEach(event => {
+            const option = document.createElement('option');
+            option.value = event.key;
+            option.textContent = `[${event.serviceType === 'package' ? 'Package' : 'Popup'}] ${event.name} (Archived)`;
+            option.style.color = '#999';
+            option.style.fontStyle = 'italic';
+            eventSelector.appendChild(option);
+        });
+
+        // Always add Legacy Data (pop-up) to archived section
+        const legacyOption = document.createElement('option');
+        legacyOption.value = 'pop-up';
+        legacyOption.textContent = 'Legacy Data (Archived)';
+        legacyOption.style.color = '#999';
+        legacyOption.style.fontStyle = 'italic';
+        eventSelector.appendChild(legacyOption);
 
         // Set default selection to first active event (not archived)
         if (activeEvents.length > 0) {
@@ -121,12 +149,10 @@ async function loadAvailableEvents() {
             eventSelector.value = currentEvent;
             console.warn('Only archived events available');
         } else {
-            // No events at all
-            const noEventsOption = document.createElement('option');
-            noEventsOption.value = '';
-            noEventsOption.textContent = 'No events available';
-            noEventsOption.disabled = true;
-            eventSelector.appendChild(noEventsOption);
+            // No Firebase events - Legacy Data is the only option
+            currentEvent = 'pop-up';
+            eventSelector.value = 'pop-up';
+            await loadDashboardData();
         }
 
     } catch (error) {
@@ -138,30 +164,49 @@ async function loadDashboardData() {
     try {
         showLoadingState();
 
-        // Load ONLY selected day data first for immediate display
-        const selectedDayData = await loadSelectedDayData(currentEvent);
+        if (dataScope === 'daily') {
+            setScopeSectionTitles('day');
+            setChartSectionForScope('daily');
+            const dayData = await loadSelectedDayData(currentEvent);
+            currentEventIsPackage = (await getCurrentEventServiceType()) === 'package';
+            updateStatsFromData(dayData, 'day');
+            updatePaymentBreakdown(dayData);
+            updateRecentOrders(dayData);
+            updateTopItems(dayData);
+            updateSalesByItemReport(dayData);
+            updateEODSummaryDisplay(dayData);
 
-        // Update UI immediately with selected day data
-        updateSelectedDayStats(selectedDayData);
-        updatePaymentBreakdown(selectedDayData);
-        updateRecentOrders(selectedDayData);
-        updateTopItems(selectedDayData);
+            // Daily = selected day ONLY. Chart = hourly for this day (one fetch). No 60-day chart.
+            setTimeout(() => {
+                updateHourlySalesChart();
+            }, 0);
 
-        // Then load all-days chart data in background (non-blocking)
-        setTimeout(async () => {
-            if (currentChartType === 'daily') {
-                const chartData = await loadAllDaysChartData(currentEvent);
-                updateSalesChart(chartData);
-                updatePopupTotal(chartData);
-            } else {
-                await updateHourlySalesChart();
-            }
-        }, 100);
+            // History = selected day only. Use data we already have; no extra fetch.
+            renderSingleDayHistory(dayData);
+        } else {
+            const isMonth = dataScope === 'month';
+            setScopeSectionTitles(isMonth ? 'month' : 'week');
+            setChartSectionForScope(isMonth ? 'month' : 'week');
+            const { start: startStr, end: endStr } = isMonth ? getMonthRange(selectedDate) : getWeekRange(selectedDate);
+            const rangeData = await loadRangeData(currentEvent, startStr, endStr);
+            updateStatsFromData(rangeData, 'range');
+            updatePaymentBreakdown(rangeData);
+            updateRecentOrders(rangeData);
+            updateTopItems(rangeData);
+            updateSalesByItemReport(rangeData);
+            const eodSection = document.getElementById('eodDashboardSection');
+            if (eodSection) eodSection.style.display = 'none';
 
-        // Load daily sales data last (also non-blocking)
-        setTimeout(async () => {
-            await loadAllEventsData();
-        }, 200);
+            lastRangeChartData = { dailySales: rangeData.dailySales || {} };
+            lastRangeStart = startStr;
+            lastRangeEnd = endStr;
+            setTimeout(() => {
+                updateSalesChartFromRange(lastRangeChartData, startStr, endStr);
+            }, 100);
+
+            // Week/Month: load the full history table for the range (or keep 60-day for context)
+            setTimeout(() => loadAllEventsData(), 0);
+        }
 
     } catch (error) {
         console.error('Error loading dashboard data:', error);
@@ -237,6 +282,74 @@ async function loadSelectedDayData(eventName) {
     } catch (error) {
         console.error(`Error loading selected day data:`, error);
         return { orders: [], sales: 0, paymentMethods: { cash: 0, gcash: 0, maya: 0 }, topItems: {} };
+    }
+}
+
+async function loadRangeData(eventName, startStr, endStr) {
+    try {
+        const rangeData = {
+            orders: [],
+            sales: 0,
+            cups: 0,
+            paymentMethods: { cash: 0, gcash: 0, maya: 0 },
+            topItems: {},
+            dailySales: {}
+        };
+
+        const start = new Date(startStr + 'T00:00:00');
+        const end = new Date(endStr + 'T00:00:00');
+
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+            const dateStr = getLocalDateString(d);
+            try {
+                const dayRef = collection(db, `pos-orders/${eventName}/${dateStr}`);
+                const daySnapshot = await getDocs(dayRef);
+                let dayTotal = 0;
+
+                daySnapshot.forEach(orderDoc => {
+                    const orderData = orderDoc.data();
+                    if (orderData.status === 'deleted') return;
+
+                    const order = { ...orderData, firebaseId: orderDoc.id, date: dateStr };
+                    rangeData.orders.push(order);
+                    const total = orderData.total || 0;
+                    rangeData.sales += total;
+                    dayTotal += total;
+
+                    const method = (orderData.paymentMethod || 'cash').toLowerCase();
+                    if (rangeData.paymentMethods[method] !== undefined) {
+                        rangeData.paymentMethods[method] += total;
+                    }
+
+                    if (orderData.items) {
+                        orderData.items.forEach(item => {
+                            const itemName = item.name || 'Unknown Item';
+                            if (!rangeData.topItems[itemName]) {
+                                rangeData.topItems[itemName] = { count: 0, total: 0 };
+                            }
+                            rangeData.topItems[itemName].count += item.quantity || 1;
+                            rangeData.topItems[itemName].total += (item.price || 0) * (item.quantity || 1);
+                            const itemNameLower = itemName.toLowerCase();
+                            if (!itemNameLower.includes('cookie') && !itemNameLower.includes('mochi') &&
+                                !itemNameLower.includes('cake') && !itemNameLower.includes('pastry') &&
+                                !itemNameLower.includes('bread') && !itemNameLower.includes('sandwich')) {
+                                rangeData.cups += item.quantity || 1;
+                            }
+                        });
+                    }
+                });
+
+                rangeData.dailySales[dateStr] = dayTotal;
+            } catch (dayError) {
+                rangeData.dailySales[getLocalDateString(d)] = 0;
+            }
+        }
+
+        rangeData.orders.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        return rangeData;
+    } catch (error) {
+        console.error('Error loading range data:', error);
+        return { orders: [], sales: 0, cups: 0, paymentMethods: { cash: 0, gcash: 0, maya: 0 }, topItems: {}, dailySales: {} };
     }
 }
 
@@ -369,37 +482,32 @@ async function loadEventData(eventName) {
     }
 }
 
-async function updateSelectedDayStats(dayData) {
+async function updateStatsFromData(data, scope) {
     const serviceType = await getCurrentEventServiceType();
     const isPackageMode = serviceType === 'package';
+    const isDay = scope === 'day';
 
-    if (isPackageMode) {
-        // Calculate total cups for package service
-        const totalCups = dayData.orders.reduce((total, order) => {
-            return total + (order.total || 0); // For package orders, total = cup count
-        }, 0);
-
-        document.getElementById('todaySales').textContent = `${totalCups} cups`;
-        document.querySelector('.stat-card h3').textContent = 'Selected Day Cups';
-
-        // Hide the separate cups card for package mode
-        document.getElementById('todayCups').textContent = '0';
-    } else {
-        // Show sales for popup service
-        document.getElementById('todaySales').textContent = formatCurrency(dayData.sales);
-        document.querySelector('.stat-card h3').textContent = 'Selected Day Sales';
-
-        // Show cups in the dedicated cups card
-        document.getElementById('todayCups').textContent = (dayData.cups || 0).toString();
+    const firstCard = document.querySelector('.stat-card:first-child h3');
+    if (firstCard) {
+        const firstCardLabel = isDay ? (isPackageMode ? 'Selected Day Cups' : 'Selected Day Sales') : (isPackageMode ? 'Period Cups' : 'Period Sales');
+        firstCard.textContent = firstCardLabel;
     }
 
-    document.getElementById('todayOrders').textContent = dayData.orders.length.toString();
+    const salesEl = document.getElementById('todaySales');
+    const ordersEl = document.getElementById('todayOrders');
+    const cupsEl = document.getElementById('todayCups');
 
-    // Store orders data for modal access
-    sessionStorage.setItem('currentDayOrders', JSON.stringify(dayData.orders));
+    if (isPackageMode) {
+        const totalCups = data.orders.reduce((total, order) => total + (order.total || 0), 0);
+        if (salesEl) salesEl.textContent = `${totalCups} cups`;
+        if (cupsEl) cupsEl.textContent = '0';
+    } else {
+        if (salesEl) salesEl.textContent = formatCurrency(data.sales);
+        if (cupsEl) cupsEl.textContent = (data.cups || 0).toString();
+    }
+    if (ordersEl) ordersEl.textContent = data.orders.length.toString();
 
-    // Add EOD summary display
-    updateEODSummaryDisplay(dayData);
+    sessionStorage.setItem('currentDayOrders', JSON.stringify(data.orders));
 }
 
 function updateEODSummaryDisplay(dayData) {
@@ -453,47 +561,36 @@ function updateEODSummaryDisplay(dayData) {
     }
 }
 
-async function updatePopupTotal(chartData) {
-    const serviceType = await getCurrentEventServiceType();
-    const isPackageMode = serviceType === 'package';
-
-    if (isPackageMode) {
-        const totalCups = Object.values(chartData.dailySales).reduce((sum, value) => sum + value, 0);
-        document.getElementById('weekSales').textContent = `${totalCups} cups`;
-        // document.querySelector('.stat-card:nth-child(3) h3').textContent = 'Total Cups (All Time)';
-    } else {
-        const totalSales = Object.values(chartData.dailySales).reduce((sum, sales) => sum + sales, 0);
-        document.getElementById('weekSales').textContent = formatCurrency(totalSales);
-        // document.querySelector('.stat-card:nth-child(3) h3').textContent = 'Pop-up Total (All Time)';
-    }
-}
-
 function updatePaymentBreakdown(dayData) {
     const paymentStats = document.getElementById('paymentStats');
+    if (!paymentStats) return;
+    const fmt = (v) => currentEventIsPackage ? `${v || 0} cups` : formatCurrency(v || 0);
     paymentStats.innerHTML = `
         <div class="payment-item">
             <span class="payment-method">Cash</span>
-            <span class="payment-amount">${formatCurrency(dayData.paymentMethods.cash)}</span>
+            <span class="payment-amount">${fmt(dayData.paymentMethods.cash)}</span>
         </div>
         <div class="payment-item">
             <span class="payment-method">GCash</span>
-            <span class="payment-amount">${formatCurrency(dayData.paymentMethods.gcash)}</span>
+            <span class="payment-amount">${fmt(dayData.paymentMethods.gcash)}</span>
         </div>
         <div class="payment-item">
             <span class="payment-method">Maya</span>
-            <span class="payment-amount">${formatCurrency(dayData.paymentMethods.maya)}</span>
+            <span class="payment-amount">${fmt(dayData.paymentMethods.maya)}</span>
         </div>
     `;
 }
 
 function updateRecentOrders(dayData) {
     const recentOrdersList = document.getElementById('recentOrdersList');
+    if (!recentOrdersList) return;
 
     if (dayData.orders.length === 0) {
         recentOrdersList.innerHTML = '<div class="loading">No orders found for selected date</div>';
         return;
     }
 
+    const orderAmount = (order) => currentEventIsPackage ? `${order.total || 0} cups` : formatCurrency(order.total || 0);
     recentOrdersList.innerHTML = dayData.orders.map(order => `
         <div class="order-item" onclick="showOrderDetails('${order.firebaseId}', '${order.id}')">
             <div class="order-info">
@@ -501,7 +598,7 @@ function updateRecentOrders(dayData) {
                 <p>${formatDateTime(order.timestamp)} • ${order.paymentMethod || 'Cash'}</p>
                 <p>${order.customerName || 'No name'}</p>
             </div>
-            <div class="order-amount">${formatCurrency(order.total || 0)}</div>
+            <div class="order-amount">${orderAmount(order)}</div>
         </div>
     `).join('');
 }
@@ -533,6 +630,9 @@ window.showOrderDetails = function (firebaseId, orderId) {
     header.textContent = `ORDER-${orderId}`;
     modal.appendChild(header);
 
+    const isPkg = currentEventIsPackage;
+    const totalDisplay = isPkg ? `${order.total || 0} cups` : formatCurrency(order.total || 0);
+    const itemDisplay = (item) => isPkg ? `${item.quantity || 1} cups` : formatCurrency((item.price || 0) * (item.quantity || 1));
     const content = document.createElement('div');
     content.innerHTML = `
         <div class="order-details-content">
@@ -550,13 +650,13 @@ window.showOrderDetails = function (firebaseId, orderId) {
                                 <span class="item-name">${item.name || 'Unknown Item'}</span>
                                 <span class="item-quantity">x${item.quantity || 1}</span>
                             </div>
-                            <div class="item-price">${formatCurrency((item.price || 0) * (item.quantity || 1))}</div>
+                            <div class="item-price">${itemDisplay(item)}</div>
                         </div>
                     `).join('') : '<p>No items found</p>'}
                 </div>
             </div>
             <div class="order-total">
-                <strong>Total: ${formatCurrency(order.total || 0)}</strong>
+                <strong>Total: ${totalDisplay}</strong>
             </div>
         </div>
     `;
@@ -583,6 +683,7 @@ window.showOrderDetails = function (firebaseId, orderId) {
 
 function updateTopItems(dayData) {
     const topItemsList = document.getElementById('topItemsList');
+    if (!topItemsList) return;
 
     const sortedItems = Object.entries(dayData.topItems)
         .sort(([, a], [, b]) => b.count - a.count)
@@ -597,11 +698,105 @@ function updateTopItems(dayData) {
         <div class="item-row">
             <div class="item-info">
                 <h4>${itemName}</h4>
-                <p>${itemData.count} sold • ${formatCurrency(itemData.total)} total</p>
+                <p>${currentEventIsPackage ? `${itemData.count} cups` : `${itemData.count} sold • ${formatCurrency(itemData.total)} total`}</p>
             </div>
             <div class="item-count">${itemData.count}</div>
         </div>
     `).join('');
+}
+
+function updateSalesByItemReport(data) {
+    const reportEl = document.getElementById('salesByItemReport');
+    if (!reportEl) return;
+
+    const sortedItems = Object.entries(data.topItems || {})
+        .sort(([, a], [, b]) => b.count - a.count);
+
+    if (sortedItems.length === 0) {
+        reportEl.innerHTML = '<div class="loading">No items sold for selected period</div>';
+        return;
+    }
+
+    const dateLabel = dataScope === 'daily'
+        ? getLocalDateString(selectedDate)
+        : dataScope === 'week'
+            ? `${getWeekRange(selectedDate).start} to ${getWeekRange(selectedDate).end}`
+            : `${getMonthRange(selectedDate).start} to ${getMonthRange(selectedDate).end}`;
+
+    const eventSelector = document.getElementById('eventSelector');
+    const eventName = eventSelector ? eventSelector.options[eventSelector.selectedIndex]?.text || currentEvent : currentEvent;
+
+    reportEl.innerHTML = `
+        <div class="sales-by-item-meta">
+            <div><strong>Event:</strong> ${eventName}</div>
+            <div><strong>Period:</strong> ${dateLabel}</div>
+        </div>
+        <table class="sales-by-item-table">
+            <thead>
+                <tr>
+                    <th>Item</th>
+                    <th class="align-right">Qty Sold</th>
+                    <th class="align-right">${currentEventIsPackage ? 'Cups' : 'Revenue'}</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${sortedItems.map(([itemName, itemData]) => `
+                    <tr>
+                        <td>${itemName}</td>
+                        <td class="align-right">${itemData.count}</td>
+                        <td class="align-right">${currentEventIsPackage ? itemData.count + ' cups' : formatCurrency(itemData.total)}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td><strong>Total</strong></td>
+                    <td class="align-right"><strong>${sortedItems.reduce((s, [, d]) => s + d.count, 0)}</strong></td>
+                    <td class="align-right"><strong>${currentEventIsPackage ? sortedItems.reduce((s, [, d]) => s + d.count, 0) + ' cups' : formatCurrency(sortedItems.reduce((s, [, d]) => s + d.total, 0))}</strong></td>
+                </tr>
+            </tfoot>
+        </table>
+    `;
+}
+
+async function downloadSalesReportScreenshot() {
+    const reportSection = document.getElementById('salesByItemReportSection');
+    const btn = document.getElementById('downloadSalesReportBtn');
+    if (!reportSection || typeof html2canvas === 'undefined') return;
+
+    const origText = btn?.textContent;
+    if (btn) {
+        btn.textContent = 'Generating...';
+        btn.disabled = true;
+    }
+
+    try {
+        const canvas = await html2canvas(reportSection, {
+            backgroundColor: '#ffffff',
+            scale: 2,
+            logging: false,
+            useCORS: true
+        });
+        const link = document.createElement('a');
+        const dateStr = getLocalDateString(selectedDate);
+        const eventKey = (currentEvent || 'report').replace(/\s+/g, '-');
+        link.download = `sales-by-item-${eventKey}-${dateStr}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+    } catch (err) {
+        console.error('Screenshot failed:', err);
+        alert('Failed to generate screenshot. Please try again.');
+    } finally {
+        if (btn) {
+            btn.textContent = origText || 'Download Screenshot';
+            btn.disabled = false;
+        }
+    }
+}
+
+function setupSalesReportDownloadListener() {
+    const btn = document.getElementById('downloadSalesReportBtn');
+    if (btn) btn.addEventListener('click', downloadSalesReportScreenshot);
 }
 
 function updateSalesChart(eventData) {
@@ -635,7 +830,28 @@ function updateDailySalesChart(eventData) {
         return d.toLocaleDateString('en', { month: 'short', day: 'numeric' });
     });
 
-    renderChart(canvas, labels, salesData, 'Daily Sales (₱)', '#2b9348');
+    const dailyLabel = currentEventIsPackage ? 'Daily Cups' : 'Daily Sales (₱)';
+    renderChart(canvas, labels, salesData, dailyLabel, '#2b9348', currentEventIsPackage);
+}
+
+function updateSalesChartFromRange(chartData, startStr, endStr) {
+    const chartContainer = document.querySelector('.chart-container');
+    const canvas = document.getElementById('salesChart');
+    const simpleChart = document.getElementById('simpleChart');
+    canvas.style.display = 'block';
+    simpleChart.style.display = 'none';
+
+    const start = new Date(startStr + 'T00:00:00');
+    const end = new Date(endStr + 'T00:00:00');
+    const labels = [];
+    const salesData = [];
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        const dateStr = getLocalDateString(d);
+        labels.push(d.toLocaleDateString('en', { month: 'short', day: 'numeric' }));
+        salesData.push(chartData.dailySales[dateStr] || 0);
+    }
+    const rangeLabel = currentEventIsPackage ? 'Daily Cups' : 'Daily Sales (₱)';
+    renderChart(canvas, labels, salesData, rangeLabel, '#2b9348', currentEventIsPackage);
 }
 
 async function updateHourlySalesChart() {
@@ -655,7 +871,8 @@ async function updateHourlySalesChart() {
             return `${hour}${ampm}`;
         });
 
-        renderChart(canvas, labels, hourlyData, 'Hourly Sales (₱)', '#2b9348');
+        const chartLabel = currentEventIsPackage ? 'Hourly Cups' : 'Hourly Sales (₱)';
+        renderChart(canvas, labels, hourlyData, chartLabel, '#2b9348', currentEventIsPackage);
     } catch (error) {
         console.error('Error loading hourly data:', error);
         // Fallback to simple chart
@@ -665,13 +882,14 @@ async function updateHourlySalesChart() {
     }
 }
 
-function renderChart(canvas, labels, data, label, color) {
+function renderChart(canvas, labels, data, label, color, isCups = false) {
     const ctx = canvas.getContext('2d');
 
-    // Destroy existing chart
     if (salesChart) {
         salesChart.destroy();
     }
+
+    const formatValue = (v) => isCups ? `${v} cups` : formatCurrency(v);
 
     salesChart = new Chart(ctx, {
         type: 'line',
@@ -692,13 +910,11 @@ function renderChart(canvas, labels, data, label, color) {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-                legend: {
-                    display: false
-                },
+                legend: { display: false },
                 tooltip: {
                     callbacks: {
                         label: function (context) {
-                            return `${context.dataset.label}: ${formatCurrency(context.raw)}`;
+                            return `${context.dataset.label}: ${formatValue(context.raw)}`;
                         }
                     }
                 }
@@ -707,7 +923,7 @@ function renderChart(canvas, labels, data, label, color) {
                 y: {
                     beginAtZero: true,
                     ticks: {
-                        callback: value => formatCurrency(value)
+                        callback: value => formatValue(value)
                     }
                 }
             }
@@ -745,8 +961,50 @@ async function getHourlyData(eventName) {
     }
 }
 
+/** Render Daily Sales History for the selected day only (no extra fetch). */
+function renderSingleDayHistory(dayData) {
+    const eventsGrid = document.getElementById('eventsGrid');
+    if (!eventsGrid) return;
+
+    const dateStr = getLocalDateString(selectedDate);
+    const dateObj = new Date(dateStr);
+    const dayOfWeek = dateObj.toLocaleDateString('en', { weekday: 'short' });
+    const dateDisplay = dateObj.toLocaleDateString('en', { month: 'short', day: 'numeric' });
+
+    getCurrentEventServiceType().then(serviceType => {
+        const isPackage = serviceType === 'package';
+        const salesCell = isPackage ? `${dayData.orders.reduce((s, o) => s + (o.total || 0), 0)} cups` : formatCurrency(dayData.sales);
+        let html = `
+            <table class="sales-history-table">
+                <thead>
+                    <tr>
+                        <th>Day</th>
+                        <th>Date</th>
+                        <th>Sales</th>
+                        <th>Orders</th>
+                        ${!isPackage ? '<th>Cups</th>' : ''}
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>${dayOfWeek}</td>
+                        <td>${dateDisplay}</td>
+                        <td>${salesCell}</td>
+                        <td>${dayData.orders.length}</td>
+                        ${!isPackage ? `<td>${dayData.cups || 0}</td>` : ''}
+                    </tr>
+                </tbody>
+            </table>
+        `;
+        eventsGrid.innerHTML = dayData.orders.length === 0 && dayData.sales === 0
+            ? '<div class="loading">No sales for selected day</div>'
+            : html;
+    });
+}
+
 async function loadAllEventsData() {
     const eventsGrid = document.getElementById('eventsGrid');
+    if (!eventsGrid) return;
     eventsGrid.innerHTML = '<div class="loading">Loading sales data...</div>';
 
     try {
@@ -886,6 +1144,31 @@ function getThisMonthRange() {
     };
 }
 
+/** Week containing date (Sun–Sat). Start and end as YYYY-MM-DD. */
+function getWeekRange(date) {
+    const d = new Date(date);
+    const day = d.getDay();
+    const startOfWeek = new Date(d);
+    startOfWeek.setDate(d.getDate() - day);
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 6);
+    return {
+        start: getLocalDateString(startOfWeek),
+        end: getLocalDateString(endOfWeek)
+    };
+}
+
+/** Month containing date. Start and end as YYYY-MM-DD. */
+function getMonthRange(date) {
+    const d = new Date(date);
+    const startOfMonth = new Date(d.getFullYear(), d.getMonth(), 1);
+    const endOfMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    return {
+        start: getLocalDateString(startOfMonth),
+        end: getLocalDateString(endOfMonth)
+    };
+}
+
 function formatCurrency(amount) {
     return `₱${amount.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
@@ -900,17 +1183,46 @@ function formatDateTime(timestamp) {
     });
 }
 
+function setScopeSectionTitles(scope) {
+    const suffix = scope === 'day' ? 'Selected Day' : scope === 'week' ? 'Selected Week' : 'Selected Month';
+    const paymentTitle = document.getElementById('paymentSectionTitle');
+    const ordersTitle = document.getElementById('ordersSectionTitle');
+    const topItemsTitle = document.getElementById('topItemsSectionTitle');
+    const salesByItemTitle = document.getElementById('salesByItemTitle');
+    if (paymentTitle) paymentTitle.textContent = `Payment Methods (${suffix})`;
+    if (ordersTitle) ordersTitle.textContent = `Orders (${suffix})`;
+    if (topItemsTitle) topItemsTitle.textContent = `Top Items (${suffix})`;
+    if (salesByItemTitle) salesByItemTitle.textContent = `Sales by Item Report (${suffix})`;
+}
+
+/** On Daily: hide "All Days" / "Peak Hours" toggle and set title to Peak Hours. On Week/Month: show toggle and "Daily Sales". */
+function setChartSectionForScope(scope) {
+    const wrap = document.getElementById('chartToggleWrap');
+    const titleEl = document.getElementById('chartSectionTitle');
+    if (scope === 'daily') {
+        if (wrap) wrap.style.display = 'none';
+        if (titleEl) titleEl.textContent = 'Peak Hours (Selected Day)';
+    } else {
+        if (wrap) wrap.style.display = '';
+        if (titleEl) titleEl.textContent = 'Daily Sales';
+    }
+}
+
 function showLoadingState() {
-    document.getElementById('todaySales').textContent = '...';
-    document.getElementById('todayOrders').textContent = '...';
-    document.getElementById('weekSales').textContent = 'Loading...';
-    // document.getElementById('totalOrders').textContent = '...';
+    const ids = ['todaySales', 'todayOrders', 'todayCups'];
+    ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = '...';
+    });
 }
 
 function showErrorState() {
-    document.getElementById('recentOrdersList').innerHTML = '<div class="error">Error loading orders</div>';
-    document.getElementById('topItemsList').innerHTML = '<div class="error">Error loading items</div>';
-    document.getElementById('eventsGrid').innerHTML = '<div class="error">Error loading events data</div>';
+    const ordersEl = document.getElementById('recentOrdersList');
+    const itemsEl = document.getElementById('topItemsList');
+    const gridEl = document.getElementById('eventsGrid');
+    if (ordersEl) ordersEl.innerHTML = '<div class="error">Error loading orders</div>';
+    if (itemsEl) itemsEl.innerHTML = '<div class="error">Error loading items</div>';
+    if (gridEl) gridEl.innerHTML = '<div class="error">Error loading events data</div>';
 }
 
 // Add these functions to dashboard.js
@@ -1355,30 +1667,31 @@ async function showMenuManagementModal(eventId, eventName) {
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
 
-    // Load current menu
-    await loadCurrentEventMenu(eventId);
+    const previewEl = content.querySelector('#menuPreview');
+
+    // Load current menu (pass preview element so we update the correct one)
+    await loadCurrentEventMenu(eventId, previewEl);
 
     // Setup event listeners
-    setupMenuManagementListeners(eventId);
+    setupMenuManagementListeners(eventId, previewEl);
 };
 
-async function loadCurrentEventMenu(eventId) {
+async function loadCurrentEventMenu(eventId, previewEl) {
     try {
         const eventRef = doc(db, 'branches', eventId);
         const eventDoc = await getDoc(eventRef);
 
-        if (eventDoc.exists()) {
-            const eventData = eventDoc.data();
-            const menuData = eventData.customMenu || getDefaultMenuData();
-            displayMenuPreview(menuData);
-        }
+        const menuData = (eventDoc.exists() && eventDoc.data().customMenu)
+            ? eventDoc.data().customMenu
+            : getDefaultMenuData();
+        displayMenuPreview(menuData, previewEl);
     } catch (error) {
         console.error('Error loading event menu:', error);
-        displayMenuPreview(getDefaultMenuData());
+        displayMenuPreview(getDefaultMenuData(), previewEl);
     }
 }
 
-function setupMenuManagementListeners(eventId) {
+function setupMenuManagementListeners(eventId, previewEl) {
     const fileInput = document.getElementById('menuFileInput');
     const saveBtn = document.getElementById('saveMenuBtn');
     const resetBtn = document.getElementById('resetMenuBtn');
@@ -1410,7 +1723,7 @@ function setupMenuManagementListeners(eventId) {
 
                 if (validateMenuData(menuData)) {
                     currentMenuData = menuData;
-                    displayMenuPreview(menuData);
+                    displayMenuPreview(menuData, previewEl);
                     saveBtn.disabled = false;
                     statusDiv.innerHTML = '<span style="color: green;">✓ Valid menu file loaded</span>';
                 } else {
@@ -1436,7 +1749,7 @@ function setupMenuManagementListeners(eventId) {
     resetBtn.addEventListener('click', async () => {
         if (confirm('Reset to default menu? This will remove any custom menu.')) {
             await resetToDefaultMenu(eventId);
-            displayMenuPreview(getDefaultMenuData());
+            displayMenuPreview(getDefaultMenuData(), previewEl);
             statusDiv.innerHTML = '<span style="color: blue;">Reset to default menu</span>';
         }
     });
@@ -1490,8 +1803,9 @@ function validateMenuData(menuData) {
     return true;
 }
 
-function displayMenuPreview(menuData) {
-    const preview = document.getElementById('menuPreview');
+function displayMenuPreview(menuData, previewEl) {
+    const preview = previewEl || document.getElementById('menuPreview');
+    if (!preview) return;
 
     let html = '<div class="menu-summary">';
     html += `<p><strong>Categories:</strong> ${menuData.categories.length}</p>`;

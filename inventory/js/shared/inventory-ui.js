@@ -131,6 +131,6 @@ export function createEmptyState(message = 'No items found', showButton = false,
 // Helper function to get branch display name (imported from data module)
 function getBranchDisplayName(branch) {
   if (!branch) return '';
-  const map = { 'sm-north': 'SM North', 'podium': 'Podium' };
+  const map = { 'sm-north': 'SM North', 'podium': 'Podium', 'moa': 'MOA' };
   return map[branch] || branch.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }

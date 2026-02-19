@@ -6,7 +6,7 @@ export let suppliers = [];
 
 // Firebase dependencies - will be imported at module level
 let db;
-let collection, doc, getDocs, setDoc, deleteDoc, query, where, orderBy, serverTimestamp, writeBatch;
+let collection, doc, getDocs, getDoc, setDoc, deleteDoc, query, where, orderBy, serverTimestamp, writeBatch;
 
 // Firebase Sync State
 let syncInProgress = false;
@@ -16,8 +16,10 @@ let hasPendingChanges = false;
 const SYNC_DEBOUNCE_DELAY = 3000; // 3 seconds
 let deletionInProgress = false; // Prevent fetchFromFirebase during deletions
 let deletedSupplierIds = new Set(); // Track deleted supplier IDs to prevent restoration
+let deletedExpenseIds = new Set(); // Track deleted expense IDs to prevent restoration
 const DELETION_TRACKING_TTL = 5 * 60 * 1000; // 5 minutes - after this, allow restoration from other devices
 let deletionTimestamps = new Map(); // Track when each supplier was deleted (supplierId -> timestamp)
+let expenseDeletionTimestamps = new Map(); // Track when each expense was deleted (expenseId -> timestamp)
 
 // Initialize Firebase and load dependencies
 export async function initializeFirebase() {
@@ -41,6 +43,7 @@ export async function initializeFirebase() {
         collection = firestoreModule.collection;
         doc = firestoreModule.doc;
         getDocs = firestoreModule.getDocs;
+        getDoc = firestoreModule.getDoc;
         setDoc = firestoreModule.setDoc;
         deleteDoc = firestoreModule.deleteDoc;
         query = firestoreModule.query;
@@ -73,13 +76,91 @@ export function getExpenses() {
     return [...expenses];
 }
 
+// Compress image before upload to reduce file size
+export async function compressImage(file, maxWidth = 1920, maxHeight = 1920, quality = 0.8) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const img = new Image();
+            img.onload = function() {
+                // Calculate new dimensions
+                let width = img.width;
+                let height = img.height;
+                
+                if (width > maxWidth || height > maxHeight) {
+                    const ratio = Math.min(maxWidth / width, maxHeight / height);
+                    width = width * ratio;
+                    height = height * ratio;
+                }
+                
+                // Create canvas and compress
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                
+                // Convert to base64 with compression
+                const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+                resolve(compressedDataUrl);
+            };
+            img.onerror = reject;
+            img.src = e.target.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+// Fetch receipt image from Firebase for an expense
+export async function fetchReceiptImageFromFirebase(expenseId) {
+    if (!db || !expenseId) {
+        return null;
+    }
+    
+    try {
+        // Add timeout to prevent endless loading (15 seconds)
+        const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Receipt fetch timeout')), 15000);
+        });
+        
+        const expenseRef = doc(db, 'expenses', expenseId);
+        const fetchPromise = getDoc(expenseRef);
+        
+        const expenseSnap = await Promise.race([fetchPromise, timeoutPromise]);
+        
+        if (expenseSnap.exists()) {
+            const expenseData = expenseSnap.data();
+            return expenseData.receiptImage || null;
+        }
+        
+        return null;
+    } catch (error) {
+        if (error.message === 'Receipt fetch timeout') {
+            console.warn('Receipt image fetch timed out for expense:', expenseId);
+        } else {
+            console.error('Failed to fetch receipt image from Firebase:', error);
+        }
+        return null;
+    }
+}
+
 export function getSuppliers() {
     return [...suppliers];
 }
 
 export function addExpense(expense) {
     expenses.push(expense);
+    
+    // Automatically create supplier if it doesn't exist
+    // This ensures ALL suppliers are always in the list
+    if (expense.supplierName && expense.supplierName.trim()) {
+        saveSupplierIfNew(expense);
+    }
+    
     saveToLocalStorage();
+    invalidateItemMatchesCache();
 }
 
 export function updateExpense(expenseId, updatedExpense) {
@@ -87,18 +168,87 @@ export function updateExpense(expenseId, updatedExpense) {
     if (index > -1) {
         updatedExpense.updatedAt = new Date().toISOString();
         expenses[index] = updatedExpense;
+        
+        // Automatically create supplier if it doesn't exist
+        // This ensures ALL suppliers are always in the list
+        if (updatedExpense.supplierName && updatedExpense.supplierName.trim()) {
+            saveSupplierIfNew(updatedExpense);
+        }
+        
         saveToLocalStorage();
+        invalidateItemMatchesCache();
         return true;
     }
     return false;
 }
 
-export function deleteExpense(expenseId) {
+export async function deleteExpense(expenseId) {
     const index = expenses.findIndex(e => e.id === expenseId);
     if (index > -1) {
-        expenses.splice(index, 1);
-        saveToLocalStorage();
-        return true;
+        const expense = expenses[index];
+        
+        // Set deletion flag to prevent fetchFromFirebase from running
+        deletionInProgress = true;
+        
+        // Track deletion immediately with permanent timestamp
+        deletedExpenseIds.add(expenseId);
+        expenseDeletionTimestamps.set(expenseId, Date.now());
+        
+        // Persist deletion tracking to localStorage immediately
+        try {
+            const trackingData = {
+                ids: Array.from(deletedExpenseIds),
+                timestamps: Object.fromEntries(expenseDeletionTimestamps)
+            };
+            localStorage.setItem('expenseTracker_deletedExpenses', JSON.stringify(trackingData));
+            invalidateItemMatchesCache();
+            console.log('Deletion tracking saved to localStorage for expense:', expenseId);
+        } catch (error) {
+            console.warn('Failed to save expense deletion tracking:', error);
+        }
+        
+        try {
+            // Remove from local array FIRST to prevent it from being displayed
+            expenses.splice(index, 1);
+            
+            // Force immediate localStorage save to ensure deletion is persisted locally
+            try {
+                const expensesForStorage = stripReceiptImagesForStorage(expenses);
+                const expensesJson = JSON.stringify(expensesForStorage);
+                const suppliersJson = JSON.stringify(suppliers);
+                localStorage.setItem('expenseTracker_expenses', expensesJson);
+                localStorage.setItem('expenseTracker_suppliers', suppliersJson);
+                console.log('Expense removed from localStorage:', expenseId);
+            } catch (error) {
+                console.error('Failed to save to localStorage:', error);
+            }
+            
+            // DELETE EXPENSE FROM FIREBASE - fire and forget for speed
+            // Don't wait for sync, just mark for deletion and let background sync handle it
+            if (db) {
+                // Delete from Firebase asynchronously without blocking
+                deleteDoc(doc(db, 'expenses', expenseId)).then(() => {
+                    console.log('Expense successfully deleted from Firebase:', expenseId);
+                }).catch(error => {
+                    console.error('Failed to delete expense from Firebase:', error);
+                    // Even if Firebase deletion fails, we still track it locally
+                    // syncToFirebase() will handle the deletion on next sync
+                });
+            }
+            
+            // Mark for background sync instead of waiting
+            if (db) {
+                hasPendingChanges = true;
+            }
+            
+            return true;
+        } finally {
+            // Clear deletion flag quickly - deletion tracking will prevent restoration
+            setTimeout(() => {
+                deletionInProgress = false;
+                console.log('Deletion flag cleared for expense:', expenseId);
+            }, 500); // Reduced to 500ms - deletion tracking handles prevention
+        }
     }
     return false;
 }
@@ -119,9 +269,11 @@ export function updateSupplier(supplierId, updatedSupplier) {
     return false;
 }
 
-export async function deleteSupplier(supplierId) {
+export async function deleteSupplier(supplierId, deleteAssociatedExpenses = true) {
     const index = suppliers.findIndex(s => s.id === supplierId);
     if (index > -1) {
+        const supplier = suppliers[index];
+        
         // Set deletion flag to prevent fetchFromFirebase from running
         deletionInProgress = true;
         
@@ -141,7 +293,42 @@ export async function deleteSupplier(supplierId) {
         }
         
         try {
-            // DELETE FROM FIREBASE FIRST - before removing from local array
+            // Delete associated expenses if requested
+            if (deleteAssociatedExpenses) {
+                const supplierName = supplier.name;
+                const expensesToDelete = expenses.filter(e => 
+                    e.supplierName.toLowerCase() === supplierName.toLowerCase()
+                );
+                
+                // Delete expenses from Firebase
+                if (db && expensesToDelete.length > 0) {
+                    try {
+                        const batch = writeBatch(db);
+                        expensesToDelete.forEach(expense => {
+                            const expenseRef = doc(db, 'expenses', expense.id);
+                            batch.delete(expenseRef);
+                        });
+                        await batch.commit();
+                        console.log(`Deleted ${expensesToDelete.length} associated expense(s) from Firebase`);
+                    } catch (error) {
+                        console.error('Failed to delete associated expenses from Firebase:', error);
+                    }
+                }
+                
+                // Remove expenses from local array
+                expensesToDelete.forEach(expense => {
+                    const expenseIndex = expenses.findIndex(e => e.id === expense.id);
+                    if (expenseIndex > -1) {
+                        expenses.splice(expenseIndex, 1);
+                    }
+                });
+                
+                if (expensesToDelete.length > 0) {
+                    console.log(`Deleted ${expensesToDelete.length} associated expense(s) for supplier "${supplierName}"`);
+                }
+            }
+            
+            // DELETE SUPPLIER FROM FIREBASE - before removing from local array
             // This ensures Firebase deletion completes before any sync can run
             if (db) {
                 try {
@@ -161,7 +348,8 @@ export async function deleteSupplier(supplierId) {
             // Force immediate sync to ensure deletion is persisted
             // Don't use saveToLocalStorage() here to avoid debounce delay
             try {
-                const expensesJson = JSON.stringify(expenses);
+                const expensesForStorage = stripReceiptImagesForStorage(expenses);
+                const expensesJson = JSON.stringify(expensesForStorage);
                 const suppliersJson = JSON.stringify(suppliers);
                 localStorage.setItem('expenseTracker_expenses', expensesJson);
                 localStorage.setItem('expenseTracker_suppliers', suppliersJson);
@@ -188,11 +376,272 @@ export async function deleteSupplier(supplierId) {
     return false;
 }
 
+// Optimized bulk deletion function - deletes multiple suppliers efficiently
+// progressCallback: optional function(current, total, message) called to report progress
+// deleteAssociatedExpenses: if true, also deletes all expenses associated with the suppliers
+export async function deleteSuppliersBulk(supplierIds, progressCallback = null, deleteAssociatedExpenses = true) {
+    if (!supplierIds || supplierIds.length === 0) {
+        return { success: false, deleted: 0, failed: 0, errors: [], expensesDeleted: 0 };
+    }
+
+    const total = supplierIds.length;
+    
+    // Set deletion flag to prevent fetchFromFirebase from running
+    deletionInProgress = true;
+
+    const results = {
+        success: true,
+        deleted: 0,
+        failed: 0,
+        errors: [],
+        expensesDeleted: 0
+    };
+
+    try {
+        // Progress: Tracking deletions
+        if (progressCallback) {
+            progressCallback(0, total, 'Preparing deletions...');
+        }
+
+        // Find suppliers and collect associated expenses
+        const suppliersToDelete = [];
+        const expensesToDelete = [];
+        
+        supplierIds.forEach(supplierId => {
+            const supplier = suppliers.find(s => s.id === supplierId);
+            if (supplier) {
+                suppliersToDelete.push(supplier);
+                
+                // Collect associated expenses if requested
+                if (deleteAssociatedExpenses) {
+                    const supplierExpenses = expenses.filter(e => 
+                        e.supplierName.toLowerCase() === supplier.name.toLowerCase()
+                    );
+                    expensesToDelete.push(...supplierExpenses);
+                }
+            }
+        });
+
+        // Track all deletions immediately
+        const now = Date.now();
+        supplierIds.forEach(supplierId => {
+            deletedSupplierIds.add(supplierId);
+            deletionTimestamps.set(supplierId, now);
+        });
+
+        // Persist deletion tracking to localStorage
+        try {
+            const trackingData = {
+                ids: Array.from(deletedSupplierIds),
+                timestamps: Object.fromEntries(deletionTimestamps)
+            };
+            localStorage.setItem('expenseTracker_deletedSuppliers', JSON.stringify(trackingData));
+        } catch (error) {
+            console.warn('Failed to save deletion tracking:', error);
+        }
+
+        // Progress: Preparing batch
+        if (progressCallback) {
+            const expenseMsg = deleteAssociatedExpenses && expensesToDelete.length > 0
+                ? ` and ${expensesToDelete.length} expense${expensesToDelete.length === 1 ? '' : 's'}`
+                : '';
+            progressCallback(Math.floor(total * 0.1), total, `Preparing batch deletion${expenseMsg}...`);
+        }
+
+        // Delete all suppliers and associated expenses from Firebase in batches
+        if (db) {
+            try {
+                const batch = writeBatch(db);
+                const suppliersToRemove = [];
+                
+                // Add expense deletions to batch if requested
+                if (deleteAssociatedExpenses && expensesToDelete.length > 0) {
+                    expensesToDelete.forEach(expense => {
+                        const expenseRef = doc(db, 'expenses', expense.id);
+                        batch.delete(expenseRef);
+                    });
+                }
+                
+                // Find suppliers in local array and prepare batch deletions
+                supplierIds.forEach((supplierId, idx) => {
+                    const index = suppliers.findIndex(s => s.id === supplierId);
+                    if (index > -1) {
+                        suppliersToRemove.push({ index, id: supplierId });
+                        const supplierRef = doc(db, 'suppliers', supplierId);
+                        batch.delete(supplierRef);
+                    }
+                    
+                    // Progress: Building batch
+                    if (progressCallback && idx % Math.max(1, Math.floor(total / 4)) === 0) {
+                        progressCallback(Math.floor(total * 0.2) + Math.floor(idx / total * 0.2), total, `Preparing deletion ${idx + 1} of ${total}...`);
+                    }
+                });
+
+                // Progress: Committing to Firebase
+                if (progressCallback) {
+                    const expenseMsg = deleteAssociatedExpenses && expensesToDelete.length > 0
+                        ? ` and ${expensesToDelete.length} expense${expensesToDelete.length === 1 ? '' : 's'}`
+                        : '';
+                    progressCallback(Math.floor(total * 0.4), total, `Deleting ${suppliersToRemove.length} supplier${suppliersToRemove.length === 1 ? '' : 's'}${expenseMsg} from Firebase...`);
+                }
+
+                // Commit all deletions in one batch operation
+                if (suppliersToRemove.length > 0 || (deleteAssociatedExpenses && expensesToDelete.length > 0)) {
+                    await batch.commit();
+                    console.log(`Bulk deleted ${suppliersToRemove.length} suppliers${deleteAssociatedExpenses && expensesToDelete.length > 0 ? ` and ${expensesToDelete.length} expenses` : ''} from Firebase`);
+                    
+                    // Progress: Updating local state
+                    if (progressCallback) {
+                        progressCallback(Math.floor(total * 0.6), total, 'Updating local data...');
+                    }
+                    
+                    // Remove expenses from local array
+                    if (deleteAssociatedExpenses && expensesToDelete.length > 0) {
+                        expensesToDelete.forEach(expense => {
+                            const expenseIndex = expenses.findIndex(e => e.id === expense.id);
+                            if (expenseIndex > -1) {
+                                expenses.splice(expenseIndex, 1);
+                            }
+                        });
+                        results.expensesDeleted = expensesToDelete.length;
+                    }
+                    
+                    // Remove suppliers from local array (in reverse order to maintain indices)
+                    suppliersToRemove.sort((a, b) => b.index - a.index);
+                    suppliersToRemove.forEach(({ index }) => {
+                        suppliers.splice(index, 1);
+                    });
+                    
+                    results.deleted = suppliersToRemove.length;
+                }
+
+                // Handle suppliers not found in local array (already deleted or invalid)
+                const foundIds = new Set(suppliersToRemove.map(s => s.id));
+                supplierIds.forEach(supplierId => {
+                    if (!foundIds.has(supplierId)) {
+                        results.failed++;
+                        results.errors.push(`Supplier ${supplierId} not found in local array`);
+                    }
+                });
+
+            } catch (error) {
+                console.error('Failed to bulk delete suppliers from Firebase:', error);
+                results.success = false;
+                results.failed = supplierIds.length;
+                results.errors.push(`Firebase batch deletion failed: ${error.message}`);
+                
+                // Progress: Error handling
+                if (progressCallback) {
+                    progressCallback(Math.floor(total * 0.5), total, 'Error occurred, cleaning up...');
+                }
+                
+                // Even if Firebase deletion fails, still remove from local array if they exist
+                supplierIds.forEach(supplierId => {
+                    const index = suppliers.findIndex(s => s.id === supplierId);
+                    if (index > -1) {
+                        suppliers.splice(index, 1);
+                        results.deleted++;
+                    }
+                });
+                
+                // Also remove expenses from local array if deletion was requested
+                if (deleteAssociatedExpenses && expensesToDelete.length > 0) {
+                    expensesToDelete.forEach(expense => {
+                        const expenseIndex = expenses.findIndex(e => e.id === expense.id);
+                        if (expenseIndex > -1) {
+                            expenses.splice(expenseIndex, 1);
+                        }
+                    });
+                    results.expensesDeleted = expensesToDelete.length;
+                }
+            }
+        } else {
+            // No Firebase - just remove from local array
+            if (progressCallback) {
+                const expenseMsg = deleteAssociatedExpenses && expensesToDelete.length > 0
+                    ? ` and ${expensesToDelete.length} expense${expensesToDelete.length === 1 ? '' : 's'}`
+                    : '';
+                progressCallback(Math.floor(total * 0.3), total, `Removing from local storage${expenseMsg}...`);
+            }
+            
+            // Remove expenses from local array if requested
+            if (deleteAssociatedExpenses && expensesToDelete.length > 0) {
+                expensesToDelete.forEach(expense => {
+                    const expenseIndex = expenses.findIndex(e => e.id === expense.id);
+                    if (expenseIndex > -1) {
+                        expenses.splice(expenseIndex, 1);
+                    }
+                });
+                results.expensesDeleted = expensesToDelete.length;
+            }
+            
+            supplierIds.forEach((supplierId, idx) => {
+                const index = suppliers.findIndex(s => s.id === supplierId);
+                if (index > -1) {
+                    suppliers.splice(index, 1);
+                    results.deleted++;
+                } else {
+                    results.failed++;
+                }
+                
+                // Progress: Local deletion
+                if (progressCallback) {
+                    progressCallback(Math.floor(total * 0.3) + Math.floor((idx + 1) / total * 0.3), total, `Removing supplier ${idx + 1} of ${total}...`);
+                }
+            });
+        }
+
+        // Progress: Saving to localStorage
+        if (progressCallback) {
+            progressCallback(Math.floor(total * 0.8), total, 'Saving changes...');
+        }
+
+        // Save to localStorage
+        try {
+            const expensesForStorage = stripReceiptImagesForStorage(expenses);
+            const expensesJson = JSON.stringify(expensesForStorage);
+            const suppliersJson = JSON.stringify(suppliers);
+            localStorage.setItem('expenseTracker_expenses', expensesJson);
+            localStorage.setItem('expenseTracker_suppliers', suppliersJson);
+        } catch (error) {
+            console.error('Failed to save to localStorage:', error);
+        }
+
+        // Progress: Syncing to Firebase
+        if (progressCallback) {
+            progressCallback(Math.floor(total * 0.9), total, 'Syncing to Firebase...');
+        }
+
+        // Trigger ONE sync to Firebase at the end (instead of after each deletion)
+        if (db && !syncInProgress && results.deleted > 0) {
+            await syncToFirebase();
+        } else if (results.deleted > 0) {
+            // Mark for sync if sync is in progress
+            hasPendingChanges = true;
+        }
+
+        // Progress: Complete
+        if (progressCallback) {
+            progressCallback(total, total, 'Deletion complete');
+        }
+
+        return results;
+    } finally {
+        // Clear deletion flag after a short delay to ensure deletion is fully processed
+        setTimeout(() => {
+            deletionInProgress = false;
+        }, 1000);
+    }
+}
+
 // Storage Functions
 export function loadFromLocalStorage() {
     try {
         const savedExpenses = localStorage.getItem('expenseTracker_expenses');
         const savedSuppliers = localStorage.getItem('expenseTracker_suppliers');
+        
+        // Check if localStorage was completely cleared (no expenses AND no suppliers)
+        const isLocalStorageEmpty = !savedExpenses && !savedSuppliers;
 
         if (savedExpenses) {
             const parsedExpenses = JSON.parse(savedExpenses);
@@ -206,11 +655,24 @@ export function loadFromLocalStorage() {
             console.log('Loaded suppliers from localStorage:', suppliers.length, 'items');
         }
 
-        // Load deletion tracking
+        // Load deletion tracking BEFORE processing expenses to prevent deleted items from being restored
+        // BUT: If localStorage was completely cleared, clear deletion tracking to allow full restore from Firebase
         try {
-            const trackingData = localStorage.getItem('expenseTracker_deletedSuppliers');
-            if (trackingData) {
-                const tracking = JSON.parse(trackingData);
+            // If localStorage was cleared, reset deletion tracking to allow restoration from Firebase
+            if (isLocalStorageEmpty) {
+                console.log('LocalStorage was cleared - resetting deletion tracking to allow Firebase restore');
+                deletedExpenseIds.clear();
+                expenseDeletionTimestamps.clear();
+                deletedSupplierIds.clear();
+                deletionTimestamps.clear();
+                // Clear deletion tracking from localStorage
+                localStorage.removeItem('expenseTracker_deletedExpenses');
+                localStorage.removeItem('expenseTracker_deletedSuppliers');
+            }
+            // Load supplier deletion tracking
+            const supplierTrackingData = localStorage.getItem('expenseTracker_deletedSuppliers');
+            if (supplierTrackingData) {
+                const tracking = JSON.parse(supplierTrackingData);
                 const now = Date.now();
                 
                 // Only keep recent deletions (within TTL)
@@ -221,9 +683,54 @@ export function loadFromLocalStorage() {
                         deletionTimestamps.set(id, deletedAt);
                     }
                 });
+            }
+            
+            // Load expense deletion tracking
+            const expenseTrackingData = localStorage.getItem('expenseTracker_deletedExpenses');
+            if (expenseTrackingData) {
+                const tracking = JSON.parse(expenseTrackingData);
                 
-                // Clean up old deletions
-                cleanupOldDeletions();
+                // Keep ALL expense deletions permanently (no TTL check)
+                // This ensures deleted expenses never get restored from Firebase
+                tracking.ids.forEach(id => {
+                    const deletedAt = tracking.timestamps[id] || 0;
+                    deletedExpenseIds.add(id);
+                    expenseDeletionTimestamps.set(id, deletedAt);
+                    console.log('Loaded deleted expense ID from localStorage (permanent):', id);
+                });
+                
+                console.log('Loaded expense deletion tracking:', deletedExpenseIds.size, 'deleted expenses');
+            }
+            
+            // Clean up old deletions
+            cleanupOldDeletions();
+            
+            // Remove deleted expenses from loaded expenses
+            if (deletedExpenseIds.size > 0 && expenses.length > 0) {
+                const originalLength = expenses.length;
+                const filteredExpenses = expenses.filter(expense => {
+                    if (deletedExpenseIds.has(expense.id)) {
+                        const deletionTime = expenseDeletionTimestamps.get(expense.id) || 0;
+                        const timeSinceDeletion = Date.now() - deletionTime;
+                        if (timeSinceDeletion < DELETION_TRACKING_TTL) {
+                            console.log('Filtering out deleted expense from localStorage:', expense.id);
+                            return false;
+                        }
+                    }
+                    return true;
+                });
+                
+                if (filteredExpenses.length < originalLength) {
+                    console.log('Filtered out', originalLength - filteredExpenses.length, 'deleted expenses from localStorage');
+                    setExpenses(filteredExpenses);
+                    // Save the filtered expenses back to localStorage
+                    try {
+                        const expensesForStorage = stripReceiptImagesForStorage(filteredExpenses);
+                        localStorage.setItem('expenseTracker_expenses', JSON.stringify(expensesForStorage));
+                    } catch (error) {
+                        console.warn('Failed to save filtered expenses:', error);
+                    }
+                }
             }
         } catch (error) {
             console.warn('Failed to load deletion tracking:', error);
@@ -236,25 +743,44 @@ export function loadFromLocalStorage() {
     }
 }
 
+// Helper function to strip receipt images from expenses before saving to localStorage
+function stripReceiptImagesForStorage(expensesArray) {
+    return expensesArray.map(expense => {
+        const { receiptImage, ...expenseWithoutImage } = expense;
+        // Add flag to indicate receipt exists in Firebase
+        if (receiptImage) {
+            expenseWithoutImage.hasReceiptImage = true;
+        }
+        return expenseWithoutImage;
+    });
+}
+
 // Clean up old deletion tracking entries
 function cleanupOldDeletions() {
     const now = Date.now();
-    const toRemove = [];
+    const supplierToRemove = [];
+    // NOTE: expenseToRemove is not used - expense deletions are kept permanently
     
+    // Clean up old supplier deletions
     deletedSupplierIds.forEach(id => {
         const deletedAt = deletionTimestamps.get(id) || 0;
         if (now - deletedAt >= DELETION_TRACKING_TTL) {
-            toRemove.push(id);
+            supplierToRemove.push(id);
         }
     });
     
-    toRemove.forEach(id => {
+    supplierToRemove.forEach(id => {
         deletedSupplierIds.delete(id);
         deletionTimestamps.delete(id);
     });
     
-    // Persist cleaned tracking
-    if (toRemove.length > 0) {
+    // NOTE: Expense deletions are kept PERMANENTLY - never clean them up
+    // This ensures that once an expense is deleted, it stays deleted forever
+    // and will never be restored from Firebase, even after page refresh
+    // We do NOT process expenseToRemove - expense deletions are permanent
+    
+    // Persist cleaned tracking for suppliers only
+    if (supplierToRemove.length > 0) {
         try {
             const trackingData = {
                 ids: Array.from(deletedSupplierIds),
@@ -262,19 +788,24 @@ function cleanupOldDeletions() {
             };
             localStorage.setItem('expenseTracker_deletedSuppliers', JSON.stringify(trackingData));
         } catch (error) {
-            console.warn('Failed to save cleaned deletion tracking:', error);
+            console.warn('Failed to save cleaned supplier deletion tracking:', error);
         }
     }
+    
+    // Expense deletions are never cleaned up - they persist permanently
 }
 
 export function saveToLocalStorage() {
     try {
-        const expensesJson = JSON.stringify(expenses);
+        // Strip receipt images from expenses before saving to localStorage to prevent quota exceeded errors
+        // Receipt images are stored in Firebase, so we only need a flag in localStorage
+        const expensesForStorage = stripReceiptImagesForStorage(expenses);
+        const expensesJson = JSON.stringify(expensesForStorage);
         const suppliersJson = JSON.stringify(suppliers);
         
         localStorage.setItem('expenseTracker_expenses', expensesJson);
         localStorage.setItem('expenseTracker_suppliers', suppliersJson);
-        console.log('Data saved to localStorage');
+        console.log('Data saved to localStorage (receipt images excluded)');
 
         // Mark that we have pending changes
         hasPendingChanges = true;
@@ -348,14 +879,47 @@ export async function syncToFirebase() {
 
         // Sync expenses with batch writes for better performance
         const batch = writeBatch(db);
+        
+        // Track local expense IDs
+        const localExpenseIds = new Set();
 
         expenses.forEach(expense => {
+            localExpenseIds.add(expense.id);
             const docRef = doc(db, 'expenses', expense.id);
             batch.set(docRef, {
                 ...expense,
                 syncedAt: serverTimestamp(),
                 deviceId: getDeviceId()
             });
+        });
+        
+        // Get Firebase expense IDs for deletion check
+        let firebaseExpenseIds = new Set();
+        if (db) {
+            try {
+                const expensesSnapshot = await getDocs(collection(db, 'expenses'));
+                firebaseExpenseIds = new Set(expensesSnapshot.docs.map(doc => doc.id));
+            } catch (error) {
+                console.warn('Failed to fetch Firebase expenses for deletion check:', error);
+            }
+        }
+        
+        // Delete expenses from Firebase that:
+        // 1. Are in Firebase but not in local array (was deleted locally), OR
+        // 2. Are explicitly in deletion tracking (explicitly marked for deletion)
+        let expenseDeletionCount = 0;
+        firebaseExpenseIds.forEach(expenseId => {
+            const isNotInLocal = !localExpenseIds.has(expenseId);
+            const isInDeletionTracking = deletedExpenseIds.has(expenseId);
+            
+            // Delete if expense was removed from local OR explicitly marked for deletion
+            if (isNotInLocal || isInDeletionTracking) {
+                const expenseRef = doc(db, 'expenses', expenseId);
+                batch.delete(expenseRef);
+                expenseDeletionCount++;
+                const reason = isInDeletionTracking ? 'deletion tracking' : 'not in local array';
+                console.log(`Marking expense for deletion in Firebase (${reason}):`, expenseId);
+            }
         });
 
         // Sync suppliers that exist locally
@@ -392,13 +956,14 @@ export async function syncToFirebase() {
         console.log('Firebase sync completed successfully', { 
             expenses: expenses.length, 
             suppliers: suppliers.length,
-            deletions: deletionCount 
+            supplierDeletions: deletionCount,
+            expenseDeletions: expenseDeletionCount
         });
         showSyncStatus('✓ Synced', 'success');
 
         // Clear deletion tracking for successfully synced deletions
-        // Only clear if deletion was successful (supplier not in local and not in Firebase anymore)
-        if (deletionCount > 0) {
+        // Only clear if deletion was successful (supplier/expense not in local and not in Firebase anymore)
+        if (deletionCount > 0 || expenseDeletionCount > 0) {
             // Re-fetch to verify deletions
             try {
                 const suppliersSnapshot = await getDocs(collection(db, 'suppliers'));
@@ -412,7 +977,7 @@ export async function syncToFirebase() {
                     }
                 });
                 
-                // Persist updated tracking
+                // Persist updated supplier tracking
                 try {
                     const trackingData = {
                         ids: Array.from(deletedSupplierIds),
@@ -420,7 +985,34 @@ export async function syncToFirebase() {
                     };
                     localStorage.setItem('expenseTracker_deletedSuppliers', JSON.stringify(trackingData));
                 } catch (error) {
-                    console.warn('Failed to persist deletion tracking:', error);
+                    console.warn('Failed to persist supplier deletion tracking:', error);
+                }
+                
+                // Also verify expense deletions
+                try {
+                    const expensesSnapshot = await getDocs(collection(db, 'expenses'));
+                    const remainingExpenseIds = new Set(expensesSnapshot.docs.map(doc => doc.id));
+                    
+                    deletedExpenseIds.forEach(id => {
+                        // If expense is not in Firebase anymore and not in local, clear tracking
+                        if (!remainingExpenseIds.has(id) && !localExpenseIds.has(id)) {
+                            deletedExpenseIds.delete(id);
+                            expenseDeletionTimestamps.delete(id);
+                        }
+                    });
+                    
+                    // Persist updated expense tracking
+                    try {
+                        const trackingData = {
+                            ids: Array.from(deletedExpenseIds),
+                            timestamps: Object.fromEntries(expenseDeletionTimestamps)
+                        };
+                        localStorage.setItem('expenseTracker_deletedExpenses', JSON.stringify(trackingData));
+                    } catch (error) {
+                        console.warn('Failed to persist expense deletion tracking:', error);
+                    }
+                } catch (error) {
+                    console.warn('Failed to verify expense deletions:', error);
                 }
             } catch (error) {
                 console.warn('Failed to verify deletions:', error);
@@ -505,16 +1097,40 @@ function mergeData(localData, firebaseData) {
     let hasChanges = false;
     const mergedExpenses = [...localData.expenses];
     const mergedSuppliers = [...localData.suppliers];
+    
+    // If local data is completely empty, allow all Firebase data to be restored
+    // (deletion tracking should have been cleared in loadFromLocalStorage if localStorage was empty)
+    const isLocalDataEmpty = localData.expenses.length === 0 && localData.suppliers.length === 0;
 
     // Merge expenses
     firebaseData.expenses.forEach(firebaseItem => {
+        // Check if this expense was deleted locally
+        // BUT: If local data is empty, ignore deletion tracking to allow full restore
+        const wasDeleted = !isLocalDataEmpty && deletedExpenseIds.has(firebaseItem.id);
+        
+        if (wasDeleted) {
+            // Expense was deleted - don't restore it if we have local data
+            // This ensures deletions persist even if Firebase sync hasn't completed yet
+            console.log('Skipping deleted expense from Firebase (permanent deletion):', firebaseItem.id);
+            return;
+        }
+        
         const localIndex = mergedExpenses.findIndex(item => item.id === firebaseItem.id);
 
         if (localIndex === -1) {
-            // New item from Firebase
-            mergedExpenses.push(firebaseItem);
-            hasChanges = true;
+            // New item from Firebase - only add if it wasn't deleted
+            if (!wasDeleted) {
+                mergedExpenses.push(firebaseItem);
+                hasChanges = true;
+            }
         } else {
+            // Expense exists in both - check if it was deleted
+            if (wasDeleted) {
+                // Don't overwrite local deletion with Firebase data
+                console.log('Skipping merge for deleted expense:', firebaseItem.id);
+                return;
+            }
+            
             // Conflict resolution: use newer timestamp
             const localItem = mergedExpenses[localIndex];
             const firebaseUpdated = new Date(firebaseItem.updatedAt || firebaseItem.createdAt);
@@ -526,6 +1142,17 @@ function mergeData(localData, firebaseData) {
             }
         }
     });
+    
+    // Remove any expenses that were deleted from the merged array (permanent removal)
+    for (let i = mergedExpenses.length - 1; i >= 0; i--) {
+        const expenseId = mergedExpenses[i].id;
+        if (deletedExpenseIds.has(expenseId)) {
+            // Always remove deleted expenses, regardless of TTL
+            console.log('Removing deleted expense from merged array:', expenseId);
+            mergedExpenses.splice(i, 1);
+            hasChanges = true;
+        }
+    }
 
     // Clean up old deletions before merging
     cleanupOldDeletions();
@@ -536,49 +1163,44 @@ function mergeData(localData, firebaseData) {
 
         if (localIndex === -1) {
             // Supplier exists in Firebase but not locally
+            // Firebase is the source of truth - add it unless it was recently deleted locally
             
-            // Check if this supplier was recently deleted locally
-            const wasRecentlyDeleted = deletedSupplierIds.has(firebaseItem.id);
+            // Check if this supplier was recently deleted locally (within TTL)
+            // BUT: If local data is empty, ignore deletion tracking to allow full restore
+            const wasRecentlyDeleted = !isLocalDataEmpty && deletedSupplierIds.has(firebaseItem.id);
             const deletionTime = deletionTimestamps.get(firebaseItem.id) || 0;
             const timeSinceDeletion = Date.now() - deletionTime;
             
             if (wasRecentlyDeleted && timeSinceDeletion < DELETION_TRACKING_TTL) {
-                // Recently deleted - don't restore it
+                // Recently deleted locally - don't restore it (deletion is still in progress)
                 console.log('Skipping recently deleted supplier from Firebase:', firebaseItem.id, firebaseItem.name);
                 return;
             }
             
-            // Only add it if it has expenses (likely from another device)
-            // This prevents re-adding deleted empty suppliers
-            const hasExpenses = localData.expenses.some(expense => 
-                expense.supplierName.toLowerCase() === firebaseItem.name.toLowerCase()
-            );
-            
-            if (hasExpenses) {
-                // Has expenses - likely legitimate from another device, add it
-                // But only if it wasn't recently deleted
-                if (!wasRecentlyDeleted) {
-                    mergedSuppliers.push(firebaseItem);
-                    hasChanges = true;
-                    console.log('Restoring supplier from Firebase (has expenses):', firebaseItem.id, firebaseItem.name);
-                } else {
-                    console.log('Skipping recently deleted supplier even though it has expenses:', firebaseItem.id, firebaseItem.name);
-                }
-            } else {
-                // No expenses - likely a deleted supplier, skip it
-                console.log('Skipping supplier from Firebase with no expenses:', firebaseItem.id, firebaseItem.name);
-            }
+            // Add supplier from Firebase (source of truth)
+            // Suppliers are independent entities and should exist regardless of local expenses
+            mergedSuppliers.push(firebaseItem);
+            hasChanges = true;
+            console.log('Adding supplier from Firebase:', firebaseItem.id, firebaseItem.name);
         } else {
             // Supplier exists in both - merge/update logic
             const localItem = mergedSuppliers[localIndex];
             
-            // Don't overwrite local if it was recently deleted
-            const wasRecentlyDeleted = deletedSupplierIds.has(firebaseItem.id);
+            // Don't overwrite local if it was recently deleted (unless local data is empty)
+            const wasRecentlyDeleted = !isLocalDataEmpty && deletedSupplierIds.has(firebaseItem.id);
             if (wasRecentlyDeleted) {
                 console.log('Skipping merge for recently deleted supplier:', firebaseItem.id);
                 return;
             }
             
+            // If local data is empty, always use Firebase (full restore)
+            if (isLocalDataEmpty) {
+                mergedSuppliers[localIndex] = firebaseItem;
+                hasChanges = true;
+                return;
+            }
+            
+            // Conflict resolution: use newer timestamp
             const firebaseUpdated = new Date(firebaseItem.updatedAt || firebaseItem.createdAt);
             const localUpdated = new Date(localItem.updatedAt || localItem.createdAt);
 
@@ -875,7 +1497,7 @@ function parseAccountingFormatCSV(data, headers, values) {
         tin: tin,
         address: address,
         invoiceNumber: '',
-        expenseCategory: 'General', // Default category for CSV imports
+        expenseCategory: 'Supplies', // Default category for CSV imports
         items: items,
         totalAmount: amount,
         vatExemptAmount: 0,
@@ -1219,61 +1841,112 @@ export function saveSupplierIfNew(expense) {
 }
 
 // Autocomplete Helper Functions
+// Cache for item matches to improve performance
+let itemMatchesCache = null;
+let itemMatchesCacheTimestamp = 0;
+const ITEM_MATCHES_CACHE_TTL = 30000; // 30 seconds
+
 export function getItemMatches(query, currentSupplier = '') {
-    // Get all unique items from expenses
-    const allItems = new Map();
+    const queryLower = query.toLowerCase().trim();
+    const now = Date.now();
+    
+    // Invalidate cache if expired or if expenses might have changed
+    if (!itemMatchesCache || (now - itemMatchesCacheTimestamp) > ITEM_MATCHES_CACHE_TTL) {
+        // Build cache of all unique items
+        const allItems = new Map();
 
-    expenses.forEach(expense => {
-        expense.items.forEach(item => {
-            const key = item.name.toLowerCase();
-            if (!allItems.has(key)) {
-                allItems.set(key, {
-                    id: item.name, // Use actual name as ID instead of lowercase
-                    name: item.name,
-                    suppliers: new Set(),
-                    frequency: 0
-                });
-            }
-            allItems.get(key).suppliers.add(expense.supplierName);
-            allItems.get(key).frequency++;
+        expenses.forEach(expense => {
+            expense.items.forEach(item => {
+                const key = item.name.toLowerCase();
+                if (!allItems.has(key)) {
+                    allItems.set(key, {
+                        id: item.name, // Use actual name as ID instead of lowercase
+                        name: item.name,
+                        suppliers: new Set(),
+                        frequency: 0
+                    });
+                }
+                allItems.get(key).suppliers.add(expense.supplierName);
+                allItems.get(key).frequency++;
+            });
         });
-    });
 
-    // Convert to array and filter/sort
-    const items = Array.from(allItems.values()).map(item => {
+        itemMatchesCache = Array.from(allItems.values());
+        itemMatchesCacheTimestamp = now;
+    }
+
+    // Early exit for empty query - return limited results
+    if (!queryLower) {
+        return itemMatchesCache
+            .slice(0, 10)
+            .map(item => ({
+                ...item,
+                priority: 5,
+                secondarySort: -item.frequency,
+                display: item.name
+            }))
+            .sort((a, b) => {
+                if (a.secondarySort !== b.secondarySort) return a.secondarySort - b.secondarySort;
+                return a.name.localeCompare(b.name);
+            });
+    }
+
+    // Filter FIRST, then map - much more efficient for longer queries
+    const matchingItems = [];
+    const queryLength = queryLower.length;
+    
+    for (const item of itemMatchesCache) {
         const name = item.name.toLowerCase();
         let priority = 999;
+        let matches = false;
 
-        // Priority 1: Exact match
-        if (name === query) priority = 1;
-        // Priority 2: Starts with query
-        else if (name.startsWith(query)) priority = 2;
-        // Priority 3: Word starts with query
-        else if (name.split(' ').some(word => word.startsWith(query))) priority = 3;
-        // Priority 4: Contains query
-        else if (query && name.includes(query)) priority = 4;
-        // Priority 5: No query (show all)
-        else if (!query) priority = 5;
-
-        // Boost priority if item was ordered from current supplier
-        if (currentSupplier && item.suppliers.has(currentSupplier)) {
-            priority = Math.max(1, priority - 1);
+        // Quick checks - order matters for performance
+        if (name === queryLower) {
+            priority = 1;
+            matches = true;
+        } else if (name.startsWith(queryLower)) {
+            priority = 2;
+            matches = true;
+        } else if (queryLength >= 3 && name.includes(queryLower)) {
+            // Only do word-based matching for longer queries (more expensive)
+            if (name.split(' ').some(word => word.startsWith(queryLower))) {
+                priority = 3;
+                matches = true;
+            } else {
+                priority = 4;
+                matches = true;
+            }
         }
 
-        // Secondary sort by frequency
-        const secondarySort = -item.frequency;
+        if (matches) {
+            // Boost priority if item was ordered from current supplier
+            if (currentSupplier && item.suppliers.has(currentSupplier)) {
+                priority = Math.max(1, priority - 1);
+            }
 
-        return { ...item, priority, secondarySort, display: item.name };
-    });
+            matchingItems.push({
+                ...item,
+                priority,
+                secondarySort: -item.frequency,
+                display: item.name
+            });
+        }
+    }
 
-    return items
-        .filter(item => item.priority < 999)
+    // Sort and limit results
+    return matchingItems
         .sort((a, b) => {
             if (a.priority !== b.priority) return a.priority - b.priority;
             if (a.secondarySort !== b.secondarySort) return a.secondarySort - b.secondarySort;
             return a.name.localeCompare(b.name);
         })
         .slice(0, 10); // Limit to 10 suggestions
+}
+
+// Function to invalidate item matches cache (call when expenses are added/updated/deleted)
+export function invalidateItemMatchesCache() {
+    itemMatchesCache = null;
+    itemMatchesCacheTimestamp = 0;
 }
 
 export function getPaidByMatches(query) {
@@ -1403,11 +2076,18 @@ export function createExpenseObject(data, options = {}) {
     };
 
     if (autoCalculateVAT) {
-        // Check if VAT computation should be enabled
-        const vatComputationEnabled = getValue('vatComputationEnabled') === 'true' || 
-                                     getValue('vatComputationEnabled') === true ||
-                                     getValue('vatComputationEnabled') === 'checked' ||
-                                     (existingExpense?.isVatRegistered && getValue('vatComputationEnabled') === '');
+        // Check if VAT computation is explicitly disabled
+        const vatComputationExplicitlyDisabled = getValue('vatComputationEnabled') === 'false' || 
+                                                 getValue('vatComputationEnabled') === false;
+        
+        // Auto-enable VAT computation if supplier is VAT registered (unless explicitly disabled)
+        // If supplier is VAT registered, default to enabled unless explicitly set to false
+        const vatComputationEnabled = vatComputationExplicitlyDisabled ? false :
+                                     (supplier?.isVatRegistered ? true :
+                                     (getValue('vatComputationEnabled') === 'true' || 
+                                      getValue('vatComputationEnabled') === true ||
+                                      getValue('vatComputationEnabled') === 'checked' ||
+                                      (existingExpense?.isVatRegistered && getValue('vatComputationEnabled') === '')));
 
         // Calculate VAT if VAT computation is enabled and (supplier is VAT registered or no supplier found)
         if (vatComputationEnabled && (supplier?.isVatRegistered || !supplier)) {
@@ -1434,23 +2114,31 @@ export function createExpenseObject(data, options = {}) {
     const expense = {
         id: isEditing && existingExpense ? existingExpense.id : (existingExpense?.id || generateId()),
         date: getValue('date', existingExpense?.date || getTodayLocal()),
-        branch: getValue('branch', existingExpense?.branch || 'SM North'),
+        branch: getValue('branch', existingExpense?.branch || null),
+        allocation: getValue('allocation', existingExpense?.allocation || 'Store'),
         supplierName: supplierName,
         businessName: getValue('businessName', existingExpense?.businessName || ''),
         tin: getValue('tin', existingExpense?.tin || ''),
         address: getValue('address', existingExpense?.address || ''),
         invoiceNumber: getValue('invoiceNumber', existingExpense?.invoiceNumber || ''),
-        expenseCategory: getValue('expenseCategory', existingExpense?.expenseCategory || 'General'),
+        expenseCategory: getValue('expenseCategory', existingExpense?.expenseCategory || 'Supplies'),
         items: items,
         totalAmount: totalAmount,
         vatExemptAmount: vatExemptAmount,
         vatableSale: vatBreakdown.vatableSale,
         vatAmount: vatBreakdown.vatAmount,
         isVatRegistered: vatBreakdown.isVatRegistered,
-        paymentMethod: getValue('paymentMethod', existingExpense?.paymentMethod || 'Cash'),
-        paidBy: getValue('paidBy', existingExpense?.paidBy || ''),
+        paidBy: (() => {
+            const allocation = getValue('allocation', existingExpense?.allocation || 'Store');
+            const paidBy = getValue('paidBy', existingExpense?.paidBy || 'Company');
+            // If allocation is non-store, always Company
+            return allocation === 'Store' ? paidBy : 'Company';
+        })(),
         notes: getValue('notes', existingExpense?.notes || ''),
         receiptImage: getValue('receiptImage', existingExpense?.receiptImage || null),
+        vatComputationEnabled: getValue('vatComputationEnabled') !== undefined ? 
+                               (getValue('vatComputationEnabled') === 'true' || getValue('vatComputationEnabled') === true) :
+                               (existingExpense?.vatComputationEnabled !== undefined ? existingExpense.vatComputationEnabled : undefined),
         createdAt: isEditing && existingExpense ? 
                    (existingExpense.createdAt || new Date().toISOString()) : 
                    new Date().toISOString(),
@@ -1503,7 +2191,7 @@ export function validateExpense(expense) {
     return errors;
 }
 
-export function validateSupplier(supplier) {
+export function validateSupplier(supplier, excludeSupplierId = null) {
     const errors = [];
 
     if (!supplier.name || supplier.name.trim() === '') {
@@ -1513,7 +2201,7 @@ export function validateSupplier(supplier) {
     // Check for duplicate names (excluding current supplier if editing)
     const existingSupplier = suppliers.find(s =>
         s.name.toLowerCase() === supplier.name.toLowerCase() &&
-        s.id !== supplier.id
+        s.id !== excludeSupplierId
     );
 
     if (existingSupplier) {
@@ -1558,7 +2246,8 @@ export function createSupplierObject(data, options = {}) {
 
     // Validate if requested
     if (validate) {
-        const errors = validateSupplier(supplier);
+        const excludeSupplierId = isEditing && existingSupplier ? existingSupplier.id : null;
+        const errors = validateSupplier(supplier, excludeSupplierId);
         if (errors.length > 0) {
             return {
                 success: false,
@@ -1906,6 +2595,9 @@ export function showExpenseDetailModal(expense) {
         return;
     }
 
+    // Set content to flex row layout for 2-column display
+    content.style.cssText = 'display: flex; flex-direction: row; flex: 1; overflow: hidden; padding: 0; min-height: 0; height: 100%;';
+
     // Format the date
     const expenseDate = new Date(expense.date);
     const isToday = expense.date === new Date().toISOString().split('T')[0];
@@ -1941,134 +2633,160 @@ export function showExpenseDetailModal(expense) {
     const headerActions = modalHeader.querySelector('.modal-header-actions');
     headerActions.insertBefore(actionButtons, headerActions.firstChild);
 
-    // Generate content
+    // Generate content with 2-pane layout - EXACTLY like edit expense modal
     content.innerHTML = `
-        <!-- Basic Information -->
-        <div class="expense-detail-section">
-            <h3>Basic Information</h3>
-            <div class="expense-detail-row">
-                <div class="expense-detail-label">Date</div>
-                <div class="expense-detail-value">${formattedDate}</div>
-            </div>
-            <div class="expense-detail-row">
-                <div class="expense-detail-label">Branch</div>
-                <div class="expense-detail-value">${expense.branch || 'Not specified'}</div>
-            </div>
-            <div class="expense-detail-row">
-                <div class="expense-detail-label">Payment Method</div>
-                <div class="expense-detail-value">${expense.paymentMethod || 'Cash'}</div>
-            </div>
-            ${expense.paidBy ? `
-            <div class="expense-detail-row">
-                <div class="expense-detail-label">Paid By</div>
-                <div class="expense-detail-value">${expense.paidBy}</div>
-            </div>
-            ` : ''}
-            ${expense.invoiceNumber ? `
-            <div class="expense-detail-row">
-                <div class="expense-detail-label">Invoice Number</div>
-                <div class="expense-detail-value">${expense.invoiceNumber}</div>
-            </div>
-            ` : ''}
-        </div>
-
-        <!-- Supplier Information -->
-        <div class="expense-detail-section">
-            <h3>Supplier Information</h3>
-            <div class="expense-detail-row supplier-clickable" onclick="viewSupplierFromExpense('${expense.supplierName}')">
-                <div class="expense-detail-label">Supplier Name</div>
-                <div class="expense-detail-value supplier-link">${expense.supplierName}</div>
-            </div>
-            ${expense.businessName ? `
-            <div class="expense-detail-row">
-                <div class="expense-detail-label">Business Name</div>
-                <div class="expense-detail-value">${expense.businessName}</div>
-            </div>
-            ` : ''}
-            ${expense.tin ? `
-            <div class="expense-detail-row">
-                <div class="expense-detail-label">TIN</div>
-                <div class="expense-detail-value">${expense.tin}</div>
-            </div>
-            ` : ''}
-            ${expense.address ? `
-            <div class="expense-detail-row">
-                <div class="expense-detail-label">Address</div>
-                <div class="expense-detail-value">${expense.address}</div>
-            </div>
-            ` : ''}
-        </div>
-
-        <!-- Financial Information -->
-        <div class="expense-detail-section">
-            <h3>Financial Information</h3>
-            <div class="expense-detail-row">
-                <div class="expense-detail-label">Total Amount</div>
-                <div class="expense-detail-value amount">₱${(expense.totalAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-            </div>
-            ${expense.isVatRegistered ? `
-            <div class="expense-detail-row">
-                <div class="expense-detail-label">VAT Status</div>
-                <div class="expense-detail-value">VAT Registered</div>
-            </div>
-            ${expense.vatableSale > 0 ? `
-            <div class="expense-detail-row">
-                <div class="expense-detail-label">VATable Sale</div>
-                <div class="expense-detail-value">₱${expense.vatableSale.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-            </div>
-            ` : ''}
-            ${expense.vatAmount > 0 ? `
-            <div class="expense-detail-row">
-                <div class="expense-detail-label">VAT Amount</div>
-                <div class="expense-detail-value">₱${expense.vatAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-            </div>
-            ` : ''}
-            ${expense.vatExemptAmount > 0 ? `
-            <div class="expense-detail-row">
-                <div class="expense-detail-label">VAT Exempt Amount</div>
-                <div class="expense-detail-value">₱${expense.vatExemptAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-            </div>
-            ` : ''}
-            ` : ''}
-        </div>
-
-        <!-- Items Purchased -->
-        <div class="expense-detail-section">
-            <h3>Items Purchased (${expense.items.length} item${expense.items.length === 1 ? '' : 's'})</h3>
-            <div class="expense-detail-items">
-                ${expense.items.map(item => `
-                    <div class="expense-detail-item">
-                        <div class="expense-detail-item-name">${item.name}</div>
-                        <div class="expense-detail-item-details">
-                            <div class="expense-detail-item-qty-price">
-                                <span>Qty: ${item.quantity}</span>
-                                ${item.price > 0 ? `<span>₱${item.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} each</span>` : ''}
-                            </div>
-                            ${item.total > 0 ? `<div class="expense-detail-item-total">₱${item.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>` : ''}
+        <div style="display: flex; flex: 1; overflow: hidden;">
+            <div style="flex: 1; padding: 1.5rem; overflow-y: auto; border-right: 1px solid #e5e5e5;">
+                <!-- Basic Information -->
+                <div class="expense-detail-section">
+                    <h3>Basic Information</h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+                        <div>
+                            <div style="font-size: 1.1rem; font-weight: 600; color: #333; margin-bottom: 0.25rem;">${formattedDate}</div>
+                            <div style="font-size: 0.875rem; color: #666;">Date</div>
                         </div>
+                        ${expense.allocation ? `
+                        <div>
+                            <div style="font-size: 1.1rem; font-weight: 600; color: #333; margin-bottom: 0.25rem;">${expense.allocation}</div>
+                            <div style="font-size: 0.875rem; color: #666;">Allocation</div>
+                        </div>
+                        ` : '<div></div>'}
+                        ${expense.branch && expense.allocation === 'Store' ? `
+                        <div>
+                            <div style="font-size: 1.1rem; font-weight: 600; color: #333; margin-bottom: 0.25rem;">${expense.branch}</div>
+                            <div style="font-size: 0.875rem; color: #666;">Branch</div>
+                        </div>
+                        ` : ''}
+                        ${expense.paidBy ? `
+                        <div>
+                            <div style="font-size: 1.1rem; font-weight: 600; color: #333; margin-bottom: 0.25rem;">${expense.paidBy}</div>
+                            <div style="font-size: 0.875rem; color: #666;">Paid By</div>
+                        </div>
+                        ` : ''}
+                        ${expense.expenseCategory ? `
+                        <div>
+                            <div style="font-size: 1.1rem; font-weight: 600; color: #333; margin-bottom: 0.25rem;">${expense.expenseCategory}</div>
+                            <div style="font-size: 0.875rem; color: #666;">Expense Category</div>
+                        </div>
+                        ` : ''}
+                        ${expense.invoiceNumber ? `
+                        <div>
+                            <div style="font-size: 1.1rem; font-weight: 600; color: #333; margin-bottom: 0.25rem;">${expense.invoiceNumber}</div>
+                            <div style="font-size: 0.875rem; color: #666;">Invoice Number</div>
+                        </div>
+                        ` : ''}
                     </div>
-                `).join('')}
-            </div>
-        </div>
-
-        ${expense.notes ? `
-        <!-- Notes -->
-        <div class="expense-detail-section">
-            <h3>Notes</h3>
-            <div class="expense-detail-notes">${expense.notes}</div>
-        </div>
-        ` : ''}
-
-        <!-- Receipt -->
-        <div class="expense-detail-section">
-            <h3>Receipt</h3>
-            ${expense.receiptImage ? `
-                <div class="expense-detail-receipt">
-                    <img src="${expense.receiptImage}" alt="Receipt" onclick="viewReceiptFullscreen('${expense.receiptImage}')">
                 </div>
-            ` : `
-                <div class="expense-detail-no-receipt">No receipt attached</div>
-            `}
+
+                <!-- Supplier Information -->
+                <div class="expense-detail-section">
+                    <h3>Supplier Information</h3>
+                    <div class="expense-detail-row supplier-clickable" onclick="viewSupplierFromExpense('${expense.supplierName}')">
+                        <div class="expense-detail-label">Supplier Name</div>
+                        <div class="expense-detail-value supplier-link">${expense.supplierName}</div>
+                    </div>
+                    ${expense.businessName ? `
+                    <div class="expense-detail-row">
+                        <div class="expense-detail-label">Business Name</div>
+                        <div class="expense-detail-value">${expense.businessName}</div>
+                    </div>
+                    ` : ''}
+                    ${expense.tin ? `
+                    <div class="expense-detail-row">
+                        <div class="expense-detail-label">TIN</div>
+                        <div class="expense-detail-value">${expense.tin}</div>
+                    </div>
+                    ` : ''}
+                    ${expense.address ? `
+                    <div class="expense-detail-row">
+                        <div class="expense-detail-label">Address</div>
+                        <div class="expense-detail-value">${expense.address}</div>
+                    </div>
+                    ` : ''}
+                </div>
+
+                <!-- Financial Information -->
+                <div class="expense-detail-section">
+                    <h3>Financial Information</h3>
+                    <div class="expense-detail-row">
+                        <div class="expense-detail-label">Total Amount</div>
+                        <div class="expense-detail-value amount">₱${(expense.totalAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    </div>
+                    ${expense.isVatRegistered ? `
+                    <div class="expense-detail-row">
+                        <div class="expense-detail-label">VAT Status</div>
+                        <div class="expense-detail-value">VAT Registered</div>
+                    </div>
+                    ${expense.vatableSale > 0 ? `
+                    <div class="expense-detail-row">
+                        <div class="expense-detail-label">VATable Sale</div>
+                        <div class="expense-detail-value">₱${expense.vatableSale.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    </div>
+                    ` : ''}
+                    ${expense.vatAmount > 0 ? `
+                    <div class="expense-detail-row">
+                        <div class="expense-detail-label">VAT Amount</div>
+                        <div class="expense-detail-value">₱${expense.vatAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    </div>
+                    ` : ''}
+                    ${expense.vatExemptAmount > 0 ? `
+                    <div class="expense-detail-row">
+                        <div class="expense-detail-label">VAT Exempt Amount</div>
+                        <div class="expense-detail-value">₱${expense.vatExemptAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    </div>
+                    ` : ''}
+                    ` : ''}
+                </div>
+
+                <!-- Items Purchased -->
+                <div class="expense-detail-section">
+                    <h3>Items Purchased (${expense.items.length} item${expense.items.length === 1 ? '' : 's'})</h3>
+                    <div class="expense-detail-items">
+                        ${expense.items.map(item => `
+                            <div class="expense-detail-item">
+                                <div class="expense-detail-item-name">${item.name}</div>
+                                <div class="expense-detail-item-details">
+                                    <div class="expense-detail-item-qty-price">
+                                        <span>Qty: ${item.quantity}</span>
+                                        ${item.price > 0 ? `<span>₱${item.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} each</span>` : ''}
+                                    </div>
+                                    ${item.total > 0 ? `<div class="expense-detail-item-total">₱${item.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>` : ''}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                ${expense.notes ? `
+                <!-- Notes -->
+                <div class="expense-detail-section">
+                    <h3>Notes</h3>
+                    <div class="expense-detail-notes">${expense.notes}</div>
+                </div>
+                ` : ''}
+            </div>
+            
+            <div style="flex: 1; padding: 1.5rem; overflow-y: auto; background: #f8f9fa;">
+                <!-- Receipt -->
+                <div style="height: 100%; display: flex; flex-direction: column;">
+                    <h3 style="font-size: 1.1rem; font-weight: 600; color: #2b9348; margin: 0 0 1.5rem 0; padding-bottom: 0.5rem; border-bottom: 2px solid rgba(43, 147, 72, 0.2);">Receipt Photo</h3>
+                    <div style="flex: 1; display: flex; flex-direction: column; justify-content: center;">
+                        ${expense.receiptImage ? `
+                            <div style="border: 2px solid #ddd; border-radius: 8px; padding: 20px; text-align: center; position: relative; aspect-ratio: 3/4; min-height: 0; display: flex; align-items: center; justify-content: center; background: white;">
+                                <img src="${expense.receiptImage}" alt="Receipt" style="width: 100%; height: 100%; border-radius: 8px; object-fit: contain; max-width: 100%; max-height: 100%; cursor: pointer;" onclick="viewReceiptFullscreen('${expense.receiptImage}')">
+                            </div>
+                        ` : `
+                            <div style="border: 2px dashed #ddd; border-radius: 8px; padding: 20px; text-align: center; aspect-ratio: 3/4; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: white; color: #999;">
+                                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-bottom: 1rem;">
+                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                                    <polyline points="21,15 16,10 5,21"></polyline>
+                                </svg>
+                                <div>No receipt attached</div>
+                            </div>
+                        `}
+                </div>
+            </div>
         </div>
     `;
 

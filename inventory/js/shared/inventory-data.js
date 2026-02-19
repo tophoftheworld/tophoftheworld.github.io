@@ -3,7 +3,7 @@ import { collection, getDocs, query, where, doc, getDoc } from 'https://www.gsta
 
 // Global state
 let inventoryItems = [];
-let availableBranches = ['sm-north', 'podium'];
+let availableBranches = ['sm-north', 'podium', 'moa'];
 
 // Load inventory items for a specific branch
 export async function loadInventoryItems(branch) {
@@ -60,22 +60,22 @@ export async function loadBranchesFromFirebase() {
       const data = d.data();
       const key = (data && (data.key || data.id)) ? (data.key || data.id) : (data && data.name ? String(data.name).toLowerCase().replace(/\s+/g, '-') : '');
       const isPopup = (data && (data.type === 'popup' || /popup/i.test(data.name || '') || /pop[- ]?up/i.test(key)));
-      if (key && !isPopup && (key === 'sm-north' || key === 'podium')) {
+      if (key && !isPopup && (key === 'sm-north' || key === 'podium' || key === 'moa')) {
         names.push(key);
       }
     });
-    availableBranches = names.length > 0 ? names : ['sm-north', 'podium'];
+    availableBranches = names.length > 0 ? names : ['sm-north', 'podium', 'moa'];
     return availableBranches;
   } catch (error) {
     console.error('Error loading branches:', error);
-    return ['sm-north', 'podium'];
+    return ['sm-north', 'podium', 'moa'];
   }
 }
 
 // Get branch display name
 export function getBranchDisplayName(branch) {
   if (!branch) return '';
-  const map = { 'sm-north': 'SM North', 'podium': 'Podium' };
+  const map = { 'sm-north': 'SM North', 'podium': 'Podium', 'moa': 'MOA' };
   return map[branch] || branch.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 

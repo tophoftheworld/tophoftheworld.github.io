@@ -1,6 +1,6 @@
 /* Main body styles */
 body {
-  font-family: Arial, 'Helvetica Neue', Helvetica, sans-serif;
+  font-family: 'Poppins', sans-serif;
   color: #333;
   font-size: 14px;
   line-height: 20px;
@@ -79,11 +79,11 @@ body {
 .menu-category-name {
   margin-top: 0px;
   margin-bottom: 0px;
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   color: #000;
   font-size: 16px;
   line-height: 28px;
-  font-weight: 300;
+  font-weight: 700;
   letter-spacing: 2px;
   text-transform: uppercase;
 }
@@ -101,14 +101,14 @@ body {
 }
 
 .menu-header {
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   color: #1d8a00;
   font-size: 24px;
   text-transform: uppercase;
   letter-spacing: 2px;
   width: 100%;
   text-align: left;
-  font-weight: 600;
+  font-weight: 800;
 }
 
 .header-container {
@@ -177,20 +177,21 @@ body {
 }
 
 .menu-header .light {
-  font-weight: 300;
+  font-weight: 500;
 }
 
 /* Menu item styles */
 .menu-item-name {
   margin-top: 20px;
   margin-bottom: 0px;
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   color: #000;
   font-size: 24px;
   line-height: 36px;
-  font-weight: 300;
+  font-weight: 500;
   letter-spacing: 0px;
   cursor: pointer;
+  text-transform: lowercase;
 }
 
 .menu-item-name:hover,
@@ -199,9 +200,13 @@ body {
 }
 
 .text-span-2 {
-  font-weight: 400;
+  font-weight: 800;
   color: #000;
   transition: color 0.0s ease;
+}
+
+.menu-item-name .text-span-2.matchanese {
+  font-weight: 900;
 }
 
 /* .text-span-2:hover {
@@ -211,14 +216,15 @@ body {
 .menu-item-desc {
   margin-top: 0px;
   margin-bottom: 0px;
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   color: #000;
-  font-size: 12.5px;
+  font-size: 14.5px;
   line-height: 18px;
-  font-weight: 300;
+  font-weight: 400;
   letter-spacing: 0px;
   white-space: normal;
   width: 60%;
+  text-transform: lowercase;
   /* Ensure it doesn't overlap with price */
   overflow-wrap: break-word;
   word-wrap: break-word;
@@ -238,7 +244,7 @@ body {
   padding-right: 5px;
   padding-left: 5px;
   background-color: #1d8a00;
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   color: #fff;
   font-size: 10px;
   line-height: 20px;
@@ -254,7 +260,7 @@ body {
   margin-bottom: 0px;
   justify-content: flex-end;
   order: 0;
-  font-family: Montserrat, sans-serif;
+  font-family: 'Poppins', sans-serif;
   color: #000;
   font-size: 24px;
   line-height: 36px;
@@ -264,8 +270,7 @@ body {
 }
 
 .text-span-2-copy {
-  font-family: Montserrat, sans-serif;
-  /* Change from Cocogoose to Montserrat */
+  font-family: 'Poppins', sans-serif;
   font-weight: 600;
 }
 
@@ -274,7 +279,7 @@ body {
   right: 0px;
   margin-top: 0px;
   margin-bottom: 0px;
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   color: #000;
   font-size: 12.5px;
   line-height: 18px;
@@ -285,7 +290,7 @@ body {
 /* Grid View Styles */
 .left-menu.grid-view {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(var(--grid-columns, 5), 1fr);
   gap: 8px;
   padding: 8px;
   max-width: 100%;
@@ -306,7 +311,7 @@ body {
 
 .left-menu.grid-view .menu-item {
   width: 100%;
-  height: 120px;
+  aspect-ratio: 1 / 1;
   border: 2px solid #e0e0e0;
   border-radius: 12px;
   padding: 8px;
@@ -320,8 +325,9 @@ body {
   cursor: pointer;
   position: relative;
   box-sizing: border-box;
-  max-width: 180px;
-  justify-self: start;
+  min-width: 140px;
+  max-width: 100%;
+  justify-self: stretch;
 }
 
 .left-menu.grid-view .menu-item:hover {
@@ -352,9 +358,9 @@ body {
 }
 
 .left-menu.grid-view .menu-item-shorthand {
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 24px;
-  font-weight: 700;
+  font-weight: 800;
   color: #1d8a00;
   margin: 0 0 6px 0;
   text-align: center;
@@ -369,14 +375,15 @@ body {
 /* Responsive adjustments for smaller screens */
 @media (max-width: 768px) {
   .left-menu.grid-view {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(var(--grid-columns, 3), 1fr);
     gap: 8px;
     padding: 8px;
   }
   
   .left-menu.grid-view .menu-item {
-    height: 100px;
+    aspect-ratio: 1 / 1;
     padding: 6px;
+    min-width: 100px;
   }
   
   .left-menu.grid-view .menu-item-shorthand {
@@ -433,7 +440,7 @@ body {
 }
 
 .order-header {
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   color: #1d8a00;
   font-size: 20px;
   text-transform: uppercase;
@@ -452,7 +459,7 @@ body {
 }
 
 .customer-name {
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 16px;
   font-weight: 500;
   color: #666;
@@ -467,7 +474,7 @@ body {
 }
 
 .empty-order-message {
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   color: #999;
   font-size: 14px;
   text-align: center;
@@ -484,7 +491,7 @@ body {
 .order-total {
   display: flex;
   justify-content: space-between;
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   margin-bottom: 10px;
 }
 
@@ -505,7 +512,7 @@ body {
 }
 
 .order-card-total {
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 18px;
   font-weight: 600;
   margin-bottom: 0;
@@ -514,7 +521,7 @@ body {
 .order-card-method {
   background-color: #1d8a00;
   color: white;
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 12px;
   font-weight: 300;
   padding: 4px 8px;
@@ -530,8 +537,8 @@ body {
   color: white;
   border: none;
   padding: 20px;
-  font-family: 'Cocogoose pro trial', sans-serif;
-  font-weight: 300;
+  font-family: 'Poppins', sans-serif;
+  font-weight: 700;
   font-size: 14px;
   letter-spacing: 2px;
   border-radius: 4px;
@@ -550,7 +557,8 @@ body {
   border: none;
   padding: 8px 12px;
   margin-top: 10px;
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
+  font-weight: 700;
   font-size: 12px;
   letter-spacing: 1px;
   border-radius: 4px;
@@ -576,13 +584,13 @@ body {
 }
 
 .order-item-name {
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-weight: 400;
   font-size: 14px;
 }
 
 .order-item-price {
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-weight: 600;
 }
 
@@ -603,21 +611,21 @@ body {
   background-color: #f0f0f0;
   border: none;
   border-radius: 50%;
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-weight: 600;
   cursor: pointer;
 }
 
 .quantity-display {
   margin: 0 10px;
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
 }
 
 .remove-btn {
   background: none;
   border: none;
   color: #999;
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 12px;
   cursor: pointer;
   text-decoration: underline;
@@ -640,6 +648,12 @@ body {
   z-index: 1000;
 }
 
+/* Event Sales Report: single top-level overlay (no nested modal feel) */
+.eod-sales-overlay {
+  z-index: 10000;
+  background-color: rgba(0, 0, 0, 0.55);
+}
+
 .modal {
   background-color: white;
   border-radius: 8px;
@@ -651,7 +665,7 @@ body {
 }
 
 .modal-header {
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 20px;
   font-weight: 400;
   margin-bottom: 20px;
@@ -664,7 +678,7 @@ body {
 }
 
 .modal-option-label {
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 14px;
   font-weight: 300;
   text-transform: uppercase;
@@ -673,7 +687,7 @@ body {
 }
 
 /* .modal-options-grid .option-text {
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
 } */
 
 .modal-options-grid {
@@ -688,12 +702,22 @@ body {
   gap: 10px;
 }
 
+.option-button .option-text {
+  font-family: 'Poppins', sans-serif;
+}
+
+.option-button[data-group="sweetness"] .option-text,
+.option-button[data-group="strength level"] .option-text {
+  font-family: 'Poppins', sans-serif;
+  font-weight: 500;
+}
+
 .option-button {
   padding: 15px 20px;
   border: 2px solid #f0f0f0;
   background-color: #f7f7f7;
   border-radius: 4px;
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 12px;
   font-weight: 300;
   cursor: pointer;
@@ -709,7 +733,7 @@ body {
 }
 
 .option-button[data-group="sweetness"] {
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-weight: 500;
 }
 
@@ -765,8 +789,8 @@ body {
   color: white;
   border: none;
   padding: 15px 20px;
-  font-family: 'Cocogoose pro trial', sans-serif;
-  font-weight: 300;
+  font-family: 'Poppins', sans-serif;
+  font-weight: 700;
   font-size: 14px;
   letter-spacing: 2px;
   border-radius: 6px;
@@ -791,8 +815,8 @@ body {
   border: 1px solid #1d8a00;
   color: #000;
   padding: 10px 20px;
-  font-family: 'Montserrat', sans-serif;
-  font-weight: 400;
+  font-family: 'Poppins', sans-serif;
+  font-weight: 600;
   font-size: 14px;
   border-radius: 4px;
   cursor: pointer;
@@ -801,14 +825,14 @@ body {
 }
 
 .cash-received {
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   margin-top: 10px;
   display: flex;
   justify-content: space-between;
 }
 
 .change-amount {
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-weight: 600;
   display: flex;
   justify-content: space-between;
@@ -837,7 +861,7 @@ body {
 }
 
 .payment-modal-header {
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 20px;
   font-weight: 400;
   margin-bottom: 20px;
@@ -858,8 +882,8 @@ body {
   /* Thicker border */
   color: #1d8a00;
   padding: 20px;
-  font-family: 'Montserrat', sans-serif;
-  font-weight: 600;
+  font-family: 'Poppins', sans-serif;
+  font-weight: 800;
   font-size: 18px;
   border-radius: 10px;
   cursor: pointer;
@@ -889,7 +913,7 @@ body {
   height: 56px;
   border: 2px solid #1d8a00;
   border-radius: 10px;
-  font-family: Montserrat, sans-serif;
+  font-family: 'Poppins', sans-serif;
   text-align: center;
   font-size: 16px;
   font-weight: 600;
@@ -930,7 +954,7 @@ body {
 }
 
 .sales-label {
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 12px;
   font-weight: 300;
   color: #333;
@@ -939,7 +963,7 @@ body {
 }
 
 .sales-amount {
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 20px;
   font-weight: 600;
   color: #1d8a00;
@@ -960,7 +984,7 @@ body {
 .voided-text {
   text-align: center;
   padding: 20px;
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 16px;
   font-weight: 400;
   color: #ff4444;
@@ -972,7 +996,7 @@ body {
   border: 2px solid #1d8a00;
   color: #1d8a00;
   padding: 10px 20px;
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-weight: 600;
   font-size: 18px;
   border-radius: 4px;
@@ -1002,7 +1026,7 @@ body {
   border-right: none;
   color: #1d8a00;
   padding: 10px 24px;
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-weight: 600;
   font-size: 14px;
   letter-spacing: 0;
@@ -1037,13 +1061,13 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 18px;
   border-radius: 4px;
 } */
 
 .payment-total {
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 20px;
   font-weight: 600;
   margin-bottom: 10px;
@@ -1055,7 +1079,7 @@ body {
 
 .cash-received-text,
 .change-text {
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 16px;
   margin-bottom: 5px;
 }
@@ -1065,8 +1089,8 @@ body {
   color: white;
   border: none;
   padding: 20px 40px;
-  font-family: 'Cocogoose pro trial', sans-serif;
-  font-weight: 300;
+  font-family: 'Poppins', sans-serif;
+  font-weight: 700;
   font-size: 16px;
   letter-spacing: 2px;
   border-radius: 10px;
@@ -1106,7 +1130,7 @@ body {
 }
 
 .order-id {
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 16px;
   font-weight: 600;  /* Changed from 400 */
   margin-bottom: 10px;
@@ -1119,7 +1143,7 @@ body {
 }
 
 .order-datetime {
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 14px;
   font-weight: 500;
   color: #666;
@@ -1127,17 +1151,17 @@ body {
 }
 
 .order-card-item span:nth-child(2) {
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
 }
 
 .order-id,
 .order-card-total,
 .order-card-item .quantity {
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
 }
 
 /* .order-card-item .item-customizations>span {
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
 } */
 
 .order-card-header {
@@ -1159,7 +1183,7 @@ body {
 }
 
 .order-card-item {
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 14px;
   font-weight: 700;
   margin-bottom: 8px;
@@ -1197,7 +1221,7 @@ body {
 }
 
 .order-card-total {
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 20px;
   font-weight: 600;
   margin-bottom: 5px;
@@ -1207,7 +1231,7 @@ body {
 .order-card-method {
   background-color: #1d8a00;
   color: white;
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 12px;
   font-weight: 300;
   padding: 4px 8px;
@@ -1310,7 +1334,7 @@ body {
   padding: 12px;
   border: none;
   border-radius: 4px;
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 12px;
   font-weight: 300;
   cursor: pointer;
@@ -1335,7 +1359,7 @@ body {
 .orders-section-label {
   position: sticky;
   left: 0;
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 16px;
   font-weight: 600;
   text-transform: uppercase;
@@ -1395,7 +1419,7 @@ body {
 }
 
 .order-id {
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 16px;
   font-weight: 600;
   color: #1d8a00;
@@ -1403,7 +1427,7 @@ body {
 }
 
 .order-datetime {
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 14px;
   font-weight: 500;
   color: #666;
@@ -1411,7 +1435,7 @@ body {
 }
 
 .order-card-total {
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 18px;
   font-weight: 600;
   margin-bottom: 5px;
@@ -1420,7 +1444,7 @@ body {
 .order-card-method {
   background-color: #1d8a00;
   color: white;
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 10px;
   font-weight: 300;
   padding: 4px 8px;
@@ -1451,7 +1475,7 @@ body {
   padding: 15px;
   margin: 20px auto;
   display: block;
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 15px;
   font-weight: 600;
   border: 2px solid #ccc;
@@ -1536,7 +1560,7 @@ body {
   transform: translate(-50%, -50%);
   width: 100%;
   text-align: center;
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 20px;
   color: #1d8a00;
   transition: opacity 0.3s ease;
@@ -1562,7 +1586,7 @@ body {
   background-color: #1d8a00;
   color: white;
   padding: 18px 15px;
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-weight: 300;
   font-size: 16px;
   z-index: 100;
@@ -1574,7 +1598,7 @@ body {
 }
 
 .mobile-order-total {
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-weight: 600;
   margin-left: 10px;
   font-size: 18px;
@@ -1584,7 +1608,7 @@ body {
   background: none;
   border: none;
   color: #1d8a00;
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 36px;
   font-weight: 300;
   cursor: pointer;
@@ -1612,7 +1636,7 @@ body {
   border: none;
   border-radius: 4px;
   padding: 8px 16px;
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -1646,7 +1670,7 @@ body {
   border: none;
   border-radius: 4px;
   padding: 8px 16px;
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 12px;
   font-weight: 300;
   cursor: pointer;
@@ -1672,7 +1696,7 @@ body {
   border: none;
   border-radius: 4px;
   padding: 8px 16px;
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 12px;
   font-weight: 300;
   cursor: pointer;
@@ -1694,7 +1718,7 @@ body {
 .eod-report-header {
   text-align: center;
   margin-bottom: 25px;
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 18px;
   text-transform: uppercase;
   letter-spacing: 1px;
@@ -1705,7 +1729,7 @@ body {
 }
 
 .report-section-title {
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 14px;
   font-weight: 300;
   text-transform: uppercase;
@@ -1723,13 +1747,13 @@ body {
 }
 
 .report-label {
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 14px;
   font-weight: 300;
 }
 
 .report-value {
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 16px;
   font-weight: 600;
 }
@@ -1742,7 +1766,7 @@ body {
 .report-value.editable input {
   width: 120px;
   padding: 5px 10px;
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 16px;
   font-weight: 600;
   border: 1px solid #ccc;
@@ -1766,7 +1790,7 @@ body {
 }
 
 .cash-flow-total {
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 18px;
   font-weight: 700;
   text-align: right;
@@ -1780,7 +1804,7 @@ body {
   color: white;
   border: none;
   padding: 12px 20px;
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-weight: 300;
   font-size: 14px;
   letter-spacing: 2px;
@@ -1801,7 +1825,7 @@ body {
   border: none;
   border-radius: 4px;
   padding: 8px 16px;
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 12px;
   font-weight: 300;
   cursor: pointer;
@@ -1816,13 +1840,13 @@ body {
 }
 
 .eod-label {
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 16px;
   font-weight: 500;
 }
 
 .eod-value {
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 16px;
   font-weight: 600;
   text-align: right;
@@ -1845,7 +1869,7 @@ body {
 }
 
 .eod-section-title {
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 16px;
   font-weight: 300;
   text-transform: capitalize;
@@ -1855,7 +1879,7 @@ body {
 .eod-input {
   width: 120px;
   padding: 8px;
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 16px;
   font-weight: 600;
   text-align: right;
@@ -1892,7 +1916,7 @@ body {
   border: 2px solid #1d8a00;
   color: #1d8a00;
   padding: 10px 15px;
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-weight: 600;
   font-size: 14px;
   border-radius: 4px;
@@ -1911,7 +1935,7 @@ body {
   color: white;
   border: none;
   padding: 10px 12px;
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-weight: 600;
   font-size: 16px;
   border-radius: 4px;
@@ -1926,7 +1950,7 @@ body {
   color: white;
   border: none;
   padding: 10px 12px;
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-weight: 600;
   font-size: 16px;
   border-radius: 4px;
@@ -1961,7 +1985,7 @@ body {
 
   .menu-item-desc {
     font-size: 1.1vw;
-    font-weight: 300;
+    font-weight: 400;
     line-height: 1.8vw;
     text-align: left;
   }
@@ -2111,7 +2135,7 @@ body.debug-mode .force-sync-btn {
 
   .menu-item-desc {
     font-size: 2vw;
-    font-weight: 300;
+    font-weight: 400;
     line-height: 1.8vw;
     text-align: left;
     width: 85%; 
@@ -2246,7 +2270,7 @@ body.debug-mode .force-sync-btn {
 
 .menu-item-desc {
   font-size: 2vw;
-  font-weight: 300;
+  font-weight: 400;
   line-height: 1.8vw;
   text-align: left;
 }
@@ -2442,126 +2466,6 @@ body.debug-mode .force-sync-btn {
   }
 }
 
-/* Don't forget to include font-face declarations if needed */
-@font-face {
-  font-family: 'Cocogoose pro trial';
-  src: url('../fonts/Cocogoose-Pro-SemiLight-Italic-Trial.ttf') format('truetype'), url('../fonts/Cocogoose-Pro-Light-Italic-Trial.ttf') format('truetype');
-  font-weight: 300;
-  font-style: italic;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Cocogoose pro trial';
-  src: url('../fonts/Cocogoose-Pro-SemiLight-Trial.ttf') format('truetype'), url('../fonts/Cocogoose-Pro-Light-Trial.ttf') format('truetype');
-  font-weight: 300;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Cocogoose pro trial';
-  src: url('../fonts/Cocogoose-Pro-Thin-Italic-Trial.ttf') format('truetype');
-  font-weight: 100;
-  font-style: italic;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Cocogoose pro trial';
-  src: url('../fonts/Cocogoose-Pro-Thin-Trial.ttf') format('truetype');
-  font-weight: 100;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Cocogoose pro block border trial';
-  src: url('../fonts/Cocogoose-Pro-Block-Border-Trial.ttf') format('truetype');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Cocogoose pro trial';
-  src: url('../fonts/Cocogoose-Pro-Regular-Italic-Trial.ttf') format('truetype');
-  font-weight: 400;
-  font-style: italic;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Cocogoose pro outlined trial';
-  src: url('../fonts/Cocogoose-Pro-Outlined-Trial.ttf') format('truetype');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Cocogoose pro block innerline trial';
-  src: url('../fonts/Cocogoose-Pro-Block-Innerline-Trial.ttf') format('truetype');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Cocogoose pro trial';
-  src: url('../fonts/Cocogoose-Pro-Ultralight-Italic-Trial.ttf') format('truetype');
-  font-weight: 200;
-  font-style: italic;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Cocogoose pro trial';
-  src: url('../fonts/Cocogoose-Pro-Ultralight-Trial.ttf') format('truetype');
-  font-weight: 200;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Cocogoose pro inline trial';
-  src: url('../fonts/Cocogoose-Pro-Inline-Trial.ttf') format('truetype');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Cocogoose pro block gradient trial';
-  src: url('../fonts/Cocogoose-Pro-Block-Gradient-Trial.ttf') format('truetype');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Cocogoose pro trial';
-  src: url('../fonts/Cocogoose-Pro-Regular-Trial.ttf') format('truetype');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Cocogoose pro block shadow trial';
-  src: url('../fonts/Cocogoose-Pro-Block-Shadow-black-Trial.ttf') format('truetype');
-  font-weight: 900;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Cocogoose pro letterpress trial';
-  src: url('../fonts/Cocogoose-Pro-Letterpress-Trial.ttf') format('truetype');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
 /* End of Day Modal Styles - Minimal */
 .eod-simple-section {
   margin-bottom: 20px;
@@ -2575,7 +2479,7 @@ body.debug-mode .force-sync-btn {
 }
 
 .eod-simple-title {
-  font-family: 'Cocogoose pro trial', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 12px;
   font-weight: 400;
   text-transform: uppercase;
@@ -2597,7 +2501,7 @@ body.debug-mode .force-sync-btn {
 }
 
 .eod-label {
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 14px;
   font-weight: 500;
   color: #333;
@@ -2605,7 +2509,7 @@ body.debug-mode .force-sync-btn {
 }
 
 .eod-value {
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 14px;
   font-weight: 600;
   color: #333;
@@ -2624,7 +2528,7 @@ body.debug-mode .force-sync-btn {
   left: 8px;
   top: 50%;
   transform: translateY(-50%);
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-weight: 600;
   color: #666;
   pointer-events: none;
@@ -2634,7 +2538,7 @@ body.debug-mode .force-sync-btn {
 .eod-input {
   width: 100%;
   padding: 6px 6px 6px 18px;
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 14px;
   font-weight: 600;
   text-align: right;
@@ -2674,7 +2578,7 @@ body.debug-mode .force-sync-btn {
   padding: 4px;
   border: 1px solid #ced4da;
   border-radius: 3px;
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 12px;
   text-align: center;
   background-color: white;
@@ -2687,7 +2591,7 @@ body.debug-mode .force-sync-btn {
 }
 
 .custom-discount-input span {
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 12px;
   color: #666;
   font-weight: 500;

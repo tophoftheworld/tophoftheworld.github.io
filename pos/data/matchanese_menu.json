@@ -1,0 +1,188 @@
+{
+  "categories": [
+    { "id": "matcha-lattes", "name": "Matcha Lattes (Iced)" },
+    { "id": "hojicha-lattes", "name": "Hōjicha Lattes (Iced)" },
+    { "id": "matcha-specials", "name": "Matcha Specials (Iced)" },
+    { "id": "matcha-cocktails", "name": "Matcha Cocktails" },
+    { "id": "cookies", "name": "Cookies (per pc)" },
+    { "id": "desserts", "name": "Desserts (per Box/Cup)" },
+    { "id": "matcha-powder", "name": "Matcha Powder" },
+    { "id": "merchandise", "name": "Merchandise" }
+  ],
+  "items": [
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Signature Matchanese Latte",
+      "description": "Matcha Cold Whisked with Milk",
+      "price": 220,
+      "type": "Iced",
+      "shorthand": "SML"
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Matchanese Seasalt Latte",
+      "description": "Our Signature Matcha Latte topped with Seasalt Cream",
+      "price": 250,
+      "tags": ["Best Seller"],
+      "type": "Iced",
+      "shorthand": "MSL"
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Strawberry Matchanese Latte",
+      "description": "Our Signature Matcha Latte with Strawberry Puree",
+      "price": 250,
+      "type": "Iced",
+      "shorthand": "STML"
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Earl Grey Matchanese Latte",
+      "description": "Our Signature Matcha Latte with Homemade Earl Grey Syrup",
+      "price": 250,
+      "type": "Iced",
+      "shorthand": "EGML"
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Coco Oat Matchanese Latte",
+      "description": "Matcha Cold Whisked with Oat Milk over Coconut Juice",
+      "price": 230,
+      "tags": ["Must-Try!"],
+      "type": "Iced",
+      "shorthand": "COML"
+    },
+    {
+      "categoryId": "hojicha-lattes",
+      "name": "Hōjicha Latte",
+      "description": "Hōjicha Cold Whisked with Milk",
+      "price": 190,
+      "type": "Iced",
+      "shorthand": "HL"
+    },
+    {
+      "categoryId": "hojicha-lattes",
+      "name": "Hōjicha Seasalt Latte",
+      "description": "Hōjicha Latte topped with Seasalt Cream",
+      "price": 220,
+      "type": "Iced",
+      "shorthand": "HSL"
+    },
+    {
+      "categoryId": "hojicha-lattes",
+      "name": "Strawberry Hōjicha Latte",
+      "description": "Hōjicha Latte with Strawberry Puree",
+      "price": 220,
+      "type": "Iced",
+      "shorthand": "STHL"
+    },
+    {
+      "categoryId": "matcha-specials",
+      "name": "Strawberry Matcha Tiramisu Latte",
+      "description": "Our Signature Matcha Latte topped with Strawberry Tiramisu",
+      "price": 280,
+      "tags": ["Limited"],
+      "type": "Iced",
+      "shorthand": "SMTL"
+    },
+    {
+      "categoryId": "matcha-specials",
+      "name": "Banoffee Matcha Latte",
+      "description": "Our Signature Matcha Latte topped with our Banoffee",
+      "price": 250,
+      "type": "Iced",
+      "shorthand": "BML"
+    },
+    {
+      "categoryId": "matcha-cocktails",
+      "name": "Matcha Sour",
+      "description": "Matcha, Amaretto, Dalandan",
+      "price": 265,
+      "shorthand": "MSC"
+    },
+    {
+      "categoryId": "matcha-cocktails",
+      "name": "Matcha Cherry Sparkler",
+      "description": "Matcha, Cherry, Soju, Sparkling Water",
+      "price": 265,
+      "shorthand": "MCS"
+    },
+    {
+      "categoryId": "matcha-powder",
+      "name": "Aki Matcha (30g Tin)",
+      "description": "",
+      "price": 850,
+      "shorthand": "AM30"
+    },
+    {
+      "categoryId": "cookies",
+      "name": "Matcha Bomb",
+      "description": "",
+      "price": 180,
+      "shorthand": "MB"
+    },
+    {
+      "categoryId": "cookies",
+      "name": "Ube Matcha",
+      "description": "",
+      "price": 180,
+      "shorthand": "UM"
+    },
+    {
+      "categoryId": "cookies",
+      "name": "Matcha Dark Chocolate",
+      "description": "",
+      "price": 180,
+      "shorthand": "MDC"
+    },
+    {
+      "categoryId": "cookies",
+      "name": "Matcha White Chocolate",
+      "description": "",
+      "price": 180,
+      "shorthand": "MWC"
+    },
+    {
+      "categoryId": "cookies",
+      "name": "Matcha Biscoff",
+      "description": "",
+      "price": 180,
+      "shorthand": "MBF"
+    },
+    {
+      "categoryId": "cookies",
+      "name": "Matcha Smores",
+      "description": "",
+      "price": 180,
+      "shorthand": "MS"
+    },
+    {
+      "categoryId": "desserts",
+      "name": "Warabi Mochi",
+      "description": "",
+      "price": 270,
+      "shorthand": "WM"
+    },
+    {
+      "categoryId": "desserts",
+      "name": "Matcha Tiramisu",
+      "description": "",
+      "price": 250,
+      "shorthand": "MT"
+    },
+    {
+      "categoryId": "desserts",
+      "name": "Matcha Banoffee",
+      "description": "",
+      "price": 240,
+      "shorthand": "MBN"
+    },
+    {
+      "categoryId": "merchandise",
+      "name": "Matcha Lover Cap",
+      "description": "",
+      "price": 650,
+      "shorthand": "MLC"
+    }
+  ]
+}

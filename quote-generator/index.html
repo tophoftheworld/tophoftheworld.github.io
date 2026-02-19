@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Matchanese Quoting App</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- Minimal Progress Indicator (Instagram Stories Style) -->
+    <div class="progress-indicator" id="progressIndicator">
+        <div class="progress-dot active" data-step="service"></div>
+        <div class="progress-dot" data-step="details"></div>
+        <div class="progress-dot" data-step="build"></div>
+        <div class="progress-dot" data-step="quote"></div>
+    </div>
+
+    <!-- Main App Container -->
+    <div class="app-container">
+        <!-- Screen: Service Selection -->
+        <div class="screen active" id="screen-service">
+            <div class="screen-content screen-content-centered">
+                <div class="main-content-wrapper">
+                    <div class="header-tile">
+                        <h2 class="header-tile-text">Get a Quote</h2>
+                    </div>
+                    <div class="service-cards">
+                    <div class="service-card" data-service="workshop">
+                        <div class="service-image">
+                            <img src="img/workshop-thumb.png" alt="Private Matcha Workshop" class="service-img">
+                            <div class="service-overlay">
+                                <h2 class="service-title">Private Matcha Workshop</h2>
+                                <p class="service-subtitle">Hands-on matcha experience for teams, birthdays, and private events</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="service-card" data-service="mobile-bar">
+                        <div class="service-image">
+                            <img src="img/matcha-bar-thumb.png" alt="Mobile Matcha Bar" class="service-img">
+                            <div class="service-overlay">
+                                <h2 class="service-title">Mobile Matcha Bar</h2>
+                                <p class="service-subtitle">We serve freshly prepared matcha drinks at your event</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                </div>
+                <div class="logo-footer">
+                    <img src="img/logo.png" alt="Matchanese" class="logo">
+                </div>
+            </div>
+        </div>
+
+        <!-- Screen: Event Details -->
+        <div class="screen" id="screen-details">
+            <div class="screen-content">
+                <h1 class="screen-title">Event Details</h1>
+
+                <div class="form-section">
+                    <div class="form-group">
+                        <label class="form-label">Name</label>
+                        <input type="text" class="form-input" id="inputName" placeholder="Your name">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Company / Group</label>
+                        <input type="text" class="form-input" id="inputCompany" placeholder="Company or group name">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Email</label>
+                        <input type="email" class="form-input" id="inputEmail" placeholder="your.email@example.com">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Phone</label>
+                        <input type="tel" class="form-input" id="inputPhone" placeholder="Phone number">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Target Date</label>
+                        <div class="date-picker-row">
+                            <button class="date-picker-btn" id="dateMonth">
+                                <span class="date-label">Month</span>
+                                <span class="date-value" id="monthValue">TBD</span>
+                            </button>
+                            <button class="date-picker-btn" id="dateDay">
+                                <span class="date-label">Day</span>
+                                <span class="date-value" id="dayValue">TBD</span>
+                            </button>
+                            <button class="date-picker-btn" id="dateYear">
+                                <span class="date-label">Year</span>
+                                <span class="date-value" id="yearValue">-</span>
+                            </button>
+                            <button class="date-picker-btn date-picker-calendar" id="dateCalendar">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                                </svg>
+                            </button>
+                        </div>
+                        <input type="date" class="form-input date-input-hidden" id="inputDate" style="display: none;">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Location</label>
+                        <input type="text" class="form-input" id="inputLocation" placeholder="Enter location (e.g., BGC, Makati, Quezon City)">
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button class="btn-secondary btn-back" id="backFromDetails">Back</button>
+                    <button class="btn-primary btn-next" id="nextFromDetails">Next</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Screen: Workshop Group Size -->
+        <div class="screen" id="screen-workshop-size">
+            <div class="screen-content screen-content-centered">
+                <div class="workshop-size-content">
+                    <div class="size-selector-row">
+                        <div class="size-number-tile">
+                            <input type="number" class="size-number-input" id="workshopSize" value="6" min="1" max="200">
+                            <span class="size-label">participants</span>
+                        </div>
+                        <div class="size-buttons-column">
+                            <div class="size-btn-tile">
+                                <button class="size-btn-increment" id="incrementSize">+</button>
+                            </div>
+                            <div class="size-btn-tile">
+                                <button class="size-btn-decrement" id="decrementSize">-</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="workshop-format-column" id="workshopFormatRow" style="display: none;">
+                        <div class="format-tile" data-format="crash-course" id="formatCrashCourse" style="display: none;">
+                            <h3 class="format-title">Matcha Making Crash Course</h3>
+                            <p class="format-duration">15-20 mins</p>
+                            <p class="format-description">Best for big teams and tight schedules</p>
+                        </div>
+                        <div class="format-tile" data-format="standard">
+                            <h3 class="format-title">Standard Private Workshop</h3>
+                            <p class="format-duration" id="standardDuration">1 hr</p>
+                            <p class="format-description">Short, hands-on, best for most groups</p>
+                        </div>
+                        <div class="format-tile" data-format="full">
+                            <h3 class="format-title">Full Matchanese Workshop</h3>
+                            <p class="format-duration" id="fullDuration">2.5 hr</p>
+                            <p class="format-description">Includes deeper discussion and guided tasting</p>
+                        </div>
+                    </div>
+
+                    <div class="total-tile" id="workshopTotalTile">
+                        <div class="total-per-pax">
+                            <div class="total-per-pax-amount" id="workshopPerPaxAmount">Php 2,450</div>
+                            <div class="total-per-pax-label">per pax</div>
+                        </div>
+                        <div class="total-amount" id="workshopTotalAmount">Php 14,700</div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button class="btn-secondary btn-back" id="backFromWorkshopSize">Back</button>
+                        <button class="btn-primary btn-next" id="nextFromWorkshopSize">Next</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Screen: Workshop Experience Options -->
+        <div class="screen" id="screen-workshop-experience">
+            <div class="screen-content">
+                <button class="back-button" id="backFromWorkshopExperience">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M19 12H5M12 19l-7-7 7-7"/>
+                    </svg>
+                </button>
+                
+                <h1 class="screen-title">Experience Options</h1>
+
+                <div class="included-items">
+                    <div class="included-card">
+                        <div class="included-icon">?</div>
+                        <div class="included-content">
+                            <h3>2 Matcha Drinks</h3>
+                        </div>
+                    </div>
+                    <div class="included-card">
+                        <div class="included-icon">?</div>
+                        <div class="included-content">
+                            <h3>Use of Tools</h3>
+                        </div>
+                    </div>
+                    <div class="included-card">
+                        <div class="included-icon">?</div>
+                        <div class="included-content">
+                            <h3>Printout Guides</h3>
+                        </div>
+                    </div>
+                    <div class="included-card">
+                        <div class="included-icon">?</div>
+                        <div class="included-content">
+                            <h3>Mini Tote Bag</h3>
+                        </div>
+                    </div>
+                    <div class="included-card">
+                        <div class="included-icon">?</div>
+                        <div class="included-content">
+                            <h3>Sticker Pack</h3>
+                        </div>
+                    </div>
+                    <div class="included-card">
+                        <div class="included-icon">?</div>
+                        <div class="included-content">
+                            <h3>Transportation</h3>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="addons-section">
+                    <h2 class="section-title">Add-ons</h2>
+                    <div class="addon-items">
+                        <label class="addon-toggle">
+                            <input type="checkbox" class="addon-checkbox" data-addon="extra-hour">
+                            <div class="addon-content">
+                                <h3>Extra Service Hour</h3>
+                            </div>
+                        </label>
+                        <label class="addon-toggle">
+                            <input type="checkbox" class="addon-checkbox" data-addon="custom-drinks">
+                            <div class="addon-content">
+                                <h3>Custom Drink Options</h3>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <button class="btn-primary btn-next" id="nextFromWorkshopExperience">Continue to Quote</button>
+            </div>
+        </div>
+
+        <!-- Screen: Workshop Quote Summary -->
+        <div class="screen" id="screen-workshop-quote">
+            <div class="screen-content">
+                <button class="back-button" id="backFromWorkshopQuote">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M19 12H5M12 19l-7-7 7-7"/>
+                    </svg>
+                </button>
+                
+                <h1 class="screen-title">Quote</h1>
+
+                <div class="quote-visual">
+                    <div class="quote-image">
+                        <div class="image-placeholder">
+                            <svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">
+                                <rect width="400" height="300" fill="#e8f5e9"/>
+                                <text x="200" y="150" text-anchor="middle" fill="#4caf50" font-size="18" font-family="sans-serif">Workshop Image</text>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="quote-summary">
+                    <div class="quote-row">
+                        <span class="quote-label">Participants:</span>
+                        <span class="quote-value" id="quotePax">6</span>
+                    </div>
+                    <div class="quote-row">
+                        <span class="quote-label">Per person:</span>
+                        <span class="quote-value" id="quotePerPax">Php 2,450</span>
+                    </div>
+                    <div class="quote-row quote-total">
+                        <span class="quote-label">Estimated Total:</span>
+                        <span class="quote-value-large" id="quoteTotal">Php 14,700</span>
+                    </div>
+                </div>
+
+                <div class="quote-details">
+                    <button class="details-toggle" id="toggleDetails">
+                        <span>What's included</span>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M6 9l6 6 6-6"/>
+                        </svg>
+                    </button>
+                    <div class="details-content" id="detailsContent" style="display: none;">
+                        <div class="detail-item">2 Matcha Drinks</div>
+                        <div class="detail-item">Use of Tools</div>
+                        <div class="detail-item">Printout Guides</div>
+                        <div class="detail-item">Mini Tote Bag (Free)</div>
+                        <div class="detail-item">Sticker Pack (Free)</div>
+                        <div class="detail-item">Transportation (Metro Manila)</div>
+                    </div>
+                </div>
+
+                <div class="payment-terms">
+                    <h3 class="payment-title">Payment Terms</h3>
+                    <div class="payment-grid">
+                        <div class="payment-item">
+                            <div class="payment-percent">25%</div>
+                            <div class="payment-label">Reservation Fee</div>
+                            <div class="payment-detail">To reserve the date</div>
+                        </div>
+                        <div class="payment-item">
+                            <div class="payment-percent">25%</div>
+                            <div class="payment-label">Down Payment</div>
+                            <div class="payment-detail">2 Weeks Before</div>
+                        </div>
+                        <div class="payment-item">
+                            <div class="payment-percent">50%</div>
+                            <div class="payment-label">Final Payment</div>
+                            <div class="payment-detail">Day of the Event</div>
+                        </div>
+                    </div>
+                    <p class="payment-options">Payment Options: Card, GCash, Bank Transfer, Cash or Check</p>
+                </div>
+
+                <div class="quote-actions">
+                    <button class="btn-secondary" id="saveQuote">Save Quote</button>
+                    <button class="btn-primary" id="requestBooking">Request Booking</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sticky Price Bar -->
+    <div class="price-bar" id="priceBar" style="display: none;">
+        <div class="price-bar-content">
+            <div class="price-bar-label">Estimated total</div>
+            <div class="price-bar-amount" id="priceBarAmount">Php 0</div>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>

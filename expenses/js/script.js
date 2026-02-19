@@ -1,6 +1,6 @@
 // Import shared utilities with version for cache busting
 // Static import with versioned URL to avoid caching issues; keep in sync with index.html
-import * as shared from './shared.js?v=1.5.16';
+import * as shared from './shared.js?v=1.5.38';
 
 // Helper function to get today's date in local timezone (YYYY-MM-DD format)
 function getTodayLocal() {
@@ -16,8 +16,24 @@ let itemCounter = 0;
 let selectedDate = getTodayLocal(); // Default to today (local timezone)
 let selectedBranch = localStorage.getItem('expense-selected-branch') || 'SM North';
 
+// Define closeMergeSupplierModal early so it's available for inline onclick handlers (for cached HTML)
+function closeMergeSupplierModal() {
+    const modal = document.getElementById('mergeSupplierModalOverlay');
+    if (modal) {
+        modal.classList.remove('show');
+        document.body.style.overflow = '';
+        document.body.style.position = '';
+        document.body.style.width = '';
+    }
+}
+// Export to window immediately for inline handlers
+window.closeMergeSupplierModal = closeMergeSupplierModal;
+
 // Main initialization
 document.addEventListener('DOMContentLoaded', async function () {
+    // IMMEDIATELY update date display (no waiting for Firebase)
+    updateDateDisplay();
+    
     // Phase 1: Load from localStorage first (instant)
     const hasLocalData = shared.loadFromLocalStorage();
 
@@ -25,6 +41,10 @@ document.addEventListener('DOMContentLoaded', async function () {
         // Immediately show UI with local data
         loadDashboard();
     }
+
+    // Initialize date picker and branch select (these also update the display)
+    initializeDatePicker();
+    initializeBranchSelect();
 
     // Phase 2: Initialize Firebase (in background)
     const firebaseInitialized = await shared.initializeFirebase();
@@ -42,9 +62,22 @@ document.addEventListener('DOMContentLoaded', async function () {
         showSyncStatus('⚠ Offline mode', 'error');
     }
 
-    // Initialize date picker and branch select
-    initializeDatePicker();
-    initializeBranchSelect();
+    // Set up merge modal close button using event delegation (works even if button is added later)
+    const mergeModalOverlay = document.getElementById('mergeSupplierModalOverlay');
+    if (mergeModalOverlay) {
+        mergeModalOverlay.addEventListener('click', function(e) {
+            // Close if clicking the overlay background or the close button
+            if (e.target.id === 'mergeModalCloseBtn' || 
+                e.target.closest('#mergeModalCloseBtn') ||
+                e.target === mergeModalOverlay) {
+                if (typeof closeMergeSupplierModal === 'function') {
+                    closeMergeSupplierModal();
+                } else if (window.closeMergeSupplierModal) {
+                    window.closeMergeSupplierModal();
+                }
+            }
+        });
+    }
 
     // Rest of initialization...
     if (document.getElementById('supplierName')) {
@@ -52,7 +85,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
 
     if (document.getElementById('expenseDate')) {
-        document.getElementById('expenseDate').value = new Date().toISOString().split('T')[0];
+        document.getElementById('expenseDate').value = selectedDate; // Use currently selected date
         addItemRow();
     }
 
@@ -199,16 +232,48 @@ function loadDashboard() {
     const expenseList = document.getElementById('expenseList');
     const allExpenses = shared.getExpenses(); // Get expenses from shared module
     
-    // Filter by selected date and branch
-    const filteredExpenses = allExpenses.filter(expense => 
-        expense.date === selectedDate && expense.branch === selectedBranch
-    );
+    // Filter by selected date and branch/allocation
+    // The selectedBranch variable now contains either a branch name or an allocation
+    const branches = ['SM North', 'Podium', 'Mall of Asia'];
+    const isBranchSelected = branches.includes(selectedBranch);
+    
+    const filteredExpenses = allExpenses.filter(expense => {
+        if (expense.date !== selectedDate) return false;
+        
+        if (isBranchSelected) {
+            // If a branch is selected, match by branch and allocation should be 'Store'
+            return expense.branch === selectedBranch && (expense.allocation === 'Store' || !expense.allocation);
+        } else {
+            // If an allocation is selected, match by allocation (branch should be null or not set)
+            return expense.allocation === selectedBranch;
+        }
+    });
+
+    // Calculate store cash and company expenses separately
+    const storeCashTotal = filteredExpenses
+        .filter(expense => (expense.paidBy || 'Company') === 'Store Cash')
+        .reduce((sum, expense) => sum + expense.totalAmount, 0);
+    
+    const companyTotal = filteredExpenses
+        .filter(expense => (expense.paidBy || 'Company') === 'Company')
+        .reduce((sum, expense) => sum + expense.totalAmount, 0);
+
+    const summaryTitle = formatDateDisplay(selectedDate) + " Expenses";
 
     if (filteredExpenses.length === 0 && allExpenses.length > 0) {
         expenseList.innerHTML = `
             <div class="summary-card">
-                <div class="summary-title">${formatDateDisplay(selectedDate)} Expenses</div>
-                <div class="summary-amount">₱0.00</div>
+                <div class="summary-title">${summaryTitle}</div>
+                <div class="summary-amounts">
+                    <div class="summary-amount-item">
+                        <div class="summary-amount-label">Store Cash</div>
+                        <div class="summary-amount-value">₱0.00</div>
+                    </div>
+                    <div class="summary-amount-item">
+                        <div class="summary-amount-label">Company</div>
+                        <div class="summary-amount-value">₱0.00</div>
+                    </div>
+                </div>
                 <div class="summary-count">0 transactions</div>
             </div>
             <div class="empty-state">
@@ -221,8 +286,17 @@ function loadDashboard() {
     if (allExpenses.length === 0) {
         expenseList.innerHTML = `
             <div class="summary-card">
-                <div class="summary-title">${formatDateDisplay(selectedDate)} Expenses</div>
-                <div class="summary-amount">₱0.00</div>
+                <div class="summary-title">${summaryTitle}</div>
+                <div class="summary-amounts">
+                    <div class="summary-amount-item">
+                        <div class="summary-amount-label">Store Cash</div>
+                        <div class="summary-amount-value">₱0.00</div>
+                    </div>
+                    <div class="summary-amount-item">
+                        <div class="summary-amount-label">Company</div>
+                        <div class="summary-amount-value">₱0.00</div>
+                    </div>
+                </div>
                 <div class="summary-count">0 transactions</div>
             </div>
             <div class="empty-state">
@@ -233,16 +307,22 @@ function loadDashboard() {
         return;
     }
 
-    const filteredTotal = filteredExpenses.reduce((sum, expense) => sum + expense.totalAmount, 0);
-    const summaryTitle = formatDateDisplay(selectedDate) + " Expenses";
-
     // Sort expenses by date (newest first)
     const sortedExpenses = [...filteredExpenses].sort((a, b) => new Date(b.date) - new Date(a.date));
 
     const summaryCard = `
     <div class="summary-card">
         <div class="summary-title">${summaryTitle}</div>
-        <div class="summary-amount">₱${filteredTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+        <div class="summary-amounts">
+            <div class="summary-amount-item">
+                <div class="summary-amount-label">Store Cash</div>
+                <div class="summary-amount-value">₱${storeCashTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            </div>
+            <div class="summary-amount-item">
+                <div class="summary-amount-label">Company</div>
+                <div class="summary-amount-value">₱${companyTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            </div>
+        </div>
         <div class="summary-count">${filteredExpenses.length} ${filteredExpenses.length === 1 ? 'transaction' : 'transactions'}</div>
     </div>
 `;
@@ -284,7 +364,13 @@ function loadDashboard() {
                     </div>
                 </div>
                 <div class="expense-footer" onclick="viewExpense('${expense.id}')">
-                   <div class="expense-branch">${expense.branch} • ${expense.paymentMethod}${expense.invoiceNumber ? ' • #' + expense.invoiceNumber : ''}${expense.isVatRegistered && expense.vatAmount > 0 ? ' • VAT' : ''}</div>
+                   <div class="expense-branch">${[
+                        expense.branch,
+                        expense.paidBy || 'Company',
+                        expense.paymentMethod,
+                        expense.invoiceNumber ? '#' + expense.invoiceNumber : null,
+                        expense.isVatRegistered && expense.vatAmount > 0 ? 'VAT' : null
+                    ].filter(Boolean).join(' • ')}</div>
                     <div class="expense-date">${isToday ? 'Today' : formatDate(expense.date)}</div>
                 </div>
             </div>
@@ -435,8 +521,34 @@ function initializeBranchSelect() {
         selectedBranch = e.target.value;
         localStorage.setItem('expense-selected-branch', selectedBranch);
         console.log('Branch saved to localStorage:', selectedBranch);
+        updatePaidByVisibility();
         loadDashboard();
     });
+    
+    // Function to show/hide Paid By field based on allocation
+    function updatePaidByVisibility() {
+        const branchSelect = document.getElementById('branchSelect');
+        const paidBySection = document.getElementById('paidBySection');
+        const paidBySelect = document.getElementById('paidBy');
+        
+        if (!branchSelect || !paidBySection || !paidBySelect) return;
+        
+        const selectedValue = branchSelect.value;
+        const branches = ['SM North', 'Podium', 'Mall of Asia'];
+        const isStore = branches.includes(selectedValue);
+        
+        if (isStore) {
+            paidBySection.style.display = 'block';
+            paidBySelect.required = true;
+        } else {
+            paidBySection.style.display = 'none';
+            paidBySelect.required = false;
+            paidBySelect.value = 'Company'; // Default to Company
+        }
+    }
+    
+    // Update visibility on page load
+    updatePaidByVisibility();
 }
 
 function openDateModal() {
@@ -633,10 +745,36 @@ function showExpenseDetailModal(expense) {
                 <div class="expense-detail-label">Date</div>
                 <div class="expense-detail-value">${formattedDate}</div>
             </div>
+            ${expense.allocation === 'Store' && expense.branch ? `
             <div class="expense-detail-row">
                 <div class="expense-detail-label">Branch</div>
                 <div class="expense-detail-value">${expense.branch}</div>
             </div>
+            ` : ''}
+            ${expense.allocation ? `
+            <div class="expense-detail-row">
+                <div class="expense-detail-label">Allocation</div>
+                <div class="expense-detail-value">${expense.allocation}</div>
+            </div>
+            ` : ''}
+            ${expense.allocation === 'Store' && expense.paidBy ? `
+            <div class="expense-detail-row">
+                <div class="expense-detail-label">Paid By</div>
+                <div class="expense-detail-value">${expense.paidBy}</div>
+            </div>
+            ` : ''}
+            ${expense.paymentMethod ? `
+            <div class="expense-detail-row">
+                <div class="expense-detail-label">Payment Method</div>
+                <div class="expense-detail-value">${expense.paymentMethod}</div>
+            </div>
+            ` : ''}
+            ${expense.invoiceNumber ? `
+            <div class="expense-detail-row">
+                <div class="expense-detail-label">Invoice Number</div>
+                <div class="expense-detail-value">${expense.invoiceNumber}</div>
+            </div>
+            ` : ''}
             <div class="expense-detail-row">
                 <div class="expense-detail-label">Total Amount</div>
                 <div class="expense-detail-value amount">₱${expense.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
@@ -689,26 +827,6 @@ function showExpenseDetailModal(expense) {
             </div>
         </div>
 
-        <!-- Payment Information -->
-        <div class="expense-detail-section">
-            <h3>Payment Information</h3>
-            <div class="expense-detail-row">
-                <div class="expense-detail-label">Payment Method</div>
-                <div class="expense-detail-value">${expense.paymentMethod}</div>
-            </div>
-            ${expense.paidBy ? `
-            <div class="expense-detail-row">
-                <div class="expense-detail-label">Paid By</div>
-                <div class="expense-detail-value">${expense.paidBy}</div>
-            </div>
-            ` : ''}
-            ${expense.invoiceNumber ? `
-            <div class="expense-detail-row">
-                <div class="expense-detail-label">Invoice Number</div>
-                <div class="expense-detail-value">${expense.invoiceNumber}</div>
-            </div>
-            ` : ''}
-        </div>
 
         ${expense.isVatRegistered && expense.vatAmount > 0 ? `
         <!-- VAT Information -->
@@ -759,11 +877,18 @@ function showExpenseDetailModal(expense) {
             <h3>Receipt</h3>
             ${expense.receiptImage ? `
                 <div class="expense-detail-receipt">
-                    <img src="${expense.receiptImage}" alt="Receipt" onclick="viewReceiptFullscreen('${expense.receiptImage}')">
+                    <img src="${expense.receiptImage}" alt="Receipt" onclick="viewReceiptFullscreen('${expense.receiptImage}')" onerror="handleReceiptImageErrorMobile('${expense.id}')">
+                </div>
+            ` : (expense.hasReceiptImage ? `
+                <div class="expense-detail-receipt" id="mobileReceiptLoading">
+                    <div style="text-align: center; padding: 2rem;">
+                        <div style="width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #2b9348; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1rem;"></div>
+                        <div style="font-size: 0.9rem; color: #666;">Loading receipt...</div>
+                    </div>
                 </div>
             ` : `
                 <div class="expense-detail-no-receipt">No receipt attached</div>
-            `}
+            `)}
         </div>
     `;
 
@@ -775,6 +900,11 @@ function showExpenseDetailModal(expense) {
     document.body.style.position = 'fixed';
     document.body.style.width = '100%';
     document.body.style.top = `-${scrollY}px`;
+    
+    // If expense has hasReceiptImage flag but no receiptImage, fetch from Firebase
+    if (expense.hasReceiptImage && !expense.receiptImage) {
+        loadReceiptImageFromFirebaseMobile(expense.id);
+    }
 }
 
 function closeExpenseDetailModal() {
@@ -826,22 +956,150 @@ function viewReceiptFullscreen(imageSrc) {
     };
 }
 
+// Load receipt image from Firebase for mobile detail modal
+async function loadReceiptImageFromFirebaseMobile(expenseId) {
+    const loadingDiv = document.getElementById('mobileReceiptLoading');
+    if (!loadingDiv) return;
+    
+    try {
+        const receiptImage = await shared.fetchReceiptImageFromFirebase(expenseId);
+        
+        if (receiptImage) {
+            // Replace loading indicator with image
+            loadingDiv.innerHTML = '';
+            loadingDiv.className = 'expense-detail-receipt';
+            const img = document.createElement('img');
+            img.src = receiptImage;
+            img.alt = 'Receipt';
+            img.onclick = () => viewReceiptFullscreen(receiptImage);
+            img.onerror = () => handleReceiptImageErrorMobile(expenseId);
+            loadingDiv.appendChild(img);
+        } else {
+            // No receipt found - show placeholder
+            loadingDiv.innerHTML = '<div class="expense-detail-no-receipt">No receipt found</div>';
+        }
+    } catch (error) {
+        console.error('Failed to load receipt image:', error);
+        loadingDiv.innerHTML = '<div class="expense-detail-no-receipt" style="color: #dc3545;">Failed to load receipt</div>';
+    }
+}
+
+// Handle receipt image load error in mobile app
+window.handleReceiptImageErrorMobile = function(expenseId) {
+    const receiptContainer = document.querySelector('.expense-detail-receipt');
+    if (!receiptContainer || !expenseId) return;
+    
+    // Try to fetch from Firebase if image failed to load
+    const expense = shared.getExpenses().find(e => e.id === expenseId);
+    if (expense && expense.hasReceiptImage && !expense.receiptImage) {
+        loadReceiptImageFromFirebaseMobile(expenseId);
+    } else {
+        receiptContainer.innerHTML = '<div class="expense-detail-no-receipt" style="color: #dc3545;">Failed to load receipt</div>';
+    }
+};
+
+// Load receipt image from Firebase for mobile edit modal
+async function loadReceiptImageForEditMobile(expenseId) {
+    const preview = document.getElementById('receiptPreview');
+    const uploadText = document.getElementById('receiptUploadText');
+    const uploadArea = document.querySelector('.receipt-upload');
+    const removeBtn = document.getElementById('removeReceiptBtn');
+    
+    if (!preview || !expenseId) return;
+    
+    try {
+        const receiptImage = await shared.fetchReceiptImageFromFirebase(expenseId);
+        
+        if (receiptImage) {
+            // Show receipt image
+            preview.src = receiptImage;
+            preview.style.display = 'block';
+            preview.onerror = () => {
+                // If image fails to load, show error state
+                preview.style.display = 'none';
+                if (uploadText) {
+                    uploadText.textContent = 'Failed to load receipt';
+                    uploadText.style.display = 'block';
+                }
+                if (uploadArea) {
+                    uploadArea.classList.remove('has-file');
+                }
+            };
+            
+            if (uploadText) {
+                uploadText.textContent = 'Receipt attached';
+            }
+            if (uploadArea) {
+                uploadArea.classList.add('has-file');
+            }
+            if (removeBtn) {
+                removeBtn.style.display = 'block';
+            }
+            window.currentReceiptData = receiptImage;
+        } else {
+            // No receipt found - show upload area
+            preview.style.display = 'none';
+            if (uploadText) {
+                uploadText.textContent = 'Tap to add receipt photo';
+                uploadText.style.display = 'block';
+            }
+            if (uploadArea) {
+                uploadArea.classList.remove('has-file');
+            }
+            if (removeBtn) {
+                removeBtn.style.display = 'none';
+            }
+            window.currentReceiptData = null;
+        }
+    } catch (error) {
+        console.error('Failed to load receipt image:', error);
+        preview.style.display = 'none';
+        if (uploadText) {
+            uploadText.textContent = 'Failed to load receipt. Tap to upload new one.';
+            uploadText.style.display = 'block';
+        }
+        if (uploadArea) {
+            uploadArea.classList.remove('has-file');
+        }
+        if (removeBtn) {
+            removeBtn.style.display = 'none';
+        }
+        window.currentReceiptData = null;
+    }
+}
+
 function resetForm() {
     // Clear editing state
     delete window.editingExpenseId;
-    document.querySelector('.modal-title').textContent = 'Add Expense';
+    
+    const modalTitle = document.querySelector('.modal-title');
+    if (modalTitle) modalTitle.textContent = 'Add Expense';
 
-    document.getElementById('expenseForm').reset();
+    const expenseForm = document.getElementById('expenseForm');
+    if (expenseForm) expenseForm.reset();
 
-    // Reset date and branch if they exist
+    // Reset date field - use currently selected date
     const dateInput = document.getElementById('expenseDate');
-    if (dateInput) dateInput.value = new Date().toISOString().split('T')[0];
+    if (dateInput) dateInput.value = selectedDate;
 
-    const branchInput = document.getElementById('branch');
-    if (branchInput) branchInput.value = 'SM North';
+    // Reset allocation and branch fields
+    const allocationSelect = document.getElementById('allocationSelect');
+    if (allocationSelect) {
+        allocationSelect.value = 'Store';
+        handleAllocationChange();
+    }
+    
+    const branchSelect = document.getElementById('branchSelect');
+    if (branchSelect) {
+        branchSelect.value = selectedBranch || 'SM North';
+    }
+    
+    // Update Paid By visibility
+    handleAllocationChange();
 
     // Clear containers
-    document.getElementById('itemsContainer').innerHTML = '';
+    const itemsContainer = document.getElementById('itemsContainer');
+    if (itemsContainer) itemsContainer.innerHTML = '';
     const totalInput = document.getElementById('totalAmountInput');
     if (totalInput) {
         totalInput.value = '';
@@ -900,7 +1158,7 @@ function resetForm() {
 }
 
 // Receipt upload
-function handleReceiptUpload(input) {
+async function handleReceiptUpload(input) {
     const file = input.files[0];
     if (file) {
         // Validate file type
@@ -909,29 +1167,48 @@ function handleReceiptUpload(input) {
             return;
         }
 
-        // Validate file size (max 5MB)
+        // Validate file size (max 5MB before compression)
         if (file.size > 5 * 1024 * 1024) {
             showToast('Image size must be less than 5MB');
             return;
         }
 
-        const reader = new FileReader();
-        reader.onload = function (e) {
-            const preview = document.getElementById('receiptPreview');
-            const uploadText = document.getElementById('receiptUploadText');
-            const uploadArea = document.querySelector('.receipt-upload');
-            const removeBtn = document.getElementById('removeReceiptBtn');
+        const preview = document.getElementById('receiptPreview');
+        const uploadText = document.getElementById('receiptUploadText');
+        const uploadArea = document.querySelector('.receipt-upload');
+        const removeBtn = document.getElementById('removeReceiptBtn');
 
-            preview.src = e.target.result;
+        // Show loading state
+        if (uploadText) {
+            uploadText.textContent = 'Compressing image...';
+        }
+
+        try {
+            // Compress image before storing
+            const compressedImage = await shared.compressImage(file, 1920, 1920, 0.8);
+            
+            preview.src = compressedImage;
             preview.style.display = 'block';
             uploadText.textContent = file.name;
             uploadArea.classList.add('has-file');
             removeBtn.style.display = 'block';
 
-            // Store the image data for saving
-            window.currentReceiptData = e.target.result;
-        };
-        reader.readAsDataURL(file);
+            // Store the compressed image data for saving
+            window.currentReceiptData = compressedImage;
+            
+            // Show compression info
+            const originalSize = (file.size / 1024 / 1024).toFixed(2);
+            const compressedSize = (compressedImage.length * 3 / 4 / 1024 / 1024).toFixed(2); // Approximate base64 size
+            console.log(`Image compressed: ${originalSize}MB → ${compressedSize}MB`);
+        } catch (error) {
+            console.error('Failed to compress image:', error);
+            showToast('Failed to process image. Please try again.');
+            // Reset upload area
+            preview.style.display = 'none';
+            uploadText.textContent = 'Tap to add receipt photo';
+            uploadArea.classList.remove('has-file');
+            removeBtn.style.display = 'none';
+        }
     }
 }
 
@@ -1481,26 +1758,35 @@ function handleFormSubmission(e) {
     const existingExpense = isEditing ? shared.getExpenses().find(e => e.id === window.editingExpenseId) : null;
     
     // Build data object for expense creation
-    // Get branch from the branch selector dropdown (not hidden field)
-    const branchSelect = document.getElementById('branchSelect');
-    const selectedBranch = branchSelect ? branchSelect.value : 'SM North';
+    // Get date, allocation, and branch from form fields
+    const date = getElementValue('expenseDate', selectedDate);
+    const allocation = getElementValue('allocationSelect', 'Store');
+    const branch = allocation === 'Store' ? getElementValue('branchSelect', '') : null;
+    
+    // Validate receipt is uploaded
+    const receiptImage = window.currentReceiptData || (existingExpense?.receiptImage || null);
+    if (!receiptImage) {
+        showToast('Please upload a receipt photo');
+        return;
+    }
     
     const expenseData = {
         items: items,
         totalAmount: totalAmount, // Use provided total (mobile app has separate input)
-        date: getElementValue('expenseDate', shared.getTodayLocal()),
-        branch: selectedBranch,
+        date: date,
+        branch: branch,
+        allocation: allocation,
         supplierName: getElementValue('supplierName'),
         businessName: getElementValue('businessName'),
         tin: getElementValue('tin'),
         address: getElementValue('address'),
         invoiceNumber: getElementValue('invoiceNumber'),
-        expenseCategory: getElementValue('expenseCategory', 'General'),
+        expenseCategory: getElementValue('expenseCategory', 'Supplies'),
         vatExemptAmount: parseFloat(getElementValue('vatExemptAmount')) || 0,
         paymentMethod: getElementValue('paymentMethod', 'Cash'),
-        paidBy: getElementValue('paidBy'),
+        paidBy: allocation === 'Store' ? getElementValue('paidBy', 'Company') : 'Company',
         notes: getElementValue('notes'),
-        receiptImage: window.currentReceiptData || (existingExpense?.receiptImage || null),
+        receiptImage: receiptImage,
         vatComputationEnabled: document.getElementById('vatComputationEnabled')?.checked || false
     };
 
@@ -1521,11 +1807,24 @@ function handleFormSubmission(e) {
 
     const expense = result.expense;
 
+    // Check if supplier is new (before saving) to show appropriate feedback
+    const supplierName = expense.supplierName.trim();
+    const allSuppliers = shared.getSuppliers();
+    const existingSupplier = allSuppliers.find(s =>
+        s.name.toLowerCase() === supplierName.toLowerCase()
+    );
+    const isNewSupplier = !existingSupplier && supplierName;
+
     if (isEditing) {
         // Update existing expense using shared function
+        // Supplier will be auto-created if new (handled by updateExpense)
         const success = shared.updateExpense(window.editingExpenseId, expense);
         if (success) {
-            showToast('Expense updated successfully!');
+            if (isNewSupplier) {
+                showToast('Expense updated and supplier created!');
+            } else {
+                showToast('Expense updated successfully!');
+            }
         } else {
             showToast('Failed to update expense');
             return;
@@ -1536,37 +1835,16 @@ function handleFormSubmission(e) {
         document.querySelector('.modal-title').textContent = 'Add Expense';
     } else {
         // Create new expense using shared function
+        // Supplier will be auto-created if new (handled by addExpense)
         shared.addExpense(expense);
-        showToast('Expense saved successfully!');
+        if (isNewSupplier) {
+            showToast('Expense saved and supplier created!');
+        } else {
+            showToast('Expense saved successfully!');
+        }
     }
 
-    // Check if supplier is new and show add supplier modal
-    const supplierName = expense.supplierName.trim();
-    const allSuppliers = shared.getSuppliers();
-    const existingSupplier = allSuppliers.find(s =>
-        s.name.toLowerCase() === supplierName.toLowerCase()
-    );
-
-    if (!existingSupplier && !isEditing) {
-        // Don't save the supplier yet - let the modal handle it
-        setTimeout(() => {
-            closeExpenseModal();
-            loadDashboard();
-
-            // Show add supplier details modal after a short delay
-            setTimeout(() => {
-                showAddSupplierModal(supplierName);
-            }, 400);
-        }, 300);
-    } else {
-        // For existing suppliers or when editing, save normally
-        saveSupplierIfNew(expense);
-        setTimeout(() => {
-            closeExpenseModal();
-            loadDashboard();
-        }, 300);
-    }
-
+    // Close modal and refresh dashboard
     setTimeout(() => {
         closeExpenseModal();
         loadDashboard();
@@ -1652,11 +1930,11 @@ function addSampleData() {
         {
             id: shared.generateId(),
             date: yesterdayStr,
-            branch: 'Makati',
+            branch: 'Mall of Asia',
             supplierName: 'Office Warehouse',
             businessName: 'Office Warehouse Inc.',
             tin: '555-666-777-000',
-            address: 'Makati Avenue, Makati City',
+            address: 'Mall of Asia, Pasay City',
             items: [
                 { name: 'Receipt Paper', quantity: 10, price: 45, total: 450 },
                 { name: 'Pens', quantity: 20, price: 15, total: 300 },
@@ -1671,11 +1949,11 @@ function addSampleData() {
         {
             id: shared.generateId(),
             date: yesterdayStr,
-            branch: 'BGC',
+            branch: 'Mall of Asia',
             supplierName: 'FoodSource Co.',
             businessName: 'FoodSource Corporation',
             tin: '111-222-333-000',
-            address: 'BGC, Taguig City',
+            address: 'Mall of Asia, Pasay City',
             items: [
                 { name: 'Bread', quantity: 20, price: 25, total: 500 },
                 { name: 'Pastries', quantity: 15, price: 35, total: 525 }
@@ -1714,7 +1992,7 @@ function addSampleData() {
             name: 'Office Warehouse',
             businessName: 'Office Warehouse Inc.',
             tin: '555-666-777-000',
-            address: 'Makati Avenue, Makati City',
+            address: 'Mall of Asia, Pasay City',
             createdAt: new Date().toISOString()
         },
         {
@@ -1722,7 +2000,7 @@ function addSampleData() {
             name: 'FoodSource Co.',
             businessName: 'FoodSource Corporation',
             tin: '111-222-333-000',
-            address: 'BGC, Taguig City',
+            address: 'Mall of Asia, Pasay City',
             createdAt: new Date().toISOString()
         }
     ];
@@ -2269,7 +2547,7 @@ function parseAccountingFormatCSV(data, headers, values) {
         tin: tin,
         address: address,
         invoiceNumber: '',
-        expenseCategory: 'General', // Default category for CSV imports
+        expenseCategory: 'Supplies', // Default category for CSV imports
         items: items,
         totalAmount: amount,
         vatExemptAmount: 0,
@@ -2786,8 +3064,11 @@ function showSupplierDetailModal(supplier) {
                                 </div>
                                 <div class="supplier-transaction-items">${itemsText}</div>
                                 <div class="supplier-transaction-footer">
-                                    <span>${expense.branch} • ${expense.paymentMethod}</span>
-                                    ${expense.invoiceNumber ? `<span>#${expense.invoiceNumber}</span>` : '<span></span>'}
+                                    <span>${[
+                                        expense.branch,
+                                        expense.paymentMethod,
+                                        expense.invoiceNumber ? '#' + expense.invoiceNumber : null
+                                    ].filter(Boolean).join(' • ')}</span>
                                 </div>
                             </div>
                         `;
@@ -2858,14 +3139,24 @@ function editExpense(expenseId, event) {
 }
 
 function populateExpenseForm(expense) {
-    // Set basic fields
-    document.getElementById('expenseDate').value = expense.date;
-    document.getElementById('branch').value = expense.branch;
-    document.getElementById('supplierName').value = expense.supplierName;
-    document.getElementById('paymentMethod').value = expense.paymentMethod;
-    document.getElementById('paidBy').value = expense.paidBy || '';
-    document.getElementById('notes').value = expense.notes || '';
-    document.getElementById('invoiceNumber').value = expense.invoiceNumber || '';
+    // Set basic fields with null checks (some fields may not exist in mobile form)
+    const expenseDate = document.getElementById('expenseDate');
+    if (expenseDate) expenseDate.value = expense.date;
+    
+    const supplierName = document.getElementById('supplierName');
+    if (supplierName) supplierName.value = expense.supplierName;
+    
+    const paymentMethod = document.getElementById('paymentMethod');
+    if (paymentMethod) paymentMethod.value = expense.paymentMethod || '';
+    
+    const paidBy = document.getElementById('paidBy');
+    if (paidBy) paidBy.value = expense.paidBy || '';
+    
+    const notes = document.getElementById('notes');
+    if (notes) notes.value = expense.notes || '';
+    
+    const invoiceNumber = document.getElementById('invoiceNumber');
+    if (invoiceNumber) invoiceNumber.value = expense.invoiceNumber || '';
     const totalInput = document.getElementById('totalAmountInput');
     if (totalInput) {
         totalInput.value = shared.formatCurrency(expense.totalAmount || 0);
@@ -2898,48 +3189,100 @@ function populateExpenseForm(expense) {
     }
 
     // Clear existing items
-    document.getElementById('itemsContainer').innerHTML = '';
-    itemCounter = 0;
+    const itemsContainer = document.getElementById('itemsContainer');
+    if (itemsContainer) {
+        itemsContainer.innerHTML = '';
+        itemCounter = 0;
 
-    // Add items
-    expense.items.forEach((item, index) => {
-        addItemRow();
-        const itemRows = document.querySelectorAll('.item-row');
-        const currentRow = itemRows[itemRows.length - 1];
+        // Add items
+        if (expense.items && expense.items.length > 0) {
+            expense.items.forEach((item, index) => {
+                addItemRow();
+                const itemRows = document.querySelectorAll('.item-row');
+                const currentRow = itemRows[itemRows.length - 1];
 
-        currentRow.querySelector('[name="itemName"]').value = item.name;
-        currentRow.querySelector('[name="itemQuantity"]').value = item.quantity;
-        currentRow.querySelector('[name="itemPrice"]').value = item.price > 0 ? '₱' + item.price.toFixed(2) : '';
+                if (currentRow) {
+                    const itemNameInput = currentRow.querySelector('[name="itemName"]');
+                    const itemQuantityInput = currentRow.querySelector('[name="itemQuantity"]');
+                    const itemPriceInput = currentRow.querySelector('[name="itemPrice"]');
+                    
+                    if (itemNameInput) itemNameInput.value = item.name || '';
+                    if (itemQuantityInput) itemQuantityInput.value = item.quantity || '';
+                    if (itemPriceInput) itemPriceInput.value = item.price > 0 ? '₱' + item.price.toFixed(2) : '';
 
-        // Show breakdown if price is set
-        if (item.price > 0) {
-            const breakdown = currentRow.querySelector('.item-breakdown');
-            const priceBtn = currentRow.querySelector('.add-price-btn');
-            breakdown.style.display = 'flex';
-            if (priceBtn) priceBtn.style.display = 'none';
+                    // Show breakdown if price is set
+                    if (item.price > 0) {
+                        const breakdown = currentRow.querySelector('.item-breakdown');
+                        const priceBtn = currentRow.querySelector('.add-price-btn');
+                        if (breakdown) breakdown.style.display = 'flex';
+                        if (priceBtn) priceBtn.style.display = 'none';
+                    }
+                }
+            });
         }
-    });
+    }
 
     // Handle receipt if exists
+    const preview = document.getElementById('receiptPreview');
+    const uploadText = document.getElementById('receiptUploadText');
+    const uploadArea = document.querySelector('.receipt-upload');
+    const removeBtn = document.getElementById('removeReceiptBtn');
+    
     if (expense.receiptImage) {
-        const preview = document.getElementById('receiptPreview');
-        const uploadText = document.getElementById('receiptUploadText');
-        const uploadArea = document.querySelector('.receipt-upload');
-        const removeBtn = document.getElementById('removeReceiptBtn');
-
-        preview.src = expense.receiptImage;
-        preview.style.display = 'block';
-        uploadText.textContent = 'Receipt attached';
-        uploadArea.classList.add('has-file');
-        removeBtn.style.display = 'block';
+        // Receipt image is directly available
+        if (preview) preview.src = expense.receiptImage;
+        if (preview) preview.style.display = 'block';
+        if (uploadText) uploadText.textContent = 'Receipt attached';
+        if (uploadArea) uploadArea.classList.add('has-file');
+        if (removeBtn) removeBtn.style.display = 'block';
         window.currentReceiptData = expense.receiptImage;
+    } else if (expense.hasReceiptImage) {
+        // Has receipt flag but no image - fetch from Firebase
+        if (preview) preview.style.display = 'none';
+        if (uploadText) {
+            uploadText.textContent = 'Loading receipt...';
+            uploadText.style.display = 'block';
+        }
+        if (uploadArea) {
+            uploadArea.classList.remove('has-file');
+        }
+        if (removeBtn) removeBtn.style.display = 'none';
+        
+        // Fetch receipt from Firebase
+        loadReceiptImageForEditMobile(expense.id);
+    } else {
+        // No receipt
+        if (preview) preview.style.display = 'none';
+        if (uploadText) uploadText.textContent = 'Tap to add receipt photo';
+        if (uploadArea) uploadArea.classList.remove('has-file');
+        if (removeBtn) removeBtn.style.display = 'none';
+        window.currentReceiptData = null;
+    }
+
+    // Set expense category if field exists
+    const expenseCategory = document.getElementById('expenseCategory');
+    if (expenseCategory && expense.expenseCategory) {
+        expenseCategory.value = expense.expenseCategory;
+    }
+
+    // Set allocation and branch if fields exist
+    const allocationSelect = document.getElementById('allocationSelect');
+    if (allocationSelect && expense.allocation) {
+        allocationSelect.value = expense.allocation;
+        handleAllocationChange();
+    }
+    
+    const branchSelect = document.getElementById('branchSelect');
+    if (branchSelect && expense.branch) {
+        branchSelect.value = expense.branch;
     }
 
     // Store the expense ID for updating instead of creating new
     window.editingExpenseId = expense.id;
 
     // Update modal title
-    document.querySelector('.modal-title').textContent = 'Edit Expense';
+    const modalTitle = document.querySelector('.modal-title');
+    if (modalTitle) modalTitle.textContent = 'Edit Expense';
 }
 
 function deleteExpense(expenseId, event) {
@@ -3275,8 +3618,8 @@ function showMergeSupplierModal(targetSupplierId) {
     </div>
     
     <div class="merge-actions">
-        <button type="button" class="cancel-btn" onclick="closeMergeSupplierModal()">Cancel</button>
-        <button type="button" class="merge-btn" onclick="executeMerge('${targetSupplierId}')">Merge Selected</button>
+        <button type="button" class="cancel-btn" id="mergeCancelBtn">Cancel</button>
+        <button type="button" class="merge-btn" id="mergeExecuteBtn">Merge Selected</button>
     </div>
 `;
 
@@ -3284,6 +3627,22 @@ function showMergeSupplierModal(targetSupplierId) {
     document.body.style.overflow = 'hidden';
     document.body.style.position = 'fixed';
     document.body.style.width = '100%';
+
+    // Add event listeners for buttons (more reliable than inline onclick)
+    const cancelBtn = document.getElementById('mergeCancelBtn');
+    const executeBtn = document.getElementById('mergeExecuteBtn');
+    
+    if (cancelBtn) {
+        // Remove any existing listeners
+        cancelBtn.replaceWith(cancelBtn.cloneNode(true));
+        document.getElementById('mergeCancelBtn').addEventListener('click', closeMergeSupplierModal);
+    }
+    
+    if (executeBtn) {
+        // Remove any existing listeners
+        executeBtn.replaceWith(executeBtn.cloneNode(true));
+        document.getElementById('mergeExecuteBtn').addEventListener('click', () => executeMerge(targetSupplierId));
+    }
 
     // Add search functionality after modal is shown
     setTimeout(() => {
@@ -3330,13 +3689,7 @@ function showMergeSupplierModal(targetSupplierId) {
     }, 100);
 }
 
-function closeMergeSupplierModal() {
-    const modal = document.getElementById('mergeSupplierModalOverlay');
-    modal.classList.remove('show');
-    document.body.style.overflow = '';
-    document.body.style.position = '';
-    document.body.style.width = '';
-}
+// closeMergeSupplierModal is defined at the top of the file for early availability
 
 function executeMerge(targetSupplierId) {
     const allSuppliers = shared.getSuppliers();
@@ -3373,42 +3726,113 @@ window.executeMerge = executeMerge;
 
 async function performSupplierMerge(targetSupplier, suppliersToMerge) {
     let totalTransferred = 0;
-    const expenses = shared.getExpenses();
+    const allExpenses = shared.getExpenses();
+    const supplierNamesToMatch = suppliersToMerge.map(s => s.name.toLowerCase());
+    const supplierIdsToRemove = new Set(suppliersToMerge.map(s => s.id));
+    const updatedExpenses = [];
+    const now = new Date().toISOString();
 
     // Update all expenses from merged suppliers to reference the target supplier
-    suppliersToMerge.forEach(supplierToMerge => {
-        expenses.forEach(expense => {
-            if (expense.supplierName.toLowerCase() === supplierToMerge.name.toLowerCase()) {
-                expense.supplierName = targetSupplier.name;
-                // Also update other supplier fields in the expense
-                expense.businessName = targetSupplier.businessName || expense.businessName;
-                expense.tin = targetSupplier.tin || expense.tin;
-                expense.address = targetSupplier.address || expense.address;
-                expense.isVatRegistered = targetSupplier.isVatRegistered;
-                totalTransferred++;
+    allExpenses.forEach(expense => {
+        const expenseSupplierLower = expense.supplierName.toLowerCase();
+        const needsUpdate = supplierNamesToMatch.includes(expenseSupplierLower);
+        
+        if (needsUpdate) {
+            // Create updated expense
+            const updatedExpense = {
+                ...expense,
+                supplierName: targetSupplier.name,
+                businessName: targetSupplier.businessName || expense.businessName,
+                tin: targetSupplier.tin || expense.tin,
+                address: targetSupplier.address || expense.address,
+                isVatRegistered: targetSupplier.isVatRegistered,
+                updatedAt: now
+            };
+            updatedExpenses.push(updatedExpense);
+            totalTransferred++;
+        } else {
+            updatedExpenses.push(expense);
+        }
+    });
+
+    // Batch update all expenses at once using setExpenses (doesn't trigger save)
+    shared.setExpenses(updatedExpenses);
+    
+    // Now manually trigger a single save
+    shared.saveToLocalStorage();
+
+    // Get current suppliers list to verify they exist before deletion
+    const currentSuppliers = shared.getSuppliers();
+    
+    // Remove the merged suppliers using shared.js (await all deletions)
+    // Also find and remove any duplicate suppliers with the same names (different IDs)
+    const suppliersToDelete = [];
+    
+    // First, add the explicitly selected suppliers
+    supplierIdsToRemove.forEach(supplierId => {
+        const supplier = currentSuppliers.find(s => s.id === supplierId);
+        if (supplier) {
+            suppliersToDelete.push(supplier);
+        }
+    });
+    
+    // Then, find any other suppliers with the same names (duplicates that weren't selected)
+    // After transferring expenses, any supplier with the same name should have no expenses left
+    supplierNamesToMatch.forEach(nameToMatch => {
+        currentSuppliers.forEach(supplier => {
+            // Don't delete the target supplier or already queued suppliers
+            if (supplier.id !== targetSupplier.id && 
+                !supplierIdsToRemove.has(supplier.id) &&
+                supplier.name.toLowerCase() === nameToMatch) {
+                // After transfer, check if this supplier still has expenses with its name
+                // (it shouldn't, since we transferred all expenses with this name)
+                const hasExpenses = updatedExpenses.some(e => 
+                    e.supplierName.toLowerCase() === supplier.name.toLowerCase()
+                );
+                // Delete if it has no expenses (all were transferred) - this handles duplicates
+                if (!hasExpenses) {
+                    suppliersToDelete.push(supplier);
+                }
             }
         });
     });
+    
+    // Remove duplicates from suppliersToDelete array
+    const uniqueSuppliersToDelete = suppliersToDelete.filter((supplier, index, self) =>
+        index === self.findIndex(s => s.id === supplier.id)
+    );
+    
+    // Delete all suppliers
+    const deletionResults = await Promise.all(
+        uniqueSuppliersToDelete.map(supplier => shared.deleteSupplier(supplier.id))
+    );
+    
+    // Check if all deletions succeeded
+    const allDeleted = deletionResults.every(result => result === true);
+    const deletedCount = deletionResults.filter(r => r === true).length;
+    
+    if (!allDeleted) {
+        console.warn(`Deleted ${deletedCount} of ${uniqueSuppliersToDelete.length} suppliers. Some may not have been found.`);
+    }
 
-    // Save updated expenses
-    expenses.forEach(expense => {
-        shared.updateExpense(expense.id, expense);
-    });
-
-    // Remove the merged suppliers using shared.js (await all deletions)
-    const supplierIdsToRemove = suppliersToMerge.map(s => s.id);
-    await Promise.all(supplierIdsToRemove.map(supplierId => shared.deleteSupplier(supplierId)));
-
-    // Close modals and refresh
+    // Close modals first
     closeMergeSupplierModal();
     closeSupplierDetailModal();
 
-    showToast(`Merged ${suppliersToMerge.length} supplier${suppliersToMerge.length === 1 ? '' : 's'} and transferred ${totalTransferred} expense${totalTransferred === 1 ? '' : 's'}`);
+    const deletedMsg = deletedCount > suppliersToMerge.length ? 
+        ` (removed ${deletedCount} total including duplicates)` : '';
+    showToast(`Merged ${suppliersToMerge.length} supplier${suppliersToMerge.length === 1 ? '' : 's'}${deletedMsg} and transferred ${totalTransferred} expense${totalTransferred === 1 ? '' : 's'}`);
 
-    // Refresh suppliers page if currently viewing it
-    if (document.getElementById('suppliersPage').style.display !== 'none') {
-        loadSuppliers();
-    }
+    // Refresh suppliers page if currently viewing it - use setTimeout to ensure UI updates
+    setTimeout(() => {
+        if (document.getElementById('suppliersPage').style.display !== 'none') {
+            loadSuppliers();
+        }
+        // Also refresh dashboard if on expenses page
+        if (document.getElementById('dashboardPage').style.display !== 'none') {
+            loadDashboard();
+        }
+    }, 100);
 }
 
 function mergeSupplierFromDetail(supplierId) {
@@ -3543,6 +3967,39 @@ function updateVatCalculation() {
 // Expose to global scope for inline event handlers
 window.updateVatCalculation = updateVatCalculation;
 
+// Handle allocation change - show/hide branch field and paidBy field
+function handleAllocationChange() {
+    const allocationSelect = document.getElementById('allocationSelect');
+    const branchFieldGroup = document.getElementById('branchFieldGroup');
+    const paidBySection = document.getElementById('paidBySection');
+    const paidBySelect = document.getElementById('paidBy');
+    
+    if (!allocationSelect) return;
+    
+    const allocation = allocationSelect.value;
+    const isStore = allocation === 'Store';
+    
+    // Show/hide branch field based on allocation
+    if (branchFieldGroup) {
+        branchFieldGroup.style.display = isStore ? 'block' : 'none';
+    }
+    
+    // Show/hide Paid By field based on allocation
+    if (paidBySection && paidBySelect) {
+        if (isStore) {
+            paidBySection.style.display = 'block';
+            paidBySelect.required = true;
+        } else {
+            paidBySection.style.display = 'none';
+            paidBySelect.required = false;
+            paidBySelect.value = 'Company';
+        }
+    }
+}
+
+// Expose to global scope for inline event handlers
+window.handleAllocationChange = handleAllocationChange;
+
 // Update the total amount change handler
 function handleTotalChange() {
     const totalInput = document.getElementById('totalAmountInput');
@@ -3657,6 +4114,7 @@ window.skipSupplierDetails = skipSupplierDetails;
 window.editSupplierFromDetail = editSupplierFromDetail;
 window.deleteSupplierFromDetail = deleteSupplierFromDetail;
 window.showMergeSupplierModal = showMergeSupplierModal;
-// Note: closeMergeSupplierModal, executeMerge, mergeSupplierFromDetail, viewSupplierFromExpense,
+window.closeMergeSupplierModal = closeMergeSupplierModal;
+// Note: executeMerge, mergeSupplierFromDetail, viewSupplierFromExpense,
 // updateVatCalculation, toggleVatRegistered, formatPesoInput, and updateFromItems are now
 // exposed immediately after their definitions above for better reliability

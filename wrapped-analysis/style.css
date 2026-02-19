@@ -1,0 +1,464 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    padding: 20px;
+    color: #333;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    background: white;
+    border-radius: 20px;
+    padding: 40px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+header {
+    text-align: center;
+    margin-bottom: 40px;
+}
+
+header h1 {
+    font-size: 2.5rem;
+    color: #667eea;
+    margin-bottom: 10px;
+}
+
+.subtitle {
+    color: #666;
+    font-size: 1.1rem;
+}
+
+.controls {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+    margin-bottom: 40px;
+    flex-wrap: wrap;
+}
+
+.btn {
+    padding: 12px 24px;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+    font-family: 'Inter', sans-serif;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+}
+
+.btn-secondary {
+    background: #f0f0f0;
+    color: #333;
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background: #e0e0e0;
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.progress-section {
+    margin-bottom: 40px;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 12px;
+}
+
+.progress-section h2 {
+    margin-bottom: 15px;
+    color: #333;
+}
+
+.progress-bar-container {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.progress-bar {
+    flex: 1;
+    height: 30px;
+    background: #e0e0e0;
+    border-radius: 15px;
+    overflow: hidden;
+    position: relative;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+    width: 0%;
+    transition: width 0.3s ease;
+    border-radius: 15px;
+}
+
+.progress-text {
+    font-weight: 600;
+    color: #667eea;
+    min-width: 50px;
+    text-align: right;
+}
+
+.results-section {
+    margin-top: 40px;
+}
+
+.stats-section {
+    margin-bottom: 50px;
+}
+
+.stats-section h2 {
+    font-size: 1.8rem;
+    margin-bottom: 25px;
+    color: #333;
+    border-bottom: 3px solid #667eea;
+    padding-bottom: 10px;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+}
+
+.stat-card {
+    background: #f8f9fa;
+    border-radius: 12px;
+    padding: 20px;
+    border-left: 4px solid #667eea;
+    transition: transform 0.2s;
+}
+
+.stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+}
+
+.stat-card.analyzing {
+    border-left-color: #ffc107;
+    background: #fff9e6;
+}
+
+.stat-card.complete {
+    border-left-color: #28a745;
+    background: #e8f5e9;
+}
+
+.stat-card.error {
+    border-left-color: #dc3545;
+    background: #ffe6e6;
+}
+
+.stat-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.stat-title {
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: #333;
+}
+
+.stat-status {
+    font-size: 0.85rem;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-weight: 500;
+}
+
+.stat-status.pending {
+    background: #e0e0e0;
+    color: #666;
+}
+
+.stat-status.analyzing {
+    background: #ffc107;
+    color: #333;
+}
+
+.stat-status.complete {
+    background: #28a745;
+    color: white;
+}
+
+.stat-status.error {
+    background: #dc3545;
+    color: white;
+}
+
+.stat-content {
+    margin-top: 10px;
+}
+
+.stat-result {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #667eea;
+    margin: 10px 0;
+}
+
+.places-2nd-3rd {
+    margin-top: 8px;
+    font-size: 0.85rem;
+    line-height: 1.4;
+}
+
+.place-2nd-3rd {
+    display: inline-block;
+    font-size: 0.85rem;
+}
+
+.place-separator {
+    margin: 0 8px;
+    color: #999;
+    font-weight: normal;
+}
+
+.stat-winner-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 15px;
+    margin-bottom: 10px;
+}
+
+.stat-winner-info {
+    flex: 1;
+}
+
+.stat-photos-container {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.stat-photo-wrapper {
+    display: inline-block;
+}
+
+.stat-photo {
+    width: 80px;
+    height: 80px;
+    border-radius: 8px;
+    border: 2px solid #667eea;
+    object-fit: cover;
+    cursor: pointer;
+    transition: transform 0.2s, border-color 0.2s;
+    flex-shrink: 0;
+}
+
+.stat-photo-selected {
+    border-color: #667eea;
+    border-width: 3px;
+}
+
+.stat-photo:hover {
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+    z-index: 10;
+    position: relative;
+}
+
+.stat-details {
+    color: #666;
+    font-size: 0.95rem;
+    line-height: 1.6;
+}
+
+.stat-details strong {
+    color: #333;
+}
+
+.branch-comparison {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+    margin-top: 15px;
+}
+
+.branch-stat {
+    padding: 15px;
+    background: white;
+    border-radius: 8px;
+    border: 2px solid #e0e0e0;
+}
+
+.branch-stat.winner {
+    border-color: #28a745;
+    background: #e8f5e9;
+}
+
+.branch-name {
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 8px;
+}
+
+.branch-value {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #667eea;
+}
+
+.loading-spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid #667eea;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-right: 8px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.hidden {
+    display: none;
+}
+
+/* Individual Employee Stats */
+.employee-selector {
+    margin-bottom: 30px;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 12px;
+}
+
+.employee-selector label {
+    display: block;
+    margin-bottom: 10px;
+    font-weight: 600;
+    color: #333;
+}
+
+.employee-dropdown {
+    width: 100%;
+    max-width: 400px;
+    padding: 12px 16px;
+    border: 2px solid #667eea;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-family: 'Inter', sans-serif;
+    background: white;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.employee-dropdown:hover {
+    border-color: #764ba2;
+}
+
+.employee-dropdown:focus {
+    outline: none;
+    border-color: #764ba2;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.individual-stats-container {
+    margin-top: 20px;
+}
+
+.individual-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+}
+
+.individual-stat-card {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    border-radius: 12px;
+    padding: 25px;
+    position: relative;
+    border-left: 4px solid #667eea;
+    transition: transform 0.2s, box-shadow 0.2s;
+    text-align: center;
+}
+
+.individual-stat-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 20px rgba(102, 126, 234, 0.2);
+}
+
+.individual-stat-icon {
+    font-size: 2.5rem;
+    margin-bottom: 10px;
+}
+
+.individual-stat-photo {
+    width: 80px;
+    height: 80px;
+    border-radius: 8px;
+    border: 2px solid #667eea;
+    object-fit: cover;
+    margin: 0 auto 12px auto;
+    display: block;
+}
+
+.individual-stat-label {
+    font-size: 0.9rem;
+    color: #666;
+    font-weight: 500;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.individual-stat-value {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: #667eea;
+    margin-bottom: 8px;
+}
+
+.individual-stat-desc {
+    font-size: 0.85rem;
+    color: #999;
+    font-style: italic;
+}
+
+/* Push Status */
+.push-status {
+    font-size: 0.95rem;
+    color: #333;
+    line-height: 1.6;
+}
+
+.push-status.success {
+    color: #28a745;
+    font-weight: 600;
+}
+
+.push-status.error {
+    color: #dc3545;
+    font-weight: 600;
+}
+
