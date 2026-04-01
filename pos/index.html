@@ -3,12 +3,12 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Matchanese Menu</title>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@100;200;300;400;500;600;700;800;900&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="css/normalize.css?v=3">
-    <link rel="stylesheet" href="css/style.css?v=3">
+    <link rel="stylesheet" href="css/normalize.css?v=4">
+    <link rel="stylesheet" href="css/style.css?v=4">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 
     <link rel="icon" href="icons/icon-192.png" type="image/png">
@@ -76,7 +76,7 @@
                 <div class="payment-methods popup-payment-methods">
                     <button class="payment-button" id="cash-payment">CASH</button>
                     <button class="payment-button" id="gcash-payment">GCASH</button>
-                    <button class="payment-button" id="maya-payment">MAYA</button>
+                    <button class="payment-button" id="card-payment">CARD</button>
                 </div>
                 <div class="payment-methods package-payment-methods" style="display: none;">
                     <button class="payment-button package-submit-btn" id="package-submit">SUBMIT ORDER</button>
@@ -101,9 +101,14 @@
                             <button class="z-reading-btn" id="endOfDayBtn">Sales Summary</button>
                             <button class="force-sync-btn" id="forceSyncBtn">Force Sync</button>
                         </div>
-                        <div class="total-sales">
-                            <div class="sales-amount" id="salesAmount">₱0.00</div>
-                            <div class="sales-label" id="salesLabel">TOTAL SALES</div>
+                        <div class="total-sales" id="totalSalesBlock">
+                            <div class="total-sales-left">
+                                <div class="sales-amount" id="salesAmount">₱0.00</div>
+                                <div class="sales-label" id="salesLabel">TOTAL SALES</div>
+                            </div>
+                            <div class="total-sales-right">
+                                <div class="sales-sub-label" id="salesSubLabel"></div>
+                            </div>
                         </div>
                     </div>
                     <!-- Order cards will be displayed here -->
@@ -115,11 +120,12 @@
             <span>VIEW ORDER</span>
             <span class="mobile-order-total">₱ 0.00</span>
         </div>
+        <div id="sheet-backdrop" class="sheet-backdrop"></div>
 
-    <script type="module" src="js/firebase-setup.js?v=3"></script>
-    <script type="module" src="js/firebase-sync.js?v=3"></script>
-    <script type="module" src="js/menu-data.js?v=3"></script>
-    <script type="module" src="js/script.js?v=3"></script>
+    <script type="module" src="js/firebase-setup.js?v=4"></script>
+    <script type="module" src="js/firebase-sync.js?v=4"></script>
+    <script type="module" src="js/menu-data.js?v=4"></script>
+    <script type="module" src="js/script.js?v=4"></script>
 </body>
 
 </html>

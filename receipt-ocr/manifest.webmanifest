@@ -1,0 +1,10 @@
+{
+  "name": "Receipt OCR",
+  "short_name": "Receipt OCR",
+  "description": "Scan receipts with Google Vision — verify VAT — copy JSON for expenses",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0f1f1a",
+  "theme_color": "#1a3a2f",
+  "icons": []
+}

@@ -16,8 +16,51 @@ const galleryCounter = document.getElementById('galleryCounter');
 // State management
 let participantNames = [];
 let currentIndex = 0;
+const STORAGE_KEY = 'matchaneseCertificateGenerator:lastInput';
 
-// Format date to "26th Day of April" format
+// Persist current form state locally to avoid losing progress
+function saveFormData() {
+    try {
+        const data = {
+            participantName: participantNameInput.value,
+            certificateDate: certificateDateInput.value,
+            venue: venueInput.value,
+            currentIndex
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch (error) {
+        // Ignore storage errors (e.g., private mode restrictions)
+        console.warn('Unable to save certificate form data:', error);
+    }
+}
+
+function loadFormData() {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return false;
+        const data = JSON.parse(raw);
+        if (!data || typeof data !== 'object') return false;
+
+        if (typeof data.participantName === 'string') {
+            participantNameInput.value = data.participantName;
+        }
+        if (typeof data.certificateDate === 'string') {
+            certificateDateInput.value = data.certificateDate;
+        }
+        if (typeof data.venue === 'string') {
+            venueInput.value = data.venue;
+        }
+        if (typeof data.currentIndex === 'number' && Number.isInteger(data.currentIndex)) {
+            currentIndex = data.currentIndex;
+        }
+        return true;
+    } catch (error) {
+        console.warn('Unable to load certificate form data:', error);
+        return false;
+    }
+}
+
+// Format date to "26th Day of April 2026" format
 function formatDate(dateString) {
     if (!dateString) return 'Date';
     
@@ -36,7 +79,8 @@ function formatDate(dateString) {
         return s[(v - 20) % 10] || s[v] || s[0];
     }
     
-    return `${day}${getOrdinalSuffix(day)} Day of ${month}`;
+    const year = date.getFullYear();
+    return `${day}${getOrdinalSuffix(day)} Day of ${month} ${year}`;
 }
 
 // Parse names from textarea (one per line)
@@ -76,6 +120,7 @@ function updateCertificate() {
     
     // Update gallery controls
     updateGalleryControls();
+    saveFormData();
 }
 
 // Update gallery navigation controls
@@ -102,9 +147,12 @@ nextBtn.addEventListener('click', () => {
     }
 });
 
-// Set default date to today
-const today = new Date();
-certificateDateInput.value = today.toISOString().split('T')[0];
+// Load saved inputs first; if not available, default date to today
+const hasSavedData = loadFormData();
+if (!hasSavedData || !certificateDateInput.value) {
+    const today = new Date();
+    certificateDateInput.value = today.toISOString().split('T')[0];
+}
 
 // Event listeners for real-time updates
 participantNameInput.addEventListener('input', updateCertificate);

@@ -336,6 +336,25 @@ button:hover {
     color: #333;
 }
 
+.request-type-badge {
+    display: inline-block;
+    padding: 0.25rem 0.6rem;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.request-type-payroll {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.request-type-reliever {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
 .request-actions {
     display: flex;
     align-items: center;
@@ -464,6 +483,8 @@ button:hover {
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 5vh 5vw;
+    box-sizing: border-box;
 }
 
 .modal-content {
@@ -471,11 +492,12 @@ button:hover {
     margin: auto;
     padding: 2rem;
     border-radius: 12px;
-    width: 90%;
-    max-width: 600px;
+    width: 100%;
+    max-width: min(600px, 80vw);
     max-height: 90vh;
     overflow-y: auto;
     position: relative;
+    box-sizing: border-box;
 }
 
 .close-modal {
@@ -501,8 +523,8 @@ button:hover {
 }
 
 .request-detail-section {
-    margin-bottom: 1.5rem;
-    padding: 1rem;
+    margin-bottom: 1rem;
+    padding: 0.75rem;
     background: #f9fafb;
     border-radius: 8px;
 }
@@ -513,14 +535,14 @@ button:hover {
     color: #666;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    margin-bottom: 1rem;
+    margin-bottom: 0.5rem;
 }
 
 .request-detail-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 1rem;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.35rem;
 }
 
 .request-detail-label {
@@ -541,13 +563,62 @@ button:hover {
     font-weight: 600;
 }
 
+.amount-preview-section {
+    background: #f5f9f5;
+    border-radius: 8px;
+    border-left: 3px solid #2b9348;
+}
+
+.amount-preview-content {
+    font-size: 1rem;
+    color: #333;
+}
+
+.amount-preview-value {
+    color: #2b9348;
+}
+
+.amount-preview-diff {
+    font-weight: 600;
+}
+
+.amount-preview-diff-positive {
+    color: #2b9348;
+}
+
+.amount-preview-diff-negative {
+    color: #c62828;
+}
+
+.amount-preview-unavailable {
+    color: #666;
+    font-style: italic;
+}
+
 .modal-actions {
     display: flex;
-    gap: 1rem;
-    justify-content: flex-end;
-    margin-top: 2rem;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+    margin: 2rem auto 0;
     padding-top: 1.5rem;
     border-top: 1px solid #f0f0f0;
+    max-width: 75%;
+}
+
+.modal-actions .modal-btn-primary {
+    width: 100%;
+}
+
+.modal-actions-row {
+    display: flex;
+    flex-direction: row;
+    gap: 0.75rem;
+}
+
+.modal-actions-row .modal-btn {
+    flex: 1;
+    min-width: 0;
 }
 
 .modal-btn {
@@ -609,18 +680,36 @@ button:hover {
     .mobile-controls {
         display: flex;
         align-items: flex-end;
-        gap: 1rem;
+        gap: 0.75rem;
         margin-bottom: 1rem;
         padding: 0.75rem;
         background: white;
         border-radius: 8px;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     }
+    .mobile-controls .control-item {
+        flex: 1;
+        min-width: 0;
+    }
+    .mobile-controls .control-item select {
+        width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
+    }
+    .refresh-btn-mobile .refresh-btn-text {
+        display: none;
+    }
+    .refresh-btn-mobile {
+        flex-shrink: 0;
+        padding: 0.6rem;
+    }
     
     .request-item {
         flex-direction: column;
         padding: 1rem;
         gap: 0.75rem;
+        height: 210px;
+        overflow: hidden;
     }
     
     .request-item-top {
@@ -635,9 +724,22 @@ button:hover {
     }
     
     .request-header {
-        flex-direction: column;
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
         align-items: flex-start;
+        flex-wrap: wrap;
         gap: 0.25rem;
+    }
+    
+    .request-header-left {
+        display: flex;
+        flex-direction: column;
+        gap: 0.1rem;
+    }
+    
+    .request-type-badge {
+        flex-shrink: 0;
     }
     
     .request-name {
@@ -655,16 +757,28 @@ button:hover {
     }
     
     .request-preview {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.35rem 1rem;
         font-size: 0.85rem;
-        gap: 0.4rem;
-        flex-direction: column;
         margin-left: 0;
     }
     
     .request-preview-item {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 0.1rem;
+        display: flex;
+        flex-direction: row;
+        gap: 0.25rem;
+        align-items: baseline;
+        min-width: 0;
+        overflow: hidden;
+    }
+    
+    .request-preview-item .request-preview-value,
+    .request-preview-item .request-type-badge {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
     }
     
     .request-preview-label {
@@ -754,26 +868,24 @@ button:hover {
         gap: 0.5rem;
     }
     
-    .request-detail-row {
-        grid-template-columns: 1fr;
-    }
-    
     /* Modal Mobile Optimizations */
     .modal {
-        align-items: flex-start;
-        padding: 0;
+        align-items: center;
+        padding: 5%;
+        box-sizing: border-box;
     }
     
     .modal.show {
-        align-items: flex-start;
-        padding-top: 0.5rem;
+        align-items: center;
+        padding: 5%;
+        box-sizing: border-box;
     }
     
     .modal-content {
-        width: 100%;
-        max-width: 100%;
-        max-height: calc(100vh - 1rem);
-        margin: 0.5rem;
+        width: 90%;
+        max-width: calc(100vw - 2rem);
+        max-height: 90vh;
+        margin: auto;
         padding: 1rem;
         border-radius: 8px;
         overflow-y: auto;
@@ -793,17 +905,18 @@ button:hover {
     }
     
     .request-detail-section {
-        margin-bottom: 1rem;
-        padding: 0.75rem;
+        margin-bottom: 0.75rem;
+        padding: 0.5rem;
     }
     
     .request-detail-section h3 {
         font-size: 0.75rem;
-        margin-bottom: 0.75rem;
+        margin-bottom: 0.4rem;
     }
     
     .request-detail-row {
-        margin-bottom: 0.75rem;
+        grid-template-columns: 1fr 1fr;
+        margin-bottom: 0.5rem;
         gap: 0.5rem;
     }
     
@@ -823,8 +936,18 @@ button:hover {
         gap: 0.75rem;
     }
     
-    .modal-btn {
+    .modal-actions > .modal-btn {
         width: 100%;
+    }
+    
+    .modal-actions-row .modal-btn {
+        width: auto;
+        flex: 1;
+        padding: 0.75rem 1rem;
+        font-size: 0.85rem;
+    }
+    
+    .modal-btn {
         padding: 0.75rem 1rem;
         font-size: 0.85rem;
     }

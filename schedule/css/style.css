@@ -529,6 +529,9 @@ button:hover {
 }
 
 .submit-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background-color: #2b9348;
     color: white;
     border: none;
@@ -1544,329 +1547,17 @@ button:hover {
     }
 }
 
-/* Mobile Daily View Styles */
+/* ============================================================
+   Mobile View — Calendar + Branch / My Schedule
+   ============================================================ */
+
+/* Hide mobile view by default; shown via media query below */
 .mobile-daily-view {
     display: none;
-    padding: 0rem;
-    max-width: 100%;
+    flex-direction: column;
+    height: 100dvh;
     overflow: hidden;
     box-sizing: border-box;
-}
-
-/* Mobile header styling - remove panel, smaller logo and font */
-@media (max-width: 768px) {
-    .admin-header {
-        display: none !important;
-    }
-    
-    body {
-        margin: 35px !important;
-        padding: 0 !important;
-    }
-    
-    .container {
-        padding: 1.5rem 0 !important;
-        margin: 0 auto !important;
-        max-width: 100% !important;
-    }
-    
-    .week-navigation {
-        margin-left: 0 !important;
-        margin-right: 0 !important;
-        width: 100% !important;
-    }
-    
-    .schedule-grid-container {
-        margin-left: 0 !important;
-        margin-right: 0 !important;
-        width: 100% !important;
-    }
-}
-
-.mobile-day-navigation {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-}
-
-/* Align navigators with day selection */
-.mobile-nav-btn {
-    background: #2b9348;
-    color: white;
-    border: none;
-    border-radius: 8px;
-    width: 40px;
-    height: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    margin: 0 0.25rem; /* Reduced margin to prevent overlap */
-    margin-top: 2.5rem; /* Align with day selection strip */
-    position: relative;
-    z-index: 5;
-}
-
-.mobile-nav-btn:hover {
-    background: #22863a;
-    transform: scale(1.05);
-}
-
-.mobile-day-info {
-    flex: 1;
-    text-align: center;
-    margin: 0 1rem; /* Add margin to create space from buttons */
-    max-width: calc(100% - 120px); /* Ensure proper spacing for buttons */
-}
-
-.mobile-month-year {
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: #333;
-}
-
-.mobile-day-strip {
-    display: flex;
-    justify-content: space-between;
-    width: 100%;
-    max-width: 100%;
-    overflow: hidden;
-    position: relative;
-    z-index: 15;
-}
-
-.mobile-day-item {
-    font-size: 0.9rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    color: #000000;
-    text-align: center;
-    flex: 1;
-    padding: 0.25rem 0;
-    min-width: 0;
-    overflow: hidden;
-    line-height: 1.2;
-    position: relative;
-    z-index: 10;
-    pointer-events: auto;
-}
-
-/* Increase day number font size by 2x */
-.mobile-day-item .day-number {
-    font-size: 1.5rem; /* 2x the original 0.9rem */
-    font-weight: 600;
-    line-height: 1;
-    margin-top: 5px;
-    display: block;
-}
-
-.mobile-day-item.active {
-    color: #2b9348;
-    font-weight: 600;
-}
-
-.mobile-day-item:hover:not(.active) {
-    color: #333;
-}
-
-.mobile-daily-schedule {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 2rem;
-    padding: 1rem 0;
-    max-width: 100%;
-    align-items: start;
-}
-
-.mobile-location-column {
-    max-width: 100%;
-    overflow: hidden;
-    word-wrap: break-word;
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-}
-
-.mobile-location-header {
-    font-weight: 800;
-    font-size: 1.2rem;
-    color: #2b9348;
-    margin-bottom: 1rem;
-    margin-top: 1rem;
-    text-align: center;
-    height: 2.5rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.mobile-location-header .mobile-plus-icon {
-    color: #10b981;
-    font-size: 1.4rem;
-    font-weight: bold;
-    cursor: pointer;
-    margin-left: 0.5rem;
-    padding: 0.2rem;
-    transition: all 0.2s ease;
-}
-
-.mobile-location-header .mobile-plus-icon:hover {
-    color: #059669;
-    transform: scale(1.1);
-}
-
-.mobile-shifts-container {
-    display: flex;
-    flex-direction: column;
-}
-
-.mobile-shift-section {
-    margin-bottom: 1.5rem;
-}
-
-.mobile-shift-section:last-child {
-    margin-bottom: 0;
-}
-
-.mobile-shift-section-title {
-    font-size: 1rem;
-    font-weight: 600;
-    color: #333;
-    margin-bottom: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.mobile-shift-item {
-    padding: 0.5rem 0;
-    border-bottom: 1px solid #eee;
-    font-size: 0.9rem;
-    color: #333;
-    transition: none;
-}
-
-.mobile-shift-item:last-child {
-    border-bottom: none;
-}
-
-.mobile-shift-item:hover {
-    background: none;
-    border: none;
-    transform: none;
-}
-
-.mobile-shift-item .employee-name {
-    font-weight: 600;
-    color: #2b9348;
-}
-
-.mobile-shift-item .shift-time {
-    color: #666;
-    margin-left: 0.5rem;
-}
-
-/* Mobile shift blocks - use EXACT SAME styling as desktop */
-.mobile-daily-schedule .shift-employee-block {
-    margin-bottom: 0.75rem;
-}
-
-.mobile-daily-schedule .shift-employee-block:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-}
-
-.mobile-daily-schedule .shift-employee-block.completed {
-    background: #f8f9fa;
-    border-color: #28a745;
-}
-
-.mobile-daily-schedule .shift-employee-block.shift-conflict {
-    border-color: #dc3545;
-    background: #fff5f5;
-}
-
-.mobile-daily-schedule .shift-employee-block.unassigned {
-    border-color: #ffc107;
-    background: #fffbf0;
-}
-
-.mobile-category-header {
-    font-size: 0.9rem;
-    font-weight: 600;
-    color: #666;
-    margin-bottom: 0.5rem;
-    margin-top: 0;
-    text-transform: uppercase;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.mobile-plus-icon {
-    color: #10b981;
-    font-size: 1.2rem;
-    font-weight: bold;
-    cursor: pointer;
-    margin-left: auto;
-    padding: 0.2rem;
-}
-
-.mobile-plus-icon:hover {
-    color: #059669;
-    transform: scale(1.1);
-}
-    letter-spacing: 0.5px;
-    border-bottom: 1px solid #eee;
-    padding-bottom: 0.25rem;
-    height: 2rem;
-    display: flex;
-    align-items: center;
-}
-
-.mobile-category-header:first-child {
-    margin-top: 0;
-}
-
-/* Ensure consistent spacing for category containers */
-.mobile-location-column .mobile-category-container:first-child .mobile-category-header {
-    margin-top: 0;
-}
-
-.mobile-category-container {
-    margin-bottom: 1.5rem;
-    min-height: 0;
-}
-
-.mobile-category-container:last-child {
-    margin-bottom: 0;
-}
-
-/* Ensure proper alignment between branches */
-.mobile-daily-schedule {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 2rem;
-    align-items: start;
-}
-
-.mobile-location-column {
-    display: flex;
-    flex-direction: column;
-}
-
-/* Make sure category containers align properly */
-.mobile-location-column .mobile-category-container[data-category="opening"] {
-    order: 1;
-}
-
-.mobile-location-column .mobile-category-container[data-category="midshift"] {
-    order: 2;
-}
-
-.mobile-location-column .mobile-category-container[data-category="closing"] {
-    order: 3;
 }
 
 /* Responsive Design */
@@ -1878,28 +1569,617 @@ button:hover {
 }
 
 @media (max-width: 768px) {
-    /* Hide desktop views on mobile */
-    .view-container {
-        display: none !important;
+    /* Strip desktop chrome */
+    .admin-header  { display: none !important; }
+    .controls      { display: none !important; }
+    .view-container { display: none !important; }
+
+    body {
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #f3f4f6;
     }
-    
-    /* Show mobile daily view */
+
+    .container {
+        padding: 0 !important;
+        margin: 0 !important;
+        max-width: 100% !important;
+    }
+
+    /* Show mobile daily view as full-screen flex column */
     .mobile-daily-view {
-        display: block !important;
-    }
-    
-    /* Hide admin controls on mobile */
-    .controls {
-        display: none !important;
-    }
-    
-    .admin-header {
-        flex-direction: column;
-        gap: 1.5rem;
-        text-align: center;
-        align-items: center;
+        display: flex !important;
     }
 }
+
+/* ── Sticky calendar header ─────────────────────────────── */
+.mobile-cal-header {
+    background: #ffffff;
+    border-bottom: 1px solid #e5e7eb;
+    padding: 0.6rem 1rem 0;
+    flex-shrink: 0;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+    touch-action: pan-y; /* horizontal swipes on header (e.g. week strip) change week, not page */
+}
+
+/* Month title row */
+.mobile-month-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    padding: 0.1rem 0 0.4rem;
+    user-select: none;
+}
+
+#mobileMonthTitle {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #111827;
+}
+
+.mobile-cal-chevron {
+    font-size: 0.7rem;
+    color: #6b7280;
+}
+
+/* Full-month calendar grid — smooth expand/collapse */
+.mobile-full-calendar {
+    padding: 0;
+    border-top: none;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.25s ease;
+}
+
+.mobile-full-calendar.expanded {
+    max-height: 220px;
+    padding: 0.4rem 0 0.5rem;
+    border-top: 1px solid #f3f4f6;
+}
+
+.mobile-full-calendar.expanded ~ .mobile-week-strip {
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-top-width: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.mobile-cal-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 1px;
+}
+
+.mobile-cal-day-header {
+    text-align: center;
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: #9ca3af;
+    padding: 0.2rem 0 0.35rem;
+    text-transform: uppercase;
+}
+
+.mobile-cal-day-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.1rem;
+    height: 2.1rem;
+    margin: 1px auto;
+    border-radius: 50%;
+    font-size: 0.8rem;
+    cursor: pointer;
+    color: #374151;
+    transition: background 0.12s ease;
+}
+
+.mobile-cal-day-cell:hover:not(.empty) {
+    background: #f3f4f6;
+}
+
+.mobile-cal-day-cell.today {
+    color: #2b9348;
+    font-weight: 700;
+}
+
+.mobile-cal-day-cell.selected {
+    background: #2b9348;
+    color: #fff;
+    font-weight: 600;
+}
+
+.mobile-cal-day-cell.selected.today {
+    background: #2b9348;
+    color: #fff;
+}
+
+.mobile-cal-day-cell.empty {
+    cursor: default;
+    pointer-events: none;
+}
+
+.mobile-cal-day-cell.adjacent {
+    color: #9ca3af;
+    font-weight: 400;
+}
+.mobile-cal-day-cell.adjacent.selected {
+    color: #fff;
+    font-weight: 600;
+}
+.mobile-cal-day-cell.adjacent.today {
+    color: #2b9348;
+}
+
+/* ── Week strip ─────────────────────────────────────────── */
+.mobile-week-strip {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    padding: 0.3rem 0 0.1rem;
+    border-top: 1px solid #f3f4f6;
+    max-height: 80px;
+    overflow: hidden;
+    transition: max-height 0.25s ease, opacity 0.25s ease, padding 0.25s ease, border-width 0.25s ease;
+    touch-action: pan-y; /* horizontal swipes change week; only vertical scroll passes through */
+}
+
+.mobile-week-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    cursor: pointer;
+    padding: 0.25rem 0.1rem;
+    border-radius: 10px;
+    transition: background 0.12s ease;
+}
+
+.mobile-week-cell:hover {
+    background: #f9fafb;
+}
+
+.mobile-week-label {
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: #9ca3af;
+    text-transform: uppercase;
+}
+
+.mobile-week-num {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #374151;
+    width: 1.9rem;
+    height: 1.9rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+}
+
+.mobile-week-cell.today .mobile-week-num {
+    color: #2b9348;
+    font-weight: 700;
+}
+
+.mobile-week-cell.selected .mobile-week-num {
+    background: #2b9348;
+    color: #fff;
+    font-weight: 600;
+}
+
+/* ── Controls bar (mode toggle + branch dropdown) ────────── */
+.mobile-controls-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 0;
+    border-top: 1px solid #f3f4f6;
+    margin-top: 0.2rem;
+}
+
+.mobile-mode-toggle {
+    display: flex;
+    background: #f3f4f6;
+    border-radius: 8px;
+    padding: 2px;
+    flex-shrink: 0;
+}
+
+.mobile-toggle-btn {
+    background: none;
+    border: none;
+    color: #6b7280;
+    padding: 0.5rem 1rem;
+    min-height: 38px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.mobile-toggle-btn.active {
+    background: #2b9348;
+    color: #fff;
+}
+
+.mobile-branch-select {
+    flex: 1;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    color: #374151;
+    padding: 0.45rem 0.5rem;
+    min-height: 38px;
+    border-radius: 8px;
+    font-size: 0.82rem;
+    min-width: 0;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.mobile-control-label {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #374151;
+    white-space: nowrap;
+}
+
+/* ── Scrollable content area ────────────────────────────── */
+.mobile-schedule-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.75rem 1rem 1.5rem;
+    -webkit-overflow-scrolling: touch;
+    background: #f3f4f6;
+}
+
+/* Date label inside branch view */
+.mobile-date-label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.75rem;
+}
+
+/* Shift-type section headers */
+.mobile-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: #9ca3af;
+    padding: 0.6rem 0 0.3rem;
+    border-bottom: 1px solid #e5e7eb;
+    margin-bottom: 0.4rem;
+    margin-top: 0.5rem;
+}
+
+.mobile-section-header:first-of-type {
+    margin-top: 0;
+}
+
+.mobile-section-plus {
+    font-size: 1.1rem;
+    line-height: 1;
+    color: #2b9348;
+    cursor: pointer;
+    padding: 0 0.15rem;
+    font-weight: 700;
+}
+
+/* Empty row indicator */
+.mobile-empty-row {
+    color: #d1d5db;
+    font-size: 0.85rem;
+    padding: 0.25rem 0.25rem 0.5rem;
+}
+
+/* Branch view: reuse desktop .shift-employee-block; only layout differs on mobile */
+.mobile-schedule-content .shift-employee-block {
+    width: 100%;
+    margin-bottom: 0.5rem;
+    box-sizing: border-box;
+    min-height: 80px;
+}
+
+.mobile-schedule-content .shift-employee-block:last-child {
+    margin-bottom: 0;
+}
+
+.mobile-schedule-content .shift-photo-wrap {
+    width: 56px;
+    height: 56px;
+    margin-right: 14px;
+}
+
+.mobile-schedule-content .shift-photo-wrap .shift-employee-photo,
+.mobile-schedule-content .shift-employee-photo {
+    width: 56px;
+    height: 56px;
+}
+
+.mobile-schedule-content .shift-details-container .shift-employee {
+    font-size: 1rem;
+}
+
+.mobile-schedule-content .shift-details-container .shift-time {
+    font-size: 0.9rem;
+}
+
+/* ── My Schedule view ───────────────────────────────────── */
+.mobile-day-header {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #374151;
+    padding: 0.7rem 0 0.35rem;
+    border-bottom: 2px solid #e5e7eb;
+    margin-bottom: 0.45rem;
+    margin-top: 1rem;
+}
+
+.mobile-day-header:first-child {
+    margin-top: 0;
+}
+
+.mobile-day-header.today {
+    color: #2b9348;
+}
+
+.mobile-my-schedule-card {
+    padding: 0.65rem 0.9rem;
+    border-radius: 10px;
+    margin-bottom: 0.45rem;
+    min-height: 72px;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    cursor: pointer;
+}
+
+.mobile-my-card-left {
+    flex-shrink: 0;
+}
+.mobile-my-card-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.2rem;
+    min-width: 0;
+}
+
+.mobile-my-branch {
+    font-size: 1.15rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.mobile-my-type {
+    font-size: 0.8rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 6px;
+    font-weight: 600;
+}
+
+.mobile-card-time {
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.mobile-my-done {
+    color: #22c55e;
+    font-size: 1rem;
+    margin-top: 0.15rem;
+}
+
+/* Scheduled (non-completed): type-based green, same as Branch view */
+.mobile-my-schedule-card:not(.completed) {
+    background-color: #2b9348;
+    color: white;
+}
+
+.mobile-my-schedule-card.opening:not(.completed) {
+    background-color: #1e7a3a;
+}
+
+.mobile-my-schedule-card.midshift:not(.completed) {
+    background-color: #2b9348;
+}
+
+.mobile-my-schedule-card.closing:not(.completed) {
+    background-color: #3eb05e;
+}
+
+.mobile-my-schedule-card.closingHalf:not(.completed) {
+    background-color: #54bf72;
+}
+
+.mobile-my-schedule-card.custom:not(.completed) {
+    background-color: #4bb569;
+}
+
+.mobile-my-schedule-card:not(.completed) .mobile-my-branch,
+.mobile-my-schedule-card:not(.completed) .mobile-my-type,
+.mobile-my-schedule-card:not(.completed) .mobile-card-time {
+    color: white;
+}
+
+.mobile-my-schedule-card:not(.completed) .mobile-my-type {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+/* Completed: match desktop completed block */
+.mobile-my-schedule-card.completed {
+    background-color: white;
+    color: #2b9348;
+    border: none;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.mobile-my-schedule-card.completed .mobile-my-branch {
+    color: #2b9348;
+}
+
+.mobile-my-schedule-card.completed .mobile-my-type {
+    color: #6b7280;
+    background: #f3f4f6;
+}
+
+.mobile-my-schedule-card.completed .mobile-card-time {
+    color: #111;
+}
+
+.mobile-my-schedule-card.completed .mobile-my-done {
+    color: #22c55e;
+}
+
+.mobile-my-pending-badge {
+    display: inline-block;
+    font-size: 0.68rem;
+    background: rgba(255, 255, 255, 0.3);
+    color: inherit;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    margin-top: 0.2rem;
+}
+.mobile-my-schedule-card.completed .mobile-my-pending-badge {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+/* Shift details modal (My Schedule card tap) */
+.shift-details-modal__content {
+    max-width: 90vw;
+    width: 340px;
+    padding: 1.5rem;
+}
+.shift-details-modal__title {
+    font-size: 1.1rem;
+    margin-bottom: 1.25rem;
+    margin-top: 0.25rem;
+    color: #111827;
+    text-align: center;
+}
+.shift-details-modal__body {
+    margin-bottom: 1.25rem;
+}
+.shift-details-modal__row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+    font-size: 0.95rem;
+}
+.shift-details-modal__label {
+    color: #6b7280;
+    flex-shrink: 0;
+}
+.shift-details-modal__actions {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.5rem;
+    justify-content: center;
+    padding: 1.25rem 0 0.5rem;
+    margin-top: 1rem;
+}
+.shift-details-reliever-form {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.5rem;
+    width: 100%;
+    max-width: 280px;
+    text-align: center;
+}
+.shift-details-reliever-form label {
+    display: block;
+    width: 100%;
+    text-align: center;
+    margin-bottom: 0.25rem;
+}
+.shift-details-reliever-form select {
+    width: 100%;
+    padding: 0.65rem 0.75rem;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+    font-family: inherit;
+    margin-top: 0.25rem;
+}
+.shift-details-reliever-form .submit-btn {
+    align-self: center;
+    width: auto;
+    min-width: 8rem;
+    justify-content: center;
+}
+.shift-details-pending-msg {
+    color: #6b7280;
+    font-size: 0.9rem;
+    margin: 0;
+}
+.shift-details-modal__actions .submit-btn {
+    text-align: center;
+    min-width: 0;
+}
+.shift-details-modal__actions .submit-btn.shift-details-btn--disabled,
+.shift-details-modal__actions .submit-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* No-shift row */
+.mobile-no-shift {
+    color: #9ca3af;
+    font-size: 0.82rem;
+    padding: 0.4rem 0.25rem 0.5rem;
+    font-style: italic;
+}
+
+/* Sign-in prompt */
+.mobile-sign-in-msg {
+    text-align: center;
+    color: #9ca3af;
+    padding: 3rem 1rem;
+    font-size: 0.95rem;
+}
+
+/* Admin add-shift button */
+.mobile-add-btn {
+    display: block;
+    width: 100%;
+    padding: 0.7rem;
+    background: none;
+    border: 2px dashed #d1d5db;
+    border-radius: 10px;
+    color: #9ca3af;
+    font-size: 0.85rem;
+    cursor: pointer;
+    margin-top: 0.85rem;
+    transition: all 0.15s ease;
+}
+
+.mobile-add-btn:hover {
+    border-color: #2b9348;
+    color: #2b9348;
+}
+
+/* Late time-in colours */
+.late-orange { color: #f59e0b !important; }
+.late-red    { color: #ef4444 !important; }
 
 /* Loading placeholder styles */
 .loading-placeholder {
@@ -1948,4 +2228,52 @@ button:hover {
 @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
+}
+
+/* Toast notification */
+.schedule-toast {
+    position: fixed;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%) translateY(100%);
+    background: #2b9348;
+    color: white;
+    padding: 0.75rem 1.25rem;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 10000;
+    opacity: 0;
+    visibility: hidden;
+    transition: transform 0.3s ease, opacity 0.3s ease, visibility 0.3s;
+}
+.schedule-toast.show {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+    visibility: visible;
+}
+.schedule-toast.error {
+    background: #dc3545;
+}
+.submit-btn.is-loading {
+    pointer-events: none;
+    opacity: 0.8;
+}
+.submit-btn .btn-spinner {
+    display: none;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255,255,255,0.4);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-right: 0.5rem;
+    flex-shrink: 0;
+}
+.submit-btn.is-loading .btn-spinner {
+    display: inline-block;
+}
+.submit-btn.is-loading .btn-text {
+    display: none;
 }

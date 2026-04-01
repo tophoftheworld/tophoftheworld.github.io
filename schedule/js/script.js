@@ -1,25 +1,13 @@
 // Import Firebase modules
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
-import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, setDoc, query, where, deleteDoc, addDoc } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, setDoc, query, where, orderBy, deleteDoc, addDoc, Timestamp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 
 // Read-only mode detection
-// Check if we're in an iframe (accessed through admin panel) or directly
+// Admin access requires explicit ?admin=true parameter — being in an iframe is not enough,
+// because both the admin portal and the employee portal use iframes.
 const isReadOnlyMode = () => {
-    // If we're in an iframe, we have admin access
-    if (window.self !== window.top) {
-        return false;
-    }
-    
-    // If accessed directly, check URL parameters
     const urlParams = new URLSearchParams(window.location.search);
-    const adminMode = urlParams.get('admin');
-    
-    // If admin=true parameter is present, allow admin access
-    if (adminMode === 'true') {
-        return false;
-    }
-    
-    // Otherwise, it's read-only mode
+    if (urlParams.get('admin') === 'true') return false;
     return true;
 };
 
@@ -74,6 +62,8 @@ const db = getFirestore(app);
 
 // Employee data - loaded from Firebase (id -> name)
 let employees = {};
+/** Pending substitution requests for current user (employeeId), used for badges and modal state */
+let pendingSubstitutionRequests = [];
 // Profile photo URLs for scheduled shift avatars (id -> photoUrl)
 let employeePhotoUrls = {};
 // Employee IDs that are archived - excluded from schedule dropdown only (names still shown on existing shifts)
@@ -133,9 +123,13 @@ function isLateTimeIn(shiftType, actualTimeIn) {
 }
 
 // Branch configuration - will be loaded from Firebase
+// Generic keys are seeded here so legacy shifts (branch='popup' etc.) are always matched
 let BRANCHES = {
     podium: "Podium",
-    smnorth: "SM North"
+    smnorth: "SM North",
+    popup: "Pop-up",
+    workshop: "Workshop",
+    other: "Other Events"
 };
 
 let allBranches = []; // Will be loaded from Firebase
@@ -149,6 +143,10 @@ let selectedEmployee = '';
 let localChanges = false;
 let isDeletingShifts = false;
 let currentMobileDay = new Date(); // For mobile daily view
+let currentMobileMode = 'branch'; // 'branch' or 'mySchedule'
+let currentMobileBranchKey = 'podium';
+let currentMobileEmployeeId = null;
+let mobileCalExpanded = false;
 
 // DOM elements
 const prevWeekBtn = document.getElementById('prevWeekBtn');
@@ -167,15 +165,9 @@ const employeeSchedule = document.getElementById('employeeSchedule');
 const syncBtn = document.getElementById('syncBtn');
 const syncStatus = document.getElementById('syncStatus');
 
-// Mobile DOM elements
+// Mobile DOM element (resolved after DOM ready via initMobileView)
 const mobileDailyView = document.getElementById('mobileDailyView');
-const prevDayBtn = document.getElementById('prevDayBtn');
-const nextDayBtn = document.getElementById('nextDayBtn');
-const mobileMonthYear = document.getElementById('mobileMonthYear');
-const mobileDayStrip = document.getElementById('mobileDayStrip');
-const mobileDailySchedule = document.getElementById('mobileDailySchedule');
-
-// Debug mobile elements
+let mobileWeekStrip, mobileScheduleContent, mobileBranchSelect, mobileEmployeeSelect, mobileEmployeeSelectLabel, mobileMonthTitle, mobileCalChevron, mobileFullCalendar, mobileCalGrid;
 
 // Modal elements
 const shiftModal = document.getElementById('shiftModal');
@@ -206,18 +198,23 @@ const thisDateOnlyBtn = document.getElementById('thisDateOnlyBtn');
 const thisAndFutureBtn = document.getElementById('thisAndFutureBtn');
 const cancelRecurringBtn = document.getElementById('cancelRecurringBtn');
 
+// Shift details modal (My Schedule card tap)
+const shiftDetailsModal = document.getElementById('shiftDetailsModal');
+const closeShiftDetailsModalBtn = document.getElementById('closeShiftDetailsModal');
+/** Set when opening shift details for a scheduled shift; used by Submit request handler */
+let currentShiftDetailsForRequest = null;
+
 document.addEventListener('DOMContentLoaded', async function () {
     hideAdminControls(); // Hide admin controls in read-only mode
     initSchedulingApp();
-    setupEventListeners(); 
-    setupMobileEventListeners();
+    setupEventListeners();
     setCurrentWeek();
     await loadBranchesFromFirebase(); // Load branches first
     await loadAllEmployees(); // Load employees
     loadEmployeeNicknames();
     updateAttendanceModeIndicator(); // Initialize attendance mode indicator
     loadScheduleData();
-    updateMobileView(); // Initialize mobile view
+    initMobileView(); // Initialize new mobile view
 });
 
 function initSchedulingApp() {
@@ -267,6 +264,17 @@ function setupEventListeners() {
     });
 
     branchForm.addEventListener('submit', handleBranchSubmit);
+
+    if (closeShiftDetailsModalBtn) closeShiftDetailsModalBtn.addEventListener('click', closeShiftDetailsModal);
+    if (shiftDetailsModal) shiftDetailsModal.addEventListener('click', (e) => { if (e.target === shiftDetailsModal) closeShiftDetailsModal(); });
+    const reqRelieverBtn = document.getElementById('shiftDetailsRequestSubstitutionBtn');
+    if (reqRelieverBtn) reqRelieverBtn.addEventListener('click', onRequestRelieverClick);
+    const relieverSelect = document.getElementById('shiftDetailsRelieverSelect');
+    const submitRequestBtn = document.getElementById('shiftDetailsSubmitRequestBtn');
+    if (relieverSelect && submitRequestBtn) {
+        relieverSelect.addEventListener('change', () => { submitRequestBtn.disabled = !relieverSelect.value; });
+        submitRequestBtn.addEventListener('click', submitSubstitutionRequest);
+    }
 
     // Branch dropdown change handler
     shiftBranch.addEventListener('change', handleBranchDropdownChange);
@@ -431,6 +439,11 @@ function setupEventListeners() {
     // Form events
     shiftForm.addEventListener('submit', handleShiftSubmit);
     shiftType.addEventListener('change', handleShiftTypeChange);
+    shiftDate.addEventListener('change', () => {
+        if (shiftModal.style.display === 'flex') {
+            populateEmployeeDropdownForDate(shiftDate.value);
+        }
+    });
     if (shiftRole) shiftRole.addEventListener('change', handleShiftRoleChange);
     deleteShiftBtn.addEventListener('click', handleShiftDelete);
 
@@ -621,10 +634,7 @@ function getDataForDate(dateStr, branchKey, shiftType) {
             // Show all employees who worked on this day and branch, regardless of shift type
             const actualShifts = Object.entries(actualData)
                 .filter(([employeeId, attendance]) => {
-                    // Convert branch display name to branch key for comparison
-                    const branchDisplayName = attendance.branch;
-                    const branchKeyFromDisplayName = Object.keys(BRANCHES).find(key => BRANCHES[key] === branchDisplayName);
-                    const matchesBranch = branchKeyFromDisplayName === branchKey;
+                    const matchesBranch = getDisplayNameCategory(attendance.branch) === branchKey;
                     const shiftCategory = categorizeShiftByTime(attendance.shift, attendance.timeIn);
                     const matchesShiftType = shiftCategory === shiftType;
                     return matchesBranch && matchesShiftType;
@@ -706,18 +716,18 @@ function getDataForDate(dateStr, branchKey, shiftType) {
 
         // Role-based rows: show only shifts with that role (scheduled only; no role on actual)
         if (shiftType === 'deliveries') {
-            const byRole = allShiftsForDay.filter(shift => shift.branch === branchKey && shift.role === 'deliveries');
+            const byRole = allShiftsForDay.filter(shift => getBranchCategory(shift.branch) === branchKey && shift.role === 'deliveries');
             return { type: 'scheduled', data: byRole, loading: false };
         }
         if (shiftType === 'custom') {
-            const byRole = allShiftsForDay.filter(shift => shift.branch === branchKey && shift.role === 'custom');
+            const byRole = allShiftsForDay.filter(shift => getBranchCategory(shift.branch) === branchKey && shift.role === 'custom');
             return { type: 'scheduled', data: byRole, loading: false };
         }
 
         const scheduledShifts = allShiftsForDay.filter(shift => {
             const shiftStartTime = getShiftStartTime(shift);
             const categorizedType = categorizeShiftByTime(shift.type, shiftStartTime);
-            const matchesBranch = shift.branch === branchKey;
+            const matchesBranch = getBranchCategory(shift.branch) === branchKey;
             const matchesType = categorizedType === shiftType;
             const isBarista = !shift.role || shift.role === 'barista';
             return matchesBranch && matchesType && isBarista;
@@ -731,9 +741,7 @@ function getDataForDate(dateStr, branchKey, shiftType) {
             // Get actual attendance for this branch/shift combination
             const actualShifts = Object.entries(actualData)
                 .filter(([employeeId, attendance]) => {
-                    const branchDisplayName = attendance.branch;
-                    const branchKeyFromDisplayName = Object.keys(BRANCHES).find(key => BRANCHES[key] === branchDisplayName);
-                    const matchesBranch = branchKeyFromDisplayName === branchKey;
+                    const matchesBranch = getDisplayNameCategory(attendance.branch) === branchKey;
                     const shiftCategory = categorizeShiftByTime(attendance.shift, attendance.timeIn);
                     const matchesShiftType = shiftCategory === shiftType;
                     return matchesBranch && matchesShiftType;
@@ -816,18 +824,18 @@ function getDataForDate(dateStr, branchKey, shiftType) {
         const allShiftsForDay = getAllShiftsForDay(dateStr);
 
         if (shiftType === 'deliveries') {
-            const byRole = allShiftsForDay.filter(shift => shift.branch === branchKey && shift.role === 'deliveries');
+            const byRole = allShiftsForDay.filter(shift => getBranchCategory(shift.branch) === branchKey && shift.role === 'deliveries');
             return { type: 'scheduled', data: byRole, loading: false };
         }
         if (shiftType === 'custom') {
-            const byRole = allShiftsForDay.filter(shift => shift.branch === branchKey && shift.role === 'custom');
+            const byRole = allShiftsForDay.filter(shift => getBranchCategory(shift.branch) === branchKey && shift.role === 'custom');
             return { type: 'scheduled', data: byRole, loading: false };
         }
 
         const scheduledShifts = allShiftsForDay.filter(shift => {
             const shiftStartTime = getShiftStartTime(shift);
             const categorizedType = categorizeShiftByTime(shift.type, shiftStartTime);
-            const matchesBranch = shift.branch === branchKey;
+            const matchesBranch = getBranchCategory(shift.branch) === branchKey;
             const matchesType = categorizedType === shiftType;
             const isBarista = !shift.role || shift.role === 'barista';
             return matchesBranch && matchesType && isBarista;
@@ -879,7 +887,7 @@ async function loadActualAttendanceForDate(dateStr) {
             
             // Also update mobile view if it's showing this date
             if (mobileDailyView && formatDate(currentMobileDay) === dateStr) {
-                updateMobileView();
+                renderMobileView();
             }
             return;
         }
@@ -912,7 +920,7 @@ async function loadActualAttendanceForDate(dateStr) {
         
         // Also update mobile view if it's showing this date
         if (mobileDailyView && formatDate(currentMobileDay) === dateStr) {
-            updateMobileView();
+            renderMobileView();
         }
         
     } catch (error) {
@@ -1649,6 +1657,8 @@ function toggleView(view) {
 }
 
 function renderCurrentView() {
+    updateBranchFilterOptions(); // Keep filter in sync with current week's activity
+
     if (currentView === 'calendar') {
         renderCalendarView();
     } else if (currentView === 'shift') {
@@ -1658,7 +1668,7 @@ function renderCurrentView() {
     }
     
     // Also update mobile view if it exists
-    updateMobileView();
+    renderMobileView();
     
     // Show/hide copy previous week button based on whether current week is empty
     updateCopyPreviousWeekButton();
@@ -1675,6 +1685,49 @@ function populateEmployeeDropdowns() {
         .join('');
 
     shiftEmployee.innerHTML = '<option value="">Select employee</option>' + employeeOptions;
+}
+
+// Employee dropdown with date-aware grouping: "Available" vs "Already scheduled" for the given date
+function populateEmployeeDropdownForDate(dateStr) {
+    const activeEntries = Object.entries(employees).filter(([id]) => !archivedEmployeeIds.has(id));
+    if (activeEntries.length === 0) {
+        shiftEmployee.innerHTML = '<option value="">Select employee</option>';
+        return;
+    }
+    const getDisplayName = (id, name) => (employeeNicknames[id] || name?.split(' ')[0] || name || id);
+
+    if (!dateStr || dateStr.length < 10 || isNaN(new Date(dateStr + 'T00:00:00').getTime())) {
+        populateEmployeeDropdowns();
+        return;
+    }
+
+    const shifts = getAllShiftsForDay(dateStr);
+    const employeeIdsWithShift = new Set(shifts.map(s => s.employeeId).filter(Boolean));
+
+    const available = activeEntries.filter(([id]) => !employeeIdsWithShift.has(id));
+    const alreadyScheduled = activeEntries.filter(([id]) => employeeIdsWithShift.has(id));
+
+    let html = '<option value="">Select employee</option>';
+    if (available.length > 0) {
+        html += '<optgroup label="Available">';
+        available.forEach(([id, name]) => {
+            html += `<option value="${id}">${getDisplayName(id, name)}</option>`;
+        });
+        html += '</optgroup>';
+    }
+    if (alreadyScheduled.length > 0) {
+        html += '<optgroup label="Already scheduled">';
+        alreadyScheduled.forEach(([id, name]) => {
+            html += `<option value="${id}">${getDisplayName(id, name)}</option>`;
+        });
+        html += '</optgroup>';
+    }
+
+    const previousValue = shiftEmployee.value;
+    shiftEmployee.innerHTML = html;
+    if (previousValue && [...shiftEmployee.options].some(o => o.value === previousValue)) {
+        shiftEmployee.value = previousValue;
+    }
 }
 
 function updateBranchDropdowns() {
@@ -1730,19 +1783,37 @@ function updateBranchDropdowns() {
     }
 
     // Update branch filter dropdown
-    const branchFilter = document.getElementById('branchFilter');
-    if (branchFilter) {
-        const currentValue = branchFilter.value;
-        branchFilter.innerHTML = '<option value="all">All Locations</option>';
+    updateBranchFilterOptions();
+}
 
-        Object.entries(BRANCHES).forEach(([key, name]) => {
-            const option = document.createElement('option');
-            option.value = key;
-            option.textContent = name;
-            branchFilter.appendChild(option);
-        });
+// Attendance-app login categories shown in the location filter
+const LOGIN_CATEGORIES = [
+    { value: 'podium',   text: 'Podium' },
+    { value: 'smnorth',  text: 'SM North' },
+    { value: 'popup',    text: 'Pop-up' },
+    { value: 'workshop', text: 'Workshop' },
+    { value: 'other',    text: 'Other Events' },
+];
 
-        branchFilter.value = currentValue;
+function updateBranchFilterOptions() {
+    const branchFilterEl = document.getElementById('branchFilter');
+    if (!branchFilterEl) return;
+
+    const currentValue = branchFilterEl.value;
+    branchFilterEl.innerHTML = '<option value="all">All Locations</option>';
+
+    LOGIN_CATEGORIES.forEach(cat => {
+        const option = document.createElement('option');
+        option.value = cat.value;
+        option.textContent = cat.text;
+        branchFilterEl.appendChild(option);
+    });
+
+    // Restore selection if still available, else fall back to 'all'
+    if ([...branchFilterEl.options].some(o => o.value === currentValue)) {
+        branchFilterEl.value = currentValue;
+    } else {
+        branchFilterEl.value = 'all';
     }
 }
 
@@ -1894,9 +1965,7 @@ async function renderShiftView() {
 
 
     // Apply branch filter to determine which branches to show
-    const allBranchKeys = Object.keys(BRANCHES);
-    const filter = branchFilter.value;
-    const shiftViewBranches = filter === 'all' ? allBranchKeys : [filter];
+    const shiftViewBranches = getFilteredBranches();
 
     // Simplified shift categories
     const shiftCategories = ['opening', 'midshift', 'closing'];
@@ -1931,56 +2000,25 @@ async function renderShiftView() {
         const branchName = BRANCHES[branchKey];
         const isDefaultBranch = branchKey === 'podium' || branchKey === 'smnorth';
 
-        // Check if this branch has ANY shifts at all this week
+        // Check if this branch has ANY visible activity this week:
+        // - past dates: only actual logins count (scheduled data on past days is ignored)
+        // - today/future dates: scheduled shifts count
         let hasAnyShifts = false;
         for (const date of weekDates) {
             const dateStr = formatDate(date);
             const isPastDate = date < today;
 
-            let shiftsForDay = [];
-
-            if (isPastDate && currentPastDaysMode === 'actual') {
-                // Use cached actual attendance
+            if (isPastDate) {
+                // Only actual logins make a past date count
                 const actualAttendance = getActualAttendanceForDate(dateStr);
-                const actualShifts = Object.entries(actualAttendance)
-                    .filter(([_, attendance]) => attendance.branch === branchName)
-                    .map(([employeeId, attendance]) => ({
-                        id: `actual_${employeeId}_${dateStr}`,
-                        employeeId: employeeId,
-                        branch: branchKey,
-                        type: categorizeShiftByTime(attendance.shift, attendance.timeIn),
-                        customStart: attendance.timeIn ? removeSecondsFromTime(attendance.timeIn) : null,
-                        customEnd: attendance.timeOut ? removeSecondsFromTime(attendance.timeOut) : null,
-                        timeInPhoto: attendance.timeInPhoto,
-                        timeOutPhoto: attendance.timeOutPhoto,
-                        isActual: true
-                    }));
-                
-                // Store attendance data in separate attendanceData structure
-                actualShifts.forEach(shift => {
-                    storeAttendanceDataLocally(shift);
-                });
-                
-                // Sort actual shifts by time in (earliest first)
-                shiftsForDay = actualShifts.sort((a, b) => {
-                    const timeA = a.customStart || a.timeIn || '00:00';
-                    const timeB = b.customStart || b.timeIn || '00:00';
-                    
-                    // Convert to 24-hour format for comparison
-                    const minutesA = timeToMinutes(timeA);
-                    const minutesB = timeToMinutes(timeB);
-                    
-                    return minutesA - minutesB;
-                });
+                const hasLogin = Object.values(actualAttendance).some(a =>
+                    getDisplayNameCategory(a.branch) === getBranchCategory(branchKey)
+                );
+                if (hasLogin) { hasAnyShifts = true; break; }
             } else {
-                // Use scheduled shifts for today and future dates
-                const allShiftsForDay = getAllShiftsForDay(dateStr);
-                shiftsForDay = allShiftsForDay.filter(shift => shift.branch === branchKey);
-            }
-
-            if (shiftsForDay.length > 0) {
-                hasAnyShifts = true;
-                break;
+                // Today and future: scheduled shifts count
+                const scheduled = getAllShiftsForDay(dateStr).filter(s => getBranchCategory(s.branch) === branchKey);
+                if (scheduled.length > 0) { hasAnyShifts = true; break; }
             }
         }
 
@@ -2015,8 +2053,7 @@ async function renderShiftView() {
                     // Check for actual attendance data
                     const actualData = getActualAttendanceForDate(dateStr);
                     Object.values(actualData).forEach(attendance => {
-                        const branchKeyFromDisplayName = Object.keys(BRANCHES).find(key => BRANCHES[key] === attendance.branch);
-                        if (branchKeyFromDisplayName === branchKey) {
+                        if (getDisplayNameCategory(attendance.branch) === branchKey) {
                             const category = categorizeShiftByTime(attendance.shift, attendance.timeIn);
                             categoriesWithActualData.add(category);
                         }
@@ -2025,7 +2062,7 @@ async function renderShiftView() {
                     // Check for scheduled shifts for today and future dates
                     const allShiftsForDay = getAllShiftsForDay(dateStr);
                     allShiftsForDay.forEach(shift => {
-                        if (shift.branch === branchKey) {
+                        if (getBranchCategory(shift.branch) === branchKey) {
                             const shiftStartTime = getShiftStartTime(shift);
                             const category = categorizeShiftByTime(shift.type, shiftStartTime);
                             categoriesWithScheduledData.add(category);
@@ -2059,7 +2096,7 @@ async function renderShiftView() {
                     const dateStr = formatDate(date);
                     const allShiftsForDay = getAllShiftsForDay(dateStr);
                     const shiftsForCategory = allShiftsForDay.filter(shift =>
-                        shift.branch === branchKey &&
+                        getBranchCategory(shift.branch) === branchKey &&
                         categorizeShiftByTime(shift.type, getShiftStartTime(shift)) === category
                     );
 
@@ -2079,7 +2116,7 @@ async function renderShiftView() {
                 for (const date of weekDates) {
                     const dateStr = formatDate(date);
                     const allShiftsForDay = getAllShiftsForDay(dateStr);
-                    if (allShiftsForDay.some(shift => shift.branch === branchKey && shift.role === roleCategory)) {
+                    if (allShiftsForDay.some(shift => getBranchCategory(shift.branch) === branchKey && shift.role === roleCategory)) {
                         hasRoleThisWeek = true;
                         break;
                     }
@@ -2372,8 +2409,8 @@ function getShiftsForBranchAndType(dateStr, branchKey, shiftType) {
     // Apply branch filter
     const filteredShifts = allShifts.filter(shift => {
         const filter = branchFilter.value;
-        const matchesBranch = filter === 'all' || shift.branch === filter;
-        const matchesShiftParams = shift.branch === branchKey && shift.type === shiftType;
+        const matchesBranch = filter === 'all' || getBranchCategory(shift.branch) === filter;
+        const matchesShiftParams = getBranchCategory(shift.branch) === branchKey && shift.type === shiftType;
         return matchesBranch && matchesShiftParams;
     });
 
@@ -2453,7 +2490,7 @@ function generateDaySlots(dateStr) {
 
     const filteredShifts = shifts.filter(shift => {
         const filter = branchFilter.value;
-        return filter === 'all' || shift.branch === filter;
+        return filter === 'all' || getBranchCategory(shift.branch) === filter;
     });
 
     let slotsHTML = '';
@@ -2902,11 +2939,49 @@ function getWeekDates() {
 
 function getFilteredBranches() {
     const filter = branchFilter.value;
-    if (filter === 'all') {
-        return Object.keys(BRANCHES);
-    } else {
-        return [filter];
+    // Always work in terms of the 5 attendance-app categories — never expose named Firebase branches
+    const categoryKeys = LOGIN_CATEGORIES.map(c => c.value);
+    if (filter === 'all') return categoryKeys;
+    return [filter];
+}
+
+// Maps a specific branch key (e.g. 'popup-ayala') to its attendance-app category
+function getBranchCategory(branchKey) {
+    if (branchKey === 'podium') return 'podium';
+    if (branchKey === 'smnorth') return 'smnorth';
+    if (branchKey && branchKey.startsWith('popup')) return 'popup';
+    if (branchKey && branchKey.startsWith('workshop')) return 'workshop';
+    return 'other';
+}
+
+// Maps an attendance display-name (e.g. 'Pop-up') to its category key
+function getDisplayNameCategory(displayName) {
+    const key = Object.keys(BRANCHES).find(k => BRANCHES[k] === displayName);
+    if (key) return getBranchCategory(key);
+    const lower = (displayName || '').toLowerCase();
+    if (lower === 'podium') return 'podium';
+    if (lower === 'sm north' || lower === 'smnorth') return 'smnorth';
+    if (lower.includes('pop-up') || lower.includes('popup')) return 'popup';
+    if (lower.includes('workshop')) return 'workshop';
+    return 'other';
+}
+
+// Returns true if any scheduled shift OR actual login for the week belongs to the given category
+function hasBranchCategoryThisWeek(category) {
+    const weekDates = getWeekDates();
+    for (const date of weekDates) {
+        const dateStr = formatDate(date);
+
+        // Check scheduled shifts
+        const shifts = getAllShiftsForDay(dateStr);
+        if (shifts.some(s => getBranchCategory(s.branch) === category)) return true;
+
+        // Check actual attendance/login records
+        const actual = getActualAttendanceForDate(dateStr);
+        const hasLogin = Object.values(actual).some(a => a.branch && getDisplayNameCategory(a.branch) === category);
+        if (hasLogin) return true;
     }
+    return false;
 }
 
 function formatDate(date) {
@@ -2944,6 +3019,30 @@ function getEmployeeShiftsForDay(employeeId, dateStr) {
 function getWeekKeyForDate(date) {
     const weekStart = getWeekStart(date);
     return formatDate(weekStart);
+}
+
+/** Fetch pending substitution requests for current user; updates pendingSubstitutionRequests and returns the array */
+async function fetchPendingSubstitutionRequests() {
+    if (!currentMobileEmployeeId || !window.db) return [];
+    try {
+        const ref = collection(db, 'substitution_requests');
+        const q = query(ref, where('employeeId', '==', currentMobileEmployeeId), where('status', '==', 'pending'));
+        const snap = await getDocs(q);
+        pendingSubstitutionRequests = [];
+        snap.forEach(d => pendingSubstitutionRequests.push({ id: d.id, ...d.data() }));
+        return pendingSubstitutionRequests;
+    } catch (e) {
+        console.error('fetchPendingSubstitutionRequests:', e);
+        return [];
+    }
+}
+
+/** True if there is a pending substitution request for this shift (same employee, date, scheduleShiftId) */
+function hasPendingSubstitutionForShift(dateStr, scheduleShiftId) {
+    if (!scheduleShiftId || !currentMobileEmployeeId) return false;
+    return pendingSubstitutionRequests.some(
+        r => r.date === dateStr && r.scheduleShiftId === scheduleShiftId && r.employeeId === currentMobileEmployeeId
+    );
 }
 
 function getAllShiftsForDay(dateStr) {
@@ -3583,6 +3682,10 @@ async function openShiftModal(mode, data) {
                 customEndTime.value = shift.customEnd;
             }
         }
+    }
+
+    if (mode === 'add' || mode === 'edit') {
+        populateEmployeeDropdownForDate(shiftDate.value);
     }
 
     shiftModal.style.display = 'flex';
@@ -4684,317 +4787,711 @@ window.debugBranches = function() {
 
 }
 
-// Mobile View Functions
-function setupMobileEventListeners() {
-    
-    if (prevDayBtn) {
-        prevDayBtn.addEventListener('click', () => {
-            changeMobileDay(-1);
-        });
-    }
-    if (nextDayBtn) {
-        nextDayBtn.addEventListener('click', () => {
-            changeMobileDay(1);
-        });
-    }
+// ============================================================
+// Mobile View — Calendar + Branch/My Schedule modes
+// ============================================================
+
+const MOBILE_ACTUAL_PLACEHOLDER = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iMjAiIGZpbGw9IiNGRkZGRkYiIHN0cm9rZT0iI0NDQ0NDQyIgc3Ryb2tlLXdpZHRoPSIyIi8+CjxwYXRoIGQ9Ik0yMCAxMkMxNi42ODYzIDEyIDE0IDE0LjY4NjMgMTQgMThDMTQgMjEuMzEzNyAxNi42ODYzIDI0IDIwIDI0QzIzLjMxMzcgMjQgMjYgMjEuMzEzNyAyNiAxOEMyNiAxNC42ODYzIDIzLjMxMzcgMTIgMjAgMTJaIiBmaWxsPSIjQ0NDQ0NDIi8+CjxwYXRoIGQ9Ik0xMCAzNkMxMCAzMS41ODE3IDEzLjU4MTcgMjggMTggMjhIMjJDMjYuNDE4MyAyOCAzMCAzMS41ODE3IDMwIDM2VjM4SDEwVjM2WiIgZmlsbD0iI0ZGRkZGRiIvPgo8L3N2Zz4K';
+const MOBILE_SCHED_PLACEHOLDER = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iMjAiIGZpbGw9IiNGRkZGRkYiIHN0cm9rZT0iI0NDQ0NDQyIgc3Ryb2tlLXdpZHRoPSIyIi8+CjxwYXRoIGQ9Ik0yMCAxMkMxNi42ODYzIDEyIDE0IDE0LjY4NjMgMTQgMThDMTQgMjEuMzEzNyAxNi42ODYzIDI0IDIwIDI0QzIzLjMxMzcgMjQgMjYgMjEuMzEzNyAyNiAxOEMyNiAxNC42ODYzIDIzLjMxMzcgMTIgMjAgMTJaIiBmaWxsPSIjRkZGRkZGIi8+CjxwYXRoIGQ9Ik0xMCAzNkMxMCAzMS41ODE3IDEzLjU4MTcgMjggMTggMjhIMjJDMjYuNDE4MyAyOCAzMCAzMS41ODE3IDMwIDM2VjM4SDEwVjM2WiIgZmlsbD0iI0ZGRkZGRiIvPgo8L3N2Zz4K';
+
+function getMobileWeekStart(date) {
+    const d = new Date(date);
+    const day = d.getDay(); // 0=Sun
+    const diff = (day === 0) ? -6 : 1 - day;
+    d.setDate(d.getDate() + diff);
+    d.setHours(0, 0, 0, 0);
+    return d;
 }
 
-function changeMobileDay(direction) {
-    // Move by weeks instead of days
-    currentMobileDay.setDate(currentMobileDay.getDate() + (direction * 7));
-    updateMobileView();
+function changeMobileWeek(direction) {
+    const d = new Date(currentMobileDay);
+    d.setDate(d.getDate() + (direction * 7));
+    currentMobileDay = d;
+    renderMobileHeader();
+    renderMobileView();
 }
 
-function updateMobileView() {
-    if (!mobileDailyView) {
+function initMobileView() {
+    // Resolve DOM refs
+    mobileWeekStrip = document.getElementById('mobileWeekStrip');
+    mobileScheduleContent = document.getElementById('mobileScheduleContent');
+    mobileBranchSelect = document.getElementById('mobileBranchSelect');
+    mobileMonthTitle = document.getElementById('mobileMonthTitle');
+    mobileCalChevron = document.getElementById('mobileCalChevron');
+    mobileFullCalendar = document.getElementById('mobileFullCalendar');
+    mobileCalGrid = document.getElementById('mobileCalGrid');
+    mobileEmployeeSelect = document.getElementById('mobileEmployeeSelect');
+    mobileEmployeeSelectLabel = document.getElementById('mobileEmployeeSelectLabel');
 
-        return;
-    }
-    
-    updateMobileDayStrip();
-    updateMobileMonthYear();
-    renderMobileDailySchedule();
-}
-
-function updateMobileDayStrip() {
-    if (!mobileDayStrip) return;
-    
-    const today = new Date();
-    const startOfWeek = new Date(currentMobileDay);
-    startOfWeek.setDate(currentMobileDay.getDate() - currentMobileDay.getDay() + 1); // Start from Monday
-    
-    mobileDayStrip.innerHTML = '';
-    
-    for (let i = 0; i < 7; i++) {
-        const day = new Date(startOfWeek);
-        day.setDate(startOfWeek.getDate() + i);
-        
-        const dayItem = document.createElement('div');
-        dayItem.className = 'mobile-day-item';
-        
-        const dayName = day.toLocaleDateString('en-US', { weekday: 'short' });
-        const dayNumber = day.getDate();
-        
-        dayItem.innerHTML = `${dayName}<br><span class="day-number">${dayNumber}</span>`;
-        
-        // Highlight current day
-        if (day.toDateString() === currentMobileDay.toDateString()) {
-            dayItem.classList.add('active');
+    // Resolve current employee: URL (debug) > parent portal > localStorage (signed-in user)
+    const urlParams = new URLSearchParams(window.location.search);
+    let signedInEmployeeId = null;
+    try {
+        if (window.parent && window.parent !== window && typeof window.parent.getCurrentUserData === 'function') {
+            const parentUserData = window.parent.getCurrentUserData();
+            if (parentUserData) signedInEmployeeId = parentUserData.employeeCode || parentUserData.username || null;
         }
-        
-        // Add click handler to select day
-        dayItem.addEventListener('click', (event) => {
-            event.preventDefault();
-            event.stopPropagation(); // Prevent event bubbling to navigation buttons
-            event.stopImmediatePropagation(); // Stop all other event listeners
-            currentMobileDay = new Date(day);
-            
-            // Update active state for all day items
-            const allDayItems = mobileDayStrip.querySelectorAll('.mobile-day-item');
-            allDayItems.forEach(item => item.classList.remove('active'));
-            dayItem.classList.add('active');
-            
-            // Only update the schedule, not the day strip (to avoid week changes)
-            updateMobileMonthYear();
-            renderMobileDailySchedule();
-            return false; // Additional prevention
+    } catch (e) {}
+    if (!signedInEmployeeId) signedInEmployeeId = localStorage.getItem("loggedInUser") || null;
+    currentMobileEmployeeId = urlParams.get('employeeId') || signedInEmployeeId || null;
+
+    // Populate branch dropdown
+    if (mobileBranchSelect) {
+        LOGIN_CATEGORIES.forEach(cat => {
+            const opt = document.createElement('option');
+            opt.value = cat.value;
+            opt.textContent = cat.text;
+            mobileBranchSelect.appendChild(opt);
         });
-        
-        mobileDayStrip.appendChild(dayItem);
-    }
-}
-
-function updateMobileMonthYear() {
-    if (!mobileMonthYear) return;
-    
-    const monthYear = currentMobileDay.toLocaleDateString('en-US', { 
-        month: 'long', 
-        year: 'numeric' 
-    });
-    mobileMonthYear.textContent = monthYear;
-}
-
-function renderMobileDailySchedule() {
-    if (!mobileDailySchedule) {
-
-        return;
-    }
-    
-    const selectedDate = formatDate(currentMobileDay);
-    
-    // Clear existing content
-    mobileDailySchedule.innerHTML = '';
-    
-    // Create two main columns: Podium and SM North
-    const podiumColumn = document.createElement('div');
-    podiumColumn.className = 'mobile-location-column';
-    renderMobileLocationColumn(podiumColumn, 'podium', selectedDate);
-    mobileDailySchedule.appendChild(podiumColumn);
-    
-    const smNorthColumn = document.createElement('div');
-    smNorthColumn.className = 'mobile-location-column';
-    renderMobileLocationColumn(smNorthColumn, 'smnorth', selectedDate);
-    mobileDailySchedule.appendChild(smNorthColumn);
-    
-}
-
-function renderMobileLocationColumn(container, branchKey, dateStr) {
-    const branchName = BRANCHES[branchKey];
-    const shiftCategories = ['opening', 'midshift', 'closing'];
-    
-    
-    // Add branch header with + button
-    const branchHeader = document.createElement('div');
-    branchHeader.className = 'mobile-location-header';
-    
-    // Create header content container
-    const headerContent = document.createElement('div');
-    headerContent.style.display = 'flex';
-    headerContent.style.alignItems = 'center';
-    headerContent.style.justifyContent = 'center';
-    headerContent.style.gap = '0.5rem';
-    
-    // Add branch name
-    const branchNameSpan = document.createElement('span');
-    branchNameSpan.textContent = branchName;
-    headerContent.appendChild(branchNameSpan);
-    
-    // Add + button for admin access (only in admin mode)
-    if (!READ_ONLY_MODE) {
-        const plusIcon = document.createElement('span');
-        plusIcon.className = 'mobile-plus-icon';
-        plusIcon.innerHTML = '+';
-        plusIcon.style.marginLeft = '0.5rem';
-        plusIcon.addEventListener('click', (e) => {
-            e.stopPropagation();
-            // Open modal without pre-selecting a category - let user choose
-            openShiftModalForLocation(branchKey, dateStr);
+        currentMobileBranchKey = LOGIN_CATEGORIES[0].value;
+        mobileBranchSelect.addEventListener('change', () => {
+            currentMobileBranchKey = mobileBranchSelect.value;
+            renderMobileView();
         });
-        headerContent.appendChild(plusIcon);
     }
-    
-    branchHeader.appendChild(headerContent);
-    container.appendChild(branchHeader);
-    
-    // Render each shift category for this branch
-    shiftCategories.forEach(category => {
-        const dataInfo = getDataForDate(dateStr, branchKey, category);
 
-        
-        // Always render category headers, even if no shifts exist
-        renderMobileBranchShiftsForCategory(container, branchKey, dateStr, category, dataInfo);
-    });
+    // Populate debug employee dropdown (admin-only, used in My Schedule mode)
+    function populateMobileEmployeeSelect() {
+        if (!mobileEmployeeSelect) return;
+        mobileEmployeeSelect.innerHTML = '';
+        const first = document.createElement('option');
+        first.value = '';
+        first.textContent = currentMobileEmployeeId ? '(Me)' : 'Select employee';
+        mobileEmployeeSelect.appendChild(first);
+        const ids = Object.keys(employees).filter(id => !archivedEmployeeIds.has(id)).sort();
+        ids.forEach(empId => {
+            const opt = document.createElement('option');
+            opt.value = empId;
+            const label = employeeNicknames[empId] || employees[empId] || empId;
+            opt.textContent = label;
+            if (empId === currentMobileEmployeeId) opt.selected = true;
+            mobileEmployeeSelect.appendChild(opt);
+        });
+    }
+    populateMobileEmployeeSelect();
+    if (mobileEmployeeSelect) {
+        mobileEmployeeSelect.addEventListener('change', () => {
+            const v = mobileEmployeeSelect.value;
+            currentMobileEmployeeId = v || urlParams.get('employeeId') || null;
+            renderMobileView();
+        });
+    }
+
+    // Month row toggles full calendar
+    const mobileMonthRow = document.getElementById('mobileMonthRow');
+    if (mobileMonthRow) {
+        mobileMonthRow.addEventListener('click', () => {
+            mobileCalExpanded = !mobileCalExpanded;
+            renderMobileHeader();
+        });
+    }
+
+    // Swipe left/right on week strip to change week
+    if (mobileWeekStrip) {
+        let swipeStartX = 0;
+        const SWIPE_THRESHOLD = 50;
+        mobileWeekStrip.addEventListener('touchstart', (e) => {
+            swipeStartX = e.touches[0].clientX;
+        }, { passive: true });
+        mobileWeekStrip.addEventListener('touchend', (e) => {
+            if (!e.changedTouches.length) return;
+            const deltaX = e.changedTouches[0].clientX - swipeStartX;
+            if (deltaX > SWIPE_THRESHOLD) changeMobileWeek(-1);  // swipe right -> prev week
+            else if (deltaX < -SWIPE_THRESHOLD) changeMobileWeek(1);  // swipe left -> next week
+        }, { passive: true });
+    }
+
+    // Mode toggle buttons
+    const branchBtn = document.getElementById('mobileBranchViewBtn');
+    const mySchedBtn = document.getElementById('mobileMyScheduleBtn');
+    if (branchBtn) {
+        branchBtn.addEventListener('click', () => {
+            currentMobileMode = 'branch';
+            branchBtn.classList.add('active');
+            mySchedBtn.classList.remove('active');
+            if (mobileBranchSelect) mobileBranchSelect.style.display = '';
+            if (mobileEmployeeSelect) mobileEmployeeSelect.style.display = 'none';
+            if (mobileEmployeeSelectLabel) mobileEmployeeSelectLabel.style.display = 'none';
+            renderMobileView();
+        });
+    }
+    if (mySchedBtn) {
+        mySchedBtn.addEventListener('click', () => {
+            currentMobileMode = 'mySchedule';
+            mySchedBtn.classList.add('active');
+            branchBtn.classList.remove('active');
+            if (mobileBranchSelect) mobileBranchSelect.style.display = 'none';
+            if (READ_ONLY_MODE) {
+                if (mobileEmployeeSelectLabel) mobileEmployeeSelectLabel.style.display = 'none';
+                if (mobileEmployeeSelect) mobileEmployeeSelect.style.display = 'none';
+            } else {
+                if (mobileEmployeeSelectLabel) mobileEmployeeSelectLabel.style.display = 'none'; /* debug: show dropdown only, like branch */
+                if (mobileEmployeeSelect) {
+                    mobileEmployeeSelect.style.display = '';
+                    mobileEmployeeSelect.disabled = false;
+                    populateMobileEmployeeSelect();
+                }
+            }
+            renderMobileView();
+        });
+    }
+
+    renderMobileHeader();
+    renderMobileView();
 }
 
-function renderMobileBranchShiftsForCategory(container, branchKey, dateStr, category, dataInfo) {
-    if (!container) return;
-    
-    const shiftsForCategory = dataInfo.data;
-
-    
-    // Create category container
-    const categoryContainer = document.createElement('div');
-    categoryContainer.className = 'mobile-category-container';
-    categoryContainer.dataset.category = category;
-    
-    // Create category header
-    const categoryHeader = document.createElement('div');
-    categoryHeader.className = 'mobile-category-header';
-    categoryHeader.textContent = category.charAt(0).toUpperCase() + category.slice(1);
-    
-    // Add + icon for admin access (only in admin mode)
-    if (!READ_ONLY_MODE) {
-        const plusIcon = document.createElement('span');
-        plusIcon.className = 'mobile-plus-icon';
-        plusIcon.innerHTML = '+';
-        plusIcon.addEventListener('click', (e) => {
-            e.stopPropagation();
-            addShiftForCategory(branchKey, dateStr, category);
-        });
-        categoryHeader.appendChild(plusIcon);
-    } else {
+function renderMobileHeader() {
+    if (mobileMonthTitle) {
+        mobileMonthTitle.textContent = currentMobileDay.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
     }
-    
-    categoryContainer.appendChild(categoryHeader);
-    
-    // Create shifts container
-    const shiftsContainer = document.createElement('div');
-    shiftsContainer.className = 'mobile-shifts-container';
-    
-    // Render each shift using EXACT SAME logic as desktop
-    shiftsForCategory.forEach(shift => {
-
-        const shiftBlock = document.createElement('div');
-        shiftBlock.className = 'shift-employee-block';
-        shiftBlock.dataset.shiftId = shift.id;
-        
-        const isPastDate = new Date(dateStr + 'T00:00:00') < new Date();
-        const completedClass = (shift.isActual && isPastDate) ? 'completed' : '';
-        const conflict = !shift.isActual && hasConflict(shift, dateStr);
-        
-        // Add all the same classes as desktop - EXACT SAME as desktop
-        shiftBlock.className = `shift-employee-block ${shift.type} ${conflict ? 'shift-conflict' : ''} ${completedClass} ${shift.employeeId === 'unassigned' ? 'unassigned' : ''}`;
-        
-        // Use EXACT SAME content generation as desktop
-        let shiftContent;
-        if (completedClass) {
-            const timeInDisplay = shift.customStart ? formatAttendanceTime(shift.customStart, shift.type, false) : 'N/A';
-            const timeOutDisplay = shift.customEnd ? formatAttendanceTime(shift.customEnd, shift.type, true) : '';
-            const timeOutWithDash = timeOutDisplay ? `- ${timeOutDisplay}` : '- ';
-            const lateStatus = isLateTimeIn(shift.type, timeInDisplay);
-            const timeInClass = lateStatus === 'red' ? 'late-red' : lateStatus === 'orange' ? 'late-orange' : '';
-            const photoSrc = shift.timeInPhoto || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iMjAiIGZpbGw9IiNGRkZGRkYiIHN0cm9rZT0iI0NDQ0NDQyIgc3Ryb2tlLXdpZHRoPSIyIi8+CjxwYXRoIGQ9Ik0yMCAxMkMxNi42ODYzIDEyIDE0IDE0LjY4NjMgMTQgMThDMTQgMjEuMzEzNyAxNi42ODYzIDI0IDIwIDI0QzIzLjMxMzcgMjQgMjYgMjEuMzEzNyAyNiAxOEMyNiAxNC42ODYzIDIzLjMxMzcgMTIgMjAgMTJaIiBmaWxsPSIjQ0NDQ0NDIi8+CjxwYXRoIGQ9Ik0xMCAzNkMxMCAzMS41ODE3IDEzLjU4MTcgMjggMTggMjhIMjJDMjYuNDE4MyAyOCAzMCAzMS41ODE3IDMwIDM2VjM4SDEwVjM2WiIgZmlsbD0iI0ZGRkZGRiIvPgo8L3N2Zz4K';
-            
-            shiftContent = `
-                <img src="${photoSrc}" class="shift-employee-photo" alt="Time In Photo" onerror="console.error('❌ Photo failed to load (mobile):', this.src)" />
-                <div class="shift-details-container">
-                    <div class="shift-employee">${shift.employeeId === 'unassigned' ? 'UNASSIGNED' : (employeeNicknames[shift.employeeId] || employees[shift.employeeId]?.split(' ')[0] || employees[shift.employeeId])}</div>
-                    <div class="shift-time ${timeInClass}">${timeInDisplay}</div>
-                    <div class="shift-time">${timeOutWithDash}</div>
-                </div>
-            `;
+    if (mobileCalChevron) {
+        mobileCalChevron.textContent = mobileCalExpanded ? '▲' : '▼';
+    }
+    if (mobileFullCalendar) {
+        if (mobileCalExpanded) {
+            renderMobileFullCalendar();
+            mobileFullCalendar.classList.add('expanded');
         } else {
-            // Scheduled shift: show profile photo or placeholder
-            const whitePlaceholderPhoto = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iMjAiIGZpbGw9IiNGRkZGRkYiIHN0cm9rZT0iI0NDQ0NDQyIgc3Ryb2tlLXdpZHRoPSIyIi8+CjxwYXRoIGQ9Ik0yMCAxMkMxNi42ODYzIDEyIDE0IDE0LjY4NjMgMTQgMThDMTQgMjEuMzEzNyAxNi42ODYzIDI0IDIwIDI0QzIzLjMxMzcgMjQgMjYgMjEuMzEzNyAyNiAxOEMyNiAxNC42ODYzIDIzLjMxMzcgMTIgMjAgMTJaIiBmaWxsPSIjRkZGRkZGIi8+CjxwYXRoIGQ9Ik0xMCAzNkMxMCAzMS41ODE3IDEzLjU4MTcgMjggMTggMjhIMjJDMjYuNDE4MyAyOCAzMCAzMS41ODE3IDMwIDM2VjM4SDEwVjM2WiIgZmlsbD0iI0ZGRkZGRiIvPgo8L3N2Zz4K';
-            const scheduledPhotoSrc = getEmployeeProfilePhotoUrl(shift.employeeId) || whitePlaceholderPhoto;
-            const timeDisplay = getShiftTimeDisplayForScheduled(shift);
-            shiftContent = `
-                <img src="${scheduledPhotoSrc}" class="shift-employee-photo" alt="Scheduled Shift" />
-                <div class="shift-details-container">
-                    <div class="shift-employee">${shift.employeeId === 'unassigned' ? 'UNASSIGNED' : (employeeNicknames[shift.employeeId] || employees[shift.employeeId]?.split(' ')[0] || employees[shift.employeeId])}</div>
-                    <div class="shift-time">${timeDisplay.startTime}</div>
-                    <div class="shift-time">- ${timeDisplay.endTime}</div>
-                </div>
-            `;
+            mobileFullCalendar.classList.remove('expanded');
         }
-        
-        shiftBlock.innerHTML = shiftContent;
-        
-        // Add EXACT SAME event listener as desktop
-        shiftBlock.addEventListener('mousedown', handleShiftClick);
-        
-        shiftsContainer.appendChild(shiftBlock);
-    });
-    
-    categoryContainer.appendChild(shiftsContainer);
-    container.appendChild(categoryContainer);
-    
+    }
+    renderMobileWeekStrip();
 }
 
-// Function to add shift for specific category (mobile admin feature)
+function renderMobileFullCalendar() {
+    if (!mobileCalGrid) return;
+    mobileCalGrid.innerHTML = '';
+
+    // Day-of-week headers (Mon–Sun)
+    ['M','T','W','T','F','S','S'].forEach(d => {
+        const h = document.createElement('div');
+        h.className = 'mobile-cal-day-header';
+        h.textContent = d;
+        mobileCalGrid.appendChild(h);
+    });
+
+    const year = currentMobileDay.getFullYear();
+    const month = currentMobileDay.getMonth();
+    const firstDay = new Date(year, month, 1);
+    // Convert Sunday=0 to Mon=0 offset (Monday = 0)
+    let offset = firstDay.getDay();
+    offset = (offset === 0) ? 6 : offset - 1;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    function addCell(cellDate, isAdjacent) {
+        const cell = document.createElement('div');
+        cell.className = 'mobile-cal-day-cell';
+        if (isAdjacent) cell.classList.add('adjacent');
+        cell.textContent = cellDate.getDate();
+        if (cellDate.getTime() === today.getTime()) cell.classList.add('today');
+        if (cellDate.toDateString() === currentMobileDay.toDateString()) cell.classList.add('selected');
+        const d = new Date(cellDate.getTime());
+        cell.addEventListener('click', () => {
+            currentMobileDay = d;
+            mobileCalExpanded = false;
+            renderMobileHeader();
+            renderMobileView();
+        });
+        mobileCalGrid.appendChild(cell);
+    }
+
+    // First row: last days of previous month
+    const prevMonthDate = new Date(year, month, 0);
+    const prevYear = prevMonthDate.getFullYear();
+    const prevMonth = prevMonthDate.getMonth();
+    const daysInPrevMonth = prevMonthDate.getDate();
+    for (let i = 0; i < offset; i++) {
+        const dayNum = daysInPrevMonth - offset + 1 + i;
+        const cellDate = new Date(prevYear, prevMonth, dayNum);
+        addCell(cellDate, true);
+    }
+
+    // Current month
+    for (let d = 1; d <= daysInMonth; d++) {
+        const cellDate = new Date(year, month, d);
+        addCell(cellDate, false);
+    }
+
+    // Last row: first days of next month to complete the grid
+    const totalCells = offset + daysInMonth;
+    const trailing = (7 - (totalCells % 7)) % 7;
+    const nextMonthDate = new Date(year, month + 1, 1);
+    const nextYear = nextMonthDate.getFullYear();
+    const nextMonth = nextMonthDate.getMonth();
+    for (let i = 0; i < trailing; i++) {
+        const cellDate = new Date(nextYear, nextMonth, i + 1);
+        addCell(cellDate, true);
+    }
+}
+
+function renderMobileWeekStrip() {
+    if (!mobileWeekStrip) return;
+    mobileWeekStrip.innerHTML = '';
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const weekStart = getMobileWeekStart(currentMobileDay);
+    const labels = ['M','T','W','T','F','S','S'];
+
+    for (let i = 0; i < 7; i++) {
+        const dayDate = new Date(weekStart);
+        dayDate.setDate(weekStart.getDate() + i);
+
+        const cell = document.createElement('div');
+        cell.className = 'mobile-week-cell';
+        if (dayDate.getTime() === today.getTime()) cell.classList.add('today');
+        if (dayDate.toDateString() === currentMobileDay.toDateString()) cell.classList.add('selected');
+
+        cell.innerHTML = `<span class="mobile-week-label">${labels[i]}</span><span class="mobile-week-num">${dayDate.getDate()}</span>`;
+        cell.addEventListener('click', () => {
+            currentMobileDay = new Date(dayDate);
+            renderMobileHeader();
+            renderMobileView();
+        });
+        mobileWeekStrip.appendChild(cell);
+    }
+}
+
+function renderMobileView() {
+    if (!mobileScheduleContent) return;
+    if (currentMobileMode === 'branch') {
+        renderMobileBranchView();
+    } else {
+        renderMobileMyScheduleView();
+        fetchPendingSubstitutionRequests().then(() => renderMobileMyScheduleView());
+    }
+}
+
+function renderMobileBranchView() {
+    const content = mobileScheduleContent;
+    content.innerHTML = '';
+
+    const dateStr = formatDate(currentMobileDay);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (currentMobileDay.getTime() === today.getTime()) {
+        loadActualAttendanceForDate(dateStr);
+    }
+
+    const dayLabel = currentMobileDay.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+
+    const dateHeader = document.createElement('div');
+    dateHeader.className = 'mobile-date-label';
+    dateHeader.textContent = dayLabel;
+    content.appendChild(dateHeader);
+
+    ['opening', 'midshift', 'closing'].forEach(category => {
+        const dataInfo = getDataForDate(dateStr, currentMobileBranchKey, category);
+        const shifts = dataInfo.data;
+
+        if (shifts.length === 0) return;
+
+        const sectionHeader = document.createElement('div');
+        sectionHeader.className = 'mobile-section-header';
+
+        if (!READ_ONLY_MODE) {
+            const plusBtn = document.createElement('span');
+            plusBtn.className = 'mobile-section-plus';
+            plusBtn.textContent = '+';
+            plusBtn.addEventListener('click', () => addShiftForCategory(currentMobileBranchKey, dateStr, category));
+            sectionHeader.textContent = category.charAt(0).toUpperCase() + category.slice(1);
+            sectionHeader.appendChild(plusBtn);
+        } else {
+            sectionHeader.textContent = category.charAt(0).toUpperCase() + category.slice(1);
+        }
+        content.appendChild(sectionHeader);
+
+        shifts.forEach(shift => content.appendChild(buildMobileShiftCard(shift, dateStr)));
+    });
+
+    if (!READ_ONLY_MODE) {
+        const addBtn = document.createElement('button');
+        addBtn.className = 'mobile-add-btn';
+        addBtn.textContent = '+ Add Shift';
+        addBtn.addEventListener('click', () => openShiftModalForLocation(currentMobileBranchKey, dateStr));
+        content.appendChild(addBtn);
+    }
+}
+
+function renderMobileMyScheduleView() {
+    const content = mobileScheduleContent;
+    content.innerHTML = '';
+
+    if (!currentMobileEmployeeId) {
+        const msg = document.createElement('div');
+        msg.className = 'mobile-sign-in-msg';
+        msg.textContent = 'Sign in to view your schedule.';
+        content.appendChild(msg);
+        return;
+    }
+
+    const weekStart = getMobileWeekStart(currentMobileDay);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    for (let i = 0; i < 7; i++) {
+        const dayDate = new Date(weekStart);
+        dayDate.setDate(weekStart.getDate() + i);
+        const dateStr = formatDate(dayDate);
+        const isPastDate = dayDate < today;
+
+        const dayHeader = document.createElement('div');
+        dayHeader.className = 'mobile-day-header';
+        if (dayDate.toDateString() === today.toDateString()) dayHeader.classList.add('today');
+        dayHeader.textContent = dayDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        content.appendChild(dayHeader);
+
+        let rendered = false;
+
+        // Past dates: show only actual attendance record (or "— No shift —"); do not show scheduled shifts
+        if (isPastDate) {
+            const actualData = getActualAttendanceForDate(dateStr);
+            const empAttendance = actualData[currentMobileEmployeeId];
+            if (empAttendance) {
+                const branchKey = Object.keys(BRANCHES).find(k => BRANCHES[k] === empAttendance.branch)
+                    || getDisplayNameCategory(empAttendance.branch)
+                    || empAttendance.branch;
+                const actualShift = {
+                    id: `actual_${currentMobileEmployeeId}_${dateStr}`,
+                    employeeId: currentMobileEmployeeId,
+                    branch: branchKey,
+                    type: categorizeShiftByTime(empAttendance.shift, empAttendance.timeIn),
+                    customStart: empAttendance.timeIn ? removeSecondsFromTime(empAttendance.timeIn) : null,
+                    customEnd: empAttendance.timeOut ? removeSecondsFromTime(empAttendance.timeOut) : null,
+                    timeInPhoto: empAttendance.timeInPhoto,
+                    isActual: true
+                };
+                const card = buildMobileMyScheduleCard(actualShift, dateStr);
+                card.addEventListener('click', () => openShiftDetailsModal(actualShift, dateStr));
+                content.appendChild(card);
+                rendered = true;
+            } else {
+                const empty = document.createElement('div');
+                empty.className = 'mobile-no-shift';
+                empty.textContent = '— No shift —';
+                content.appendChild(empty);
+                rendered = true;
+            }
+        }
+
+        if (!rendered) {
+            const shifts = getEmployeeShiftsForDay(currentMobileEmployeeId, dateStr);
+            if (shifts.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'mobile-no-shift';
+                empty.textContent = '— No shift —';
+                content.appendChild(empty);
+            } else {
+                shifts.forEach(shift => {
+                    const card = buildMobileMyScheduleCard(shift, dateStr);
+                    card.addEventListener('click', () => openShiftDetailsModal(shift, dateStr));
+                    content.appendChild(card);
+                });
+            }
+        }
+    }
+}
+
+function buildMobileShiftCard(shift, dateStr) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const isPastDate = new Date(dateStr + 'T00:00:00') < today;
+    /* Match desktop: any actual attendance (today or past) gets the white "logged-in" card style */
+    const completedClass = shift.isActual ? 'completed' : '';
+    const conflict = !shift.isActual && hasConflict(shift, dateStr);
+
+    const block = document.createElement('div');
+    block.className = [
+        'shift-employee-block',
+        shift.type,
+        conflict ? 'shift-conflict' : '',
+        completedClass,
+        shift.employeeId === 'unassigned' ? 'unassigned' : ''
+    ].filter(Boolean).join(' ');
+    block.dataset.shiftId = shift.id;
+
+    const empName = shift.employeeId === 'unassigned'
+        ? 'UNASSIGNED'
+        : (employeeNicknames[shift.employeeId] || employees[shift.employeeId]?.split(' ')[0] || employees[shift.employeeId] || shift.employeeId);
+
+    let shiftContent;
+    if (completedClass) {
+        const timeInDisplay = shift.customStart ? formatAttendanceTime(shift.customStart, shift.type, false) : 'N/A';
+        const timeOutDisplay = shift.customEnd ? formatAttendanceTime(shift.customEnd, shift.type, true) : '';
+        const timeOneLine = timeOutDisplay ? `${timeInDisplay} – ${timeOutDisplay}` : `${timeInDisplay} –`;
+        const lateStatus = isLateTimeIn(shift.type, timeInDisplay);
+        const timeInClass = lateStatus === 'red' ? 'late-red' : lateStatus === 'orange' ? 'late-orange' : '';
+        const photoSrc = shift.timeInPhoto || MOBILE_ACTUAL_PLACEHOLDER;
+        shiftContent = `
+            <div class="shift-photo-wrap">
+                <img src="${photoSrc}" class="shift-employee-photo" alt="Time In Photo" onerror="this.src='${MOBILE_ACTUAL_PLACEHOLDER}'" />
+            </div>
+            <div class="shift-details-container">
+                <div class="shift-employee">${empName}</div>
+                <div class="shift-time ${timeInClass}">${timeOneLine}</div>
+            </div>`;
+    } else {
+        const photoSrc = getEmployeeProfilePhotoUrl(shift.employeeId) || MOBILE_SCHED_PLACEHOLDER;
+        const timeDisplay = getShiftTimeDisplayForScheduled(shift);
+        const timeOneLine = `${timeDisplay.startTime} – ${timeDisplay.endTime}`;
+        shiftContent = `
+            <div class="shift-photo-wrap">
+                <img src="${photoSrc}" class="shift-employee-photo" alt="Scheduled Shift" />
+            </div>
+            <div class="shift-details-container">
+                <div class="shift-employee">${empName}</div>
+                <div class="shift-time">${timeOneLine}</div>
+            </div>`;
+    }
+    block.innerHTML = shiftContent;
+    block.addEventListener('mousedown', handleShiftClick);
+    return block;
+}
+
+function buildMobileMyScheduleCard(shift, dateStr) {
+    const card = document.createElement('div');
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const isPastDate = new Date(dateStr + 'T00:00:00') < today;
+    const isCompleted = shift.isActual && isPastDate;
+    const branchName = BRANCHES[shift.branch] || shift.branch || '';
+    const shiftTypeName = SHIFT_TYPES[shift.type]?.name || (shift.type ? shift.type.charAt(0).toUpperCase() + shift.type.slice(1) : '');
+
+    card.className = ['mobile-my-schedule-card', shift.type || '', isCompleted ? 'completed' : ''].filter(Boolean).join(' ');
+
+    if (isCompleted) {
+        const timeInDisplay = shift.customStart ? formatAttendanceTime(shift.customStart, shift.type, false) : 'N/A';
+        const timeOutDisplay = shift.customEnd ? formatAttendanceTime(shift.customEnd, shift.type, true) : '';
+        const lateStatus = isLateTimeIn(shift.type, timeInDisplay);
+        const timeInClass = lateStatus === 'red' ? 'late-red' : lateStatus === 'orange' ? 'late-orange' : '';
+        card.innerHTML = `
+            <div class="mobile-my-card-left">
+                <span class="mobile-my-branch">${branchName}</span>
+            </div>
+            <div class="mobile-my-card-right">
+                <span class="mobile-my-type">${shiftTypeName}</span>
+                <div class="mobile-card-time ${timeInClass}">${timeInDisplay} – ${timeOutDisplay || '...'}</div>
+                <span class="mobile-my-done">✓</span>
+            </div>`;
+    } else {
+        const pendingBadge = hasPendingSubstitutionForShift(dateStr, shift.id)
+            ? '<span class="mobile-my-pending-badge">Pending reliever request</span>'
+            : '';
+        const timeDisplay = getShiftTimeDisplayForScheduled(shift);
+        card.innerHTML = `
+            <div class="mobile-my-card-left">
+                <span class="mobile-my-branch">${branchName}</span>
+            </div>
+            <div class="mobile-my-card-right">
+                <span class="mobile-my-type">${shiftTypeName}</span>
+                <div class="mobile-card-time">${timeDisplay.startTime} – ${timeDisplay.endTime}</div>
+                ${pendingBadge}
+            </div>`;
+    }
+
+    return card;
+}
+
+async function openShiftDetailsModal(shift, dateStr) {
+    if (!shiftDetailsModal) return;
+    const dateEl = document.getElementById('shiftDetailsDate');
+    const branchEl = document.getElementById('shiftDetailsBranch');
+    const typeEl = document.getElementById('shiftDetailsShiftType');
+    const timeEl = document.getElementById('shiftDetailsTime');
+    const actualTimeRow = document.getElementById('shiftDetailsActualTimeRow');
+    const actualTimeEl = document.getElementById('shiftDetailsActualTime');
+    const actionsEl = document.getElementById('shiftDetailsActions');
+    const relieverForm = document.getElementById('shiftDetailsRelieverForm');
+    const relieverSelect = document.getElementById('shiftDetailsRelieverSelect');
+    const pendingMsg = document.getElementById('shiftDetailsPendingMsg');
+    const reqRelieverBtn = document.getElementById('shiftDetailsRequestSubstitutionBtn');
+    const submitRequestBtn = document.getElementById('shiftDetailsSubmitRequestBtn');
+
+    if (!dateEl || !branchEl || !typeEl || !timeEl) return;
+
+    const dateObj = new Date(dateStr + 'T00:00:00');
+    dateEl.textContent = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    branchEl.textContent = BRANCHES[shift.branch] || shift.branch || '—';
+    typeEl.textContent = SHIFT_TYPES[shift.type]?.name || (shift.type ? shift.type.charAt(0).toUpperCase() + shift.type.slice(1) : '—');
+
+    let scheduledStr;
+    if (shift.isActual && (shift.customStart || shift.customEnd)) {
+        const preset = SHIFT_TYPES[shift.type];
+        scheduledStr = preset?.display || (preset ? `${getShiftTimeDisplayForScheduled({ type: shift.type }).startTime} – ${getShiftTimeDisplayForScheduled({ type: shift.type }).endTime}` : '—');
+        timeEl.textContent = scheduledStr;
+        const actualIn = shift.customStart ? formatAttendanceTime(shift.customStart, shift.type, false) : 'N/A';
+        const actualOut = shift.customEnd ? formatAttendanceTime(shift.customEnd, shift.type, true) : '...';
+        if (actualTimeRow && actualTimeEl) {
+            actualTimeRow.style.display = '';
+            actualTimeEl.textContent = `${actualIn} – ${actualOut}`;
+        }
+    } else {
+        const timeDisplay = getShiftTimeDisplayForScheduled(shift);
+        scheduledStr = `${timeDisplay.startTime} – ${timeDisplay.endTime}`;
+        timeEl.textContent = scheduledStr;
+        if (actualTimeRow) actualTimeRow.style.display = 'none';
+    }
+
+    currentShiftDetailsForRequest = null;
+    if (actionsEl) actionsEl.style.display = 'none';
+    if (relieverForm) relieverForm.style.display = 'none';
+    if (pendingMsg) pendingMsg.style.display = 'none';
+    if (reqRelieverBtn) reqRelieverBtn.style.display = 'none';
+    const bodyEl = document.querySelector('.shift-details-modal__body');
+    const titleEl = document.querySelector('.shift-details-modal__title');
+    if (bodyEl) bodyEl.style.display = '';
+    if (titleEl) titleEl.textContent = 'Shift details';
+
+    if (!shift.isActual && shift.id && currentMobileEmployeeId) {
+        await fetchPendingSubstitutionRequests();
+        const pending = hasPendingSubstitutionForShift(dateStr, shift.id);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const shiftDate = new Date(dateStr + 'T00:00:00');
+        const daysUntil = Math.ceil((shiftDate.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
+        const canRequest = daysUntil >= 3 && !pending;
+
+        if (actionsEl) actionsEl.style.display = '';
+        if (pending) {
+            if (pendingMsg) pendingMsg.style.display = 'block';
+        } else if (canRequest) {
+            currentShiftDetailsForRequest = { shift, dateStr };
+            if (reqRelieverBtn) reqRelieverBtn.style.display = 'block';
+            if (relieverForm) relieverForm.style.display = 'none';
+        }
+    }
+
+    shiftDetailsModal.style.display = 'flex';
+}
+
+function populateShiftDetailsRelieverDropdown() {
+    const relieverSelect = document.getElementById('shiftDetailsRelieverSelect');
+    const submitRequestBtn = document.getElementById('shiftDetailsSubmitRequestBtn');
+    if (!relieverSelect) return;
+    relieverSelect.innerHTML = '<option value="">Select reliever</option>';
+    const ids = Object.keys(employees).filter(id => !archivedEmployeeIds.has(id) && id !== currentMobileEmployeeId).sort();
+    ids.forEach(id => {
+        const name = employeeNicknames[id] || employees[id] || id;
+        const opt = document.createElement('option');
+        opt.value = id;
+        opt.textContent = name;
+        relieverSelect.appendChild(opt);
+    });
+    if (submitRequestBtn) submitRequestBtn.disabled = true;
+}
+
+function onRequestRelieverClick() {
+    if (!currentShiftDetailsForRequest) return;
+    const reqRelieverBtn = document.getElementById('shiftDetailsRequestSubstitutionBtn');
+    const relieverForm = document.getElementById('shiftDetailsRelieverForm');
+    const bodyEl = document.querySelector('.shift-details-modal__body');
+    const titleEl = document.querySelector('.shift-details-modal__title');
+    if (reqRelieverBtn) reqRelieverBtn.style.display = 'none';
+    if (bodyEl) bodyEl.style.display = 'none';
+    if (titleEl) titleEl.textContent = 'Request reliever';
+    populateShiftDetailsRelieverDropdown();
+    if (relieverForm) relieverForm.style.display = 'block';
+}
+
+function closeShiftDetailsModal() {
+    if (shiftDetailsModal) shiftDetailsModal.style.display = 'none';
+    currentShiftDetailsForRequest = null;
+}
+
+function showScheduleToast(message, isError = false) {
+    const el = document.getElementById('scheduleToast');
+    if (!el) return;
+    el.textContent = message;
+    el.classList.toggle('error', isError);
+    el.classList.add('show');
+    clearTimeout(showScheduleToast._tid);
+    showScheduleToast._tid = setTimeout(() => {
+        el.classList.remove('show');
+    }, 3000);
+}
+
+async function submitSubstitutionRequest() {
+    const { shift, dateStr } = currentShiftDetailsForRequest || {};
+    const relieverSelect = document.getElementById('shiftDetailsRelieverSelect');
+    const submitBtn = document.getElementById('shiftDetailsSubmitRequestBtn');
+    const requestedRelieverId = relieverSelect?.value?.trim();
+    if (!shift || !dateStr || !shift.id || !currentMobileEmployeeId || !requestedRelieverId) return;
+    if (requestedRelieverId === currentMobileEmployeeId) return;
+    const existing = await fetchPendingSubstitutionRequests();
+    const alreadyPending = existing.some(r => r.date === dateStr && r.scheduleShiftId === shift.id);
+    if (alreadyPending) return;
+    const requestedRelieverName = employeeNicknames[requestedRelieverId] || employees[requestedRelieverId] || requestedRelieverId;
+    const weekKey = getWeekKeyForDate(new Date(dateStr + 'T00:00:00'));
+    const payload = {
+        type: 'substitution',
+        employeeId: currentMobileEmployeeId,
+        employeeName: employees[currentMobileEmployeeId] || currentMobileEmployeeId,
+        date: dateStr,
+        status: 'pending',
+        requestedAt: Timestamp.now(),
+        weekKey,
+        scheduleShiftId: shift.id,
+        branch: shift.branch || '',
+        shiftType: shift.type || '',
+        requestedRelieverId,
+        requestedRelieverName
+    };
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.classList.add('is-loading');
+    }
+    try {
+        await addDoc(collection(db, 'substitution_requests'), payload);
+        closeShiftDetailsModal();
+        showScheduleToast('Request submitted.');
+        await fetchPendingSubstitutionRequests();
+        renderMobileMyScheduleView();
+    } catch (e) {
+        console.error('submitSubstitutionRequest:', e);
+        showScheduleToast('Failed to submit. Please try again.', true);
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.classList.remove('is-loading');
+        }
+    }
+}
+
+// Admin shift modal helpers (used by mobile branch view)
 function addShiftForCategory(branchKey, dateStr, category) {
-    // Pre-fill the shift modal with the category and branch
     const modal = document.getElementById('shiftModal');
-    const shiftBranch = document.getElementById('shiftBranch');
-    const shiftType = document.getElementById('shiftType');
-    const shiftDate = document.getElementById('shiftDate');
-    
-    if (modal && shiftBranch && shiftType && shiftDate) {
-        // Set the values
-        shiftDate.value = dateStr;
-        shiftBranch.value = branchKey;
-        shiftType.value = category;
-        
-        // Update modal title
-        const modalTitle = document.getElementById('modalTitle');
-        if (modalTitle) {
-            modalTitle.textContent = `Add ${category.charAt(0).toUpperCase() + category.slice(1)} Shift`;
-        }
-        
-        // Show the modal
+    const shiftBranchEl = document.getElementById('shiftBranch');
+    const shiftTypeEl = document.getElementById('shiftType');
+    const shiftDateEl = document.getElementById('shiftDate');
+    if (modal && shiftBranchEl && shiftTypeEl && shiftDateEl) {
+        shiftDateEl.value = dateStr;
+        shiftBranchEl.value = branchKey;
+        shiftTypeEl.value = category;
+        populateEmployeeDropdownForDate(dateStr);
+        const titleEl = document.getElementById('modalTitle');
+        if (titleEl) titleEl.textContent = `Add ${category.charAt(0).toUpperCase() + category.slice(1)} Shift`;
         modal.style.display = 'flex';
-        
-        // Focus on employee selection
-        const shiftEmployee = document.getElementById('shiftEmployee');
-        if (shiftEmployee) {
-            setTimeout(() => shiftEmployee.focus(), 100);
-        }
+        const empEl = document.getElementById('shiftEmployee');
+        if (empEl) setTimeout(() => empEl.focus(), 100);
     }
 }
 
 function openShiftModalForLocation(branchKey, dateStr) {
-    // Open the shift modal with branch and date pre-filled, but let user choose shift type
     const modal = document.getElementById('shiftModal');
-    const shiftBranch = document.getElementById('shiftBranch');
-    const shiftType = document.getElementById('shiftType');
-    const shiftDate = document.getElementById('shiftDate');
-    
-    if (modal && shiftBranch && shiftType && shiftDate) {
-        // Set the values
-        shiftDate.value = dateStr;
-        shiftBranch.value = branchKey;
-        shiftType.value = ''; // Don't pre-select a shift type
-        
-        // Update modal title
-        const modalTitle = document.getElementById('modalTitle');
-        if (modalTitle) {
-            modalTitle.textContent = 'Add Shift';
-        }
-        
-        // Show the modal
+    const shiftBranchEl = document.getElementById('shiftBranch');
+    const shiftTypeEl = document.getElementById('shiftType');
+    const shiftDateEl = document.getElementById('shiftDate');
+    if (modal && shiftBranchEl && shiftTypeEl && shiftDateEl) {
+        shiftDateEl.value = dateStr;
+        shiftBranchEl.value = branchKey;
+        shiftTypeEl.value = '';
+        populateEmployeeDropdownForDate(dateStr);
+        const titleEl = document.getElementById('modalTitle');
+        if (titleEl) titleEl.textContent = 'Add Shift';
         modal.style.display = 'flex';
-        
-        // Focus on shift type selection
-        setTimeout(() => shiftType.focus(), 100);
+        setTimeout(() => shiftTypeEl.focus(), 100);
     }
 }

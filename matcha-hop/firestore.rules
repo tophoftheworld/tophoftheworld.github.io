@@ -1,0 +1,15 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Cafes and logs: allow read/write for all (no auth). Tighten to "if request.auth != null" when you add Firebase Auth.
+    match /cafes/{cafeId} {
+      allow read, write: if true;
+    }
+    match /logs/{logId} {
+      allow read, write: if true;
+    }
+    match /settings/{docId} {
+      allow read, write: if true;
+    }
+  }
+}

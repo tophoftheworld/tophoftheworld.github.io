@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#ffffff" />
+  <title>Receipt OCR (Batch)</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+
+<body>
+  <header class="ocr-desktop-header">
+    <div class="ocr-desktop-header-inner">
+      <div class="ocr-desktop-title">
+        <div class="ocr-desktop-title-main">Receipt OCR (Batch)</div>
+        <div class="ocr-desktop-title-sub">Document AI · drag/drop multiple photos · process sequentially</div>
+      </div>
+      <div class="ocr-desktop-actions">
+        <button type="button" class="ocr-btn" id="btnClearQueue">Clear</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="ocr-desktop-main">
+    <section class="ocr-left">
+      <div class="ocr-card">
+        <div class="ocr-card-title">Upload</div>
+        <div class="ocr-dropzone" id="dropzone" role="button" tabindex="0">
+          <div class="ocr-dropzone-title">Drag & drop receipts here</div>
+          <div class="ocr-dropzone-sub">or click to upload up to 20 images</div>
+          <input type="file" id="fileInput" accept="image/*" multiple hidden />
+        </div>
+
+        <div class="ocr-upload-controls">
+          <button type="button" class="ocr-btn ocr-btn-primary" id="btnProcessQueue" disabled>
+            Process <span id="queueCountLabel">0</span>
+          </button>
+        </div>
+
+        <div class="ocr-batch-status" id="batchStatus" role="status">Ready.</div>
+      </div>
+
+      <div class="ocr-card invoices-card">
+        <div class="ocr-card-title">Invoices (click a row to preview)</div>
+        <div class="ocr-table-wrap">
+          <table class="ocr-table" aria-label="Extracted invoice details">
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>Supplier</th>
+                <th>TIN</th>
+                <th>Invoice / OR / SI #</th>
+                <th>Date</th>
+                <th>Total</th>
+                <th>VAT exempt</th>
+                <th>Printed VAT</th>
+                <th>VAT check</th>
+              </tr>
+            </thead>
+            <tbody id="invoiceTbody"></tbody>
+          </table>
+        </div>
+
+        <div class="ocr-selected-editor" id="selectedEditor" style="display: none;">
+          <div class="ocr-selected-title">Selected row VAT (editable)</div>
+          <div class="ocr-selected-grid">
+            <label class="ocr-editor-label">
+              Vatable sale
+              <input class="ocr-input" id="editorPrintedVatable" inputmode="decimal" placeholder="—" />
+            </label>
+            <label class="ocr-editor-label">
+              VAT (12%)
+              <input class="ocr-input" id="editorPrintedVatAmt" inputmode="decimal" placeholder="—" />
+            </label>
+            <label class="ocr-editor-label">
+              Taxable amount
+              <input class="ocr-input" id="editorPrintedTaxable" inputmode="decimal" placeholder="—" />
+            </label>
+            <label class="ocr-editor-label">
+              Printed total
+              <input class="ocr-input" id="editorPrintedTotal" inputmode="decimal" placeholder="—" />
+            </label>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="ocr-right">
+      <div class="ocr-card ocr-preview-card">
+        <div class="ocr-card-title">Receipt preview</div>
+        <div class="ocr-preview-empty" id="previewEmpty">Select a row to preview the image.</div>
+        <img id="previewImg" class="ocr-preview-img" alt="Selected receipt preview" />
+        <div class="ocr-preview-meta" id="previewMeta"></div>
+      </div>
+    </aside>
+  </main>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+
+</html>

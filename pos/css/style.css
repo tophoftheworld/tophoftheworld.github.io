@@ -1,9 +1,19 @@
+/* Expose safe-area-inset-bottom as a CSS variable readable by JS */
+:root {
+  --sab: env(safe-area-inset-bottom, 0px);
+}
+
 /* Main body styles */
 body {
   font-family: 'Poppins', sans-serif;
   color: #333;
   font-size: 14px;
   line-height: 20px;
+  touch-action: pan-x pan-y;
+}
+
+html {
+  touch-action: pan-x pan-y;
 }
 
 .body {
@@ -843,7 +853,7 @@ body {
   top: 0;
   left: 0;
   width: 100%;
-  height: 100%;
+  height: 100vh;
   background-color: rgba(0, 0, 0, 0.5);
   display: flex;
   justify-content: center;
@@ -858,6 +868,7 @@ body {
   width: 90%;
   max-width: 320px;
   text-align: center;
+  position: relative;
 }
 
 .payment-modal-header {
@@ -951,6 +962,8 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: rgba(29, 138, 0, 0.1);
 }
 
 .sales-label {
@@ -960,6 +973,22 @@ body {
   color: #333;
   letter-spacing: 1px;
   margin-top: 2px;
+}
+
+.sales-sub-label {
+  font-family: 'Poppins', sans-serif;
+  font-size: 10px;
+  font-weight: 300;
+  color: #666;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.total-sales-left,
+.total-sales-right {
+  display: contents;
 }
 
 .sales-amount {
@@ -1142,12 +1171,35 @@ body {
   flex-grow: 1;
 }
 
+.order-datetime-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
 .order-datetime {
   font-family: 'Poppins', sans-serif;
   font-size: 14px;
   font-weight: 500;
   color: #666;
-  margin-bottom: 10px;
+  margin-bottom: 0;
+}
+
+.order-queue-badge {
+  font-family: 'Poppins', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #888;
+  background: #f0f0f0;
+  border-radius: 4px;
+  padding: 2px 7px;
+}
+
+.order-queue-badge.queue-next {
+  color: #fff;
+  background: #1d8a00;
 }
 
 .order-card-item span:nth-child(2) {
@@ -1308,8 +1360,8 @@ body {
   flex-direction: column;
   width: 280px;
   flex: 0 0 auto;
-  height: 400px;
-  /* Fixed height */
+  height: 100%;
+  box-sizing: border-box;
 }
 
 .order-card.completed {
@@ -1380,6 +1432,36 @@ body {
 .order-cards-row {
   display: flex;
   gap: 20px;
+  height: 100%;
+}
+
+/* Section group: label on top, cards in a row below */
+.order-section-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex-shrink: 0;
+  height: 100%;
+}
+
+.order-section-cards {
+  display: flex;
+  flex-direction: row;
+  gap: 20px;
+  align-items: stretch;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Section label above each group */
+.order-section-divider {
+  font-family: 'Poppins', sans-serif;
+  font-size: 16.5px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #888;
+  padding: 4px 2px;
+  white-space: nowrap;
 }
 
 .order-cancel-btn,
@@ -1504,6 +1586,33 @@ body {
   padding: 0px 10px;
 }
 
+@media screen and (max-width: 767px) {
+  .name-input-modal .modal {
+    max-width: 100%;
+    width: 100%;
+    border-radius: 16px 16px 0 0;
+    padding: 24px 20px 36px;
+    box-sizing: border-box;
+  }
+
+  .name-input-modal input {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .name-input-modal .modal-footer {
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  .name-input-modal .modal-footer button {
+    width: 100%;
+    min-height: 52px;
+    flex: none;
+  }
+}
+
 .order-header-text {
   cursor: pointer;
   display: inline-block;
@@ -1602,6 +1711,14 @@ body {
   font-weight: 600;
   margin-left: 10px;
   font-size: 18px;
+}
+
+.sheet-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 199;
 }
 
 .add-more-btn {
@@ -2071,11 +2188,19 @@ body.debug-mode .force-sync-btn {
     /* Reduce padding to save space */
     box-sizing: border-box;
     height: 100%;
+    padding-top: 70px; /* push content below fixed header */
   }
 
   .header-container {
     margin-bottom: 10px;
-    /* Reduce margin */
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 50;
+    background: #f7f7f7;
+    padding: 10px 5%;
+    box-sizing: border-box;
   }
 
 .header-logo-desktop {
@@ -2108,8 +2233,9 @@ body.debug-mode .force-sync-btn {
 
   .content {
     position: static;
-    overflow: auto;
-    width: 100vw;
+    overflow-y: auto;
+    overflow-x: hidden;
+    width: 100%;
     height: 100vh;
     max-width: none;
     margin-top: 0vh;
@@ -2128,9 +2254,26 @@ body.debug-mode .force-sync-btn {
     min-height: 70vh;
   }
 
+  /* Reserve right-side space for the absolutely-positioned price/type columns */
+  .menu-item-line {
+    padding-right: 90px;
+    box-sizing: border-box;
+  }
+
   .menu-item-name {
     font-size: 3.2vw;
     line-height: 4vw;
+    white-space: normal;
+  }
+
+  .menu-category-name {
+    font-size: 13px;
+    line-height: 20px;
+    letter-spacing: 1px;
+  }
+
+  .spacer {
+    height: 1px;
   }
 
   .menu-item-desc {
@@ -2138,7 +2281,7 @@ body.debug-mode .force-sync-btn {
     font-weight: 400;
     line-height: 1.8vw;
     text-align: left;
-    width: 85%; 
+    width: 100%;
   }
 
   .menu-item-tag {
@@ -2152,6 +2295,13 @@ body.debug-mode .force-sync-btn {
   .menu-item-price {
     font-size: 3.2vw;
     line-height: 5vw;
+    top: 0;
+    margin-top: 0;
+  }
+
+  .menu-item-price .text-span-2-copy {
+    font-size: 0.5em;
+    vertical-align: middle;
   }
 
   .menu-item-type {
@@ -2172,26 +2322,85 @@ body.debug-mode .force-sync-btn {
  }
 
  .content.menu {
-   height: calc(100vh - 120px);
-   /* Increase height, leave just enough for header and bottom button */
+   height: calc(var(--vh, 1vh) * 100 - 70px);
+   /* Full height minus fixed header (--vh is Safari-safe, set by JS) */
    margin-top: 0;
-   padding-bottom: 60px;
-   /* Reduced padding at bottom */
+   padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+   /* Enough room above the fixed VIEW ORDER button */
    overflow-y: auto;
  }
 
+  /* Hide descriptions and serving type on mobile for a clean look */
+  .menu-item-type {
+    display: none;
+  }
+
+  /* Package mode: no reserved price column space on mobile */
+  body.package-mode .menu-item-line {
+    padding-right: 0;
+  }
+
+/* Hide Sales Summary (end-of-day) for package events — not relevant */
+body.package-mode .z-reading-btn {
+  display: none !important;
+}
+
 .right-panel {
   width: 100%;
-  height: 100vh;
   position: fixed;
-  top: 0;
+  bottom: 0;
   left: 0;
+  right: 0;
+  top: auto;
+  height: 85vh;
+  border-radius: 16px 16px 0 0;
+  transform: translateY(100%);
+  transition: transform 0.3s ease;
+  display: flex !important;
   z-index: 200;
-  display: none;
-  /* Hidden by default on mobile */
   overflow-y: auto;
-  padding-bottom: 60px;
-  /* Space for payment buttons */
+  padding-top: 28px;
+  padding-bottom: 24px;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.right-panel.open {
+  transform: translateY(0);
+}
+
+/* Order items in the bottom-sheet panel */
+.order-item-name {
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.order-item-details {
+  font-size: 12px;
+  color: #666;
+  line-height: 18px;
+}
+
+.order-item-price {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.quantity-btn {
+  width: 32px;
+  height: 32px;
+}
+
+.right-panel::before {
+  content: '';
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40px;
+  height: 4px;
+  background: #ddd;
+  border-radius: 2px;
+  pointer-events: none;
 }
 }
 
@@ -2317,7 +2526,6 @@ body.debug-mode .force-sync-btn {
 }
 
 @media screen and (max-width: 767px){
-  /* Existing styles remain */
 
   .kiosk-container {
     flex-direction: column;
@@ -2331,100 +2539,247 @@ body.debug-mode .force-sync-btn {
     height: 70vh;
   }
 
-  .right-panel {
-    width: 100%;
-    height: 100vh;
+  /* Orders container — no scroll here, grid handles it */
+  .content.orders {
+    display: flex;
+    flex-direction: column;
+    height: calc(var(--vh, 1vh) * 100 - 60px);
+    overflow: hidden;
+    padding-bottom: 0;
   }
 
-        .content.orders {
-          display: flex;
-          flex-direction: column;
-          height: calc(100vh - 60px);
-          overflow-y: auto;
-          padding-bottom: 60px;
-          /* Space for mobile order button */
-        }
-  
-    .orders-header {
-      flex-direction: column;
-      padding: 10px;
-      gap: 10px;
-    }
-  
-    .date-picker-container {
-      width: 100%;
-      justify-content: center;
-    }
-  
-    .date-actions {
-      width: 100%;
-    }
-  
-  
-    .order-cards-row {
-      flex-direction: column;
-      width: 100%;
-      gap: 15px;
-    }
-  
-    .orders-section {
-      width: 100%;
-    }
+  /* Fixed orders header below the main fixed header */
+  .orders-header {
+    position: fixed;
+    top: 60px;
+    left: 0;
+    right: 0;
+    z-index: 49;
+    background: #f7f7f7;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 5%;
+    box-sizing: border-box;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+    overflow: visible;
+    max-width: 100%;
+  }
 
-    .order-card {
-      width: auto;
-      min-height: unset;
-      height: auto;
-      margin: 0 auto 15px;
-      max-width: 95%;
-    }
+  /* Row 1: event selector full width */
+  .event-selector-container {
+    width: 100%;
+    margin-right: 0;
+    justify-content: flex-start;
+  }
 
-    /* Fix for order cards to display in a column */
-    .orders-grid {
-      flex-direction: column;
-      height: auto;
-      overflow-y: visible;
-      overflow-x: hidden;
-    }
-    .orders-section-label {
-      position: static;
-      padding: 10px 0;
-      text-align: center;
-    }
+  .event-selector {
+    min-width: unset;
+    width: 100%;
+    box-sizing: border-box;
+    height: 40px;
+    line-height: 40px;
+    font-size: 13px;
+    padding: 0 10px;
+  }
+
+  /* Row 2: date display full-width + total sales on right */
+  .date-picker-container {
+    width: 100%;
+    justify-content: space-between;
+    flex-wrap: nowrap;
+    gap: 8px;
+    align-items: center;
+  }
+
+  /* Hide prev/next nav on mobile — date display is enough */
+  .date-nav-btn:not(.date-display) {
+    display: none !important;
+  }
+
+  /* Date display button takes available space, restore full border since prev/next are hidden */
+  .date-display {
+    flex: 1;
+    text-align: center;
+    border-left: 2px solid #1d8a00;
+    border-right: 2px solid #1d8a00;
+    border-radius: 4px;
+  }
+
+  /* Summary: left = big number + label, right = pending info */
+  .total-sales {
+    order: unset;
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 0 2px;
+    gap: 12px;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .total-sales-left {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .total-sales-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+  }
+
+  .sales-amount {
+    font-size: 22px;
+    line-height: 1;
+    text-align: center;
+  }
+
+  .sales-label {
+    font-size: 10px;
+    margin-top: 1px;
+    text-align: center;
+  }
+
+  .sales-sub-label {
+    font-size: 10px;
+    font-weight: 500;
+    color: #555;
+    line-height: 1.5;
+    text-align: right;
+    margin-top: 0;
+  }
+
+  /* Hide non-essential controls on mobile */
+  .refresh-btn,
+  .delete-date-btn,
+  .force-sync-btn,
+  .z-reading-btn {
+    display: none !important;
+  }
+
+  /* Collapse the now-empty date-actions row */
+  .date-actions {
+    display: none !important;
+  }
+
+  /* Push ordersContent below the fixed orders-header (JS adjusts this dynamically) */
+  #ordersContent {
+    padding-top: 160px;
+    height: 100%;
+  }
+
+  /* Section label above each group (mobile) */
+  .order-section-divider {
+    font-size: 15px;
+    letter-spacing: 1.5px;
+    padding: 2px 0;
+  }
+
+  .order-section-cards {
+    gap: 12px;
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* Single continuous horizontal row — same as desktop */
+  .orders-grid {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    height: calc(var(--vh, 1vh) * 100 - 210px);
+    min-height: unset;
+    padding: 20px 15px calc(15px + env(safe-area-inset-bottom, 0px));
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .order-cards-row {
+    flex-direction: row;
+    overflow-x: visible;
+    overflow-y: visible;
+    align-items: stretch;
+    gap: 20px;
+    flex-wrap: nowrap;
+    height: 100%;
+  }
+
+  .order-card {
+    flex: 0 0 auto;
+    width: 80vw;
+    max-width: 300px;
+    min-height: unset;
+    height: 100%;
+    box-sizing: border-box;
+    margin: 0;
+  }
+
+  /* Card buttons: compact 2-row layout */
+  .order-buttons {
+    flex-wrap: wrap;
+    gap: 8px;
+    flex-direction: row;
+  }
+
+  .order-action-btn {
+    min-height: 44px;
+    font-size: 13px;
+    padding: 10px 8px;
+    width: auto;
+  }
+
+  /* CANCEL + EDIT share the first row (50% each) */
+  .order-cancel-btn,
+  .order-edit-btn {
+    flex: 1 0 calc(50% - 4px);
+    min-width: 0;
+  }
+
+  /* DONE takes its own full-width row below */
+  .order-done-btn {
+    flex: 0 0 100%;
+  }
+
+  /* RETURN + VOID side by side (50% each) */
+  .order-return-btn,
+  .order-void-btn {
+    flex: 1;
+  }
+
+  /* Package mode: larger item names since no price */
+  body.package-mode .menu-item-name {
+    font-size: 5vw;
+    line-height: 7vw;
+  }
 }
 
 @media screen and (max-width: 479px) {
   /* Existing styles remain */
 
   .total-sales {
-      order: -1;
-      /* Move total sales to the top */
-      width: 100%;
-      margin-bottom: 10px;
+      order: unset;
+      width: auto;
+      margin-bottom: 0;
     }
   
     .order-card {
       padding: 10px;
     }
   
+    /* Keep compact 2-row button layout on small screens */
     .order-buttons {
-      flex-direction: column;
+      flex-direction: row;
+      flex-wrap: wrap;
       gap: 8px;
     }
-  
-    .order-action-btn {
-      width: 100%;
-    }
-  
-    /* Make sure orders container takes full height */
-    #orders-container {
-      height: calc(100vh - 60px);
-      /* Account for mobile order button */
-    }
-  
-    #ordersContent {
-      height: 100%;
-      overflow-y: auto;
+
+    /* Package mode: larger item names on small screens */
+    body.package-mode .menu-item-name {
+      font-size: 22px;
+      line-height: 30px;
     }
 
   .kiosk-container {
@@ -2438,16 +2793,128 @@ body.debug-mode .force-sync-btn {
   .add-to-order-btn {
     width: 100%;
   }
+
+  .menu-category-name {
+    font-size: 13px;
+    line-height: 20px;
+    letter-spacing: 1px;
+  }
+
+  .spacer {
+    height: 1px;
+  }
+
+  /* Reserve right-side space for the absolutely-positioned price/type columns */
+  .menu-item-line {
+    padding-right: 90px;
+    box-sizing: border-box;
+  }
+
+  .menu-item-name {
+    font-size: 18px;
+    line-height: 26px;
+    white-space: normal;
+  }
+
+  .menu-item-desc {
+    font-size: 13px;
+    line-height: 18px;
+    width: 100%;
+  }
+
+  .menu-item-price {
+    font-size: 18px;
+    line-height: 26px;
+    top: 0;
+    margin-top: 0;
+  }
+
+  .menu-item-price .text-span-2-copy {
+    font-size: 0.5em;
+    vertical-align: middle;
+  }
+
+  .menu-item-type {
+    font-size: 11px;
+    line-height: 16px;
+  }
+}
+
+@keyframes slideUpModal {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
 }
 
 @media screen and (max-width: 767px) {
+  .modal-overlay {
+    align-items: flex-end;
+  }
+
+  /* ORDER SUBMITTED confirmation: always centered, not slide-up */
+  .order-confirmed-overlay {
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  .order-confirmed-modal {
+    width: auto !important;
+    max-width: 300px !important;
+    border-radius: 8px !important;
+    padding: 40px !important;
+    animation: none !important;
+  }
+
   .modal {
-    width: 95%;
-    padding: 15px;
+    width: 100%;
+    max-width: 100%;
+    border-radius: 16px 16px 0 0;
+    max-height: 90vh;
+    padding: 24px 20px 36px;
+    animation: slideUpModal 0.3s ease;
   }
 
   .modal-options-grid {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .modal-option {
+    margin-bottom: 0;
+  }
+
+  .modal-option-label {
+    margin-bottom: 10px;
+  }
+
+  .modal-buttons {
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .modal-option:last-child .modal-buttons {
+    margin-bottom: 0;
+  }
+
+  .option-button {
+    flex: 1;
+    min-width: 0;
+    min-height: 48px;
+    padding: 12px 10px;
+    font-size: 13px;
+  }
+
+  .modal-footer {
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 20px;
+  }
+
+  .modal-cancel,
+  .modal-add {
+    flex: none;
+    width: 100%;
+    min-height: 52px;
   }
 }
 
@@ -2461,8 +2928,9 @@ body.debug-mode .force-sync-btn {
   }
 
   .option-button {
-    padding: 8px 10px;
-    font-size: 10px;
+    padding: 12px 10px;
+    font-size: 12px;
+    min-height: 48px;
   }
 }
 

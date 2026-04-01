@@ -1,5 +1,5 @@
 import { menuData } from './menu-data.js';
-import { syncOrderToFirebase, syncAllPendingOrders, initializeMenuItems, loadEventsFromFirebase, saveEventToFirebase } from './firebase-sync.js';
+import { syncOrderToFirebase, syncAllPendingOrders, initializeMenuItems, loadEventsFromFirebase, saveEventToFirebase, subscribeToOrders } from './firebase-sync.js';
 import { db, collection, doc, getDocs, deleteDoc, setDoc, getDoc, serverTimestamp } from './firebase-setup.js';
 
 
@@ -28,6 +28,7 @@ const customizationOptions = {
     'none': 0,
     'senior': -0.2,  // 20% discount
     'pwd': -0.2,     // 20% discount
+    'free': -1,      // 100% off (free)
     'custom': 0      // Custom discount (will be set dynamically)
   },
   strengthLevel: {
@@ -36,6 +37,23 @@ const customizationOptions = {
     '3': 80
   }
 };
+
+// Effective options: merge menu-level overrides when present (backwards compatible)
+function getCustomizationOptions() {
+  const menu = currentMenuData || null;
+  const opts = { ...customizationOptions };
+  opts.milk = { ...customizationOptions.milk };
+  opts.strengthLevel = { ...customizationOptions.strengthLevel };
+  if (menu) {
+    if (typeof menu.oatUpgradePrice === 'number') {
+      opts.milk.oat = menu.oatUpgradePrice;
+    }
+    if (menu.strengthLevelPrices && typeof menu.strengthLevelPrices === 'object') {
+      Object.assign(opts.strengthLevel, menu.strengthLevelPrices);
+    }
+  }
+  return opts;
+}
 
 // Hide size in customization modal (data/logic kept for possible future use)
 const HIDE_SIZE_CUSTOMIZATION = true;
@@ -129,7 +147,7 @@ function updateEventSelector() {
   isUpdatingEventSelector = true;
 
   const eventSelector = document.getElementById('eventSelector');
-  const currentValue = eventSelector.value;
+  const currentValue = currentEvent; // Use the localStorage-saved value, not the selector's current value
 
   // Clear existing options
   eventSelector.innerHTML = '';
@@ -226,6 +244,13 @@ function updateDisplayMode() {
   document.querySelectorAll('.menu-item-price').forEach(priceElement => {
     priceElement.style.display = isPackageMode ? 'none' : 'block';
   });
+
+  // Toggle package-mode class on body for CSS targeting
+  if (isPackageMode) {
+    document.body.classList.add('package-mode');
+  } else {
+    document.body.classList.remove('package-mode');
+  }
 
   // Update order total display
   updateOrderDisplay();
@@ -422,6 +447,10 @@ function createGridMenuItemElement(item) {
 // Order management
 let currentOrder = [];
 let orderHistory = JSON.parse(localStorage.getItem('orderHistory') || '[]');
+
+function generateOrderId() {
+  return crypto.randomUUID().replace(/-/g, '').slice(0, 5).toUpperCase();
+}
 
 function addToOrder(item) {
   // Check if item is already in order
@@ -625,12 +654,28 @@ function updateOrderDisplay() {
     popupPaymentMethods.style.display = 'flex';
     packagePaymentMethods.style.display = 'none';
   }
+
+  // Sync mobile order button total and item count
+  const mobileTotal = document.querySelector('.mobile-order-total');
+  if (mobileTotal) {
+    if (isPackageMode) {
+      mobileTotal.textContent = `${totalCups} item${totalCups !== 1 ? 's' : ''}`;
+    } else {
+      mobileTotal.textContent = '₱ ' + subtotal.toFixed(2);
+    }
+  }
+  const mobileViewText = document.querySelector('#mobileOrderButton > span:first-child');
+  if (mobileViewText) {
+    const itemsCount = currentOrder.reduce((sum, item) => sum + item.quantity, 0);
+    mobileViewText.textContent = itemsCount > 0
+      ? `VIEW ORDER (${itemsCount} ${itemsCount === 1 ? 'item' : 'items'})`
+      : 'VIEW ORDER';
+  }
 }
 
 // Toggle between menu and orders view
 document.querySelector('.menu-header').addEventListener('click', () => {
   const menuContainer = document.getElementById('menu-container');
-  const orderPanel = document.getElementById('order-panel');
   const ordersContainer = document.getElementById('orders-container');
   const menuHeader = document.querySelector('.menu-header');
   const viewToggleContainer = document.querySelector('.view-toggle-container');
@@ -638,18 +683,25 @@ document.querySelector('.menu-header').addEventListener('click', () => {
   if (menuContainer.style.display === 'none') {
     // Switch to menu view
     menuContainer.style.display = 'flex';
-    orderPanel.style.display = 'flex';
+    if (window.innerWidth > 767) {
+      openOrderPanel();
+    } else {
+      document.getElementById('mobileOrderButton').style.display = 'flex';
+    }
     ordersContainer.style.display = 'none';
     menuHeader.innerHTML = 'MATCHA BAR <span class="light">MENU</span>';
     viewToggleContainer.style.display = 'block';
   } else {
     // Switch to orders view
     menuContainer.style.display = 'none';
-    orderPanel.style.display = 'none';
+    closeOrderPanel();
+    document.getElementById('mobileOrderButton').style.display = 'none';
     ordersContainer.style.display = 'flex';
     menuHeader.innerHTML = 'MATCHA BAR <span class="light">ORDERS</span>';
     viewToggleContainer.style.display = 'none';
     displayOrderHistory();
+    // After rendering, fix padding so cards aren't hidden under the fixed orders-header
+    setTimeout(adjustOrdersContentPadding, 50);
   }
 });
 
@@ -667,16 +719,58 @@ function displayOrderHistory() {
   const today = new Date();
   const isToday = getLocalDateString(selectedDate) === getLocalDateString(today);
 
-  // Filter orders by selected date
   // Filter orders by selected date AND current event
   const selectedDateOrders = orderHistory.filter(order => {
-    const orderEvent = order.event || 'pop-up'; // Default to 'pop-up' for existing orders
+    const orderEvent = order.event || 'pop-up';
     return getLocalDateString(new Date(order.timestamp)) === getLocalDateString(selectedDate) &&
       orderEvent === currentEvent;
   });
 
+  if (selectedDateOrders.length === 0) {
+    const emptyMessage = document.createElement('div');
+    emptyMessage.className = 'empty-order-message';
+    emptyMessage.textContent = isToday ? 'No orders yet' : 'No orders for this date';
+    emptyMessage.style.margin = '80px auto';
+    orderGrid.appendChild(emptyMessage);
+    updateTotalSalesDisplay();
+    return;
+  }
+
+  // Single continuous flat row for all screen sizes
+  const flatRow = document.createElement('div');
+  flatRow.className = 'order-cards-row';
+
+  function makeSection(label, orders, isCompleted, isVoided) {
+    if (orders.length === 0) return null;
+    const group = document.createElement('div');
+    group.className = 'order-section-group';
+
+    const header = document.createElement('div');
+    header.className = 'order-section-divider';
+    header.textContent = label;
+    group.appendChild(header);
+
+    const cardsRow = document.createElement('div');
+    cardsRow.className = 'order-section-cards';
+
+    // For pending orders, compute queue positions by oldest-first ordering
+    let queueMap = null;
+    if (!isCompleted && !isVoided) {
+      const sorted = [...orders].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+      queueMap = {};
+      sorted.forEach((o, i) => { queueMap[o.id] = i + 1; });
+    }
+
+    orders.forEach(order => {
+      const pos = queueMap ? queueMap[order.id] : null;
+      cardsRow.appendChild(createOrderCard(order, isCompleted, isVoided, pos));
+    });
+    group.appendChild(cardsRow);
+
+    return group;
+  }
+
   if (isToday) {
-    // Sort by timestamp in descending order (newest first)
     const pendingOrders = selectedDateOrders
       .filter(order => order.status === 'pending')
       .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
@@ -687,137 +781,29 @@ function displayOrderHistory() {
       .filter(order => order.status === 'voided')
       .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
-    if (selectedDateOrders.length === 0) {
-      const emptyMessage = document.createElement('div');
-      emptyMessage.className = 'empty-order-message';
-      emptyMessage.textContent = 'No orders yet';
-      emptyMessage.style.margin = '80px auto';
-      orderGrid.appendChild(emptyMessage);
-      return;
-    }
-
-    // Pending Orders Section
-    if (pendingOrders.length > 0) {
-      const pendingSection = document.createElement('div');
-      pendingSection.className = 'orders-section';
-
-      const pendingLabel = document.createElement('div');
-      pendingLabel.className = 'orders-section-label';
-      pendingLabel.textContent = 'PENDING ORDERS';
-      pendingSection.appendChild(pendingLabel);
-
-      const pendingCardsRow = document.createElement('div');
-      pendingCardsRow.className = 'order-cards-row';
-
-      pendingOrders.forEach(order => {
-        const orderCard = createOrderCard(order, false);
-        pendingCardsRow.appendChild(orderCard);
-      });
-
-      pendingSection.appendChild(pendingCardsRow);
-      orderGrid.appendChild(pendingSection);
-    }
-
-    // Completed Orders Section
-    if (completedOrders.length > 0) {
-      const completedSection = document.createElement('div');
-      completedSection.className = 'orders-section';
-
-      const completedLabel = document.createElement('div');
-      completedLabel.className = 'orders-section-label';
-      completedLabel.textContent = 'COMPLETED ORDERS';
-      completedSection.appendChild(completedLabel);
-
-      const completedCardsRow = document.createElement('div');
-      completedCardsRow.className = 'order-cards-row';
-
-      completedOrders.forEach(order => {
-        const orderCard = createOrderCard(order, true);
-        completedCardsRow.appendChild(orderCard);
-      });
-
-      completedSection.appendChild(completedCardsRow);
-      orderGrid.appendChild(completedSection);
-    }
-
-    // Voided Orders Section
-    if (voidedOrders.length > 0) {
-      const voidedSection = document.createElement('div');
-      voidedSection.className = 'orders-section';
-
-      const voidedLabel = document.createElement('div');
-      voidedLabel.className = 'orders-section-label';
-      voidedLabel.textContent = 'VOIDED ORDERS';
-      voidedSection.appendChild(voidedLabel);
-
-      const voidedCardsRow = document.createElement('div');
-      voidedCardsRow.className = 'order-cards-row';
-
-      voidedOrders.forEach(order => {
-        const orderCard = createOrderCard(order, false, true); // Pass true for voided
-        voidedCardsRow.appendChild(orderCard);
-      });
-
-      voidedSection.appendChild(voidedCardsRow);
-      orderGrid.appendChild(voidedSection);
-    }
+    [makeSection('PENDING ORDERS', pendingOrders, false, false),
+     makeSection('COMPLETED ORDERS', completedOrders, true, false),
+     makeSection('VOIDED ORDERS', voidedOrders, false, true)]
+      .forEach(g => { if (g) flatRow.appendChild(g); });
   } else {
-    const completedOrders = selectedDateOrders.filter(order => order.status === 'completed' || order.status === 'pending').reverse();
-    const voidedOrders = selectedDateOrders.filter(order => order.status === 'voided').reverse();
+    const completedOrders = selectedDateOrders
+      .filter(order => order.status === 'completed' || order.status === 'pending')
+      .reverse();
+    const voidedOrders = selectedDateOrders
+      .filter(order => order.status === 'voided')
+      .reverse();
 
-    if (selectedDateOrders.length === 0) {
-      const emptyMessage = document.createElement('div');
-      emptyMessage.className = 'empty-order-message';
-      emptyMessage.textContent = 'No orders for this date';
-      emptyMessage.style.margin = '80px auto';
-      orderGrid.appendChild(emptyMessage);
-      return;
-    }
-
-    if (completedOrders.length > 0) {
-      const completedSection = document.createElement('div');
-      completedSection.className = 'orders-section';
-
-      const completedLabel = document.createElement('div');
-      completedLabel.className = 'orders-section-label';
-      completedLabel.textContent = 'COMPLETED ORDERS';
-      completedSection.appendChild(completedLabel);
-
-      const completedCardsRow = document.createElement('div');
-      completedCardsRow.className = 'order-cards-row';
-
-      completedOrders.forEach(order => {
-        const orderCard = createOrderCard(order, true);
-        completedCardsRow.appendChild(orderCard);
-      });
-
-      completedSection.appendChild(completedCardsRow);
-      orderGrid.appendChild(completedSection);
-    }
-    if (voidedOrders.length > 0) {
-      const voidedSection = document.createElement('div');
-      voidedSection.className = 'orders-section';
-
-      const voidedLabel = document.createElement('div');
-      voidedLabel.className = 'orders-section-label';
-      voidedLabel.textContent = 'VOIDED ORDERS';
-      voidedSection.appendChild(voidedLabel);
-
-      const voidedCardsRow = document.createElement('div');
-      voidedCardsRow.className = 'order-cards-row';
-
-      voidedOrders.forEach(order => {
-        const orderCard = createOrderCard(order, false, true); // Pass true for voided
-        voidedCardsRow.appendChild(orderCard);
-      });
-
-      voidedSection.appendChild(voidedCardsRow);
-      orderGrid.appendChild(voidedSection);
-    }
+    [makeSection('COMPLETED ORDERS', completedOrders, true, false),
+     makeSection('VOIDED ORDERS', voidedOrders, false, true)]
+      .forEach(g => { if (g) flatRow.appendChild(g); });
   }
 
+  orderGrid.appendChild(flatRow);
 
   updateTotalSalesDisplay();
+  if (window.innerWidth <= 767) {
+    setTimeout(adjustOrdersContentPadding, 50);
+  }
 }
 
 function calculateTotalSales(date) {
@@ -875,38 +861,155 @@ function getPendingItemsCount(date) {
   }, 0);
 }
 
+function adjustOrdersContentPadding() {
+  const ordersHeader = document.querySelector('.orders-header');
+  const ordersContent = document.getElementById('ordersContent');
+  const ordersGrid = ordersContent ? ordersContent.querySelector('.orders-grid') : null;
+  if (!ordersHeader || !ordersContent) return;
+
+  const headerHeight = ordersHeader.getBoundingClientRect().height;
+  // Content padding: push cards below the fixed orders-header
+  ordersContent.style.paddingTop = (headerHeight + 10) + 'px';
+
+  // Grid height: use actual window.innerHeight (Safari-safe) minus the real header heights
+  if (ordersGrid && window.innerWidth <= 767) {
+    const mainHeaderHeight = 60; // Fixed main header
+    const safeAreaBottom = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--sab') || '0'
+    ) || 0;
+    const totalOffset = mainHeaderHeight + headerHeight + 10 + safeAreaBottom;
+    ordersGrid.style.height = (window.innerHeight - totalOffset) + 'px';
+  }
+}
+
+function showItemSummaryModal() {
+  const serviceType = getCurrentEventServiceType();
+  const isPackageMode = serviceType === 'package';
+
+  const ordersForDate = orderHistory.filter(order => {
+    const orderEvent = order.event || 'pop-up';
+    return getLocalDateString(new Date(order.timestamp)) === getLocalDateString(selectedDate) &&
+      (order.status === 'pending' || order.status === 'completed') &&
+      orderEvent === currentEvent;
+  });
+
+  // Tally items
+  const itemMap = {};
+  ordersForDate.forEach(order => {
+    order.items.forEach(item => {
+      const key = item.name ? item.name.replace(/<[^>]*>/g, '') : 'Unknown';
+      if (!itemMap[key]) itemMap[key] = 0;
+      itemMap[key] += item.quantity;
+    });
+  });
+
+  // Build modal
+  const overlay = document.createElement('div');
+  overlay.className = 'item-summary-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;';
+
+  const modal = document.createElement('div');
+  modal.style.cssText = 'background:#fff;border-radius:12px;padding:24px;max-width:400px;width:100%;max-height:80vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.2);';
+
+  const title = document.createElement('h3');
+  title.textContent = isPackageMode ? 'ITEM BREAKDOWN (CUPS)' : 'ITEM BREAKDOWN (SALES)';
+  title.style.cssText = 'font-family:Poppins,sans-serif;font-size:14px;font-weight:700;letter-spacing:1px;color:#333;margin:0 0 16px;text-align:center;';
+  modal.appendChild(title);
+
+  const entries = Object.entries(itemMap).sort((a, b) => b[1] - a[1]);
+  entries.forEach(([name, qty]) => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f0f0f0;font-family:Poppins,sans-serif;font-size:13px;color:#444;';
+    row.innerHTML = `<span>${name}</span><span style="font-weight:700;color:#1d8a00;">${qty}</span>`;
+    modal.appendChild(row);
+  });
+
+  // Tally milk types
+  let dairyCount = 0;
+  let oatCount = 0;
+  ordersForDate.forEach(order => {
+    order.items.forEach(item => {
+      if (item.customizations && item.customizations.milk) {
+        const qty = item.quantity || 1;
+        if (item.customizations.milk === 'dairy') dairyCount += qty;
+        else if (item.customizations.milk === 'oat') oatCount += qty;
+      }
+    });
+  });
+
+  if (dairyCount > 0 || oatCount > 0) {
+    const milkTitle = document.createElement('h4');
+    milkTitle.textContent = 'MILK TYPE';
+    milkTitle.style.cssText = 'font-family:Poppins,sans-serif;font-size:11px;font-weight:700;letter-spacing:1px;color:#aaa;margin:16px 0 4px;text-align:center;';
+    modal.appendChild(milkTitle);
+
+    [['dairy', dairyCount], ['oat', oatCount]].forEach(([label, count]) => {
+      if (count === 0) return;
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #f0f0f0;font-family:Poppins,sans-serif;font-size:13px;color:#444;';
+      row.innerHTML = `<span style="text-transform:capitalize;">${label} milk</span><span style="font-weight:700;color:#1d8a00;">${count}</span>`;
+      modal.appendChild(row);
+    });
+  }
+
+  if (!isPackageMode) {
+    const salesSummaryBtn = document.createElement('button');
+    salesSummaryBtn.textContent = 'SALES SUMMARY';
+    salesSummaryBtn.style.cssText = 'margin-top:16px;width:100%;padding:12px;background:transparent;color:#1d8a00;border:2px solid #1d8a00;border-radius:8px;font-family:Poppins,sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;cursor:pointer;';
+    salesSummaryBtn.addEventListener('click', () => { overlay.remove(); showEndOfDayModal(); });
+    modal.appendChild(salesSummaryBtn);
+  }
+
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = 'CLOSE';
+  closeBtn.style.cssText = 'margin-top:8px;width:100%;padding:12px;background:#1d8a00;color:#fff;border:none;border-radius:8px;font-family:Poppins,sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;cursor:pointer;';
+  closeBtn.addEventListener('click', () => overlay.remove());
+  modal.appendChild(closeBtn);
+
+  overlay.appendChild(modal);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+}
+
 function updateTotalSalesDisplay() {
   const serviceType = getCurrentEventServiceType();
   const isPackageMode = serviceType === 'package';
   
   const salesAmount = document.getElementById('salesAmount');
   const salesLabel = document.getElementById('salesLabel');
+  const salesSubLabel = document.getElementById('salesSubLabel');
   
   if (isPackageMode) {
-    // For package service, show total cups
     const totalCups = calculateTotalCups(selectedDate);
-    if (salesAmount) {
-      salesAmount.textContent = totalCups.toString();
-    }
-    if (salesLabel) {
-      // Get pending orders count and pending items count
+    if (salesAmount) salesAmount.textContent = totalCups.toString();
+    if (salesLabel) salesLabel.textContent = 'TOTAL CUPS';
+    if (salesSubLabel) {
       const pendingOrders = getPendingOrdersCount(selectedDate);
       const pendingItems = getPendingItemsCount(selectedDate);
-      salesLabel.textContent = `TOTAL CUPS • ${pendingOrders} PENDING ORDERS • ${pendingItems} PENDING ITEMS`;
+      salesSubLabel.innerHTML = `${pendingOrders} PENDING ORDERS<br>${pendingItems} PENDING ITEMS`;
     }
   } else {
-    // For popup service, show total sales
     const totalSales = calculateTotalSales(selectedDate);
-    if (salesAmount) {
-      salesAmount.textContent = `₱${totalSales.toFixed(2)}`;
+    if (salesAmount) salesAmount.textContent = `₱${totalSales.toFixed(2)}`;
+    if (salesLabel) salesLabel.textContent = 'TOTAL SALES';
+    if (salesSubLabel) {
+      const pendingOrders = getPendingOrdersCount(selectedDate);
+      salesSubLabel.innerHTML = `${pendingOrders} PENDING`;
     }
-    if (salesLabel) {
-      salesLabel.textContent = 'TOTAL SALES';
-    }
+  }
+
+  if (window.innerWidth <= 767) {
+    setTimeout(adjustOrdersContentPadding, 30);
   }
 }
 
-function createOrderCard(order, isCompleted, isVoided = false) {
+function getQueueLabel(pos) {
+  if (pos === 1) return 'NEXT';
+  const suffix = pos === 2 ? 'ND' : pos === 3 ? 'RD' : 'TH';
+  return `${pos}${suffix}`;
+}
+
+function createOrderCard(order, isCompleted, isVoided = false, queuePosition = null) {
   const orderCard = document.createElement('div');
   orderCard.className = 'order-card' + (isCompleted ? ' completed' : '') + (isVoided ? ' voided' : '');
 
@@ -928,6 +1031,9 @@ function createOrderCard(order, isCompleted, isVoided = false) {
   orderHeaderTop.appendChild(orderId);
   orderHeaderTop.appendChild(customerName);
 
+  const orderDateTimeRow = document.createElement('div');
+  orderDateTimeRow.className = 'order-datetime-row';
+
   const orderDateTime = document.createElement('div');
   orderDateTime.className = 'order-datetime';
   const date = new Date(order.timestamp);
@@ -936,9 +1042,17 @@ function createOrderCard(order, isCompleted, isVoided = false) {
     minute: '2-digit',
     hour12: true
   });
+  orderDateTimeRow.appendChild(orderDateTime);
+
+  if (queuePosition !== null) {
+    const queueBadge = document.createElement('div');
+    queueBadge.className = 'order-queue-badge' + (queuePosition === 1 ? ' queue-next' : '');
+    queueBadge.textContent = getQueueLabel(queuePosition);
+    orderDateTimeRow.appendChild(queueBadge);
+  }
 
   orderHeader.appendChild(orderHeaderTop);
-  orderHeader.appendChild(orderDateTime);
+  orderHeader.appendChild(orderDateTimeRow);
   orderCard.appendChild(orderHeader);
 
   const orderMetaBottom = document.createElement('div');
@@ -949,7 +1063,12 @@ function createOrderCard(order, isCompleted, isVoided = false) {
 
           const orderTotal = document.createElement('div');
         orderTotal.className = 'order-card-total';
-        orderTotal.textContent = `₱${order.total.toFixed(2)}`;
+        if (getCurrentEventServiceType() === 'package') {
+          const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
+          orderTotal.textContent = `${itemCount} item${itemCount !== 1 ? 's' : ''}`;
+        } else {
+          orderTotal.textContent = `₱${order.total.toFixed(2)}`;
+        }
 
   // Only show payment method for orders that have one
   if (order.paymentMethod && order.paymentMethod.trim() !== '') {
@@ -1190,12 +1309,11 @@ function editOrder(orderId) {
 
   // Switch to menu view
   const menuContainer = document.getElementById('menu-container');
-  const orderPanel = document.getElementById('order-panel');
   const ordersContainer = document.getElementById('orders-container');
   const menuHeader = document.querySelector('.menu-header');
 
   menuContainer.style.display = 'flex';
-  orderPanel.style.display = 'flex';
+  openOrderPanel();
   ordersContainer.style.display = 'none';
   menuHeader.innerHTML = 'MATCHA BAR <span class="light">MENU</span>';
 
@@ -1421,9 +1539,11 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
   // Create modal
   const modal = document.createElement('div');
   modal.className = 'modal';
-  // Make modal wider
-  modal.style.maxWidth = '400px';
-  modal.style.width = '90%';
+  // On desktop only — mobile uses full-width bottom-sheet CSS
+  if (window.innerWidth > 767) {
+    modal.style.maxWidth = '400px';
+    modal.style.width = '90%';
+  }
   
   // Store item data in modal for price calculations
   modal.dataset.item = JSON.stringify(item);
@@ -1510,7 +1630,8 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
   milkDiscountRow.style.gap = '20px';
   milkDiscountRow.style.marginBottom = '30px';
 
-  // Determine if milk options are available for this item
+  // Determine if milk options are available for this item.
+  // If the item defines a customizations object, milk only shows if milk is explicitly included.
   const hasMilkOptions = !allowedCustomizations || allowedCustomizations.milk;
 
   if (hasMilkOptions) {
@@ -1590,9 +1711,21 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
   pwdBtn.innerHTML = '<span class="option-text">PWD</span>';
   pwdBtn.addEventListener('click', () => toggleDiscount(pwdBtn));
 
+  const freeBtn = document.createElement('button');
+  freeBtn.className = 'option-button discount-toggle';
+  freeBtn.dataset.discount = 'free';
+
+  if (currentCustomizations.discount === 'free') {
+    freeBtn.classList.add('active');
+  }
+
+  freeBtn.innerHTML = '<span class="option-text">FREE</span>';
+  freeBtn.addEventListener('click', () => toggleDiscount(freeBtn));
+
   discountButtons.appendChild(seniorBtn);
   discountButtons.appendChild(pwdBtn);
-  
+  discountButtons.appendChild(freeBtn);
+
   // Add custom discount button
   const customBtn = document.createElement('button');
   customBtn.className = 'option-button discount-toggle';
@@ -1613,11 +1746,16 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
   const customDiscountInput = document.createElement('div');
   customDiscountInput.className = 'custom-discount-input';
   customDiscountInput.style.display = 'none';
-  customDiscountInput.style.position = 'absolute';
-  customDiscountInput.style.left = '100%';
-  customDiscountInput.style.top = '0';
-  customDiscountInput.style.marginLeft = '10px';
   customDiscountInput.style.zIndex = '10';
+  if (window.innerWidth <= 767) {
+    customDiscountInput.style.position = 'static';
+    customDiscountInput.style.marginTop = '8px';
+  } else {
+    customDiscountInput.style.position = 'absolute';
+    customDiscountInput.style.left = '100%';
+    customDiscountInput.style.top = '0';
+    customDiscountInput.style.marginLeft = '10px';
+  }
   customDiscountInput.innerHTML = `
     <div style="display: flex; align-items: center; gap: 5px;">
       <input type="number" id="customDiscountPercent" placeholder="%" min="0" max="100" style="width: 50px; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px;">
@@ -1693,19 +1831,20 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
   hiddenTotal.className = 'item-total-display';
   hiddenTotal.style.display = 'none';
 
-  // Calculate initial price
+  // Calculate initial price (use menu-level oat/strength prices when set)
+  const opts = getCustomizationOptions();
   let basePrice = editMode ? (item.basePrice || item.price) : item.price;
-  if (currentCustomizations.size && customizationOptions.size[currentCustomizations.size]) {
-    basePrice += customizationOptions.size[currentCustomizations.size];
+  if (currentCustomizations.size && opts.size[currentCustomizations.size]) {
+    basePrice += opts.size[currentCustomizations.size];
   }
-  if (currentCustomizations.milk && customizationOptions.milk[currentCustomizations.milk]) {
-    basePrice += customizationOptions.milk[currentCustomizations.milk];
+  if (currentCustomizations.milk && opts.milk[currentCustomizations.milk]) {
+    basePrice += opts.milk[currentCustomizations.milk];
   }
-  if (currentCustomizations.strengthLevel && customizationOptions.strengthLevel[currentCustomizations.strengthLevel] !== undefined) {
-    basePrice += customizationOptions.strengthLevel[currentCustomizations.strengthLevel];
+  if (currentCustomizations.strengthLevel && opts.strengthLevel[currentCustomizations.strengthLevel] !== undefined) {
+    basePrice += opts.strengthLevel[currentCustomizations.strengthLevel];
   }
-  if (currentCustomizations.discount && customizationOptions.discount[currentCustomizations.discount]) {
-    basePrice = basePrice * (1 + customizationOptions.discount[currentCustomizations.discount]);
+  if (currentCustomizations.discount && opts.discount[currentCustomizations.discount]) {
+    basePrice = basePrice * (1 + opts.discount[currentCustomizations.discount]);
   }
   hiddenTotal.dataset.basePrice = editMode ? (item.basePrice || item.price) : item.price;
   modal.appendChild(hiddenTotal);
@@ -1738,6 +1877,11 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
 
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
+
+  // Close on outside tap
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
 
   // Initialize the item total when the modal is first shown
   updateItemTotal();
@@ -1822,49 +1966,50 @@ function editOrderItem(index) {
 
 function updateCustomizedItemInOrder(baseItem, editIndex, overlay) {
   const options = getSelectedOptions();
+  const isPackageMode = getCurrentEventServiceType() === 'package';
 
   // Calculate additional price and adjustments
   let additionalPrice = 0;
   let discountMultiplier = 1;
 
-  // Size adjustment
-  if (options.size && customizationOptions.size[options.size]) {
-    additionalPrice += customizationOptions.size[options.size];
-  }
+  if (!isPackageMode) {
+    const opts = getCustomizationOptions();
+    // Size adjustment
+    if (options.size && opts.size[options.size]) {
+      additionalPrice += opts.size[options.size];
+    }
 
-  // Milk adjustment
-  if (options.milk && customizationOptions.milk[options.milk]) {
-    additionalPrice += customizationOptions.milk[options.milk];
-  }
+    // Milk adjustment
+    if (options.milk && opts.milk[options.milk]) {
+      additionalPrice += opts.milk[options.milk];
+    }
 
-  // Strength level adjustment
-  if (options.strengthLevel && customizationOptions.strengthLevel[options.strengthLevel] !== undefined) {
-    additionalPrice += customizationOptions.strengthLevel[options.strengthLevel];
-  }
+    // Strength level adjustment
+    if (options.strengthLevel && opts.strengthLevel[options.strengthLevel] !== undefined) {
+      additionalPrice += opts.strengthLevel[options.strengthLevel];
+    }
 
-  // Add preparation adjustment for brew bar items
-  if (options.preparation && baseItem.customizations && baseItem.customizations.preparation) {
-    const preparationPrice = baseItem.customizations.preparation[options.preparation];
-    if (preparationPrice !== undefined) {
-      // For brew bar items, the preparation price replaces the base price
-      baseItem.price = preparationPrice;
-      additionalPrice = 0; // Reset additional price since preparation price is the total
+    // Add preparation adjustment for brew bar items
+    if (options.preparation && baseItem.customizations && baseItem.customizations.preparation) {
+      const preparationPrice = baseItem.customizations.preparation[options.preparation];
+      if (preparationPrice !== undefined) {
+        baseItem.price = preparationPrice;
+        additionalPrice = 0;
+      }
+    }
+
+    // Apply discount if any
+    if (options.discount && options.discount !== 'none') {
+      if (options.discount === 'custom' && options.customDiscountPercent) {
+        const customDiscountMultiplier = -(options.customDiscountPercent / 100);
+        discountMultiplier = 1 + customDiscountMultiplier;
+      } else if (opts.discount[options.discount]) {
+        discountMultiplier = 1 + opts.discount[options.discount];
+      }
     }
   }
 
-  // Apply discount if any
-  if (options.discount && options.discount !== 'none') {
-    if (options.discount === 'custom' && options.customDiscountPercent) {
-      // Handle custom discount
-      const customDiscountMultiplier = -(options.customDiscountPercent / 100);
-      discountMultiplier = 1 + customDiscountMultiplier;
-    } else if (customizationOptions.discount[options.discount]) {
-      // Handle predefined discounts (senior, pwd)
-      discountMultiplier = 1 + customizationOptions.discount[options.discount];
-    }
-  }
-
-  // Calculate final price
+  // Calculate final price (always 0 for package mode)
   const finalPrice = ((baseItem.basePrice || baseItem.price) + additionalPrice) * discountMultiplier;
 
   // Update item with new customizations
@@ -1936,25 +2081,26 @@ function updateItemTotal() {
   const addButton = document.getElementById('add-to-order-btn');
   if (!addButton) return;
 
-  // Get base price from the menu item
+  // Get base price from the menu item (use menu-level oat/strength prices when set)
+  const opts = getCustomizationOptions();
   let basePrice = parseFloat(itemTotalDisplay.dataset.basePrice);
 
   // Apply size adjustment
   const sizeOption = document.querySelector('.option-button.active[data-group="size"]');
-  if (sizeOption && customizationOptions.size[sizeOption.dataset.option]) {
-    basePrice += customizationOptions.size[sizeOption.dataset.option];
+  if (sizeOption && opts.size[sizeOption.dataset.option]) {
+    basePrice += opts.size[sizeOption.dataset.option];
   }
 
   // Apply milk adjustment
   const milkOption = document.querySelector('.option-button.active[data-group="milk"]');
-  if (milkOption && customizationOptions.milk[milkOption.dataset.option]) {
-    basePrice += customizationOptions.milk[milkOption.dataset.option];
+  if (milkOption && opts.milk[milkOption.dataset.option]) {
+    basePrice += opts.milk[milkOption.dataset.option];
   }
 
   // Apply strength level adjustment
   const strengthLevelOption = document.querySelector('.option-button.active[data-group="strength level"]');
-  if (strengthLevelOption && customizationOptions.strengthLevel[strengthLevelOption.dataset.option] !== undefined) {
-    basePrice += customizationOptions.strengthLevel[strengthLevelOption.dataset.option];
+  if (strengthLevelOption && opts.strengthLevel[strengthLevelOption.dataset.option] !== undefined) {
+    basePrice += opts.strengthLevel[strengthLevelOption.dataset.option];
   }
 
   // Apply preparation adjustment for brew bar items
@@ -1995,9 +2141,9 @@ function updateItemTotal() {
           basePrice = basePrice * (1 + customDiscountMultiplier);
         }
       }
-    } else if (customizationOptions.discount[discountType]) {
+    } else if (opts.discount[discountType]) {
       // Handle predefined discounts (senior, pwd)
-      basePrice = basePrice * (1 + customizationOptions.discount[discountType]);
+      basePrice = basePrice * (1 + opts.discount[discountType]);
     }
   }
 
@@ -2105,57 +2251,58 @@ function getSelectedOptions() {
 
 function addCustomizedItemToOrder(baseItem, overlay) {
   const options = getSelectedOptions();
+  const isPackageMode = getCurrentEventServiceType() === 'package';
 
   // Calculate additional price and adjustments
   let additionalPrice = 0;
   let discountMultiplier = 1;
 
-  // Add size adjustment
-  if (options.size && customizationOptions.size[options.size]) {
-    additionalPrice += customizationOptions.size[options.size];
-  }
+  if (!isPackageMode) {
+    const opts = getCustomizationOptions();
+    // Add size adjustment
+    if (options.size && opts.size[options.size]) {
+      additionalPrice += opts.size[options.size];
+    }
 
-  // Add milk adjustment
-  if (options.milk && customizationOptions.milk[options.milk]) {
-    additionalPrice += customizationOptions.milk[options.milk];
-  }
+    // Add milk adjustment
+    if (options.milk && opts.milk[options.milk]) {
+      additionalPrice += opts.milk[options.milk];
+    }
 
-  // Add strength level adjustment
-  if (options.strengthLevel && customizationOptions.strengthLevel[options.strengthLevel] !== undefined) {
-    additionalPrice += customizationOptions.strengthLevel[options.strengthLevel];
-  }
+    // Add strength level adjustment
+    if (options.strengthLevel && opts.strengthLevel[options.strengthLevel] !== undefined) {
+      additionalPrice += opts.strengthLevel[options.strengthLevel];
+    }
 
-  // Add preparation adjustment for brew bar items
-  if (options.preparation && baseItem.customizations && baseItem.customizations.preparation) {
-    const preparationPrice = baseItem.customizations.preparation[options.preparation];
-    if (preparationPrice !== undefined) {
-      // For brew bar items, the preparation price replaces the base price
-      baseItem.price = preparationPrice;
-      additionalPrice = 0; // Reset additional price since preparation price is the total
+    // Add preparation adjustment for brew bar items
+    if (options.preparation && baseItem.customizations && baseItem.customizations.preparation) {
+      const preparationPrice = baseItem.customizations.preparation[options.preparation];
+      if (preparationPrice !== undefined) {
+        baseItem.price = preparationPrice;
+        additionalPrice = 0;
+      }
+    }
+
+    // Apply variant price adjustment if any
+    if (options.variant && baseItem.variants) {
+      const selectedVariant = baseItem.variants.find(v => v.name === options.variant);
+      if (selectedVariant && selectedVariant.price) {
+        additionalPrice += selectedVariant.price;
+      }
+    }
+
+    // Apply discount if any
+    if (options.discount && options.discount !== 'none') {
+      if (options.discount === 'custom' && options.customDiscountPercent) {
+        const customDiscountMultiplier = -(options.customDiscountPercent / 100);
+        discountMultiplier = 1 + customDiscountMultiplier;
+      } else if (opts.discount[options.discount]) {
+        discountMultiplier = 1 + opts.discount[options.discount];
+      }
     }
   }
 
-  // Apply variant price adjustment if any
-  if (options.variant && baseItem.variants) {
-    const selectedVariant = baseItem.variants.find(v => v.name === options.variant);
-    if (selectedVariant && selectedVariant.price) {
-      additionalPrice += selectedVariant.price;
-    }
-  }
-
-  // Apply discount if any
-  if (options.discount && options.discount !== 'none') {
-    if (options.discount === 'custom' && options.customDiscountPercent) {
-      // Handle custom discount
-      const customDiscountMultiplier = -(options.customDiscountPercent / 100);
-      discountMultiplier = 1 + customDiscountMultiplier;
-    } else if (customizationOptions.discount[options.discount]) {
-      // Handle predefined discounts (senior, pwd)
-      discountMultiplier = 1 + customizationOptions.discount[options.discount];
-    }
-  }
-
-  // Calculate final price with all adjustments
+  // Calculate final price with all adjustments (always 0 for package mode)
   const finalPrice = (baseItem.price + additionalPrice) * discountMultiplier;
 
   // Check if this exact customization already exists in the order
@@ -2212,13 +2359,13 @@ function initializePaymentHandlers() {
     showGCashPaymentModal();
   });
 
-  // Maya payment handler
-  document.getElementById('maya-payment').addEventListener('click', () => {
+  // Card payment handler
+  document.getElementById('card-payment').addEventListener('click', () => {
     if (currentOrder.length === 0) {
       alert('Please add items to your order first.');
       return;
     }
-    showMayaPaymentModal();
+    showCardPaymentModal();
   });
 }
 
@@ -2237,6 +2384,12 @@ document.addEventListener('DOMContentLoaded', function () {
   const endOfDayBtn = document.getElementById('endOfDayBtn');
   if (endOfDayBtn) {
     endOfDayBtn.addEventListener('click', showEndOfDayModal);
+  }
+
+  const totalSalesBlock = document.getElementById('totalSalesBlock');
+  if (totalSalesBlock) {
+    totalSalesBlock.style.cursor = 'pointer';
+    totalSalesBlock.addEventListener('click', showItemSummaryModal);
   }
 });
 
@@ -2272,7 +2425,7 @@ function buildEventSalesSummaryHTML(record, eventName, dateStr) {
   html += `<table style="width: 100%; border-collapse: collapse;">`;
   html += `<tr><td style="padding: 0.06rem 0.5rem;">Cash:</td><td style="text-align: right;">${fmt(record.cash)}</td></tr>`;
   html += `<tr><td style="padding: 0.06rem 0.5rem;">GCash:</td><td style="text-align: right;">${fmt(record.gcash)}</td></tr>`;
-  html += `<tr><td style="padding: 0.06rem 0.5rem;">Maya:</td><td style="text-align: right;">${fmt(record.maya)}</td></tr>`;
+  html += `<tr><td style="padding: 0.06rem 0.5rem;">Card:</td><td style="text-align: right;">${fmt(record.card)}</td></tr>`;
   html += `<tr><td style="padding: 0.06rem 0.5rem;"><strong>Total Sales:</strong></td><td style="text-align: right;"><strong>${fmt(record.totalSales)}</strong></td></tr>`;
   html += `</table></div>`;
   html += `<div style="margin-bottom: 0.48rem;">`;
@@ -2322,7 +2475,7 @@ async function sendEventSalesEmail(record, eventName, dateStr) {
     <div style="margin-bottom: 0.48rem;"><strong>Sales Breakdown</strong><table style="width: 100%; border-collapse: collapse;">
     <tr><td style="padding: 0.06rem 0.5rem;">Cash:</td><td style="text-align: right;">${fmt(record.cash)}</td></tr>
     <tr><td style="padding: 0.06rem 0.5rem;">GCash:</td><td style="text-align: right;">${fmt(record.gcash)}</td></tr>
-    <tr><td style="padding: 0.06rem 0.5rem;">Maya:</td><td style="text-align: right;">${fmt(record.maya)}</td></tr>
+    <tr><td style="padding: 0.06rem 0.5rem;">Card:</td><td style="text-align: right;">${fmt(record.card)}</td></tr>
     <tr><td style="padding: 0.06rem 0.5rem;"><strong>Total Sales:</strong></td><td style="text-align: right;"><strong>${fmt(record.totalSales)}</strong></td></tr></table></div>
     <div style="margin-bottom: 0.48rem;"><strong>Expenses</strong><table style="width: 100%; border-collapse: collapse;">
     <tr><td style="padding: 0.06rem 0.5rem;">Cash Expenses:</td><td style="text-align: right;">${fmt(record.expenses)}</td></tr></table></div>
@@ -2351,8 +2504,8 @@ function showEndOfDayModal() {
   const dateStr = getLocalDateString(selectedDate);
   const eventName = getEventDisplayName();
   const cashFlowKey = `cashFlow_${currentEvent}_${dateStr}`;
-  const existingCashData = JSON.parse(localStorage.getItem(cashFlowKey) || '{"startingCash": 0, "expenses": 0}');
-  const expectedCash = existingCashData.startingCash + salesData.cash - existingCashData.expenses;
+  const existingCashData = JSON.parse(localStorage.getItem(cashFlowKey) || '{"expenses": 0}');
+  const expectedCash = salesData.cash - (existingCashData.expenses || 0);
   const formattedDate = formatEventSalesDate(dateStr);
 
   const reportModalStyles = `
@@ -2405,7 +2558,7 @@ function showEndOfDayModal() {
         <div class="eod-subheader">Sales Breakdown (from POS)</div>
         <div class="eod-row"><label>Cash</label><span class="eod-val">₱${formatWithCommas(salesData.cash.toFixed(2))}</span></div>
         <div class="eod-row"><label>GCash</label><span class="eod-val">₱${formatWithCommas(salesData.gcash.toFixed(2))}</span></div>
-        <div class="eod-row"><label>Maya</label><span class="eod-val">₱${formatWithCommas(salesData.maya.toFixed(2))}</span></div>
+        <div class="eod-row"><label>Card</label><span class="eod-val">₱${formatWithCommas(salesData.card.toFixed(2))}</span></div>
       </div>
       <div class="eod-group-card">
         <div class="eod-subheader">Cash Expenses</div>
@@ -2419,13 +2572,6 @@ function showEndOfDayModal() {
       </div>
       <div class="eod-group-card">
         <div class="eod-subheader">Cash Reconciliation</div>
-        <div class="eod-row">
-          <label>Starting Cash</label>
-          <div class="eod-input-inline" style="flex: 1; max-width: 140px;">
-            <span class="peso">₱</span>
-            <input type="number" id="eodStartingCash" value="${existingCashData.startingCash}" step="0.01" placeholder="0">
-          </div>
-        </div>
         <div class="eod-row"><label>Expected Cash</label><span class="eod-val" id="eodExpectedCash">₱${formatWithCommas(expectedCash.toFixed(2))}</span></div>
         <div class="eod-row">
           <label>Actual Cash Count</label>
@@ -2457,15 +2603,13 @@ function showEndOfDayModal() {
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
 
-  const startingInput = document.getElementById('eodStartingCash');
   const expensesInput = document.getElementById('eodExpenses');
   const actualInput = document.getElementById('eodActualCash');
 
   function updateEodCalculations() {
-    const start = parseFloat(startingInput.value) || 0;
     const exp = parseFloat(expensesInput.value) || 0;
     const actual = parseFloat(actualInput.value) || 0;
-    const expected = start + salesData.cash - exp;
+    const expected = salesData.cash - exp;
     const variance = actual - expected;
     const cashLeftEl = document.getElementById('eodCashLeft');
     if (cashLeftEl) cashLeftEl.textContent = `₱${formatWithCommas(expected.toFixed(2))}`;
@@ -2475,7 +2619,6 @@ function showEndOfDayModal() {
     else if (variance < 0) { el.style.color = '#ff4444'; el.textContent = `-₱${formatWithCommas(Math.abs(variance).toFixed(2))}`; }
     else { el.style.color = '#333'; el.textContent = `₱${formatWithCommas(variance.toFixed(2))}`; }
   }
-  startingInput.addEventListener('input', updateEodCalculations);
   expensesInput.addEventListener('input', updateEodCalculations);
   actualInput.addEventListener('input', updateEodCalculations);
   updateEodCalculations();
@@ -2483,10 +2626,9 @@ function showEndOfDayModal() {
   document.getElementById('eodCancelBtn').addEventListener('click', () => overlay.remove());
 
   document.getElementById('eodNextBtn').addEventListener('click', async () => {
-    const startingCash = parseFloat(startingInput.value) || 0;
     const expenses = parseFloat(expensesInput.value) || 0;
     const actualCash = parseFloat(actualInput.value) || 0;
-    const calculatedCashLeft = startingCash + salesData.cash - expenses;
+    const calculatedCashLeft = salesData.cash - expenses;
     const variance = actualCash - calculatedCashLeft;
     const record = {
       eventKey: currentEvent,
@@ -2494,12 +2636,12 @@ function showEndOfDayModal() {
       date: dateStr,
       cash: salesData.cash,
       gcash: salesData.gcash,
-      maya: salesData.maya,
+      card: salesData.card,
       totalSales: salesData.total,
       walkInSales: salesData.total,
       grab: 0,
       expenses,
-      startingCash,
+      startingCash: 0,
       actualCashLeft: actualCash,
       calculatedCashLeft,
       cashVariance: variance,
@@ -2530,36 +2672,32 @@ function showEndOfDayModal() {
 
     document.getElementById('eodBackBtn').addEventListener('click', () => {
       modal.innerHTML = formContent;
-      const startInp = document.getElementById('eodStartingCash');
       const expInp = document.getElementById('eodExpenses');
       const actInp = document.getElementById('eodActualCash');
-      startInp.value = startingCash;
       expInp.value = expenses;
       actInp.value = actualCash;
       function up() {
-        const s = parseFloat(startInp.value) || 0, e = parseFloat(expInp.value) || 0, a = parseFloat(actInp.value) || 0;
-        const expected = s + salesData.cash - e, variance = a - expected;
+        const e = parseFloat(expInp.value) || 0, a = parseFloat(actInp.value) || 0;
+        const expected = salesData.cash - e, variance = a - expected;
         document.getElementById('eodExpectedCash').textContent = `₱${formatWithCommas(expected.toFixed(2))}`;
         const el = document.getElementById('eodVariance');
         if (variance > 0) { el.style.color = '#1d8a00'; el.textContent = `+₱${formatWithCommas(variance.toFixed(2))}`; }
         else if (variance < 0) { el.style.color = '#ff4444'; el.textContent = `-₱${formatWithCommas(Math.abs(variance).toFixed(2))}`; }
         else { el.style.color = '#333'; el.textContent = `₱${formatWithCommas(variance.toFixed(2))}`; }
       }
-      startInp.addEventListener('input', up);
       expInp.addEventListener('input', up);
       actInp.addEventListener('input', up);
       up();
       document.getElementById('eodCancelBtn').addEventListener('click', () => overlay.remove());
       document.getElementById('eodNextBtn').addEventListener('click', function goConfirm() {
-        const sc = parseFloat(document.getElementById('eodStartingCash').value) || 0;
         const ex = parseFloat(document.getElementById('eodExpenses').value) || 0;
         const ac = parseFloat(document.getElementById('eodActualCash').value) || 0;
-        const calcLeft = sc + salesData.cash - ex;
+        const calcLeft = salesData.cash - ex;
         const rec = {
           eventKey: currentEvent, eventName, date: dateStr,
-          cash: salesData.cash, gcash: salesData.gcash, maya: salesData.maya,
+          cash: salesData.cash, gcash: salesData.gcash, card: salesData.card,
           totalSales: salesData.total, walkInSales: salesData.total, grab: 0,
-          expenses: ex, startingCash: sc, actualCashLeft: ac, calculatedCashLeft: calcLeft,
+          expenses: ex, startingCash: 0, actualCashLeft: ac, calculatedCashLeft: calcLeft,
           cashVariance: ac - calcLeft, source: 'pos'
         };
         getDoc(salesRef).then(existingSnap2 => {
@@ -2582,22 +2720,19 @@ function showEndOfDayModal() {
           document.getElementById('eodConfirmSummary').innerHTML = summaryHTML2;
           document.getElementById('eodBackBtn').addEventListener('click', () => {
             modal.innerHTML = formContent;
-            const s2 = document.getElementById('eodStartingCash');
             const e2 = document.getElementById('eodExpenses');
             const a2 = document.getElementById('eodActualCash');
-            s2.value = sc;
             e2.value = ex;
             a2.value = ac;
             function up2() {
-              const s = parseFloat(s2.value) || 0, e = parseFloat(e2.value) || 0, a = parseFloat(a2.value) || 0;
-              const expected = s + salesData.cash - e, variance = a - expected;
+              const e = parseFloat(e2.value) || 0, a = parseFloat(a2.value) || 0;
+              const expected = salesData.cash - e, variance = a - expected;
               document.getElementById('eodExpectedCash').textContent = `₱${formatWithCommas(expected.toFixed(2))}`;
               const el = document.getElementById('eodVariance');
               if (variance > 0) { el.style.color = '#1d8a00'; el.textContent = `+₱${formatWithCommas(variance.toFixed(2))}`; }
               else if (variance < 0) { el.style.color = '#ff4444'; el.textContent = `-₱${formatWithCommas(Math.abs(variance).toFixed(2))}`; }
               else { el.style.color = '#333'; el.textContent = `₱${formatWithCommas(variance.toFixed(2))}`; }
             }
-            s2.addEventListener('input', up2);
             e2.addEventListener('input', up2);
             a2.addEventListener('input', up2);
             up2();
@@ -2609,7 +2744,7 @@ function showEndOfDayModal() {
             try {
               await setDoc(salesRef, { ...rec, timestamp: serverTimestamp() });
               sendEventSalesEmail(rec, eventName, dateStr).catch(e => console.error(e));
-              const cashFlowData = { date: dateStr, event: currentEvent, startingCash: sc, expenses: ex, actualCash: ac, expectedCash: calcLeft, variance: ac - calcLeft, salesData, savedAt: new Date().toISOString() };
+              const cashFlowData = { date: dateStr, event: currentEvent, expenses: ex, actualCash: ac, expectedCash: calcLeft, variance: ac - calcLeft, salesData, savedAt: new Date().toISOString() };
               localStorage.setItem(cashFlowKey, JSON.stringify(cashFlowData));
               const summaries = JSON.parse(localStorage.getItem('eodSummaries') || '[]');
               const filtered = summaries.filter(s => !(s.date === dateStr && s.event === currentEvent));
@@ -2631,7 +2766,7 @@ function showEndOfDayModal() {
         const payload = { ...record, timestamp: serverTimestamp() };
         await setDoc(salesRef, payload);
         sendEventSalesEmail(record, eventName, dateStr).catch(e => console.error(e));
-        const cashFlowData = { date: dateStr, event: currentEvent, startingCash, expenses, actualCash, expectedCash: calculatedCashLeft + variance, variance, salesData, savedAt: new Date().toISOString() };
+        const cashFlowData = { date: dateStr, event: currentEvent, expenses, actualCash, expectedCash: calculatedCashLeft, variance, salesData, savedAt: new Date().toISOString() };
         localStorage.setItem(cashFlowKey, JSON.stringify(cashFlowData));
         const summaries = JSON.parse(localStorage.getItem('eodSummaries') || '[]');
         const filtered = summaries.filter(s => !(s.date === dateStr && s.event === currentEvent));
@@ -2781,7 +2916,7 @@ function calculateSalesByPaymentMethod(date) {
   let totalSales = 0;
   let cashSales = 0;
   let gcashSales = 0;
-  let mayaSales = 0;
+  let cardSales = 0;
 
   // Calculate sales by payment method
   relevantOrders.forEach(order => {
@@ -2795,8 +2930,8 @@ function calculateSalesByPaymentMethod(date) {
       case 'gcash':
         gcashSales += orderTotal;
         break;
-      case 'maya':
-        mayaSales += orderTotal;
+      case 'card':
+        cardSales += orderTotal;
         break;
       default:
         // If payment method not specified, assume cash
@@ -2808,7 +2943,7 @@ function calculateSalesByPaymentMethod(date) {
     total: totalSales,
     cash: cashSales,
     gcash: gcashSales,
-    maya: mayaSales
+    card: cardSales
   };
 }
 
@@ -3031,7 +3166,7 @@ function showGCashPaymentModal() {
   document.body.appendChild(overlay);
 }
 
-function showMayaPaymentModal() {
+function showCardPaymentModal() {
   const existingModal = document.querySelector('.payment-modal-overlay');
   if (existingModal) {
     existingModal.remove();
@@ -3051,14 +3186,14 @@ function showMayaPaymentModal() {
 
   const header = document.createElement('h2');
   header.className = 'payment-modal-header';
-  header.textContent = 'Maya Payment';
+  header.textContent = 'Card Payment';
   modal.appendChild(header);
 
   // QR Code image (changed from div to img)
   const qrCode = document.createElement('img');
   qrCode.className = 'qr-code';
   qrCode.src = 'images/qr.png';
-  qrCode.alt = 'Maya QR Code';
+  qrCode.alt = 'Card';
   modal.appendChild(qrCode);
 
   // Total display
@@ -3072,7 +3207,7 @@ function showMayaPaymentModal() {
   sentButton.className = 'charge-button';
   sentButton.textContent = 'PAYMENT SENT';
   sentButton.addEventListener('click', () => {
-    completeDigitalPayment('Maya');
+    completeDigitalPayment('Card');
     // overlay.remove();
   });
   modal.appendChild(sentButton);
@@ -3099,7 +3234,7 @@ function completeCashPayment() {
   const isEditing = window.editingOrderData !== undefined;
 
   const order = {
-    id: isEditing ? window.editingOrderData.originalId : now.getTime().toString().slice(-5),
+    id: isEditing ? window.editingOrderData.originalId : generateOrderId(),
     items: [...currentOrder],
     total: calculateOrderTotal(),
     paymentMethod: 'Cash', // or method
@@ -3150,7 +3285,7 @@ function completeDigitalPayment(method) {
   const isEditing = window.editingOrderData !== undefined;
 
   const order = {
-    id: isEditing ? window.editingOrderData.originalId : now.getTime().toString().slice(-5),
+    id: isEditing ? window.editingOrderData.originalId : generateOrderId(),
     items: [...currentOrder],
     total: calculateOrderTotal(),
     paymentMethod: method, // or method
@@ -3320,14 +3455,26 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Make syncOrdersWithFirebase available globally
   window.syncOrdersWithFirebase = syncOrdersWithFirebase;
 
-  // Load existing orders and sync with Firebase
+  // Push any locally queued orders and start real-time listener for today
   await syncOrdersWithFirebase();
+  subscribeToOrders(currentEvent, selectedDate, mergeFirebaseOrder);
 
-  // Schedule periodic sync
+  // Periodic sync keeps offline-queued orders flushed to Firebase
   setInterval(syncOrdersWithFirebase, 60000);
 
   // Add window resize listener to recalculate grid columns
   let resizeTimeout;
+  // Safari-safe viewport height: 100vh is unreliable on Safari because it
+  // doesn't shrink when the browser chrome (address bar) is visible.
+  // We measure window.innerHeight and expose it as --vh for use in CSS.
+  function setVhVariable() {
+    document.documentElement.style.setProperty('--vh', `${window.innerHeight * 0.01}px`);
+  }
+  setVhVariable();
+  window.addEventListener('resize', setVhVariable);
+  // Safari fires a scroll event on the window when its chrome appears/disappears
+  window.addEventListener('scroll', setVhVariable, { passive: true });
+
   window.addEventListener('resize', () => {
     clearTimeout(resizeTimeout);
     resizeTimeout = setTimeout(() => {
@@ -3398,8 +3545,9 @@ async function initializeEventSelector() {
     // Force update order display for payment buttons
     updateOrderDisplay();
 
-    // Reload orders for the new event
+    // Reload orders for the new event with a fresh real-time listener
     syncOrdersWithFirebase();
+    subscribeToOrders(currentEvent, selectedDate, mergeFirebaseOrder);
     displayOrderHistory();
   });
 }
@@ -3466,6 +3614,37 @@ async function syncOrdersWithFirebase() {
   }
 }
 
+function mergeFirebaseOrder(docSnapshot) {
+  const remote = { firebaseId: docSnapshot.id, ...docSnapshot.data() };
+
+  // Never overwrite an order that this device is currently mid-edit
+  if (window.editingOrderData?.originalId === remote.id) return;
+
+  const localIndex = orderHistory.findIndex(o => o.id === remote.id);
+
+  if (localIndex === -1) {
+    // Order created on another device — add it
+    orderHistory.push(remote);
+  } else {
+    const local = orderHistory[localIndex];
+    // Local wins only if it has unsynced changes that are newer than Firebase
+    const localNewer = local.needsSync &&
+      new Date(local.lastModified) > new Date(remote.lastModified);
+
+    if (!localNewer) {
+      // Firebase version is newer or equal — accept it
+      orderHistory[localIndex] = { ...remote, needsSync: false };
+    }
+    // Otherwise: local pending change is newer, leave it alone until it pushes
+  }
+
+  localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+
+  if (document.getElementById('orders-container').style.display !== 'none') {
+    displayOrderHistory();
+  }
+}
+
 // Replace the existing showNameInputModal function:
 function showNameInputModal() {
   const existingModal = document.querySelector('.name-input-modal');
@@ -3520,6 +3699,10 @@ function showNameInputModal() {
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
 
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+
   setTimeout(() => input.focus(), 100);
 }
 
@@ -3572,9 +3755,7 @@ function initializeDatePicker() {
       selectedDate = selectedDates[0];
       updateDateDisplay();
       displayOrderHistory();
-
-      // Sync the newly selected date with Firebase
-      syncOrdersWithFirebase();
+      subscribeToOrders(currentEvent, selectedDate, mergeFirebaseOrder);
     },
     maxDate: "today",
     disableMobile: true
@@ -3585,9 +3766,7 @@ function initializeDatePicker() {
     selectedDate.setDate(selectedDate.getDate() - 1);
     updateDateDisplay();
     displayOrderHistory();
-
-    // Sync the newly selected date with Firebase
-    syncOrdersWithFirebase();
+    subscribeToOrders(currentEvent, selectedDate, mergeFirebaseOrder);
   });
 
   // Next day button
@@ -3595,9 +3774,7 @@ function initializeDatePicker() {
     selectedDate.setDate(selectedDate.getDate() + 1);
     updateDateDisplay();
     displayOrderHistory();
-
-    // Sync the newly selected date with Firebase
-    syncOrdersWithFirebase();
+    subscribeToOrders(currentEvent, selectedDate, mergeFirebaseOrder);
   });
 
   updateDateDisplay();
@@ -3633,23 +3810,50 @@ function updateDateDisplay() {
   updateTotalSalesDisplay();
 }
 
-// Add this to your script.js file
+function openOrderPanel() {
+  const panel = document.getElementById('order-panel');
+  if (window.innerWidth <= 767) {
+    panel.classList.add('open');
+    const backdrop = document.getElementById('sheet-backdrop');
+    if (backdrop) backdrop.style.display = 'block';
+  } else {
+    panel.style.display = 'flex';
+  }
+}
+
+function closeOrderPanel() {
+  const panel = document.getElementById('order-panel');
+  panel.classList.remove('open');
+  const backdrop = document.getElementById('sheet-backdrop');
+  if (backdrop) backdrop.style.display = 'none';
+  if (window.innerWidth > 767) {
+    panel.style.display = 'none';
+  }
+}
+
 function initializeMobileLayout() {
   const mobileOrderButton = document.getElementById('mobileOrderButton');
   const mobileBackButton = document.getElementById('mobileBackButton');
-  const orderPanel = document.getElementById('order-panel');
   const menuContainer = document.getElementById('menu-container');
 
   if (mobileOrderButton && mobileBackButton) {
     mobileOrderButton.addEventListener('click', () => {
-      orderPanel.style.display = 'flex';
+      openOrderPanel();
       mobileOrderButton.style.display = 'none';
     });
 
     mobileBackButton.addEventListener('click', () => {
-      orderPanel.style.display = 'none';
+      closeOrderPanel();
       mobileOrderButton.style.display = 'flex';
     });
+
+    const backdrop = document.getElementById('sheet-backdrop');
+    if (backdrop) {
+      backdrop.addEventListener('click', () => {
+        closeOrderPanel();
+        mobileOrderButton.style.display = 'flex';
+      });
+    }
   }
 
   // Update the mobile order button total when the order changes
@@ -3818,7 +4022,7 @@ function submitPackageOrder() {
   const isEditing = window.editingOrderData !== undefined;
 
   const order = {
-    id: isEditing ? window.editingOrderData.originalId : now.getTime().toString().slice(-5),
+    id: isEditing ? window.editingOrderData.originalId : generateOrderId(),
     items: [...currentOrder],
     total: currentOrder.reduce((total, item) => total + item.quantity, 0), // Total cups for package service
     paymentMethod: '', // No payment method for package orders
@@ -3862,10 +4066,10 @@ function submitPackageOrder() {
 function showPackageOrderConfirmation() {
   // Create a simple success message without payment modal styling
   const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
+  overlay.className = 'modal-overlay order-confirmed-overlay';
 
   const modal = document.createElement('div');
-  modal.className = 'modal';
+  modal.className = 'modal order-confirmed-modal';
   modal.style.cssText = `
     width: 300px;
     padding: 40px;
@@ -3947,7 +4151,8 @@ function refreshMenuDisplay() {
   const menuContainer = document.getElementById('menuContent');
   menuContainer.innerHTML = ''; // Clear existing menu
   initializeMenu(menuContainer); // Rebuild menu with current data
-  
+  updateDisplayMode(); // Re-apply package mode price hiding after every rebuild
+
   // Recalculate grid columns after refresh if in grid view
   if (isGridView) {
     setTimeout(() => {
@@ -4021,7 +4226,7 @@ function calculateOptimalGridColumns(container, itemCount) {
   }
   
   // Ensure we have at least 2 columns and at most 8 columns for very large screens
-  optimalColumns = Math.max(2, Math.min(8, optimalColumns));
+  optimalColumns = Math.max(3, Math.min(8, optimalColumns));
   
   // Set CSS custom property
   container.style.setProperty('--grid-columns', optimalColumns);

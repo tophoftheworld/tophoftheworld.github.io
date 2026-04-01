@@ -17,6 +17,7 @@ let currentOrders = [];
 let currentGroupId = null;
 let orderGroups = [];
 let expandedCards = new Set(); // Track which cards are expanded
+let showingArchivedGroups = false;
 
 // DOM elements
 const ordersEl = document.getElementById('ordersList');
@@ -27,6 +28,7 @@ const sortEl = document.getElementById('sort');
 const toastEl = document.getElementById('toast');
 const importModalEl = document.getElementById('importModalOverlay');
 const importFormEl = document.getElementById('importForm');
+const archivedToggleBtnEl = document.getElementById('archivedToggleBtn');
 
 // Initialize the app
 document.addEventListener('DOMContentLoaded', async () => {
@@ -172,30 +174,112 @@ async function deleteOrderGroup(groupId) {
     }
 }
 
+async function archiveOrderGroup(groupId, event) {
+    if (event) {
+        event.stopPropagation(); // Prevent card click navigation
+    }
+
+    try {
+        await updateDoc(doc(db, 'orderGroups', groupId), {
+            archived: true,
+            updatedAt: serverTimestamp()
+        });
+
+        // Update local list and re-render groups (archived ones are hidden)
+        const idx = orderGroups.findIndex((g) => g.id === groupId);
+        if (idx !== -1) {
+            orderGroups[idx].archived = true;
+        }
+        showOrderGroups();
+        showToast('Order batch archived');
+    } catch (error) {
+        console.error('Error archiving order group:', error);
+        showToast('Error archiving order batch');
+    }
+}
+
+async function unarchiveOrderGroup(groupId, event) {
+    if (event) {
+        event.stopPropagation(); // Prevent card click navigation
+    }
+
+    try {
+        await updateDoc(doc(db, 'orderGroups', groupId), {
+            archived: false,
+            updatedAt: serverTimestamp()
+        });
+
+        const idx = orderGroups.findIndex((g) => g.id === groupId);
+        if (idx !== -1) {
+            orderGroups[idx].archived = false;
+        }
+        showOrderGroups();
+        showToast('Order batch unarchived');
+    } catch (error) {
+        console.error('Error unarchiving order group:', error);
+        showToast('Error unarchiving order batch');
+    }
+}
+
+function toggleArchivedView(event) {
+    if (event) event.stopPropagation();
+    showingArchivedGroups = !showingArchivedGroups;
+    updateArchivedToggleButton();
+    showOrderGroups();
+}
+
+function updateArchivedToggleButton() {
+    if (!archivedToggleBtnEl) return;
+    archivedToggleBtnEl.textContent = showingArchivedGroups ? 'View Active' : 'View Archived';
+}
+
 // UI Functions
 function showOrderGroups() {
     orderGroupsEl.style.display = 'block';
     ordersEl.style.display = 'none';
     document.getElementById('backBtn').style.display = 'none';
+    if (archivedToggleBtnEl) archivedToggleBtnEl.style.display = '';
+    updateArchivedToggleButton();
     
-    if (orderGroups.length === 0) {
+    const visibleGroups = showingArchivedGroups
+        ? orderGroups.filter((g) => !!g.archived)
+        : orderGroups.filter((g) => !g.archived);
+
+    if (visibleGroups.length === 0) {
         orderGroupsEl.innerHTML = `
             <div class="empty-state">
-                <p>No order groups found</p>
-                <p>Import your first CSV file to get started</p>
+                <p>${showingArchivedGroups ? 'No archived order batches found' : 'No active order batches found'}</p>
+                <p>${showingArchivedGroups ? 'Archive batches to see them here' : 'Import your first CSV file to get started'}</p>
             </div>
         `;
         return;
     }
     
-    orderGroupsEl.innerHTML = orderGroups.map(group => `
+    orderGroupsEl.innerHTML = visibleGroups.map(group => `
         <div class="group-card" onclick="openOrderGroup('${group.id}')">
             <div class="group-header">
                 <div class="group-left">
                     <div class="group-name">${group.name}</div>
                     <div class="group-description">${group.description || 'No description'}</div>
                 </div>
-                <div class="group-stats">${group.orderCount || 0} orders</div>
+                <div class="group-right">
+                    <div class="group-stats">${group.orderCount || 0} orders</div>
+                    ${showingArchivedGroups
+                        ? `<button
+                            type="button"
+                            class="archive-group-btn unarchive-group-btn"
+                            onclick="unarchiveOrderGroup('${group.id}', event)"
+                        >
+                            Unarchive
+                        </button>`
+                        : `<button
+                            type="button"
+                            class="archive-group-btn"
+                            onclick="archiveOrderGroup('${group.id}', event)"
+                        >
+                            Archive
+                        </button>`}
+                </div>
             </div>
             <div class="group-footer">
                 <div class="group-date">${formatDate(group.createdAt?.toDate())}</div>
@@ -221,6 +305,7 @@ function showOrders() {
     orderGroupsEl.style.display = 'none';
     ordersEl.style.display = 'block';
     document.getElementById('backBtn').style.display = 'flex';
+    if (archivedToggleBtnEl) archivedToggleBtnEl.style.display = 'none';
 }
 
 function renderOrders() {
@@ -298,8 +383,10 @@ function createOrderCard(order) {
     const method = order.shippingMethod || (isPickup(order) ? 'Pickup' : 'Shipping');
     const location = computeLocation(order);
     const orderNumber = order.orderNumber || '';
-    const item = order.itemName || '';
-    const quantity = order.quantity || '1';
+    const items = getOrderItems(order);
+    const totalQuantity = getOrderQuantity(order);
+    const firstItem = items[0] || { name: '' };
+    const extraItemCount = Math.max(0, items.length - 1);
     const total = parseFloat(order.total || '0');
     const notes = order.notes || '';
 
@@ -310,7 +397,8 @@ function createOrderCard(order) {
                     <div class="order-number">${orderNumber}</div>
                     <div class="customer-name">${order.customerName || 'No Name'}</div>
                     <div class="order-items">
-                        <span style="font-weight: 600; color: #439407;">${quantity}</span> × ${item}
+                        <span style="font-weight: 600; color: #439407;">${totalQuantity}</span> × ${firstItem.name || 'Item'}
+                        ${extraItemCount > 0 ? `<span class="items-more">+${extraItemCount} more</span>` : ''}
                     </div>
                 </div>
                 <div class="order-right">
@@ -364,13 +452,80 @@ function createOrderCard(order) {
                     <span class="detail-label">Email</span>
                     <span class="detail-value">${order.customerEmail || '—'}</span>
                 </div>
-                ${notes ? `<div class="order-notes">${notes}</div>` : ''}
+                <div class="detail-field">
+                    <span class="detail-label">Order Items</span>
+                    <span class="detail-value">
+                        ${items.length > 0
+                            ? `<div class="order-items-inline">
+                                ${items
+                                    .map(
+                                        (i) => `
+                                            <div class="order-item-line">
+                                                <span class="order-item-qty">${i.quantity}</span>
+                                                <span class="order-item-dot">×</span>
+                                                <span class="order-item-name">${i.name}</span>
+                                            </div>
+                                        `
+                                    )
+                                    .join('')}
+                               </div>`
+                            : '—'}
+                    </span>
+                </div>
+
+                <div class="detail-field">
+                    <span class="detail-label">Notes</span>
+                    <span class="detail-value">
+                        <div class="notes-inline">
+                            <textarea
+                                class="order-notes-textarea"
+                                id="order-notes-${order.id}"
+                                rows="3"
+                                onclick="event.stopPropagation()"
+                                onmousedown="event.stopPropagation()"
+                            >${(notes ?? '').toString()}</textarea>
+                            <button
+                                type="button"
+                                class="notes-save-btn"
+                                onclick="saveOrderNotes('${order.id}', event)"
+                            >
+                                Save Notes
+                            </button>
+                        </div>
+                    </span>
+                </div>
+                <div class="delete-section">
+                    <button
+                        type="button"
+                        class="delete-order-btn"
+                        onclick="deleteOrder('${order.id}', event)"
+                    >
+                        Delete Order
+                    </button>
+                </div>
                 <div class="action-buttons">
                     ${getActionButtons(order)}
                 </div>
             </div>
         </div>
     `;
+}
+
+function getOrderItems(order) {
+    if (Array.isArray(order.items) && order.items.length > 0) {
+        return order.items
+            .map((i) => ({
+                name: (i?.name ?? '').toString().trim(),
+                quantity: parseInt((i?.quantity ?? '0').toString().trim(), 10) || 0
+            }))
+            .filter((i) => i.name && i.quantity > 0);
+    }
+
+    // Legacy shape: itemName + quantity
+    const itemName = (order.itemName ?? '').toString().trim();
+    if (!itemName) return [];
+    const qty = parseInt((order.quantity ?? '1').toString().trim(), 10) || 1;
+    return [{ name: itemName, quantity: qty }];
 }
 
 function getActionButtons(order) {
@@ -418,6 +573,13 @@ function metroManila(order) {
 }
 
 function getOrderQuantity(order) {
+    if (Array.isArray(order.items) && order.items.length > 0) {
+        return order.items.reduce((sum, item) => {
+            const q = parseInt((item.quantity ?? '0').toString().trim(), 10);
+            return sum + (Number.isNaN(q) ? 0 : q);
+        }, 0) || 1;
+    }
+
     const quantity = order.quantity || '1';
     return parseInt(quantity, 10) || 1;
 }
@@ -537,28 +699,105 @@ function parseCSV(csvText) {
             header: true,
             skipEmptyLines: 'greedy',
             complete: ({ data: rows }) => {
-                const orders = rows
-                    .filter(r => r && (r.Name || r['Order Number']))
-                    .map(row => ({
-                        orderNumber: row.Name || row['Order Number'] || '',
-                        customerName: row['Billing Name'] || '',
-                        customerPhone: row['Billing Phone'] || '',
-                        customerEmail: row['Email'] || '',
-                        billingStreet: row['Billing Street'] || '',
-                        billingCity: row['Billing City'] || '',
-                        billingProvince: row['Billing Province'] || '',
-                        shippingName: row['Shipping Name'] || '',
-                        shippingStreet: row['Shipping Street'] || '',
-                        shippingCity: row['Shipping City'] || '',
-                        shippingProvince: row['Shipping Province Name'] || row['Shipping Province'] || '',
-                        shippingMethod: row['Shipping Method'] || '',
-                        pickupLocation: row['Pickup Location'] || '',
-                        itemName: row['Lineitem name'] || '',
-                        quantity: row['Lineitem quantity'] || '1',
-                        total: row['Total'] || '0',
-                        notes: row['Notes'] || row['Note'] || '',
-                        status: 'unfulfilled'
-                    }));
+                const orderMap = new Map();
+
+                const getOrderNumber = (row) => (row.Name ?? row['Order Number'] ?? '').toString().trim();
+                const getRowId = (row) => (row['Id'] ?? row['ID'] ?? '').toString().trim();
+
+                const getQuantity = (raw) => {
+                    const n = parseInt((raw ?? '').toString().trim(), 10);
+                    return Number.isNaN(n) ? 1 : n;
+                };
+
+                const fillIfEmpty = (target, key, value) => {
+                    const v = (value ?? '').toString().trim();
+                    if (!target[key] && v) target[key] = v;
+                };
+
+                for (const row of rows) {
+                    if (!row) continue;
+
+                    // Shopify exports typically repeat Name/Order Number on each line item row,
+                    // while other fields may be blank on subsequent rows.
+                    const orderNumber = getOrderNumber(row);
+                    const rowId = getRowId(row);
+                    const orderKey = orderNumber || rowId;
+                    if (!orderKey) continue;
+
+                    if (!orderMap.has(orderKey)) {
+                        orderMap.set(orderKey, {
+                            orderNumber: orderNumber || orderKey,
+                            customerName: row['Billing Name'] || '',
+                            customerPhone: row['Billing Phone'] || '',
+                            customerEmail: row['Email'] || '',
+                            billingStreet: row['Billing Street'] || '',
+                            billingCity: row['Billing City'] || '',
+                            billingProvince: row['Billing Province'] || '',
+                            shippingName: row['Shipping Name'] || '',
+                            shippingStreet: row['Shipping Street'] || '',
+                            shippingCity: row['Shipping City'] || '',
+                            shippingProvince: row['Shipping Province Name'] || row['Shipping Province'] || '',
+                            shippingMethod: row['Shipping Method'] || '',
+                            pickupLocation: row['Pickup Location'] || '',
+                            // Multi-item support: items[] aggregated by Lineitem name
+                            items: [],
+                            // Backward compatibility for existing UI:
+                            itemName: '',
+                            quantity: '1',
+                            total: row['Total'] || '0',
+                            notes: row['Notes'] || row['Note'] || '',
+                            status: 'unfulfilled'
+                        });
+                    }
+
+                    const order = orderMap.get(orderKey);
+
+                    // Fill order-level fields from any later line item row that has them.
+                    // This is important because in Shopify exports, only the first row may carry full details.
+                    fillIfEmpty(order, 'customerName', row['Billing Name']);
+                    fillIfEmpty(order, 'customerPhone', row['Billing Phone']);
+                    fillIfEmpty(order, 'customerEmail', row['Email']);
+                    fillIfEmpty(order, 'billingStreet', row['Billing Street']);
+                    fillIfEmpty(order, 'billingCity', row['Billing City']);
+                    fillIfEmpty(order, 'billingProvince', row['Billing Province']);
+                    fillIfEmpty(order, 'shippingName', row['Shipping Name']);
+                    fillIfEmpty(order, 'shippingStreet', row['Shipping Street']);
+                    fillIfEmpty(order, 'shippingCity', row['Shipping City']);
+                    fillIfEmpty(order, 'shippingProvince', row['Shipping Province Name'] || row['Shipping Province']);
+                    fillIfEmpty(order, 'shippingMethod', row['Shipping Method']);
+                    fillIfEmpty(order, 'pickupLocation', row['Pickup Location']);
+                    fillIfEmpty(order, 'notes', row['Notes'] || row['Note']);
+                    fillIfEmpty(order, 'total', row['Total'] || '0');
+
+                    const lineItemName = (row['Lineitem name'] ?? '').toString().trim();
+                    const lineQty = getQuantity(row['Lineitem quantity']);
+
+                    if (lineItemName) {
+                        const existing = order.items.find((i) => i.name === lineItemName);
+                        if (existing) {
+                            existing.quantity += lineQty;
+                        } else {
+                            order.items.push({ name: lineItemName, quantity: lineQty });
+                        }
+                    }
+                }
+
+                // Finalize aggregated quantities + legacy fallback fields.
+                const orders = [];
+                for (const order of orderMap.values()) {
+                    if (order.items && order.items.length > 0) {
+                        const totalQty = order.items.reduce((sum, i) => sum + (parseInt(i.quantity, 10) || 0), 0);
+                        order.quantity = String(totalQty);
+                        order.itemName = order.items[0].name;
+                    } else {
+                        // No line items parsed; keep any pre-existing fallback.
+                        order.itemName = order.itemName || '';
+                        order.quantity = String(parseInt(order.quantity, 10) || 1);
+                        order.items = [];
+                    }
+                    orders.push(order);
+                }
+
                 resolve(orders);
             }
         });
@@ -592,6 +831,57 @@ async function updateStatus(orderId, status, event) {
     }
 }
 
+async function saveOrderNotes(orderId, event) {
+    if (event) {
+        event.stopPropagation();
+    }
+
+    const textarea = document.getElementById(`order-notes-${orderId}`);
+    if (!textarea) return;
+
+    const notes = textarea.value ?? '';
+
+    try {
+        await updateDoc(doc(db, `orderGroups/${currentGroupId}/orders`, orderId), {
+            notes: notes,
+            updatedAt: serverTimestamp()
+        });
+
+        // Update local state so other UI pieces (like re-render) stay in sync.
+        const idx = currentOrders.findIndex((o) => o.id === orderId);
+        if (idx !== -1) {
+            currentOrders[idx].notes = notes;
+        }
+
+        showToast('Notes saved');
+    } catch (error) {
+        console.error('Error saving notes:', error);
+        showToast('Error saving notes');
+    }
+}
+
+async function deleteOrder(orderId, event) {
+    if (event) {
+        event.stopPropagation(); // Prevent card collapse
+    }
+
+    const ok = window.confirm('Delete this order? This cannot be undone.');
+    if (!ok) return;
+
+    try {
+        await deleteDoc(doc(db, `orderGroups/${currentGroupId}/orders`, orderId));
+
+        expandedCards.delete(orderId);
+        currentOrders = currentOrders.filter((o) => o.id !== orderId);
+
+        renderOrders();
+        showToast('Order deleted');
+    } catch (error) {
+        console.error('Error deleting order:', error);
+        showToast('Error deleting order');
+    }
+}
+
 function copyText(text, event) {
     if (!text) return;
     event.stopPropagation(); // Prevent card collapse
@@ -612,11 +902,16 @@ function showToast(message) {
 window.openOrderGroup = openOrderGroup;
 window.toggleOrderDetails = toggleOrderDetails;
 window.updateStatus = updateStatus;
+window.saveOrderNotes = saveOrderNotes;
+window.deleteOrder = deleteOrder;
 window.copyText = copyText;
 window.closeImportModal = closeImportModal;
 window.showImportModal = showImportModal;
 window.goBack = goBack;
 window.exportToExcel = exportToExcel;
+window.archiveOrderGroup = archiveOrderGroup;
+window.unarchiveOrderGroup = unarchiveOrderGroup;
+window.toggleArchivedView = toggleArchivedView;
 
 function goBack() {
     if (currentGroupId) {
@@ -625,6 +920,7 @@ function goBack() {
         currentOrders = [];
         showOrderGroups();
         document.getElementById('backBtn').style.display = 'none';
+        if (archivedToggleBtnEl) archivedToggleBtnEl.style.display = '';
     }
 }
 
@@ -665,35 +961,31 @@ function exportToExcel() {
         return;
     }
 
-    // Prepare CSV data
-    const headers = ['Order Number', 'Name', 'Shipment Method', 'x Item/s'];
-    
-    const csvData = filteredOrders.map(order => {
+    if (typeof XLSX === 'undefined') {
+        showToast('Excel export library not loaded');
+        return;
+    }
+
+    // Prepare worksheet rows
+    const rows = filteredOrders.map(order => {
         const orderNumber = order.orderNumber || 'No Order #';
         const customerName = order.customerName || 'No Name';
         const shipmentMethod = isPickup(order) ? 'Pickup' : (metroManila(order) ? 'Metro Manila' : 'Nationwide');
         const quantity = getOrderQuantity(order);
         const quantityText = quantity === 1 ? '1 Item' : `${quantity} Items`;
         
-        return [orderNumber, customerName, shipmentMethod, quantityText];
+        return {
+            'Order Number': orderNumber,
+            'Name': customerName,
+            'Shipment Method': shipmentMethod,
+            'x Item/s': quantityText
+        };
     });
 
-    // Create CSV content
-    const csvContent = [
-        headers.join(','),
-        ...csvData.map(row => row.map(cell => `"${cell}"`).join(','))
-    ].join('\n');
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Orders');
+    XLSX.writeFile(workbook, `orders_export_${new Date().toISOString().split('T')[0]}.xlsx`);
 
-    // Create and download file
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `orders_export_${new Date().toISOString().split('T')[0]}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-
-    showToast(`Exported ${filteredOrders.length} orders to CSV`);
+    showToast(`Exported ${filteredOrders.length} orders to XLSX`);
 }

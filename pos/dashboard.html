@@ -6,8 +6,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Matchanese Pop-up Sales Dashboard</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/dashboard.css?v=8">
+    <link rel="stylesheet" href="css/dashboard.css?v=20">
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"
         integrity="sha512-ElRFoEQdI5Ht6kZvyzXhYG9NqjtkmlkfYk0wr6wHxU9JEHakS7UJZNeml5ALk+8IKlU6jDgMabC3vkumRokgJA=="
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
@@ -23,9 +24,13 @@
                 </select>
                 <input type="date" id="dateSelector" class="date-selector">
                 <div class="scope-toggle" role="group" aria-label="Data scope">
-                    <button type="button" class="scope-toggle-btn active" data-scope="daily">Daily</button>
-                    <button type="button" class="scope-toggle-btn" data-scope="week">Week</button>
-                    <button type="button" class="scope-toggle-btn" data-scope="month">Month</button>
+                    <button type="button" class="scope-toggle-btn active" data-scope="day">Day</button>
+                    <button type="button" class="scope-toggle-btn" data-scope="range">Range</button>
+                </div>
+                <div id="rangeControls" class="range-controls" style="display: none;">
+                    <input type="date" id="rangeStartDate" class="date-selector">
+                    <span class="range-separator">to</span>
+                    <input type="date" id="rangeEndDate" class="date-selector">
                 </div>
                 <button id="manageEventsBtn" class="manage-events-btn">Manage Events</button>
                 <button id="refreshBtn" class="refresh-btn">Refresh Data</button>
@@ -58,10 +63,10 @@
         <div class="dashboard-grid">
             <div class="chart-section">
                 <div class="chart-header">
-                    <h3 id="chartSectionTitle">Peak Hours (Selected Day)</h3>
+                    <h3 id="chartSectionTitle">Hourly Sales (Selected Day)</h3>
                     <div id="chartToggleWrap" class="chart-toggle-buttons" style="display: none;">
                         <button class="chart-toggle-btn active" data-chart="daily">All Days</button>
-                        <button class="chart-toggle-btn" data-chart="hourly">Peak Hours</button>
+                        <button class="chart-toggle-btn" data-chart="hourly">Hourly Sales</button>
                     </div>
                 </div>
                 <div class="chart-container">
@@ -84,7 +89,7 @@
                         <span class="payment-amount">₱0.00</span>
                     </div>
                     <div class="payment-item">
-                        <span class="payment-method">Maya</span>
+                        <span class="payment-method">Card</span>
                         <span class="payment-amount">₱0.00</span>
                     </div>
                 </div>
@@ -116,14 +121,17 @@
         </div>
 
         <div class="data-section">
-            <h3>Daily Sales History</h3>
+            <div class="data-section-header">
+                <h3 id="dailySalesHistoryTitle">Daily Sales History</h3>
+                <button id="exportHistoryPdfBtn" class="download-report-btn" type="button">Export PDF</button>
+            </div>
             <div class="sales-table-container" id="eventsGrid">
                 <div class="loading">Loading events data...</div>
             </div>
         </div>
     </div>
 
-    <script type="module" src="js/dashboard.js?v=8"></script>
+    <script type="module" src="js/dashboard.js?v=20"></script>
 </body>
 
 </html>

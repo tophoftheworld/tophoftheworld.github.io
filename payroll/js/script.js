@@ -250,10 +250,14 @@ function time24to12(time24) {
 // Handles both "10:34:09 AM" and "10:34 AM" formats
 function normalizeTimeForComparison(timeStr) {
     if (!timeStr || timeStr === '--' || timeStr === 'null') return '';
-    
-    // Remove seconds if they exist (format: "HH:MM:SS AM/PM" -> "HH:MM AM/PM")
-    // This regex matches a colon followed by two digits before the space and AM/PM
-    return timeStr.replace(/:\d{2}(\s[AP]M)/i, '$1');
+    let s = (timeStr && timeStr.trim()) || '';
+    if (!s) return '';
+    // Only remove seconds when present (HH:MM:SS AM/PM -> HH:MM AM/PM)
+    const withSeconds = /^(\d{1,2}:\d{2}):\d{2}(\s*[AP]M)$/i;
+    s = s.replace(withSeconds, '$1$2').trim() || s;
+    // Normalize leading zero on hour so "09:45 AM" and "9:45 AM" compare equal
+    s = s.replace(/^0(\d):/, '$1:');
+    return s;
 }
 
 // Cache for request statuses

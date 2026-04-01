@@ -1,0 +1,4 @@
+window.LEADS_DASHBOARD_CONFIG = window.LEADS_DASHBOARD_CONFIG || {
+  API_BASE_URL: "",
+  ADMIN_API_TOKEN: "replace-me"
+};

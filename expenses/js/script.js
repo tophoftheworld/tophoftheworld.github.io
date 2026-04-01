@@ -1071,6 +1071,8 @@ async function loadReceiptImageForEditMobile(expenseId) {
 function resetForm() {
     // Clear editing state
     delete window.editingExpenseId;
+    // Pre-generate an ID so receipt uploads can be stored in a stable path.
+    window.currentDraftExpenseId = shared.generateId();
     
     const modalTitle = document.querySelector('.modal-title');
     if (modalTitle) modalTitle.textContent = 'Add Expense';
@@ -1193,8 +1195,25 @@ async function handleReceiptUpload(input) {
             uploadArea.classList.add('has-file');
             removeBtn.style.display = 'block';
 
-            // Store the compressed image data for saving
-            window.currentReceiptData = compressedImage;
+            // Upload receipt to Firebase Storage (preferred) and store the download URL in Firestore.
+            // If storage upload fails, fall back to storing the base64 data URL so the user can still save.
+            const expenseIdForReceipt = window.editingExpenseId || window.currentDraftExpenseId;
+            if (!window.currentDraftExpenseId && !window.editingExpenseId) {
+                window.currentDraftExpenseId = shared.generateId();
+            }
+
+            let receiptUrl = null;
+            try {
+                receiptUrl = await shared.uploadReceiptImageToStorage(
+                    expenseIdForReceipt || window.currentDraftExpenseId,
+                    compressedImage
+                );
+            } catch (error) {
+                receiptUrl = null;
+            }
+
+            // Store for saving (URL preferred)
+            window.currentReceiptData = receiptUrl || compressedImage;
             
             // Show compression info
             const originalSize = (file.size / 1024 / 1024).toFixed(2);
@@ -1771,6 +1790,7 @@ function handleFormSubmission(e) {
     }
     
     const expenseData = {
+        id: isEditing ? window.editingExpenseId : window.currentDraftExpenseId,
         items: items,
         totalAmount: totalAmount, // Use provided total (mobile app has separate input)
         date: date,
@@ -3279,6 +3299,8 @@ function populateExpenseForm(expense) {
 
     // Store the expense ID for updating instead of creating new
     window.editingExpenseId = expense.id;
+    // Ensure receipt uploads during edit use the correct expense ID.
+    window.currentDraftExpenseId = expense.id;
 
     // Update modal title
     const modalTitle = document.querySelector('.modal-title');

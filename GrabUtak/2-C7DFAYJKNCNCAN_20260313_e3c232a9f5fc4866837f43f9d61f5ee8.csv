@@ -1,0 +1,78 @@
+﻿*ItemID,*ItemName,*Price,*CategoryName,AvailabilitySchedule,*AvailableStatus,Description,Photo1,Photo2,Photo3,Photo4,OptionGroup1,OptionGroup2,OptionGroup3,OptionGroup4
+"[Please refrain from deleting or editing the 1st and 2nd row]
+Item ID 
+Unique ID of the item on Grab. 
+This column is required when updating an item. 
+Please do not make any edit to your Item ID.","Item Name 
+The name of the item. 
+This column can't be empty and must stay under 80 characters.","Price 
+The price of the item in local currency. 
+This column can't be empty.","Category Name 
+The category this item belongs to. 
+This column can't be empty and must stay under 60 characters.","(Optional) Availability Schedule 
+The name of scheduled availability for this item. Availability Schedule controls the service hours within a week of the categories and items under it.
+If you leave it blank, will use the default schedule which will be available all time.
+If you fill in a name, will locate the exisiting schedule with the name.","Availability Status 
+Availability of the item. 
+Only the following value is valid:
+- AVAILABLE 
+- UNAVAILABLE_TODAY
+- UNAVAILABLE_PERMANENTLY","(Optional) Description 
+Explanation of the item. 
+This column should be under 300 characters.","(Optional) Photo 1 
+File name of the photo, including the format (.png or .jpg only). 
+Please upload the photo files to the /images directory. 
+Only 4 photos are allowed per item name. Max file size per image <=2MB.","(Optional) Photo 2 
+File name of the photo, including the format (.png or .jpg only). 
+Please upload the photo files to the /images directory. 
+Only 4 photos are allowed per item name. Max file size per image <=2MB.","(Optional) Photo 3 
+File name of the photo, including the format (.png or .jpg only). 
+Please upload the photo files to the /images directory. 
+Only 4 photos are allowed per item name. Max file size per image <=2MB.","(Optional) Photo 4 
+File name of the photo, including the format (.png or .jpg only). 
+Please upload the photo files to the /images directory. 
+Only 4 photos are allowed per item name. Max file size per image <=2MB.","(Optional) Option group 1 
+Option group and options applicable to this item. 
+To link multiple option groups to one item, add a new column of OptionGroup (Example: OptionGroup2, OptionGroup3). 
+
+Please include the following value and use the following format to create a valid value:
+-Option group name
+- Minimum selection
+- Maximum selection
+- First option name
+- Price of the first option
+- Second option name
+- Price of the second option
+
+Format: Name##MinSelection-MaxSelection##OptionName1:Price#OptionName2:Price
+Example: Size##1-1##Large:5#Regular:3#Small:2",,,
+PHITE2025062711294789327,Matcha Ice Cream - Level 3,260,Ice Cream,All opening hours,AVAILABLE,Solo Serving Cup,https://food-cms.grab.com/item/PHITE2025062711294789327/photos/menueditor_item_e8f84f3fc7e44ed9823650f658d6b2cc_1751023655862408701.jpeg,,,,,,,
+PHITE2025071809560900018,Seasalt Latte,240,Coffee,All opening hours,AVAILABLE,,https://food-cms.grab.com/item/PHITE2025071809560900018/photos/menueditor_item_c480991fb48b4deaa0dac08b86601926_1752832555367964699.jpeg,,,,,,,
+PHITE20250513025205013875,Matchanese Dalandan,230,Matcha Lite,All opening hours,AVAILABLE,Premium hand-whisked Matcha over Dalandan Juice,https://food-cms.grab.com/item/PHITE20250513025205013875/photos/menueditor_item_32a94096bc4e4477a1cdfbe07490d7b9_1750072254211479646.jpeg,,,,Matcha Strength##0-1##Level 1 (Default):0#Level 2 (Recommended):50#Level 3 (Intense):90,,,
+PHITE2025062711240054123,Matcha Ice Cream - Level 2,230,Ice Cream,All opening hours,AVAILABLE,Solo Serving Cup,https://food-cms.grab.com/item/PHITE2025062711240054123/photos/menueditor_item_4876c70246754366851d63b19fab19e3_1751023412600786417.jpeg,,,,,,,
+PHITE2025071809554165650,Spanish Latte,230,Coffee,All opening hours,AVAILABLE,,https://food-cms.grab.com/item/PHITE2025071809554165650/photos/menueditor_item_f77bdbd3d33c4e1e99d9ece236e42b70_1752832491747454829.jpeg,,,,,,,
+PHITE20250513025205033152,Matchanese Tea,220,Matcha Lite,All opening hours,AVAILABLE,Premium hand-whisked Clear Matcha Tea,https://food-cms.grab.com/item/PHITE20250513025205033152/photos/menueditor_item_e5d2605161eb4437a945261e250200c9_1750072128230720024.jpeg,,,,,,,
+PHITE20250513025205108389,Matchanese Seasalt Latte,270,Matcha Lattes,All opening hours,AVAILABLE,Our Signature Matchanese Latte topped with Salted Cream,https://food-cms.grab.com/item/PHITE20250513025205108389/photos/menueditor_item_f490e5de14694d7cb16a713a468023ab_1748979913367163270.jpeg,https://food-cms.grab.com/item/PHITE20250513025205108389/photos/menueditor_item_8ef05c74c34d45599654e84c59aeee80_1748979914303132837.jpeg,,,Separate Container for Cream##0-1##Mini Bottle:15#Don’t Separate:0,Sweetness##0-1##0% (Unsweetened):0#50% (Slightly Sweetened):0#100% (Balanced Sweetness):0#200% (Sweet):0,Milk##0-1##Dairy Milk:0#Oat Milk:30#Coconut Milk:50,Matcha Strength##0-1##Level 1 (Default):0#Level 2 (Recommended):50#Level 3 (Intense):90
+PHITE2025121211110094961,Matchanese Sticker Pack,150,Merch,All opening hours,UNAVAILABLE_PERMANENTLY,,https://food-cms.grab.com/item/PHITE2025121211110094961/photos/menueditor_item_ba4205798ac2478494e75b6ec7218f3a_1765537761180478398.jpg,,,,,,,
+PHITE2025071809505869531,Matcha Bomb,180,Cookies,All opening hours,UNAVAILABLE_PERMANENTLY,,https://food-cms.grab.com/item/PHITE2025071809505869531/photos/menueditor_item_1894ee7384ec4fe0afc14030a0273948_1752832244410524757.jpeg,,,,,,,
+PHITE20250513025205047088,Matchanese Cloud,290,Matcha Specials,All opening hours,AVAILABLE,Premium hand-whisked Matcha with Matcha Cream,https://food-cms.grab.com/item/PHITE20250513025205047088/photos/menueditor_item_4970053bb15c4a5f95d8790bba740061_1750072098071290016.jpeg,,,,Separate Container for Cream##0-1##Mini Bottle:15#Don’t Separate:0,Milk##0-1##Dairy Milk:0#Oat Milk:30#Coconut Milk:50,,
+PHITE20250513025205026341,Matchanese Coconut,230,Matcha Lite,All opening hours,UNAVAILABLE_PERMANENTLY,Premium hand-whisked Matcha over Coconut Water,https://food-cms.grab.com/item/PHITE20250513025205026341/photos/menueditor_item_b9d84ab6b35748c1abdc27b43ff7753d_1750072151960172040.jpeg,,,,Matcha Strength##0-1##Level 1 (Default):0#Level 2 (Recommended):50#Level 3 (Intense):90,,,
+PHITE20250513025205112335,Spanish Matchanese Latte,260,Matcha Lattes,All opening hours,AVAILABLE,Premium hand-whisked Matcha with Sweetened Milk,https://food-cms.grab.com/item/PHITE20250513025205112335/photos/menueditor_item_0f68ea16e97b45d3be1f879fcf57de7c_1748979076785701681.jpeg,,,,Matcha Strength##0-1##Level 1 (Default):0#Level 2 (Recommended):50#Level 3 (Intense):90,Sweetness##0-1##0% (Unsweetened):0#50% (Slightly Sweetened):0#100% (Balanced Sweetness):0#200% (Sweet):0,Milk##0-1##Dairy Milk:0#Oat Milk:30#Coconut Milk:50,
+PHITE2025071809492362160,Ube Matcha,180,Cookies,All opening hours,AVAILABLE,,https://food-cms.grab.com/item/PHITE2025071809492362160/photos/menueditor_item_f61c2e1fb3ea45a8819bb863775a45bc_1752832152840098373.jpeg,,,,,,,
+PHITE2025102118133217528,Warabi Mochi,320,Desserts,All opening hours,UNAVAILABLE_PERMANENTLY,,https://food-cms.grab.com/item/PHITE2025102118133217528/photos/menueditor_item_7f9204ca77254208ada3ca0ba2833f37_1761070303439929304.jpeg,,,,Coating##1-1##Kinako:0#Matcha:0,,,
+PHITE2025071809521596916,Matcha Dark Chocolate,180,Cookies,All opening hours,UNAVAILABLE_PERMANENTLY,,https://food-cms.grab.com/item/PHITE2025071809521596916/photos/menueditor_item_a28c4432a5e340058e6dbd94c906725d_1752832320454293297.jpeg,,,,,,,
+PHITE20250513025205094015,Earl Grey Matchanese,260,Matcha Lattes,All opening hours,AVAILABLE,,https://food-cms.grab.com/item/PHITE20250513025205094015/photos/menueditor_item_3a8762cedf5d4b5baf63fa766fbe553c_1748979938951275902.jpeg,,,,Matcha Strength##0-1##Level 1 (Default):0#Level 2 (Recommended):50#Level 3 (Intense):90,Milk##0-1##Dairy Milk:0#Oat Milk:30#Coconut Milk:50,,
+PHITE2025062711304757138,Hojicha Ice Cream - Dark Roast,190,Ice Cream,All opening hours,UNAVAILABLE_PERMANENTLY,,https://food-cms.grab.com/item/PHITE2025062711304757138/photos/menueditor_item_f80ee39268184c52a9a9a31778163a84_1751023828305198650.jpeg,,,,,,,
+PHITE20250513025205060028,Hōjicha Latte,220,Matcha Lattes,All opening hours,AVAILABLE,Premium hand-whisked Matcha over Milk,https://food-cms.grab.com/item/PHITE20250513025205060028/photos/menueditor_item_30f9aac693d142b0810998185d4ac317_1750072068563621394.jpeg,,,,Sweetness##0-1##0% (Unsweetened):0#50% (Slightly Sweetened):0#100% (Balanced Sweetness):0#200% (Sweet):0,Milk##0-1##Dairy Milk:0#Oat Milk:30#Coconut Milk:50,,
+PHITE2025071809535930715,Americano,160,Coffee,All opening hours,AVAILABLE,,https://food-cms.grab.com/item/PHITE2025071809535930715/photos/menueditor_item_5c45b1ae79564edf9e6a6a340603a442_1752832425540632430.jpeg,,,,,,,
+PHITE20250513025205129030,Signature Matchanese Latte,250,Matcha Lattes,All opening hours,AVAILABLE,Cold-Whisked Matcha over Milk,https://food-cms.grab.com/item/PHITE20250513025205129030/photos/menueditor_item_2e38c8a41b8f4b2c821570ac0689f0df_1748979020274964068.jpeg,,,,Sweetness##0-1##0% (Unsweetened):0#50% (Slightly Sweetened):0#100% (Balanced Sweetness):0#200% (Sweet):0,Milk##0-1##Dairy Milk:0#Oat Milk:30#Coconut Milk:50,Matcha Strength##0-1##Level 1 (Default):0#Level 2 (Recommended):50#Level 3 (Intense):90,
+PHITE2025071809502431471,Matcha Smores,180,Cookies,All opening hours,AVAILABLE,,https://food-cms.grab.com/item/PHITE2025071809502431471/photos/menueditor_item_3845f113deaf4363ac0e7a84f67b5f6a_1752832209982553942.jpeg,,,,,,,
+PHITE2025071809495932464,Matcha Biscoff,180,Cookies,All opening hours,AVAILABLE,,https://food-cms.grab.com/item/PHITE2025071809495932464/photos/menueditor_item_97c4f4f671a341ba8114b65083bfff39_1752832178346377285.jpeg,,,,,,,
+PHITE2025071809543844770,Kyoto Latte,220,Coffee,All opening hours,AVAILABLE,,https://food-cms.grab.com/item/PHITE2025071809543844770/photos/menueditor_item_a5470163e970411dace74471886d89c6_1752832462611657926.jpeg,,,,,,,
+PHITE20250513025205082639,White Chocolate Matchanese,280,Matcha Lattes,All opening hours,AVAILABLE,Premium hand-whisked Matcha with Milk and White Chocolate,https://food-cms.grab.com/item/PHITE20250513025205082639/photos/menueditor_item_b9fbd469533d4d61ae544c23cd0efcdc_1750071983977465546.jpeg,,,,Matcha Strength##0-1##Level 1 (Default):0#Level 2 (Recommended):50#Level 3 (Intense):90,Separate Container for Cream##0-1##Mini Bottle:15#Don’t Separate:0,Milk##0-1##Dairy Milk:0#Oat Milk:30#Coconut Milk:50,
+PHITE2025071809564743169,Matchanese Espresso,290,Coffee,All opening hours,AVAILABLE,,https://food-cms.grab.com/item/PHITE2025071809564743169/photos/menueditor_item_c9a2971df7d547b9bc251ba212cf6450_1752832587913619662.jpeg,,,,,,,
+PHITE2025071809514221312,Matcha White Chocolate,180,Cookies,All opening hours,UNAVAILABLE_PERMANENTLY,,https://food-cms.grab.com/item/PHITE2025071809514221312/photos/menueditor_item_9aff0b58c4864519bc2b3596b651d4ce_1752832278940111963.jpeg,,,,,,,
+PHITE2025111307041454616,Matcha Banoffee,250,Desserts,All opening hours,AVAILABLE,"Matcha Banoffee features a Biscoff crust, caramelized bananas, and toffee sauce, layered with matcha chocolate, whipped cream, and matcha powder. Enjoy layers of creamy, crunchy, and earthy-sweet flavors in this unique dessert.",https://food-cms.grab.com/item/PHITE2025111307041454616/photos/menueditor_item_fa976363261e4687a2292fa26a7c1c5d_1763017381772985674.jpeg,https://food-cms.grab.com/item/PHITE2025111307041454616/photos/menueditor_item_823d8785b90e4061bce93752b04cc99d_1763017375477175164.jpeg,,,,,,
+PHITE2025062711231370483,Matcha Ice Cream - Level 1,190,Ice Cream,All opening hours,AVAILABLE,Solo Serving Cup,https://food-cms.grab.com/item/PHITE2025062711231370483/photos/menueditor_item_65a00bbaf6a94673b36754509e400451_1751023334930142390.jpeg,,,,,,,
+PHITE2025062406364202059,Matcha Tiramisu (250ml Cup),270,Desserts,All opening hours,AVAILABLE,Authentic Matcha Tiramisu made with Mascarpone Cream and Matcha soaked Ladyfingers.,https://food-cms.grab.com/item/PHITE2025062406364202059/photos/menueditor_item_4209d6bbeeb94285af7e77351f9b2a1a_1763021050430566484.jpeg,https://food-cms.grab.com/item/PHITE2025062406364202059/photos/menueditor_item_86fc6dc3d11f4fafaaa77719ffe85059_1763021136526273636.jpeg,https://food-cms.grab.com/item/PHITE2025062406364202059/photos/menueditor_item_1dfd35baebd64dd1a2a3de7a499fea28_1750747195175254045.jpeg,,,,,
+PHITE20250513025205074485,Strawberry Matchanese,270,Matcha Lattes,All opening hours,AVAILABLE,Premium hand-whisked Matcha with Milk and Strawberries,https://food-cms.grab.com/item/PHITE20250513025205074485/photos/menueditor_item_c2d1553162a947029146971ee64dab11_1750072040891923100.jpeg,,,,Matcha Strength##0-1##Level 1 (Default):0#Level 2 (Recommended):50#Level 3 (Intense):90,Milk##0-1##Dairy Milk:0#Oat Milk:30#Coconut Milk:50,,

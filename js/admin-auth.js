@@ -147,6 +147,7 @@ function checkTabPermission(tabName) {
             'Payroll': 'payroll',
             'Staff': 'staff',
             'Schedule': 'schedule',
+            'Matcha supply': 'schedule',
             'Sales': 'sales',
             'Expenses': 'expenses',
             'Inventory': 'inventory',

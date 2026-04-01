@@ -1,0 +1,82 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Shopify Orders</title>
+    <link rel="icon" href="data:," />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="css/orders-dashboard.css" />
+</head>
+<body>
+    <div class="container">
+        <header class="admin-header">
+            <div class="logo-section">
+                <img src="../expenses/img/matchanese-logo.png" class="logo" alt="Logo" />
+                <h1 class="app-title">Shopify Orders</h1>
+            </div>
+            <div class="view-selector" id="sourceToggle" aria-label="Data source">
+                <button type="button" class="view-btn active" id="sourceLive">Live</button>
+                <button type="button" class="view-btn" id="sourceCsv">Import CSV</button>
+            </div>
+        </header>
+
+        <div class="banner-file hidden" id="fileBanner"></div>
+
+        <div class="summary-cards" id="summaryCards"></div>
+
+        <div class="main-controls">
+            <div class="control-group">
+                <label for="searchInput">Search</label>
+                <input type="search" id="searchInput" placeholder="Order, customer, email…" />
+            </div>
+            <div class="control-group">
+                <label for="filterFinancial">Payment</label>
+                <select id="filterFinancial">
+                    <option value="">All payment statuses</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label for="filterFulfillment">Fulfillment</label>
+                <select id="filterFulfillment">
+                    <option value="">All fulfillment</option>
+                </select>
+            </div>
+            <div class="control-group" style="margin-left: auto;">
+                <label>&nbsp;</label>
+                <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                    <button type="button" class="action-btn primary" id="btnRefresh">Refresh</button>
+                    <button type="button" class="action-btn secondary" id="btnImportCsv">Choose CSV</button>
+                </div>
+            </div>
+            <input type="file" id="csvFile" accept=".csv,text/csv" class="hidden" />
+        </div>
+
+        <p class="status-bar" id="statusBar" aria-live="polite"></p>
+
+        <div class="data-table-container">
+            <table id="ordersTable">
+                <thead>
+                    <tr>
+                        <th data-sort="name">Order</th>
+                        <th data-sort="created_at">Created</th>
+                        <th data-sort="customer">Customer</th>
+                        <th data-sort="total">Total</th>
+                        <th data-sort="financial_status">Payment</th>
+                        <th data-sort="fulfillment_status">Fulfillment</th>
+                        <th>Admin</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <div class="load-more-wrap">
+            <button type="button" class="action-btn secondary" id="btnLoadMore" disabled>Load more</button>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script type="module" src="js/orders-dashboard.js"></script>
+</body>
+</html>

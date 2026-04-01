@@ -1,4 +1,4 @@
-const APP_VERSION = "1.09"; // Bump this to clear cache - Fixed sales data to always load SM North only
+const APP_VERSION = "1.12"; // Bump this to clear cache - Payroll period aligned with mobile (3 days before EOM)
 console.log('✅ Admin Payroll script loaded - Version:', APP_VERSION);
 
 // Import Firebase modules
@@ -262,6 +262,7 @@ const SALES_BONUS_CONFIG = {
 
 // DOM elements
 const loadingOverlay = document.getElementById('loadingOverlay');
+const mobileLoadingOverlay = document.getElementById('mobileLoadingOverlay');
 const photoModal = document.getElementById('photoModal');
 const modalImage = document.getElementById('modalImage');
 const closeModal = document.getElementById('closeModal');
@@ -270,6 +271,17 @@ const branchSelect = document.getElementById('branchSelect');
 const refreshBtn = document.getElementById('refreshBtn');
 const exportBtn = document.getElementById('exportBtn');
 const employeeTableBody = document.getElementById('employeeTableBody');
+const employeeCardsMobileEl = document.getElementById('employeeCardsMobile');
+const employeeDetailMobileModal = document.getElementById('employeeDetailMobileModal');
+const employeeDetailMobileClose = document.getElementById('employeeDetailMobileClose');
+const employeeDetailMobileName = document.getElementById('employeeDetailMobileName');
+const periodSelectModal = document.getElementById('periodSelectModal');
+const periodSelectModalClose = document.getElementById('periodSelectModalClose');
+const periodSelectModalList = document.getElementById('periodSelectModalList');
+const mobileSummaryCard = document.getElementById('mobileSummaryCard');
+const employeeDetailMobileSummary = document.getElementById('employeeDetailMobileSummary');
+const employeeDetailMobileActions = document.getElementById('employeeDetailMobileActions');
+const employeeDetailMobileDayCards = document.getElementById('employeeDetailMobileDayCards');
 const employeeEditModal = document.getElementById('employeeEditModal');
 const closeEditModal = document.getElementById('closeEditModal');
 const cancelEditBtn = document.getElementById('cancelEditBtn');
@@ -1037,7 +1049,7 @@ async function loadData(selectedPeriodId = null) {
     const forcedPeriodId = selectedPeriodId || periodSelect.value;
     console.log("FORCED LOADING FOR PERIOD:", forcedPeriodId);
 
-    const branchId = branchSelect.value;
+    const branchId = isMobileLayout() ? 'all' : branchSelect.value;
     const cacheKey = getCacheKey(forcedPeriodId, branchId);
 
     await loadHolidays();
@@ -1457,7 +1469,7 @@ function clearSingleUserCaches() {
 // Replace the existing filterData function with this updated version
 function filterData() {
     const period = periodSelect.value;
-    const branch = branchSelect.value;
+    const branch = isMobileLayout() ? 'all' : branchSelect.value;
     const { startDate, endDate } = getPeriodDates(period);
 
     // First make a deep copy of original attendance data to avoid modifying it
@@ -1591,6 +1603,13 @@ function updateSummaryCards() {
     
     const totalPayrollElement = document.getElementById('totalPayroll');
     totalPayrollElement.textContent = `₱${totalPayrollAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    const mobileSummaryTotal = document.getElementById('mobileSummaryTotalPayroll');
+    const mobileSummaryActive = document.getElementById('mobileSummaryActive');
+    const mobileSummaryPeriodLabel = document.getElementById('mobileSummaryPeriodLabel');
+    if (mobileSummaryTotal) mobileSummaryTotal.textContent = `₱${totalPayrollAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    if (mobileSummaryActive) mobileSummaryActive.textContent = activeEmployees;
+    if (mobileSummaryPeriodLabel) mobileSummaryPeriodLabel.textContent = periodSelect.options[periodSelect.selectedIndex]?.text || '—';
 
     // Check if payroll period is over and calculate unpaid amount
     const today = new Date();
@@ -1796,6 +1815,208 @@ function validateCacheData(cacheKey, data) {
     return false;
 }
 
+function isMobileLayout() {
+    return window.matchMedia('(max-width: 992px)').matches;
+}
+
+function renderMobileCards(cardData) {
+    if (!employeeCardsMobileEl) return;
+    employeeCardsMobileEl.innerHTML = '';
+    employeeCardsMobileEl.setAttribute('aria-hidden', 'false');
+
+    cardData.forEach(({ employeeId, employee, totalPay, payableAmount, payableClass, showPaymentButton, daysWorked }) => {
+        const name = employee.name || employees[employeeId] || 'Unknown Employee';
+        const photoUrl = employee.lastClockInPhoto || '';
+        const totalPayStr = totalPay.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const isPaid = payableClass === 'paid-amount' || payableAmount <= 0;
+        const statusLabel = isPaid ? 'Paid' : 'Unpaid';
+
+        const card = document.createElement('div');
+        card.className = 'employee-card-mobile';
+        card.dataset.employeeId = employeeId;
+
+        /* Badge and Pay only in disbursement period (today > period end), same as desktop. Pay button only when unpaid. */
+        const showBadge = showPaymentButton;
+        const showPayButton = showPaymentButton && !isPaid;
+        card.innerHTML = `
+            <div class="employee-card-mobile__main">
+                ${photoUrl
+                    ? `<img src="${photoUrl}" class="employee-card-mobile__avatar" alt="">`
+                    : `<div class="employee-card-mobile__avatar-placeholder">${(name || '?').charAt(0).toUpperCase()}</div>`
+                }
+                <div class="employee-card-mobile__info">
+                    <div class="employee-card-mobile__name">${escapeHtml(name)}</div>
+                    <div class="employee-card-mobile__meta">${daysWorked} days</div>
+                </div>
+            </div>
+            <div class="employee-card-mobile__right">
+                <div class="employee-card-mobile__salary">₱${totalPayStr}</div>
+                ${showBadge ? `<span class="employee-card-mobile__status-badge ${isPaid ? 'paid' : 'unpaid'}">${statusLabel}</span>` : ''}
+                ${showPayButton ? `<button type="button" class="action-btn payment-btn" data-employee-id="${employeeId}">Pay</button>` : ''}
+            </div>
+        `;
+
+        employeeCardsMobileEl.appendChild(card);
+    });
+
+    /* Whole card clickable: opens employee view (modal on mobile). Pay button still works. */
+    employeeCardsMobileEl.querySelectorAll('.employee-card-mobile').forEach(cardEl => {
+        cardEl.addEventListener('click', function (e) {
+            if (e.target.closest('.payment-btn')) return;
+            const employeeId = this.dataset.employeeId;
+            if (!employeeId) return;
+            if (isMobileLayout()) {
+                openMobileEmployeeDetail(employeeId);
+            } else {
+                currentEmployeeView = employeeId;
+                updateURLHash(employeeId);
+                if (!filteredData[employeeId]) {
+                    setTimeout(() => { if (currentEmployeeView === employeeId) updateViewMode(); }, 500);
+                    return;
+                }
+                updateViewMode();
+                setTimeout(() => {
+                    if (currentEmployeeView === employeeId) {
+                        updateViewModeImpl();
+                        setTimeout(() => {
+                            const detailsContainer = document.getElementById('employee-details-table');
+                            if (detailsContainer && detailsContainer.innerHTML.includes('spinner')) {
+                                loadEmployeeDetailsAsMainTable(employeeId, detailsContainer);
+                            }
+                        }, 1000);
+                    }
+                }, 200);
+            }
+        });
+    });
+
+    employeeCardsMobileEl.querySelectorAll('.payment-btn').forEach(btn => {
+        btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            openPaymentModal(this.dataset.employeeId);
+        });
+    });
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function openMobileEmployeeDetail(employeeId) {
+    if (!employeeDetailMobileModal || !filteredData[employeeId]) return;
+    const employee = filteredData[employeeId];
+    const name = employee.name || employees[employeeId] || 'Unknown Employee';
+    const totalPay = payCalculator.calculateTotalPay(employee.dates || [], { id: employeeId, baseRate: employee.baseRate || 0, salesBonusEligible: employee.salesBonusEligible || false }, 'simple');
+    const paymentStatus = window.paymentStatus || {};
+    const empPayment = paymentStatus[employeeId];
+    const remaining = empPayment ? Math.max(0, empPayment.remainingAmount || 0) : totalPay;
+    const isPaid = remaining <= 0;
+    const daysWorked = employee.dates ? employee.dates.filter(d => d.timeIn && d.timeOut).length : 0;
+
+    employeeDetailMobileName.textContent = name;
+    const totalPayStr = totalPay.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const statusLabel = isPaid ? 'Paid' : 'Unpaid';
+    const period = periodSelect.value;
+    const { endDate } = getPeriodDates(period);
+    const showPaymentButton = new Date() > endDate;
+    employeeDetailMobileSummary.className = 'employee-detail-mobile__summary' + (isPaid ? ' employee-detail-mobile__summary--paid' : '');
+    const statusRowHtml = showPaymentButton
+        ? `<div class="employee-detail-mobile__summary-row">
+            <span class="employee-detail-mobile__summary-label">Status</span>
+            <span class="employee-detail-mobile__summary-value employee-detail-mobile__summary-status ${isPaid ? 'employee-detail-mobile__summary-status--paid' : 'employee-detail-mobile__summary-status--unpaid'}">${statusLabel}</span>
+        </div>`
+        : '';
+    employeeDetailMobileSummary.innerHTML = `
+        <div class="employee-detail-mobile__summary-card">
+            <div class="employee-detail-mobile__summary-row">
+                <span class="employee-detail-mobile__summary-label">Days worked</span>
+                <span class="employee-detail-mobile__summary-value">${daysWorked}</span>
+            </div>
+            <div class="employee-detail-mobile__summary-row">
+                <span class="employee-detail-mobile__summary-label">Total pay</span>
+                <span class="employee-detail-mobile__summary-value">₱${totalPayStr}</span>
+            </div>
+            ${statusRowHtml}
+        </div>
+    `;
+    employeeDetailMobileActions.innerHTML = '';
+    if (showPaymentButton && !isPaid) {
+        const payBtn = document.createElement('button');
+        payBtn.type = 'button';
+        payBtn.className = 'action-btn payment-btn';
+        payBtn.textContent = 'Record payment';
+        payBtn.dataset.employeeId = employeeId;
+        payBtn.addEventListener('click', function () { openPaymentModal(employeeId); });
+        employeeDetailMobileActions.appendChild(payBtn);
+    }
+
+    renderMobileDayCards(employeeId);
+
+    employeeDetailMobileModal.style.display = 'flex';
+    employeeDetailMobileModal.setAttribute('aria-hidden', 'false');
+
+    if (employeeDetailMobileClose) {
+        employeeDetailMobileClose.onclick = closeMobileEmployeeDetail;
+    }
+    employeeDetailMobileModal.onclick = function (e) {
+        if (e.target === employeeDetailMobileModal) closeMobileEmployeeDetail();
+    };
+}
+
+function closeMobileEmployeeDetail() {
+    if (employeeDetailMobileModal) {
+        employeeDetailMobileModal.style.display = 'none';
+        employeeDetailMobileModal.setAttribute('aria-hidden', 'true');
+        employeeDetailMobileModal.onclick = null;
+    }
+    if (employeeDetailMobileClose) employeeDetailMobileClose.onclick = null;
+}
+
+function renderMobileDayCards(employeeId) {
+    if (!employeeDetailMobileDayCards || !filteredData[employeeId]) return;
+    const employee = filteredData[employeeId];
+    const dates = (employee.dates || []).slice().sort((a, b) => a.date.localeCompare(b.date));
+
+    employeeDetailMobileDayCards.innerHTML = '';
+    dates.forEach(dateEntry => {
+        const dailyPay = dateEntry.timeIn && dateEntry.timeOut
+            ? payCalculator.calculateDailyPay(dateEntry, employee, 'simple')
+            : 0;
+        const dateLabel = formatReadableDate(dateEntry.date);
+        const timeInStr = dateEntry.timeIn ? formatTimeWithoutSeconds(dateEntry.timeIn) : '–';
+        const timeOutStr = dateEntry.timeOut ? formatTimeWithoutSeconds(dateEntry.timeOut) : '–';
+        const branch = dateEntry.branch || '–';
+        const shift = dateEntry.shift || '–';
+        const timeInPhoto = dateEntry.timeInPhoto || '';
+        const timeOutPhoto = dateEntry.timeOutPhoto || '';
+
+        const card = document.createElement('div');
+        card.className = 'employee-detail-mobile__day-card';
+        card.innerHTML = `
+            <div class="employee-detail-mobile__day-card__left">
+                <div class="employee-detail-mobile__day-card__date">${dateLabel}</div>
+                <div class="employee-detail-mobile__day-card__photos">
+                    ${timeInPhoto ? `<img src="${timeInPhoto}" class="employee-detail-mobile__day-card__thumb thumb" data-photo="${timeInPhoto}" alt="Clock-in">` : ''}
+                    ${timeOutPhoto ? `<img src="${timeOutPhoto}" class="employee-detail-mobile__day-card__thumb thumb" data-photo="${timeOutPhoto}" alt="Clock-out">` : ''}
+                </div>
+                <div class="employee-detail-mobile__day-card__meta">${branch} · ${shift} · ${timeInStr} – ${timeOutStr}</div>
+            </div>
+            <div class="employee-detail-mobile__day-card__pay">₱${dailyPay.toFixed(2)}</div>
+        `;
+        employeeDetailMobileDayCards.appendChild(card);
+    });
+
+    employeeDetailMobileDayCards.querySelectorAll('.thumb').forEach(thumb => {
+        thumb.addEventListener('click', function (e) {
+            e.stopPropagation();
+            const photoUrl = this.dataset.photo;
+            if (photoUrl) openPhotoModal(photoUrl);
+        });
+    });
+}
+
 function renderEmployeeTable() {
     // Clear the table body first
     employeeTableBody.innerHTML = '';
@@ -1838,9 +2059,14 @@ function renderEmployeeTable() {
         const row = document.createElement('tr');
         row.innerHTML = `<td colspan="8" class="no-data">No data available for the selected filters</td>`;
         employeeTableBody.appendChild(row);
+        if (employeeCardsMobileEl) {
+            employeeCardsMobileEl.innerHTML = '';
+            employeeCardsMobileEl.setAttribute('aria-hidden', 'true');
+        }
         return;
     }
 
+    const mobileCardData = [];
     // Continue with the rest of the function using filteredEmployees
     filteredEmployees.forEach(([employeeId, employee]) => {
         const row = document.createElement('tr');
@@ -1918,6 +2144,16 @@ function renderEmployeeTable() {
             
             payableClass = payableAmount <= 0 ? 'paid-amount' : 'payable-amount';
         }
+
+        mobileCardData.push({
+            employeeId,
+            employee,
+            totalPay,
+            payableAmount,
+            payableClass,
+            showPaymentButton,
+            daysWorked
+        });
 
         row.innerHTML = `
         <td>
@@ -2089,6 +2325,13 @@ function renderEmployeeTable() {
             row.classList.add('expanded');
             detailRow.classList.add('expanded');
         }
+    }
+
+    if (isMobileLayout()) {
+        renderMobileCards(mobileCardData);
+    } else if (employeeCardsMobileEl) {
+        employeeCardsMobileEl.innerHTML = '';
+        employeeCardsMobileEl.setAttribute('aria-hidden', 'true');
     }
 
     setTimeout(updateEmployeePaymentStatus, 500);
@@ -2773,23 +3016,60 @@ function showLoading(message = 'Loading data...') {
         loadingState = 'initial';
     }
 
-    // Show the loading overlay
-    loadingOverlay.style.display = 'flex';
-
-    // Update the loading message if it exists, otherwise create it
-    let loadingMessage = loadingOverlay.querySelector('.loading-message');
-    if (!loadingMessage) {
-        loadingMessage = document.createElement('div');
-        loadingMessage.className = 'loading-message';
-        loadingOverlay.appendChild(loadingMessage);
+    if (isMobileLayout() && mobileLoadingOverlay) {
+        loadingOverlay.style.display = 'none';
+        mobileLoadingOverlay.style.display = 'flex';
+        mobileLoadingOverlay.setAttribute('aria-hidden', 'false');
+        const msg = mobileLoadingOverlay.querySelector('.loading-message');
+        if (msg) msg.textContent = message;
+    } else {
+        if (mobileLoadingOverlay) mobileLoadingOverlay.style.display = 'none';
+        loadingOverlay.style.display = 'flex';
+        let loadingMessage = loadingOverlay.querySelector('.loading-message');
+        if (!loadingMessage) {
+            loadingMessage = document.createElement('div');
+            loadingMessage.className = 'loading-message';
+            loadingOverlay.appendChild(loadingMessage);
+        }
+        loadingMessage.textContent = message;
     }
-
-    loadingMessage.textContent = message;
 }
 
 function hideLoading() {
     loadingState = 'idle';
     loadingOverlay.style.display = 'none';
+    if (mobileLoadingOverlay) {
+        mobileLoadingOverlay.style.display = 'none';
+        mobileLoadingOverlay.setAttribute('aria-hidden', 'true');
+    }
+}
+
+function openPeriodSelectModal() {
+    if (!periodSelectModal || !periodSelectModalList || !window.payrollPeriods) return;
+    periodSelectModalList.innerHTML = '';
+    window.payrollPeriods.forEach(p => {
+        const li = document.createElement('li');
+        li.textContent = p.label;
+        li.dataset.periodId = p.id;
+        li.setAttribute('role', 'option');
+        li.tabIndex = 0;
+        li.addEventListener('click', function () {
+            const id = this.dataset.periodId;
+            periodSelect.value = id;
+            closePeriodSelectModal();
+            loadData(id);
+        });
+        periodSelectModalList.appendChild(li);
+    });
+    periodSelectModal.style.display = 'flex';
+    periodSelectModal.setAttribute('aria-hidden', 'false');
+}
+
+function closePeriodSelectModal() {
+    if (periodSelectModal) {
+        periodSelectModal.style.display = 'none';
+        periodSelectModal.setAttribute('aria-hidden', 'true');
+    }
 }
 
 // Helper function to format date as YYYY-MM-DD
@@ -3577,27 +3857,21 @@ function generatePayrollPeriods(startDate, endDate, limitCount = false) {
         // Use the exact start date without going back additional months
         minDate = new Date(startDate);
 
-        // Round to the beginning of the period containing this date
+        // Round to the beginning of the period containing this date (3 days before end of month = second cutoff)
+        const daysInMonth = new Date(minDate.getFullYear(), minDate.getMonth() + 1, 0).getDate();
+        const secondCutoff = daysInMonth - 3;
         if (minDate.getDate() <= 12) {
-            // If date is 1-12, it's in the second half of previous period
-            // So round back to the 28th/29th of previous month
-            minDate.setDate(1); // First set to first of current month
-            minDate.setMonth(minDate.getMonth() - 1); // Go to previous month
-
-            // Get the starting date (28th or 29th depending on month)
+            // In early period (spans from previous month); round to start of that period
+            minDate.setDate(1);
+            minDate.setMonth(minDate.getMonth() - 1);
             const daysInPrevMonth = new Date(minDate.getFullYear(), minDate.getMonth() + 1, 0).getDate();
-            const startDay = daysInPrevMonth === 31 ? 29 : 28;
-            minDate.setDate(startDay);
-        } else if (minDate.getDate() <= 27) {
-            // If date is 13-27, it's in the first half of current period
-            // So round back to the 13th
+            minDate.setDate(daysInPrevMonth - 2);
+        } else if (minDate.getDate() <= secondCutoff) {
+            // In late period (13th to end-3); round to 13th
             minDate.setDate(13);
         } else {
-            // If date is 28-31, it's in the second half of current period
-            // Stay on current month, round to 28th/29th
-            const daysInMonth = new Date(minDate.getFullYear(), minDate.getMonth() + 1, 0).getDate();
-            const startDay = daysInMonth === 31 ? 29 : 28;
-            minDate.setDate(startDay);
+            // In early period (same month); round to start of that period
+            minDate.setDate(daysInMonth - 2);
         }
     } else {
         // For default, we'll just go back enough for 3 periods
@@ -3605,19 +3879,16 @@ function generatePayrollPeriods(startDate, endDate, limitCount = false) {
         minDate.setMonth(minDate.getMonth() - 2);
     }
 
-    // Find the current period end date
+    // Find the current period end date (aligned with mobile: 3 days before end of month, not fixed 27th)
     let currentPeriodEnd = new Date();
+    const daysInCurMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+    const secondCutoffThisMonth = daysInCurMonth - 3;
 
-    // If today is after 27th, the current period ends on the 12th of next month
-    if (today.getDate() > 27) {
+    if (today.getDate() > secondCutoffThisMonth) {
         currentPeriodEnd = new Date(today.getFullYear(), today.getMonth() + 1, 12);
-    }
-    // If today is after 12th but before or on 27th, current period ends on the 27th
-    else if (today.getDate() > 12) {
-        currentPeriodEnd = new Date(today.getFullYear(), today.getMonth(), 27);
-    }
-    // If today is before or on 12th, current period ends on the 12th
-    else {
+    } else if (today.getDate() > 12) {
+        currentPeriodEnd = new Date(today.getFullYear(), today.getMonth(), secondCutoffThisMonth);
+    } else {
         currentPeriodEnd = new Date(today.getFullYear(), today.getMonth(), 12);
     }
 
@@ -3628,26 +3899,19 @@ function generatePayrollPeriods(startDate, endDate, limitCount = false) {
     while ((!isDefault || count < 3) && (isDefault || periodEnd >= minDate)) {
         let periodStart;
 
-        // If period ends on 12th, it starts on 28th or 29th of previous month
-        // IMPORTANT: This correctly handles year boundaries (e.g., Jan 12 period starts Dec 29 of previous year)
+        // If period ends on 12th, it starts on (prev month end - 2), i.e. 3 days before prev month end + 1
         if (periodEnd.getDate() === 12) {
             const prevMonth = periodEnd.getMonth() === 0 ? 11 : periodEnd.getMonth() - 1;
             const prevYear = periodEnd.getMonth() === 0 ? periodEnd.getFullYear() - 1 : periodEnd.getFullYear();
             const daysInPrevMonth = new Date(prevYear, prevMonth + 1, 0).getDate();
-
-            // Starting day depends on days in previous month
-            const startDay = daysInPrevMonth === 31 ? 29 : 28;
+            const startDay = daysInPrevMonth - 2; // (end - 3) + 1
             periodStart = new Date(prevYear, prevMonth, startDay);
 
-            // STOP if this would go before our oldest data
             if (periodStart < minDate) break;
-
         }
-        // If period ends on 27th, it starts on the 13th of same month
+        // If period ends on (month end - 3), it starts on the 13th of same month
         else {
             periodStart = new Date(periodEnd.getFullYear(), periodEnd.getMonth(), 13);
-
-            // STOP if this would go before our oldest data
             if (periodStart < minDate) break;
         }
 
@@ -3756,7 +4020,7 @@ function updateViewModeImpl() {
 
                 // Create batch edit button for single employee view
                 const batchEditBtn = document.createElement('button');
-                batchEditBtn.className = 'edit-btn';
+                batchEditBtn.className = 'edit-btn batch-edit-period-btn';
                 batchEditBtn.innerHTML = `
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" 
                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -3887,8 +4151,9 @@ function updateViewModeImpl() {
             totalPayCard.textContent = `₱${payCalculator.calculateTotalPay(employee.dates, employee, 'simple').toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;    
         }
 
-        // 4. Hide the main employee table
+        // 4. Hide the main employee table and mobile cards (single-employee view)
         employeeTable.style.display = 'none';
+        if (employeeCardsMobileEl) employeeCardsMobileEl.style.display = 'none';
 
         // 5. Load the employee details and make them the main table
         // First check if we already have a details table
@@ -3931,8 +4196,9 @@ function updateViewModeImpl() {
             importExportContainer.remove();
         }
 
-        // Show the original table
+        // Show the original table and mobile cards (CSS controls visibility by breakpoint)
         employeeTable.style.display = 'table';
+        if (employeeCardsMobileEl) employeeCardsMobileEl.style.display = '';
 
         // Remove any employee details table
         const detailsTable = document.getElementById('employee-details-table');
@@ -5533,6 +5799,20 @@ document.addEventListener('DOMContentLoaded', async function () {
         }
     });
 
+    if (mobileSummaryCard) {
+        mobileSummaryCard.addEventListener('click', function () {
+            if (isMobileLayout()) openPeriodSelectModal();
+        });
+        mobileSummaryCard.addEventListener('keydown', function (e) {
+            if (isMobileLayout() && (e.key === 'Enter' || e.key === ' ')) {
+                e.preventDefault();
+                openPeriodSelectModal();
+            }
+        });
+    }
+    if (periodSelectModalClose) periodSelectModalClose.addEventListener('click', closePeriodSelectModal);
+    if (periodSelectModal) periodSelectModal.addEventListener('click', function (e) { if (e.target === periodSelectModal) closePeriodSelectModal(); });
+
     branchSelect.addEventListener('change', function () {
         localStorage.removeItem('last_selected_branch');
         localStorage.setItem('last_selected_branch', this.value);
@@ -5611,6 +5891,19 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     // Load initial data (this will use cache if available)
     await loadData();
+
+    // Re-render when crossing mobile breakpoint (table vs cards)
+    let lastMobile = isMobileLayout();
+    window.matchMedia('(max-width: 992px)').addEventListener('change', function () {
+        const now = isMobileLayout();
+        if (now !== lastMobile) {
+            lastMobile = now;
+            if (!now && employeeDetailMobileModal && employeeDetailMobileModal.style.display === 'flex') {
+                closeMobileEmployeeDetail();
+            }
+            renderEmployeeTable();
+        }
+    });
 
     // Set up background refresh after initial load
     setupBackgroundRefresh();

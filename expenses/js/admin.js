@@ -1,5 +1,10 @@
 import * as shared from './shared.js';
-
+import {
+    createAutocomplete,
+    getItemMatches,
+    getPaidByMatches,
+    buildSupplierMatchList,
+} from './autocomplete.js';
 
 // Pagination state
 let currentPage = 1;
@@ -8,6 +13,88 @@ let totalFilteredExpenses = [];
 
 // View state
 let dateRangeInput = null;
+let adminRefreshIntervalId = null;
+let adminRefreshInFlight = false;
+
+/** @type {HTMLElement | null} */
+let adminExpenseModalEl = null;
+/** @type {HTMLElement | null} */
+let adminSupplierModalEl = null;
+let adminPendingReceiptUrl = null;
+let adminSupplierExpenseSort = { column: 'date', direction: 'desc' };
+let adminSupplierExpensePage = 1;
+let adminConfirmationCallback = null;
+
+function getActiveDataTable() {
+    return document.querySelector('.view-btn[data-table].active')?.dataset.table || 'expenses';
+}
+
+function escapeHtml(text) {
+    if (text == null) return '';
+    const d = document.createElement('div');
+    d.textContent = String(text);
+    return d.innerHTML;
+}
+
+function closeAdminExpenseModal() {
+    if (adminExpenseModalEl?.parentNode) {
+        adminExpenseModalEl.parentNode.removeChild(adminExpenseModalEl);
+    }
+    adminExpenseModalEl = null;
+    adminPendingReceiptUrl = null;
+}
+
+function closeAdminSupplierModal() {
+    if (adminSupplierModalEl?.parentNode) {
+        adminSupplierModalEl.parentNode.removeChild(adminSupplierModalEl);
+    }
+    adminSupplierModalEl = null;
+}
+
+function setupAdminConfirmationModal() {
+    if (window._adminConfirmationWired) return;
+    window._adminConfirmationWired = true;
+    const overlay = document.getElementById('confirmationModalOverlay');
+    const cancel = document.getElementById('confirmationCancelBtn');
+    const action = document.getElementById('confirmationActionBtn');
+    cancel?.addEventListener('click', () => {
+        adminConfirmationCallback = null;
+        overlay?.classList.remove('show');
+        document.body.style.overflow = '';
+    });
+    action?.addEventListener('click', async () => {
+        const cb = adminConfirmationCallback;
+        adminConfirmationCallback = null;
+        overlay?.classList.remove('show');
+        document.body.style.overflow = '';
+        if (typeof cb === 'function') await cb();
+    });
+    overlay?.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+            adminConfirmationCallback = null;
+            overlay.classList.remove('show');
+            document.body.style.overflow = '';
+        }
+    });
+}
+
+function showAdminConfirmation(title, message, actionText, callback) {
+    setupAdminConfirmationModal();
+    const overlay = document.getElementById('confirmationModalOverlay');
+    const titleEl = document.getElementById('confirmationTitle');
+    const messageEl = document.getElementById('confirmationMessage');
+    const actionBtn = document.getElementById('confirmationActionBtn');
+    if (!overlay || !titleEl || !messageEl || !actionBtn) {
+        if (window.confirm(message)) callback?.();
+        return;
+    }
+    titleEl.textContent = title;
+    messageEl.textContent = message;
+    actionBtn.textContent = actionText;
+    adminConfirmationCallback = callback;
+    overlay.classList.add('show');
+    document.body.style.overflow = 'hidden';
+}
 
 // Load data from localStorage first, then sync with Firebase
 async function loadData() {
@@ -84,25 +171,25 @@ function renderTable() {
         return b.date.localeCompare(a.date);
     });
 
-    sortedExpenses.slice(0, 500).forEach(expense => {
+    sortedExpenses.slice(0, 500).forEach((expense) => {
         const row = document.createElement('tr');
+        row.className = 'data-table-clickable-row';
+        row.dataset.expenseId = expense.id;
 
-        const itemsText = expense.items ? expense.items.map(i => i.name).join(', ') : 'No items';
+        const itemsText = expense.items ? expense.items.map((i) => i.name).join(', ') : 'No items';
+        const itemsShort = itemsText.length > 50 ? itemsText.substring(0, 50) + '...' : itemsText;
         const vatText = expense.vatAmount > 0 ? `₱${expense.vatAmount.toFixed(2)}` : 'No VAT';
 
         row.innerHTML = `
-            <td><input type="checkbox" onchange="updateBulkEditButton()" onclick="handleCheckboxClick(event)"></td>
-            <td>${expense.date || 'No date'}</td>
-            <td>${expense.supplierName || 'No supplier'}</td>
-            <td title="${itemsText}">${itemsText.length > 50 ? itemsText.substring(0, 50) + '...' : itemsText}</td>
-            <td>${expense.expenseCategory || 'General'}</td>
+            <td><input type="checkbox" onchange="updateBulkActionBar()" onclick="handleCheckboxClick(event)"></td>
+            <td>${escapeHtml(expense.date || 'No date')}</td>
+            <td><strong>${escapeHtml(expense.supplierName || 'No supplier')}</strong></td>
+            <td title="${escapeHtml(itemsText)}">${escapeHtml(itemsShort)}</td>
+            <td>${escapeHtml(expense.expenseCategory || 'General')}</td>
             <td>₱${(expense.totalAmount || 0).toLocaleString()}</td>
-            <td>${expense.branch || 'No branch'}</td>
-            <td>${expense.paymentMethod || 'Cash'}</td>
-            <td>${vatText}</td>
-             <td>
-                 <button onclick="window.viewExpense('${expense.id}')">View</button>
-            </td>
+            <td>${escapeHtml(expense.branch || 'No branch')}</td>
+            <td>${escapeHtml(expense.paymentMethod || 'Cash')}</td>
+            <td>${escapeHtml(vatText)}</td>
         `;
 
         tbody.appendChild(row);
@@ -169,7 +256,7 @@ function renderSuppliers() {
     tbody.innerHTML = '';
 
     if (totalFilteredExpenses.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8">No suppliers found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7">No suppliers found</td></tr>';
         return;
     }
 
@@ -187,17 +274,17 @@ function renderSuppliers() {
         const totalAmount = supplierExpenses.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
 
         const row = document.createElement('tr');
+        row.className = 'data-table-clickable-row';
+        row.dataset.supplierId = supplier.id;
+        row.dataset.supplierName = supplier.name;
         row.innerHTML = `
-            <td style="width: 30px; max-width: 30px; text-align: center;"><input type="checkbox" onchange="updateBulkEditButton()" onclick="handleCheckboxClick(event)"></td>
-            <td style="width: 220px; max-width: 220px;"><strong>${supplier.name || 'No name'}</strong></td>
-            <td style="width: 220px; max-width: 220px;">${supplier.businessName || '-'}</td>
-            <td style="width: 160px; max-width: 160px;">${supplier.tin || '-'}</td>
+            <td style="width: 30px; max-width: 30px; text-align: center;"><input type="checkbox" onchange="updateBulkActionBar()" onclick="handleCheckboxClick(event)"></td>
+            <td style="width: 220px; max-width: 220px;"><strong>${escapeHtml(supplier.name || 'No name')}</strong></td>
+            <td style="width: 220px; max-width: 220px;">${escapeHtml(supplier.businessName || '-')}</td>
+            <td style="width: 160px; max-width: 160px;">${escapeHtml(supplier.tin || '-')}</td>
             <td style="width: 140px; max-width: 140px;">${supplier.isVatRegistered ? 'VAT Registered' : 'Not Registered'}</td>
             <td style="width: 60px; max-width: 60px; text-align: center;">${transactionCount}</td>
             <td style="width: 100px; max-width: 100px; text-align: right;">₱${totalAmount.toLocaleString()}</td>
-            <td style="width: 50px; max-width: 50px; text-align: center;">
-                <button onclick="viewSupplierDetails('${supplier.name}')">View</button>
-            </td>
         `;
         tbody.appendChild(row);
     });
@@ -535,6 +622,48 @@ function setDefaultDateRange() {
     setDateRangeShortcut("All Data");
 }
 
+function startAdminPeriodicRefresh() {
+    if (adminRefreshIntervalId) return; // Avoid duplicates
+
+    // Poll every 2 minutes; long enough to reduce load, short enough to stay fresh.
+    const refreshMs = 2 * 60 * 1000;
+    console.log(`[AdminRefresh] Starting periodic refresh every ${refreshMs}ms`);
+
+    adminRefreshIntervalId = setInterval(async () => {
+        if (adminRefreshInFlight) return;
+        adminRefreshInFlight = true;
+
+        try {
+            const changed = await shared.fetchFromFirebase();
+            if (!changed) return;
+
+            const activeBtn = document.querySelector('.view-btn[data-table].active');
+            const activeTable = activeBtn?.dataset.table || 'expenses';
+
+            if (activeTable === 'expenses') {
+                // Re-apply current filter state (flatpickr date range + selectors).
+                filterAndRender();
+            } else if (activeTable === 'suppliers') {
+                currentPage = 1;
+                renderSuppliers();
+                // Suppliers view doesn't call the filtered summary path, so update overall summary too.
+                updateSummary();
+            }
+        } catch (error) {
+            console.warn('[AdminRefresh] Periodic refresh failed:', error);
+        } finally {
+            adminRefreshInFlight = false;
+        }
+    }, refreshMs);
+
+    window.addEventListener('beforeunload', () => {
+        if (adminRefreshIntervalId) {
+            clearInterval(adminRefreshIntervalId);
+            adminRefreshIntervalId = null;
+        }
+    });
+}
+
 async function initialize() {
     console.log('=== INITIALIZING ADMIN INTERFACE ===');
 
@@ -588,6 +717,9 @@ async function initialize() {
         setDefaultDateRange();
         console.log('[8/8] ✓ Default date range set');
         console.log('=== ✓ INITIALIZATION COMPLETE ===');
+
+        // Start polling after we know the UI and flatpickr are ready.
+        startAdminPeriodicRefresh();
     }, 100);
 }
 
@@ -609,17 +741,24 @@ function setupEventListeners() {
             // Hide all views
             document.querySelectorAll('.data-view').forEach(view => view.classList.add('hidden'));
 
-            // Show/hide date filter controls based on tab
-            const dateFilterControls = document.querySelector('.main-controls');
+            const filterSection = document.getElementById('adminFilterSection');
+            const mainControls = document.querySelector('.main-controls');
+            const addExpenseBtn = document.getElementById('addExpenseBtn');
             const tableControls = document.querySelector('.table-controls');
-            
+
+            if (mainControls) mainControls.style.display = 'flex';
+
             if (btn.dataset.table === 'expenses') {
-                // Show date filters and action buttons for expenses
-                if (dateFilterControls) dateFilterControls.style.display = 'flex';
+                if (filterSection) filterSection.style.display = '';
+                if (addExpenseBtn) addExpenseBtn.style.display = 'inline-flex';
+                if (tableControls) tableControls.style.display = 'flex';
+            } else if (btn.dataset.table === 'suppliers') {
+                if (filterSection) filterSection.style.display = 'none';
+                if (addExpenseBtn) addExpenseBtn.style.display = 'none';
                 if (tableControls) tableControls.style.display = 'flex';
             } else {
-                // Hide date filters and action buttons for suppliers and analytics
-                if (dateFilterControls) dateFilterControls.style.display = 'none';
+                if (filterSection) filterSection.style.display = 'none';
+                if (addExpenseBtn) addExpenseBtn.style.display = 'none';
                 if (tableControls) tableControls.style.display = 'none';
             }
 
@@ -652,6 +791,12 @@ function setupEventListeners() {
                     targetView.innerHTML = '<div style="padding: 2rem;">Analytics coming soon...</div>';
                 }
             }
+
+            const selAllExp = document.getElementById('selectAllExpenses');
+            const selAllSup = document.getElementById('selectAllSuppliers');
+            if (selAllExp) selAllExp.checked = false;
+            if (selAllSup) selAllSup.checked = false;
+            updateBulkActionBar();
         });
     });
 
@@ -712,8 +857,63 @@ function setupEventListeners() {
     
     // Add clear filters functionality
     addClearFiltersButton();
-    
+
+    setupAdminConfirmationModal();
+    const selAllSuppliers = document.getElementById('selectAllSuppliers');
+    if (selAllSuppliers) {
+        selAllSuppliers.addEventListener('change', () => {
+            document.querySelectorAll('#supplierTableBody input[type="checkbox"]').forEach((cb) => {
+                cb.checked = selAllSuppliers.checked;
+            });
+            updateBulkActionBar();
+        });
+    }
+
+    setupExpenseTableRowActivation();
+    setupSupplierTableRowActivation();
+
     console.log('Event listeners set up successfully');
+}
+
+function setupExpenseTableRowActivation() {
+    const tbody = document.getElementById('expenseTableBody');
+    if (!tbody || tbody.dataset.clickDelegation === '1') return;
+    tbody.dataset.clickDelegation = '1';
+    tbody.addEventListener('click', (e) => {
+        if (e.target.closest('input[type="checkbox"]')) return;
+        const tr = e.target.closest('tr[data-expense-id]');
+        if (!tr?.dataset.expenseId) return;
+        window.viewExpense(tr.dataset.expenseId);
+    });
+}
+
+function setupSupplierTableRowActivation() {
+    const tbody = document.getElementById('supplierTableBody');
+    if (!tbody || tbody.dataset.clickDelegation === '1') return;
+    tbody.dataset.clickDelegation = '1';
+    tbody.addEventListener('click', (e) => {
+        if (e.target.closest('input[type="checkbox"]')) return;
+        const tr = e.target.closest('tr[data-supplier-id]');
+        if (!tr?.dataset.supplierName) return;
+        window.viewSupplierDetails(tr.dataset.supplierName);
+    });
+}
+
+function refreshAdminTables() {
+    const tab = getActiveDataTable();
+    if (tab === 'expenses') {
+        const activeBtn = document.querySelector('.date-shortcut-btn.active');
+        if (activeBtn) activeBtn.click();
+        else {
+            const expenses = shared.getExpenses();
+            renderFilteredTable(expenses);
+            updateFilteredSummary(expenses);
+        }
+    } else if (tab === 'suppliers') {
+        renderSuppliers();
+        updateSummary();
+    }
+    updateBulkActionBar();
 }
 
 // Add clear filters button functionality
@@ -1062,25 +1262,25 @@ function renderFilteredTable(filteredExpenses) {
     const endIndex = Math.min(startIndex + itemsPerPage, totalFilteredExpenses.length);
     const pageExpenses = totalFilteredExpenses.slice(startIndex, endIndex);
 
-    pageExpenses.forEach(expense => {
+    pageExpenses.forEach((expense) => {
         const row = document.createElement('tr');
+        row.className = 'data-table-clickable-row';
+        row.dataset.expenseId = expense.id;
 
-        const itemsText = expense.items ? expense.items.map(i => i.name).join(', ') : 'No items';
+        const itemsText = expense.items ? expense.items.map((i) => i.name).join(', ') : 'No items';
+        const itemsShort = itemsText.length > 50 ? itemsText.substring(0, 50) + '...' : itemsText;
         const vatText = expense.vatAmount > 0 ? `₱${expense.vatAmount.toFixed(2)}` : 'No VAT';
 
         row.innerHTML = `
-            <td><input type="checkbox" onchange="updateBulkEditButton()" onclick="handleCheckboxClick(event)"></td>
-            <td>${formatDate(expense.date)}</td>
-            <td><strong>${expense.supplierName || 'No supplier'}</strong></td>
-            <td title="${itemsText}">${itemsText.length > 50 ? itemsText.substring(0, 50) + '...' : itemsText}</td>
-            <td>${expense.expenseCategory || 'General'}</td>
+            <td><input type="checkbox" onchange="updateBulkActionBar()" onclick="handleCheckboxClick(event)"></td>
+            <td>${escapeHtml(formatDate(expense.date))}</td>
+            <td><strong>${escapeHtml(expense.supplierName || 'No supplier')}</strong></td>
+            <td title="${escapeHtml(itemsText)}">${escapeHtml(itemsShort)}</td>
+            <td>${escapeHtml(expense.expenseCategory || 'General')}</td>
             <td>₱${(expense.totalAmount || 0).toLocaleString()}</td>
-            <td>${expense.branch || 'No branch'}</td>
-            <td>${expense.paymentMethod || 'Cash'}</td>
-            <td>${vatText}</td>
-             <td>
-                 <button onclick="window.viewExpense('${expense.id}')">View</button>
-            </td>
+            <td>${escapeHtml(expense.branch || 'No branch')}</td>
+            <td>${escapeHtml(expense.paymentMethod || 'Cash')}</td>
+            <td>${escapeHtml(vatText)}</td>
         `;
 
         tbody.appendChild(row);
@@ -1614,36 +1814,27 @@ window.editExpenseFromDetail = function(expenseId) {
     window.open(editUrl, '_blank');
 };
 
-window.deleteExpenseFromDetail = function(expenseId) {
-    if (confirm('Are you sure you want to delete this expense? This action cannot be undone.')) {
-        const success = shared.deleteExpense(expenseId);
-                if (success) {
-                    shared.showToast('Expense deleted successfully');
-            shared.closeExpenseDetailModal();
-            
-            // Refresh the admin interface
-            const activeBtn = document.querySelector('.date-shortcut-btn.active');
-            if (activeBtn) {
-                activeBtn.click();
-                    } else {
-    const expenses = shared.getExpenses();
-                renderFilteredTable(expenses);
-                updateFilteredSummary(expenses);
-            }
-                } else {
-            shared.showToast('Failed to delete expense');
+window.deleteExpenseFromDetail = function (expenseId) {
+    showAdminConfirmation(
+        'Delete expense',
+        'Permanently delete this expense? This cannot be undone.',
+        'Delete',
+        async () => {
+            const ok = await shared.deleteExpense(expenseId);
+            if (ok) {
+                shared.showToast('Expense deleted');
+                closeAdminExpenseModal();
+                refreshAdminTables();
+            } else shared.showToast('Failed to delete expense');
         }
-    }
+    );
 };
 
-window.viewSupplierFromExpense = function(supplierName) {
-    // Switch to suppliers view and filter by this supplier
-    const suppliersBtn = document.querySelector('.view-btn[data-view="suppliers"]');
-    if (suppliersBtn) {
-        suppliersBtn.click();
-        // TODO: Add filtering by supplier name
-        shared.showToast(`Viewing supplier: ${supplierName}`);
-    }
+window.viewSupplierFromExpense = function (supplierName) {
+    const suppliersBtn = document.querySelector('.view-btn[data-table="suppliers"]');
+    if (!suppliersBtn) return;
+    suppliersBtn.click();
+    setTimeout(() => window.viewSupplierDetails(supplierName), 80);
 };
 
 window.viewReceiptFullscreen = function(imageSrc) {
@@ -1681,32 +1872,158 @@ window.viewReceiptFullscreen = function(imageSrc) {
 };
 
 // Bulk edit functionality
-window.showBulkEditModal = function() {
+window.showBulkEditModal = function () {
+    if (getActiveDataTable() !== 'expenses') {
+        shared.showToast('Open the Expenses tab to bulk edit');
+        return;
+    }
     const selectedExpenses = getSelectedExpenses();
-    
+
     if (selectedExpenses.length === 0) {
         shared.showToast('Please select expenses to edit');
         return;
     }
-    
+
     showBulkEditModalDialog(selectedExpenses);
 };
 
 function getSelectedExpenses() {
-    const checkboxes = document.querySelectorAll('#expenseTableBody input[type="checkbox"]:checked');
-    const selectedIds = Array.from(checkboxes).map(cb => {
-        const row = cb.closest('tr');
-        const viewButton = row.querySelector('button[onclick*="viewExpense"]');
-        if (viewButton) {
-            const onclick = viewButton.getAttribute('onclick');
-            const match = onclick.match(/viewExpense\('([^']+)'\)/);
-            return match ? match[1] : null;
-        }
-        return null;
-    }).filter(id => id !== null);
-    
-    return shared.getExpenses().filter(expense => selectedIds.includes(expense.id));
+    const ids = Array.from(document.querySelectorAll('#expenseTableBody tr[data-expense-id]'))
+        .filter((tr) => tr.querySelector('input[type="checkbox"]:checked'))
+        .map((tr) => tr.dataset.expenseId)
+        .filter(Boolean);
+    return shared.getExpenses().filter((expense) => ids.includes(expense.id));
 }
+
+function getSelectedSupplierIds() {
+    return Array.from(document.querySelectorAll('#supplierTableBody tr[data-supplier-id]'))
+        .filter((tr) => tr.querySelector('input[type="checkbox"]:checked'))
+        .map((tr) => tr.dataset.supplierId)
+        .filter(Boolean);
+}
+
+window.showBulkDeleteModal = function () {
+    const tab = getActiveDataTable();
+    if (tab === 'expenses') {
+        const selected = getSelectedExpenses();
+        if (!selected.length) {
+            shared.showToast('Select expenses to delete');
+            return;
+        }
+        showAdminConfirmation(
+            'Delete expenses',
+            `Permanently delete ${selected.length} expense(s)? This cannot be undone.`,
+            'Delete',
+            async () => {
+                for (const e of selected) {
+                    await shared.deleteExpense(e.id);
+                }
+                shared.showToast(`Deleted ${selected.length} expense(s)`);
+                refreshAdminTables();
+            }
+        );
+    } else if (tab === 'suppliers') {
+        const ids = getSelectedSupplierIds();
+        if (!ids.length) {
+            shared.showToast('Select suppliers to delete');
+            return;
+        }
+        showAdminConfirmation(
+            'Delete suppliers',
+            `Permanently delete ${ids.length} supplier(s) and ALL linked expenses? This cannot be undone.`,
+            'Delete',
+            async () => {
+                const r = await shared.deleteSuppliersBulk(ids, null, true);
+                shared.showToast(`Removed ${r.deleted} supplier(s)`);
+                refreshAdminTables();
+            }
+        );
+    }
+};
+
+function ensureBulkMergeModalWired() {
+    if (window._bulkMergeWired) return;
+    window._bulkMergeWired = true;
+    const closeBtn = document.getElementById('bulkMergeModalCloseBtn');
+    const overlay = document.getElementById('bulkMergeModalOverlay');
+    closeBtn?.addEventListener('click', () => closeBulkMergeModal());
+    overlay?.addEventListener('click', (e) => {
+        if (e.target === overlay) closeBulkMergeModal();
+    });
+}
+
+window.closeBulkMergeModal = function () {
+    const overlay = document.getElementById('bulkMergeModalOverlay');
+    overlay?.classList.remove('show');
+    document.body.style.overflow = '';
+};
+
+window.showBulkMergeModal = function () {
+    const ids = getSelectedSupplierIds();
+    if (ids.length < 2) {
+        shared.showToast('Select at least two suppliers to merge');
+        return;
+    }
+    const suppliers = ids
+        .map((id) => shared.getSuppliers().find((s) => s.id === id))
+        .filter(Boolean);
+    if (suppliers.length < 2) {
+        shared.showToast('Suppliers not found');
+        return;
+    }
+
+    ensureBulkMergeModalWired();
+    const content = document.getElementById('bulkMergeContent');
+    if (!content) return;
+
+    const lines = suppliers
+        .map((s, i) => {
+            const checked = i === 0 ? 'checked' : '';
+            return `<label class="admin-bulk-merge-target"><input type="radio" name="adminMergeTarget" value="${escapeHtml(s.id)}" ${checked}> <strong>${escapeHtml(s.name)}</strong>${s.businessName ? ` — ${escapeHtml(s.businessName)}` : ''}</label>`;
+        })
+        .join('');
+    content.innerHTML = `
+        <p style="margin-bottom:1rem;color:#555;">Expenses from merged suppliers will point at the target. Other selected supplier rows will be removed.</p>
+        <div style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:1.25rem;">${lines}</div>
+        <div style="display:flex;justify-content:flex-end;gap:0.75rem;">
+            <button type="button" class="action-btn secondary" onclick="closeBulkMergeModal()">Cancel</button>
+            <button type="button" class="action-btn primary" onclick="executeAdminBulkMerge()">Merge</button>
+        </div>
+    `;
+    document.getElementById('bulkMergeModalOverlay')?.classList.add('show');
+    document.body.style.overflow = 'hidden';
+};
+
+window.executeAdminBulkMerge = async function () {
+    const ids = getSelectedSupplierIds();
+    const selected = document.querySelector('input[name="adminMergeTarget"]:checked');
+    const targetId = selected?.value;
+    if (!targetId || ids.length < 2) {
+        shared.showToast('Select a merge target');
+        return;
+    }
+    const sourceIds = ids.filter((id) => id !== targetId);
+    if (!sourceIds.length) {
+        shared.showToast('Choose a target different from merged suppliers');
+        return;
+    }
+
+    showAdminConfirmation(
+        'Confirm merge',
+        `Merge ${sourceIds.length} supplier(s) into the target? This cannot be undone.`,
+        'Merge',
+        async () => {
+            closeBulkMergeModal();
+            const r = await shared.mergeSuppliersIntoTarget(targetId, sourceIds);
+            if (r.success) {
+                shared.showToast(`Merged suppliers; ${r.transferred} expense row(s) updated`);
+            } else {
+                shared.showToast(r.error || 'Merge failed');
+            }
+            refreshAdminTables();
+        }
+    );
+};
 
 function showBulkEditModalDialog(expenses) {
     // Create modal overlay
@@ -1830,8 +2147,7 @@ window.applyBulkEdit = function() {
     
     shared.showToast(`Successfully updated ${updatedCount} expenses`);
     closeBulkEditModal();
-    
-    // Refresh the admin interface
+
     const activeBtn = document.querySelector('.date-shortcut-btn.active');
     if (activeBtn) {
         activeBtn.click();
@@ -1840,181 +2156,261 @@ window.applyBulkEdit = function() {
         renderFilteredTable(expenses);
         updateFilteredSummary(expenses);
     }
+    updateBulkActionBar();
 };
 
 // Select all functionality - only selects items on current page
-window.toggleSelectAll = function() {
+window.toggleSelectAll = function () {
     const selectAllCheckbox = document.getElementById('selectAllExpenses');
-        const checkboxes = document.querySelectorAll('#expenseTableBody input[type="checkbox"]');
-    
+    const checkboxes = document.querySelectorAll('#expenseTableBody input[type="checkbox"]');
+
     if (!selectAllCheckbox) {
         console.error('Select all checkbox not found');
         return;
     }
-    
-        checkboxes.forEach(checkbox => {
-            if (checkbox) {
-            checkbox.checked = selectAllCheckbox.checked;
-            }
-        });
-    
-    updateBulkEditButton();
+
+    checkboxes.forEach((checkbox) => {
+        if (checkbox) checkbox.checked = selectAllCheckbox.checked;
+    });
+
+    updateBulkActionBar();
 };
 
 // Shift+click selection functionality
 let lastSelectedCheckbox = null;
 
-window.handleCheckboxClick = function(event) {
-    if (event.shiftKey && lastSelectedCheckbox && lastSelectedCheckbox !== event.target) {
-        // Find all checkboxes in the table
-        const allCheckboxes = Array.from(document.querySelectorAll('#expenseTableBody input[type="checkbox"]'));
+window.handleCheckboxClick = function (event) {
+    const tbody = event.target.closest('#expenseTableBody, #supplierTableBody');
+    if (
+        event.shiftKey &&
+        lastSelectedCheckbox &&
+        lastSelectedCheckbox !== event.target &&
+        tbody
+    ) {
+        const allCheckboxes = Array.from(tbody.querySelectorAll('input[type="checkbox"]'));
         const currentIndex = allCheckboxes.indexOf(event.target);
         const lastIndex = allCheckboxes.indexOf(lastSelectedCheckbox);
-        
-        // Determine the range
         const startIndex = Math.min(currentIndex, lastIndex);
         const endIndex = Math.max(currentIndex, lastIndex);
-        
-        // Select all checkboxes in the range
         for (let i = startIndex; i <= endIndex; i++) {
             allCheckboxes[i].checked = true;
         }
-        
-        updateBulkEditButton();
+        updateBulkActionBar();
     } else {
-        // Regular click - just update the last selected
         lastSelectedCheckbox = event.target;
     }
 };
 
-// Update bulk edit button visibility and text
-window.updateBulkEditButton = function() {
-    const checkboxes = document.querySelectorAll('#expenseTableBody input[type="checkbox"]:checked');
+function setBulkButtonLabel(btn, svgMarkup, text) {
+    if (!btn) return;
+    btn.innerHTML = svgMarkup;
+    btn.appendChild(document.createTextNode(text));
+}
+
+const bulkEditSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="m18.5 2.5 a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z"></path></svg>`;
+const bulkMergeSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>`;
+const bulkDelSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3,6 5,6 21,6"></polyline><path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>`;
+
+window.updateBulkActionBar = function () {
+    const tab = getActiveDataTable();
     const bulkEditBtn = document.getElementById('bulkEditBtn');
-    
-    if (bulkEditBtn) {
-        if (checkboxes.length > 0) {
-            bulkEditBtn.style.display = 'flex';
-            
-            // Update button text dynamically
-            const count = checkboxes.length;
-            let buttonText;
-            if (count === 1) {
-                buttonText = 'Edit';
-            } else {
-                buttonText = `Edit ${count} Entries`;
-            }
-            
-            // Update the text content (keep the SVG icon)
-            const svg = bulkEditBtn.querySelector('svg');
-            bulkEditBtn.innerHTML = '';
-            if (svg) {
-                bulkEditBtn.appendChild(svg);
-            }
-            bulkEditBtn.appendChild(document.createTextNode(buttonText));
-        } else {
-            bulkEditBtn.style.display = 'none';
+    const bulkMergeBtn = document.getElementById('bulkMergeBtn');
+    const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
+
+    if (tab === 'analytics') {
+        if (bulkEditBtn) bulkEditBtn.style.display = 'none';
+        if (bulkMergeBtn) bulkMergeBtn.style.display = 'none';
+        if (bulkDeleteBtn) bulkDeleteBtn.style.display = 'none';
+        return;
+    }
+
+    if (tab === 'expenses') {
+        if (bulkMergeBtn) bulkMergeBtn.style.display = 'none';
+        const n = document.querySelectorAll('#expenseTableBody input[type="checkbox"]:checked').length;
+        if (bulkEditBtn) {
+            if (n > 0) {
+                bulkEditBtn.style.display = 'inline-flex';
+                const label = n === 1 ? 'Edit' : `Edit ${n} entries`;
+                setBulkButtonLabel(bulkEditBtn, bulkEditSvg, label);
+            } else bulkEditBtn.style.display = 'none';
+        }
+        if (bulkDeleteBtn) {
+            if (n > 0) {
+                bulkDeleteBtn.style.display = 'inline-flex';
+                setBulkButtonLabel(bulkDeleteBtn, bulkDelSvg, n === 1 ? 'Delete' : `Delete ${n}`);
+            } else bulkDeleteBtn.style.display = 'none';
+        }
+    } else if (tab === 'suppliers') {
+        if (bulkEditBtn) bulkEditBtn.style.display = 'none';
+        const n = document.querySelectorAll('#supplierTableBody input[type="checkbox"]:checked').length;
+        if (bulkMergeBtn) {
+            if (n >= 2) {
+                bulkMergeBtn.style.display = 'inline-flex';
+                setBulkButtonLabel(bulkMergeBtn, bulkMergeSvg, 'Merge');
+            } else bulkMergeBtn.style.display = 'none';
+        }
+        if (bulkDeleteBtn) {
+            if (n > 0) {
+                bulkDeleteBtn.style.display = 'inline-flex';
+                setBulkButtonLabel(bulkDeleteBtn, bulkDelSvg, n === 1 ? 'Delete' : `Delete ${n}`);
+            } else bulkDeleteBtn.style.display = 'none';
         }
     }
 };
 
+/** @deprecated use updateBulkActionBar */
+window.updateBulkEditButton = window.updateBulkActionBar;
+
 // View supplier details function
-window.viewSupplierDetails = function(supplierName) {
-    const supplier = shared.getSuppliers().find(s => s.name === supplierName);
+window.viewSupplierDetails = function (supplierName) {
+    closeAdminSupplierModal();
+    const supplier = shared
+        .getSuppliers()
+        .find((s) => (s.name || '').toLowerCase() === (supplierName || '').toLowerCase());
     if (!supplier) {
         shared.showToast('Supplier not found');
         return;
     }
 
-    // Get all expenses for this supplier
-    const supplierExpenses = shared.getExpenses().filter(e => e.supplierName === supplierName);
+    const pageSize = 12;
+    let sortCol = 'date';
+    let sortDir = 'desc';
+    let page = 1;
+
+    function collectExpenses() {
+        const nm = (supplier.name || '').toLowerCase();
+        let list = shared.getExpenses().filter((e) => (e.supplierName || '').toLowerCase() === nm);
+        list.sort((a, b) => {
+            let av;
+            let bv;
+            if (sortCol === 'amount') {
+                av = a.totalAmount || 0;
+                bv = b.totalAmount || 0;
+            } else {
+                av = a.date || '';
+                bv = b.date || '';
+            }
+            if (av < bv) return sortDir === 'asc' ? -1 : 1;
+            if (av > bv) return sortDir === 'asc' ? 1 : -1;
+            return 0;
+        });
+        return list;
+    }
+
+    function renderExpenseRows() {
+        const list = collectExpenses();
+        const total = list.length;
+        const pages = Math.max(1, Math.ceil(total / pageSize));
+        if (page > pages) page = pages;
+        const start = (page - 1) * pageSize;
+        const slice = list.slice(start, start + pageSize);
+        const tbody = document.getElementById('adminSupplierExpenseTbody');
+        const pagerEl = document.getElementById('adminSupplierExpensePager');
+        if (!tbody) return;
+        tbody.innerHTML = slice
+            .map(
+                (e) => `
+            <tr class="admin-supplier-exp-row" data-expense-id="${String(e.id).replace(/"/g, '')}">
+                <td>${escapeHtml(e.date || '')}</td>
+                <td>${escapeHtml(e.expenseCategory || 'General')}</td>
+                <td style="text-align:right">₱${(e.totalAmount || 0).toLocaleString()}</td>
+                <td>${escapeHtml(e.branch || '')}</td>
+                <td>${escapeHtml((e.invoiceNumber || '').slice(0, 24))}</td>
+            </tr>`
+            )
+            .join('');
+        tbody.querySelectorAll('.admin-supplier-exp-row').forEach((tr) => {
+            tr.addEventListener('click', () => {
+                const id = tr.getAttribute('data-expense-id');
+                closeAdminSupplierModal();
+                window.viewExpense(id);
+            });
+        });
+        if (pagerEl) {
+            pagerEl.textContent = `Page ${page} / ${pages} · ${total} expense(s)`;
+        }
+    }
+
+    const modal = document.createElement('div');
+    modal.className = 'admin-supplier-modal-overlay';
+    adminSupplierModalEl = modal;
+
+    const supplierExpenses = collectExpenses();
     const totalAmount = supplierExpenses.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
 
-    // Create a simple modal to show supplier details
-    const modal = document.createElement('div');
-    modal.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.75);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 3000;
-    `;
-    
-    const modalContent = document.createElement('div');
-    modalContent.style.cssText = `
-        background: white;
-        border-radius: 16px;
-        max-width: 600px;
-        width: 90%;
-        max-height: 90vh;
-        overflow-y: auto;
-        box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
-    `;
-    
-    modalContent.innerHTML = `
-        <div style="display: flex; align-items: center; justify-content: space-between; padding: 1.5rem; border-bottom: 1px solid #e5e5e5; background: #f8f9fa; position: sticky; top: 0; z-index: 10;">
-            <h2 style="margin: 0; font-size: 1.5rem; font-weight: 600; color: #333;">Supplier Details</h2>
-            <button onclick="this.closest('div').parentElement.parentElement.remove()" style="background: none; border: none; cursor: pointer; padding: 4px; color: #666; font-size: 1.5rem; display: flex; align-items: center; justify-content: center; border-radius: 6px;">×</button>
-        </div>
-        <div style="padding: 1.5rem;">
-            <div style="margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid #f0f0f0;">
-                <h3 style="font-size: 1.1rem; font-weight: 600; color: #2b9348; margin: 0 0 1rem 0; padding-bottom: 0.5rem; border-bottom: 2px solid rgba(43, 147, 72, 0.2);">Basic Information</h3>
-                <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem;">
-                    <span style="font-weight: 500; color: #666;">Supplier Name</span>
-                    <span style="font-weight: 600; color: #333;">${supplier.name}</span>
+    modal.innerHTML = `
+        <div class="admin-supplier-modal-shell">
+            <div class="admin-supplier-modal-header">
+                <h2>Supplier</h2>
+                <button type="button" class="admin-modal-icon-btn" aria-label="Close">&times;</button>
             </div>
-            ${supplier.businessName ? `
-                <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem;">
-                    <span style="font-weight: 500; color: #666;">Business Name</span>
-                    <span style="font-weight: 600; color: #333;">${supplier.businessName}</span>
-            </div>
-            ` : ''}
-            ${supplier.tin ? `
-                <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem;">
-                    <span style="font-weight: 500; color: #666;">TIN</span>
-                    <span style="font-weight: 600; color: #333;">${supplier.tin}</span>
-            </div>
-            ` : ''}
-            ${supplier.address ? `
-                <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem;">
-                    <span style="font-weight: 500; color: #666;">Address</span>
-                    <span style="font-weight: 600; color: #333; text-align: right; max-width: 60%;">${supplier.address}</span>
-            </div>
-            ` : ''}
-                <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem;">
-                    <span style="font-weight: 500; color: #666;">VAT Status</span>
-                    <span style="font-weight: 600; color: #333;">${supplier.isVatRegistered ? 'VAT Registered' : 'Not VAT Registered'}</span>
-                        </div>
+            <div class="admin-supplier-modal-body">
+                <div class="admin-supplier-summary">
+                    <p><strong>${escapeHtml(supplier.name)}</strong></p>
+                    ${supplier.businessName ? `<p class="muted">${escapeHtml(supplier.businessName)}</p>` : ''}
+                    ${supplier.tin ? `<p class="muted">TIN ${escapeHtml(supplier.tin)}</p>` : ''}
+                    ${supplier.address ? `<p class="muted">${escapeHtml(supplier.address)}</p>` : ''}
+                    <p>${supplier.isVatRegistered ? 'VAT Registered' : 'Not VAT Registered'}</p>
+                    <p><strong>₱${totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> · ${supplierExpenses.length} transactions</p>
                 </div>
-            <div style="margin-bottom: 1.5rem;">
-                <h3 style="font-size: 1.1rem; font-weight: 600; color: #2b9348; margin: 0 0 1rem 0; padding-bottom: 0.5rem; border-bottom: 2px solid rgba(43, 147, 72, 0.2);">Transaction Summary</h3>
-                <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem;">
-                    <span style="font-weight: 500; color: #666;">Total Transactions</span>
-                    <span style="font-weight: 600; color: #333;">${supplierExpenses.length}</span>
+                <h3 class="admin-supplier-exp-heading">Expenses</h3>
+                <div class="admin-supplier-exp-toolbar">
+                    <button type="button" class="action-btn secondary admin-sort-date">Sort: date</button>
+                    <button type="button" class="action-btn secondary admin-sort-amt">Sort: amount</button>
+                    <button type="button" class="action-btn secondary admin-page-prev">Prev</button>
+                    <button type="button" class="action-btn secondary admin-page-next">Next</button>
+                </div>
+                <p id="adminSupplierExpensePager" class="admin-supplier-pager"></p>
+                <div class="admin-supplier-table-wrap">
+                    <table class="data-table admin-supplier-exp-table">
+                        <thead><tr><th>Date</th><th>Category</th><th style="text-align:right">Amount</th><th>Branch</th><th>Invoice</th></tr></thead>
+                        <tbody id="adminSupplierExpenseTbody"></tbody>
+                    </table>
+                </div>
             </div>
-                <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem;">
-                    <span style="font-weight: 500; color: #666;">Total Amount</span>
-                    <span style="font-weight: 600; color: #2b9348; font-size: 1.1rem;">₱${totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-        </div>
-            </div>
-        </div>
-    `;
-    
-    modal.appendChild(modalContent);
-    document.body.appendChild(modal);
+        </div>`;
 
-    // Close on overlay click
+    modal.querySelector('.admin-modal-icon-btn')?.addEventListener('click', closeAdminSupplierModal);
     modal.addEventListener('click', (e) => {
-        if (e.target === modal) {
-            document.body.removeChild(modal);
+        if (e.target === modal) closeAdminSupplierModal();
+    });
+
+    modal.querySelector('.admin-sort-date')?.addEventListener('click', () => {
+        if (sortCol === 'date') sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+        else {
+            sortCol = 'date';
+            sortDir = 'desc';
         }
-        });
-    };
+        page = 1;
+        renderExpenseRows();
+    });
+    modal.querySelector('.admin-sort-amt')?.addEventListener('click', () => {
+        if (sortCol === 'amount') sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+        else {
+            sortCol = 'amount';
+            sortDir = 'desc';
+        }
+        page = 1;
+        renderExpenseRows();
+    });
+    modal.querySelector('.admin-page-prev')?.addEventListener('click', () => {
+        if (page > 1) {
+            page--;
+            renderExpenseRows();
+        }
+    });
+    modal.querySelector('.admin-page-next')?.addEventListener('click', () => {
+        const list = collectExpenses();
+        const pages = Math.max(1, Math.ceil(list.length / pageSize));
+        if (page < pages) {
+            page++;
+            renderExpenseRows();
+        }
+    });
+
+    document.body.appendChild(modal);
+    renderExpenseRows();
+};
 
 // View expense details function with inline editing
 window.viewExpense = function(expenseId) {
@@ -2054,74 +2450,198 @@ window.addExpense = function() {
     showExpenseModal(newExpense, true);
 };
 
-// Unified expense modal for both viewing and editing
-function showExpenseModal(expense, isNew = false) {
-    const isEditing = isNew;
-    const modalTitle = isNew ? 'Add New Expense' : 'Expense Details';
-    
-    // Create modal
-    const modal = document.createElement('div');
-    modal.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.75);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 3000;
-    `;
-    
-    const modalContent = document.createElement('div');
-    modalContent.style.cssText = `
-        background: white;
-        border-radius: 16px;
-        max-width: 600px;
-        width: 90%;
-        max-height: 90vh;
-        overflow: hidden;
-        box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
-    `;
-    
-    modalContent.innerHTML = `
-        <div style="display: flex; align-items: center; justify-content: space-between; padding: 1.5rem; border-bottom: 1px solid #e5e5e5; background: #f8f9fa; border-radius: 16px 16px 0 0;">
-            <h2 style="margin: 0; font-size: 1.5rem; font-weight: 600; color: #333;">${modalTitle}</h2>
-            <div style="display: flex; gap: 0.5rem;">
-                ${!isNew ? `
-                <button onclick="toggleEditMode('${expense.id}')" style="background: white; border: 1px solid #e5e5e5; border-radius: 6px; padding: 8px; cursor: pointer; color: #2b9348; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px;" title="Edit expense">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                        <path d="m18.5 2.5 a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z"></path>
-                    </svg>
-                </button>
-                <button onclick="deleteExpenseFromDetail('${expense.id}')" style="background: white; border: 1px solid #e5e5e5; border-radius: 6px; padding: 8px; cursor: pointer; color: #dc3545; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px;" title="Delete expense">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="3,6 5,6 21,6"></polyline>
-                        <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"></path>
-                        <line x1="10" y1="11" x2="10" y2="17"></line>
-                        <line x1="14" y1="11" x2="14" y2="17"></line>
-                    </svg>
-                </button>
-                ` : ''}
-                <button onclick="this.closest('div').parentElement.parentElement.remove()" style="background: none; border: none; cursor: pointer; padding: 4px; color: #666; font-size: 1.5rem; display: flex; align-items: center; justify-content: center; border-radius: 6px;">×</button>
-            </div>
+window.adminUnlockSupplierFields = function () {
+    document.querySelectorAll('.admin-supplier-field').forEach((el) => {
+        el.readOnly = false;
+    });
+    document.getElementById('adminSupplierLockBanner')?.remove();
+};
+
+function adminApplySupplierRecord(supplier) {
+    const sn = document.getElementById('adminSupplierName');
+    const bn = document.getElementById('adminBusinessName');
+    const tin = document.getElementById('adminTin');
+    const ad = document.getElementById('adminAddress');
+    if (sn) sn.value = supplier.name || '';
+    if (bn) bn.value = supplier.businessName || '';
+    if (tin) tin.value = supplier.tin || '';
+    if (ad) ad.value = supplier.address || '';
+}
+
+function wireAdminItemAutocomplete(inputEl, modalBody) {
+    createAutocomplete(
+        inputEl,
+        (q) => {
+            const sn = document.getElementById('adminSupplierName');
+            return getItemMatches(() => shared.getExpenses(), q, sn?.value || '');
+        },
+        (name, input) => {
+            input.value = name;
+        },
+        { showOnFocus: true, modalBodyEl: modalBody, useFixedItemDropdown: true }
+    );
+}
+
+function wireAdminExpenseAutocompletes(modalBody) {
+    const sn = document.getElementById('adminSupplierName');
+    if (sn) {
+        createAutocomplete(
+            sn,
+            (q) => buildSupplierMatchList(() => shared.getSuppliers(), q),
+            (supplierId) => {
+                const supplier = shared.getSuppliers().find((s) => s.id === supplierId);
+                if (supplier) adminApplySupplierRecord(supplier);
+            },
+            { showOnFocus: true, modalBodyEl: modalBody }
+        );
+    }
+    const paid = document.getElementById('adminPaidBy');
+    if (paid) {
+        createAutocomplete(
+            paid,
+            (q) => getPaidByMatches(() => shared.getExpenses(), q),
+            (name, input) => {
+                input.value = name;
+            },
+            { showOnFocus: true, modalBodyEl: modalBody }
+        );
+    }
+    modalBody.querySelectorAll('.admin-item-name-input').forEach((inp) => {
+        wireAdminItemAutocomplete(inp, modalBody);
+    });
+}
+
+function initAdminReceiptPanel(expense, isEditing, expenseId) {
+    const mount = document.getElementById('adminReceiptPanelMount');
+    if (!mount) return;
+
+    if (!isEditing) {
+        if (expense.receiptImage) {
+            const u = JSON.stringify(expense.receiptImage);
+            mount.innerHTML = `<div class="admin-receipt-frame"><img src="${expense.receiptImage}" alt="Receipt" class="admin-receipt-preview-full"/><p><button type="button" class="action-btn secondary" onclick="viewReceiptFullscreen(${u})">Fullscreen</button></p></div>`;
+        } else if (expense.hasReceiptImage) {
+            mount.innerHTML = '<p class="muted">Loading receipt…</p>';
+            shared.fetchReceiptImageFromFirebase(expenseId).then((url) => {
+                if (!url) mount.innerHTML = '<p class="muted">No receipt found</p>';
+                else {
+                    const u = JSON.stringify(url);
+                    mount.innerHTML = `<div class="admin-receipt-frame"><img src="${url}" alt="Receipt" class="admin-receipt-preview-full"/><p><button type="button" class="action-btn secondary" onclick="viewReceiptFullscreen(${u})">Fullscreen</button></p></div>`;
+                }
+            });
+        } else {
+            mount.innerHTML = '<p class="muted">No receipt attached</p>';
+        }
+        return;
+    }
+
+    mount.innerHTML = `
+        <div class="admin-receipt-upload" id="adminReceiptDrop">
+            <input type="file" id="adminReceiptInput" accept="image/*" style="display:none" />
+            <div class="admin-receipt-upload-content">Click to upload or replace receipt</div>
+            <img id="adminReceiptPreview" class="admin-receipt-preview" style="display:none" alt="" />
         </div>
-        <div style="padding: 1.5rem; overflow-y: auto; max-height: calc(90vh - 80px);">
-            ${generateExpenseForm(expense, isEditing)}
-        </div>
-    `;
-    
-    modal.appendChild(modalContent);
-    document.body.appendChild(modal);
-    
-    // Close on overlay click
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) {
-            document.body.removeChild(modal);
+        <button type="button" class="action-btn secondary" id="adminRemoveReceiptBtn" style="display:none;margin-top:0.5rem">Remove receipt</button>`;
+
+    const input = document.getElementById('adminReceiptInput');
+    const drop = document.getElementById('adminReceiptDrop');
+    const preview = document.getElementById('adminReceiptPreview');
+    const rm = document.getElementById('adminRemoveReceiptBtn');
+
+    const showPreview = (src) => {
+        if (!src) return;
+        adminPendingReceiptUrl = src;
+        window.adminReceiptRemove = false;
+        preview.src = src;
+        preview.style.display = 'block';
+        drop.classList.add('has-file');
+        rm.style.display = 'inline-flex';
+    };
+
+    if (expense.receiptImage) showPreview(expense.receiptImage);
+
+    drop.addEventListener('click', () => input?.click());
+    input?.addEventListener('change', async () => {
+        const f = input.files?.[0];
+        if (!f) return;
+        try {
+            const dataUrl = await shared.compressImage(f);
+            const url = await shared.uploadReceiptImageToStorage(expenseId, dataUrl);
+            showPreview(url || dataUrl);
+        } catch (err) {
+            console.warn(err);
+            shared.showToast('Receipt upload failed');
         }
     });
+    rm?.addEventListener('click', () => {
+        preview.style.display = 'none';
+        adminPendingReceiptUrl = null;
+        window.adminReceiptRemove = true;
+        rm.style.display = 'none';
+        drop.classList.remove('has-file');
+        if (input) input.value = '';
+    });
+}
+
+// Unified expense modal for both viewing and editing
+function showExpenseModal(expense, isNew = false) {
+    closeAdminExpenseModal();
+    adminPendingReceiptUrl = expense.receiptImage || null;
+    window.adminReceiptRemove = false;
+
+    const isEditing = isNew;
+    const modalTitle = isNew ? 'Add New Expense' : 'Expense Details';
+
+    const shell = document.createElement('div');
+    shell.className = 'admin-expense-modal-overlay';
+    adminExpenseModalEl = shell;
+
+    shell.innerHTML = `
+        <div class="admin-expense-modal-shell">
+            <div class="admin-expense-modal-main">
+                <div class="admin-expense-modal-header">
+                    <h2 class="admin-expense-modal-title">${escapeHtml(modalTitle)}</h2>
+                    <div class="admin-expense-modal-actions">
+                        ${
+                            !isNew
+                                ? `<button type="button" class="admin-modal-icon-btn admin-edit-exp" title="Edit" data-expense-id="${escapeHtml(expense.id)}">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="m18.5 2.5 a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z"></path></svg>
+                        </button>
+                        <button type="button" class="admin-modal-icon-btn danger" title="Delete" data-del="${escapeHtml(expense.id)}">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3,6 5,6 21,6"></polyline><path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"></path></svg>
+                        </button>`
+                                : ''
+                        }
+                        <button type="button" class="admin-modal-icon-btn" data-close-exp-modal aria-label="Close">&times;</button>
+                    </div>
+                </div>
+                <div class="admin-expense-modal-body">
+                    ${generateExpenseForm(expense, isEditing)}
+                </div>
+            </div>
+            <div class="admin-expense-modal-receipt">
+                <h3 class="admin-receipt-heading">Receipt</h3>
+                <div id="adminReceiptPanelMount" class="admin-receipt-panel-inner"></div>
+            </div>
+        </div>`;
+
+    document.body.appendChild(shell);
+
+    shell.querySelector('[data-close-exp-modal]')?.addEventListener('click', closeAdminExpenseModal);
+    shell.addEventListener('click', (e) => {
+        if (e.target === shell) closeAdminExpenseModal();
+    });
+    shell.querySelector('.admin-edit-exp')?.addEventListener('click', () => {
+        toggleEditMode(expense.id);
+    });
+    shell.querySelector('[data-del]')?.addEventListener('click', () => {
+        deleteExpenseFromDetail(expense.id);
+    });
+
+    const modalBody = shell.querySelector('.admin-expense-modal-body');
+    initAdminReceiptPanel(expense, isEditing, expense.id);
+    if (isEditing && modalBody) {
+        wireAdminExpenseAutocompletes(modalBody);
+    }
 }
 
 // Generate the expense form content
@@ -2132,30 +2652,43 @@ function generateExpenseForm(expense, isEditing) {
         return date.toISOString().split('T')[0];
     };
 
+    const matchedSupplier = shared.getSuppliers().find(
+        (s) => (s.name || '').toLowerCase() === (expense.supplierName || '').toLowerCase()
+    );
+    const supplierLocked = Boolean(isEditing && matchedSupplier);
+    const supRead = !isEditing || supplierLocked;
+    const supRoAttr = supRead ? 'readonly' : '';
+    const supClass = supplierLocked ? 'class="admin-supplier-field"' : '';
+
+    const supplierProfileBtn =
+        !isEditing && matchedSupplier
+            ? `<p class="admin-inline-link"><button type="button" class="admin-text-btn" onclick="viewSupplierFromExpense(${JSON.stringify(matchedSupplier.name)})">Open supplier profile</button></p>`
+            : '';
+
+    const supplierLockBanner = isEditing && supplierLocked
+        ? `<div id="adminSupplierLockBanner" class="admin-banner-soft">Matched saved supplier. <button type="button" class="admin-text-btn" onclick="adminUnlockSupplierFields()">Change supplier</button></div>`
+        : '';
+
     return `
         <form id="expenseForm" onsubmit="saveExpense(event, '${expense.id}')">
-            <!-- Basic Information -->
-            <div style="margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid #f0f0f0;">
-                <h3 style="font-size: 1.1rem; font-weight: 600; color: #2b9348; margin: 0 0 1rem 0; padding-bottom: 0.5rem; border-bottom: 2px solid rgba(43, 147, 72, 0.2);">Basic Information</h3>
-                
-                <div style="margin-bottom: 1rem;">
-                        <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.5rem;">Date</label>
-                        <input type="date" name="date" value="${formatDate(expense.date)}" required style="width: 100%; padding: 0.75rem; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 0.9rem;" ${!isEditing ? 'readonly' : ''}>
-                    </div>
-                    
-                <div style="margin-bottom: 1rem;">
-                        <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.5rem;">Branch</label>
-                    <select name="branch" required style="width: 100%; padding: 0.75rem; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 0.9rem; ${!isEditing ? 'background-color: #f8f9fa; color: #666;' : ''}" ${!isEditing ? 'disabled' : ''}>
-                            <option value="SM North" ${expense.branch === 'SM North' ? 'selected' : ''}>SM North</option>
-                            <option value="Podium" ${expense.branch === 'Podium' ? 'selected' : ''}>Podium</option>
+            <div class="admin-form-section">
+                <h3 class="admin-form-section-title">Basic Information</h3>
+                <div class="admin-field">
+                    <label>Date</label>
+                    <input type="date" name="date" value="${formatDate(expense.date)}" required ${!isEditing ? 'readonly' : ''}>
+                </div>
+                <div class="admin-field">
+                    <label>Branch</label>
+                    <select name="branch" required ${!isEditing ? 'disabled' : ''} style="${!isEditing ? 'background:#f8f9fa' : ''}">
+                        <option value="SM North" ${expense.branch === 'SM North' ? 'selected' : ''}>SM North</option>
+                        <option value="Podium" ${expense.branch === 'Podium' ? 'selected' : ''}>Podium</option>
                         <option value="BGC" ${expense.branch === 'BGC' ? 'selected' : ''}>BGC</option>
                         <option value="Makati" ${expense.branch === 'Makati' ? 'selected' : ''}>Makati</option>
-                        </select>
-                    </div>
-                    
-                <div style="margin-bottom: 1rem;">
-                    <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.5rem;">Expense Category</label>
-                    <select name="expenseCategory" required style="width: 100%; padding: 0.75rem; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 0.9rem; ${!isEditing ? 'background-color: #f8f9fa; color: #666;' : ''}" ${!isEditing ? 'disabled' : ''}>
+                    </select>
+                </div>
+                <div class="admin-field">
+                    <label>Expense Category</label>
+                    <select name="expenseCategory" required ${!isEditing ? 'disabled' : ''} style="${!isEditing ? 'background:#f8f9fa' : ''}">
                         <option value="General" ${(expense.expenseCategory || 'General') === 'General' ? 'selected' : ''}>General</option>
                         <option value="Matcha" ${(expense.expenseCategory || 'General') === 'Matcha' ? 'selected' : ''}>Matcha</option>
                         <option value="Suppliers" ${(expense.expenseCategory || 'General') === 'Suppliers' ? 'selected' : ''}>Suppliers</option>
@@ -2164,150 +2697,143 @@ function generateExpenseForm(expense, isEditing) {
                         <option value="Marketing" ${(expense.expenseCategory || 'General') === 'Marketing' ? 'selected' : ''}>Marketing</option>
                         <option value="Maintenance" ${(expense.expenseCategory || 'General') === 'Maintenance' ? 'selected' : ''}>Maintenance</option>
                         <option value="Equipment" ${(expense.expenseCategory || 'General') === 'Equipment' ? 'selected' : ''}>Equipment</option>
-                        </select>
-                    </div>
-                    
-                <div style="margin-bottom: 1rem;">
-                    <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.5rem;">Payment Method</label>
-                    <select name="paymentMethod" required style="width: 100%; padding: 0.75rem; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 0.9rem; ${!isEditing ? 'background-color: #f8f9fa; color: #666;' : ''}" ${!isEditing ? 'disabled' : ''}>
+                    </select>
+                </div>
+                <div class="admin-field">
+                    <label>Payment Method</label>
+                    <select name="paymentMethod" required ${!isEditing ? 'disabled' : ''} style="${!isEditing ? 'background:#f8f9fa' : ''}">
                         <option value="Cash" ${expense.paymentMethod === 'Cash' ? 'selected' : ''}>Cash</option>
                         <option value="GCash" ${expense.paymentMethod === 'GCash' ? 'selected' : ''}>GCash</option>
                         <option value="Credit Card" ${expense.paymentMethod === 'Credit Card' ? 'selected' : ''}>Credit Card</option>
                         <option value="Debit Card" ${expense.paymentMethod === 'Debit Card' ? 'selected' : ''}>Debit Card</option>
                         <option value="Bank Transfer" ${expense.paymentMethod === 'Bank Transfer' ? 'selected' : ''}>Bank Transfer</option>
-                        </select>
-                    </div>
-                    
-                <div style="margin-bottom: 1rem;">
-                    <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.5rem;">Paid By</label>
-                    <input type="text" name="paidBy" value="${expense.paidBy || ''}" placeholder="Person who paid" style="width: 100%; padding: 0.75rem; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 0.9rem;" ${!isEditing ? 'readonly' : ''}>
+                    </select>
                 </div>
-                
-                <div style="margin-bottom: 1rem;">
-                        <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.5rem;">Invoice Number</label>
-                        <input type="text" name="invoiceNumber" value="${expense.invoiceNumber || ''}" placeholder="Invoice/reference number" style="width: 100%; padding: 0.75rem; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 0.9rem;" ${!isEditing ? 'readonly' : ''}>
+                <div class="admin-field">
+                    <label>Paid By</label>
+                    <input type="text" id="adminPaidBy" name="paidBy" value="${escapeHtml(expense.paidBy || '')}" placeholder="Person who paid" ${!isEditing ? 'readonly' : ''}>
+                </div>
+                <div class="admin-field">
+                    <label>Invoice Number</label>
+                    <input type="text" name="invoiceNumber" value="${escapeHtml(expense.invoiceNumber || '')}" placeholder="Invoice/reference" ${!isEditing ? 'readonly' : ''}>
                 </div>
             </div>
 
-            <!-- Supplier Information -->
-            <div style="margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid #f0f0f0;">
-                <h3 style="font-size: 1.1rem; font-weight: 600; color: #2b9348; margin: 0 0 1rem 0; padding-bottom: 0.5rem; border-bottom: 2px solid rgba(43, 147, 72, 0.2);">Supplier Information</h3>
-                
-                <div style="margin-bottom: 1rem;">
-                    <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.5rem;">Supplier Name *</label>
-                    <input type="text" name="supplierName" value="${expense.supplierName || ''}" required placeholder="Enter supplier name" style="width: 100%; padding: 0.75rem; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 0.9rem;" ${!isEditing ? 'readonly' : ''}>
+            <div class="admin-form-section">
+                <h3 class="admin-form-section-title">Supplier Information</h3>
+                ${supplierLockBanner}
+                ${supplierProfileBtn}
+                <div class="admin-field">
+                    <label>Supplier Name *</label>
+                    <input type="text" id="adminSupplierName" name="supplierName" value="${escapeHtml(expense.supplierName || '')}" required placeholder="Supplier name" ${supRoAttr} ${supClass}>
                 </div>
-                
-                    <div style="margin-bottom: 1rem;">
-                        <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.5rem;">Business Name</label>
-                    <input type="text" name="businessName" value="${expense.businessName || ''}" placeholder="Enter business name" style="width: 100%; padding: 0.75rem; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 0.9rem;" ${!isEditing ? 'readonly' : ''}>
-                    </div>
-                    
-                    <div style="margin-bottom: 1rem;">
-                        <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.5rem;">TIN</label>
-                    <input type="text" name="tin" value="${expense.tin || ''}" placeholder="Tax Identification Number" style="width: 100%; padding: 0.75rem; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 0.9rem;" ${!isEditing ? 'readonly' : ''}>
-                    </div>
-                    
-                    <div style="margin-bottom: 1rem;">
-                        <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.5rem;">Address</label>
-                    <textarea name="address" placeholder="Supplier address" style="width: 100%; padding: 0.75rem; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 0.9rem; min-height: 60px; resize: vertical;" ${!isEditing ? 'readonly' : ''}>${expense.address || ''}</textarea>
+                <div class="admin-field">
+                    <label>Business Name</label>
+                    <input type="text" id="adminBusinessName" name="businessName" value="${escapeHtml(expense.businessName || '')}" placeholder="Business name" ${supRoAttr} ${supClass}>
+                </div>
+                <div class="admin-field">
+                    <label>TIN</label>
+                    <input type="text" id="adminTin" name="tin" value="${escapeHtml(expense.tin || '')}" placeholder="TIN" ${supRoAttr} ${supClass}>
+                </div>
+                <div class="admin-field">
+                    <label>Address</label>
+                    <textarea id="adminAddress" name="address" placeholder="Address" ${supRoAttr} ${supClass}>${escapeHtml(expense.address || '')}</textarea>
                 </div>
             </div>
 
-            <!-- Items -->
-            <div style="margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid #f0f0f0;">
-                <h3 style="font-size: 1.1rem; font-weight: 600; color: #2b9348; margin: 0 0 1rem 0; padding-bottom: 0.5rem; border-bottom: 2px solid rgba(43, 147, 72, 0.2);">Items Purchased</h3>
+            <div class="admin-form-section">
+                <h3 class="admin-form-section-title">Items Purchased</h3>
                 <div id="itemsContainer">
-                    ${expense.items.map((item, index) => `
-                        <div class="item-row" style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem; align-items: end;">
-                            <div style="flex: 2;">
-                                <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.25rem; font-size: 0.8rem;">Item Name</label>
-                                <input type="text" name="itemName_${index}" value="${item.name}" placeholder="Item name" required style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem;" ${!isEditing ? 'readonly' : ''}>
+                    ${expense.items
+                        .map(
+                            (item, index) => `
+                        <div class="item-row admin-item-row">
+                            <div style="flex:2">
+                                <label class="admin-mini-label">Item</label>
+                                <input type="text" class="admin-item-name-input" name="itemName_${index}" value="${escapeHtml(item.name)}" placeholder="Item name" required ${!isEditing ? 'readonly' : ''}>
                             </div>
-                            <div style="flex: 1;">
-                                <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.25rem; font-size: 0.8rem;">Qty</label>
-                                <input type="number" name="itemQty_${index}" value="${item.quantity}" min="1" step="1" style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem;" ${!isEditing ? 'readonly' : ''}>
-                                </div>
-                            <div style="flex: 1;">
-                                <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.25rem; font-size: 0.8rem;">Price</label>
-                                <input type="number" name="itemPrice_${index}" value="${item.price}" min="0" step="0.01" style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem;" ${!isEditing ? 'readonly' : ''}>
-                                </div>
-                            <div style="flex: 1;">
-                                <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.25rem; font-size: 0.8rem;">Total</label>
-                                <input type="number" name="itemTotal_${index}" value="${item.total}" min="0" step="0.01" style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem;" ${!isEditing ? 'readonly' : ''}>
-                                    </div>
-                            ${isEditing ? `<button type="button" onclick="removeItem(this)" style="background: #dc3545; color: white; border: none; border-radius: 4px; padding: 0.5rem; cursor: pointer; height: fit-content;">×</button>` : ''}
-                        </div>
-                    `).join('')}
+                            <div style="flex:1">
+                                <label class="admin-mini-label">Qty</label>
+                                <input type="number" name="itemQty_${index}" value="${item.quantity}" min="1" step="1" ${!isEditing ? 'readonly' : ''}>
+                            </div>
+                            <div style="flex:1">
+                                <label class="admin-mini-label">Price</label>
+                                <input type="number" name="itemPrice_${index}" value="${item.price}" min="0" step="0.01" ${!isEditing ? 'readonly' : ''}>
+                            </div>
+                            <div style="flex:1">
+                                <label class="admin-mini-label">Total</label>
+                                <input type="number" name="itemTotal_${index}" value="${item.total}" min="0" step="0.01" ${!isEditing ? 'readonly' : ''}>
+                            </div>
+                            ${isEditing ? '<button type="button" class="admin-item-remove" onclick="removeItem(this)">×</button>' : ''}
+                        </div>`
+                        )
+                        .join('')}
                 </div>
-                ${isEditing ? `<button type="button" onclick="addItem()" style="background: #2b9348; color: white; border: none; border-radius: 6px; padding: 0.75rem 1rem; cursor: pointer; font-size: 0.9rem; margin-top: 0.5rem;">+ Add Item</button>` : ''}
-                
-                <div style="margin-top: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 6px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="font-weight: 600; color: #333;">Total Amount:</span>
-                        <span style="font-weight: 600; color: #2b9348; font-size: 1.1rem;">₱${(expense.totalAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                    </div>
-                    </div>
-                    </div>
-
-            <!-- Notes -->
-            <div style="margin-bottom: 1.5rem;">
-                <h3 style="font-size: 1.1rem; font-weight: 600; color: #2b9348; margin: 0 0 1rem 0; padding-bottom: 0.5rem; border-bottom: 2px solid rgba(43, 147, 72, 0.2);">Notes</h3>
-                <textarea name="notes" placeholder="Additional notes..." style="width: 100%; padding: 0.75rem; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 0.9rem; min-height: 80px; resize: vertical;" ${!isEditing ? 'readonly' : ''}>${expense.notes || ''}</textarea>
+                ${isEditing ? '<button type="button" class="action-btn secondary admin-add-item" onclick="addItem()">+ Add Item</button>' : ''}
+                <div class="admin-total-pill">
+                    <span>Total Amount</span>
+                    <strong>₱${(expense.totalAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                </div>
             </div>
 
-            ${isEditing ? `
-            <div style="display: flex; gap: 1rem; justify-content: flex-end; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #f0f0f0;">
-                <button type="button" onclick="this.closest('div').parentElement.parentElement.remove()" style="padding: 0.75rem 1.5rem; border: 1px solid #e5e5e5; background: white; border-radius: 6px; cursor: pointer; font-size: 0.9rem;">Cancel</button>
-                <button type="submit" style="padding: 0.75rem 1.5rem; border: none; background: #2b9348; color: white; border-radius: 6px; cursor: pointer; font-size: 0.9rem;">Save Expense</button>
+            <div class="admin-form-section">
+                <h3 class="admin-form-section-title">Notes</h3>
+                <textarea name="notes" placeholder="Notes" ${!isEditing ? 'readonly' : ''}>${escapeHtml(expense.notes || '')}</textarea>
             </div>
-            ` : ''}
-        </form>
-    `;
+
+            ${
+                isEditing
+                    ? `<div class="admin-form-actions">
+                <button type="button" class="action-btn secondary" onclick="closeAdminExpenseModal()">Cancel</button>
+                <button type="submit" class="action-btn primary">Save Expense</button>
+            </div>`
+                    : ''
+            }
+        </form>`;
 }
 
 // Toggle edit mode
-window.toggleEditMode = function(expenseId) {
-    const expense = shared.getExpenses().find(e => e.id === expenseId);
+window.toggleEditMode = function (expenseId) {
+    const expense = shared.getExpenses().find((e) => e.id === expenseId);
     if (!expense) {
         shared.showToast('Expense not found');
         return;
     }
-    
-    // Close current modal and open in edit mode
-    document.querySelector('.expense-modal-overlay')?.remove();
+    closeAdminExpenseModal();
     showExpenseModal(expense, true);
 };
 
 // Add item function
-window.addItem = function() {
+window.addItem = function () {
     const container = document.getElementById('itemsContainer');
+    if (!container) return;
     const itemCount = container.children.length;
-    
+
     const itemRow = document.createElement('div');
-    itemRow.className = 'item-row';
-    itemRow.style.cssText = 'display: flex; gap: 0.5rem; margin-bottom: 0.75rem; align-items: end;';
+    itemRow.className = 'item-row admin-item-row';
     itemRow.innerHTML = `
-        <div style="flex: 2;">
-            <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.25rem; font-size: 0.8rem;">Item Name</label>
-            <input type="text" name="itemName_${itemCount}" placeholder="Item name" required style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem;">
+        <div style="flex:2">
+            <label class="admin-mini-label">Item</label>
+            <input type="text" class="admin-item-name-input" name="itemName_${itemCount}" placeholder="Item name" required>
         </div>
-        <div style="flex: 1;">
-            <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.25rem; font-size: 0.8rem;">Qty</label>
-            <input type="number" name="itemQty_${itemCount}" value="1" min="1" step="1" style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem;">
-            </div>
-        <div style="flex: 1;">
-            <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.25rem; font-size: 0.8rem;">Price</label>
-            <input type="number" name="itemPrice_${itemCount}" value="0" min="0" step="0.01" style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem;">
-            </div>
-        <div style="flex: 1;">
-            <label style="display: block; font-weight: 500; color: #666; margin-bottom: 0.25rem; font-size: 0.8rem;">Total</label>
-            <input type="number" name="itemTotal_${itemCount}" value="0" min="0" step="0.01" style="width: 100%; padding: 0.5rem; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 0.85rem;">
-                </div>
-        <button type="button" onclick="removeItem(this)" style="background: #dc3545; color: white; border: none; border-radius: 4px; padding: 0.5rem; cursor: pointer; height: fit-content;">×</button>
-    `;
-    
+        <div style="flex:1">
+            <label class="admin-mini-label">Qty</label>
+            <input type="number" name="itemQty_${itemCount}" value="1" min="1" step="1">
+        </div>
+        <div style="flex:1">
+            <label class="admin-mini-label">Price</label>
+            <input type="number" name="itemPrice_${itemCount}" value="0" min="0" step="0.01">
+        </div>
+        <div style="flex:1">
+            <label class="admin-mini-label">Total</label>
+            <input type="number" name="itemTotal_${itemCount}" value="0" min="0" step="0.01">
+        </div>
+        <button type="button" class="admin-item-remove" onclick="removeItem(this)">×</button>`;
+
     container.appendChild(itemRow);
+    const modalBody = document.querySelector('.admin-expense-modal-body');
+    const nameInp = itemRow.querySelector('.admin-item-name-input');
+    if (modalBody && nameInp) wireAdminItemAutocomplete(nameInp, modalBody);
 };
 
 // Remove item function
@@ -2320,24 +2846,31 @@ window.saveExpense = function(event, expenseId) {
     event.preventDefault();
     
     const formData = new FormData(event.target);
-    const isNew = !shared.getExpenses().find(e => e.id === expenseId);
+    const existingExpense = shared.getExpenses().find(e => e.id === expenseId) || null;
+    const isNew = !existingExpense;
     
     // Collect items
     const items = [];
     const itemRows = document.querySelectorAll('.item-row');
-    
-    itemRows.forEach((row, index) => {
-        const name = formData.get(`itemName_${index}`);
-        const qty = parseFloat(formData.get(`itemQty_${index}`)) || 1;
-        const price = parseFloat(formData.get(`itemPrice_${index}`)) || 0;
-        const total = parseFloat(formData.get(`itemTotal_${index}`)) || 0;
-        
-        if (name && name.trim()) {
-                items.push({
-                name: name.trim(),
-                    quantity: qty,
-                    price: price,
-                total: total
+
+    // Use DOM queries instead of relying on positional index suffixes.
+    itemRows.forEach((row) => {
+        const nameInput = row.querySelector('input[name^="itemName_"]');
+        const qtyInput = row.querySelector('input[name^="itemQty_"]');
+        const priceInput = row.querySelector('input[name^="itemPrice_"]');
+        const totalInput = row.querySelector('input[name^="itemTotal_"]');
+
+        const name = (nameInput?.value || '').trim();
+        const qty = parseFloat(qtyInput?.value) || 1;
+        const price = parseFloat(priceInput?.value) || 0;
+        const total = parseFloat(totalInput?.value) || 0;
+
+        if (name) {
+            items.push({
+                name,
+                quantity: qty,
+                price,
+                total
             });
         }
     });
@@ -2346,6 +2879,15 @@ window.saveExpense = function(event, expenseId) {
     const totalAmount = items.reduce((sum, item) => sum + item.total, 0);
     
     const expenseData = {
+        ...(existingExpense || {
+            allocation: 'Store',
+            vatExemptAmount: 0,
+            vatableSale: 0,
+            vatAmount: 0,
+            isVatRegistered: false,
+            vatComputationEnabled: false,
+            receiptImage: null
+        }),
         id: expenseId,
         date: formData.get('date'),
         branch: formData.get('branch'),
@@ -2354,21 +2896,21 @@ window.saveExpense = function(event, expenseId) {
         tin: formData.get('tin'),
         address: formData.get('address'),
         invoiceNumber: formData.get('invoiceNumber'),
-        expenseCategory: formData.get('expenseCategory') || 'General',
+        expenseCategory: formData.get('expenseCategory') || existingExpense?.expenseCategory || 'General',
         items: items,
         totalAmount: totalAmount,
-        vatExemptAmount: 0,
-        vatableSale: 0,
-        vatAmount: 0,
-        isVatRegistered: false,
         paymentMethod: formData.get('paymentMethod'),
         paidBy: formData.get('paidBy'),
         notes: formData.get('notes'),
-        receiptImage: null,
-        createdAt: isNew ? new Date().toISOString() : shared.getExpenses().find(e => e.id === expenseId)?.createdAt,
-        updatedAt: new Date().toISOString()
+        receiptImage: (() => {
+            if (window.adminReceiptRemove) return null;
+            if (adminPendingReceiptUrl) return adminPendingReceiptUrl;
+            return existingExpense?.receiptImage || null;
+        })(),
+        createdAt: isNew ? new Date().toISOString() : existingExpense?.createdAt,
+        updatedAt: new Date().toISOString(),
     };
-    
+
     if (isNew) {
         shared.addExpense(expenseData);
         shared.showToast('Expense added successfully');
@@ -2376,25 +2918,15 @@ window.saveExpense = function(event, expenseId) {
         shared.updateExpense(expenseId, expenseData);
         shared.showToast('Expense updated successfully');
     }
-    
-    // Close modal and refresh table
-    event.target.closest('div').parentElement.parentElement.remove();
-        
-        // Refresh the admin interface
-        const activeBtn = document.querySelector('.date-shortcut-btn.active');
-        if (activeBtn) {
-            activeBtn.click();
-        } else {
-            const expenses = shared.getExpenses();
-            renderFilteredTable(expenses);
-            updateFilteredSummary(expenses);
-    }
+
+    closeAdminExpenseModal();
+    refreshAdminTables();
 };
 
 // Make shared functions available globally for the modal
 window.shared = shared;
-window.closeExpenseDetailModal = function() {
-    // This function can be used if needed, but the modal is self-contained
+window.closeExpenseDetailModal = function () {
+    closeAdminExpenseModal();
 };
 
 // Debug function availability

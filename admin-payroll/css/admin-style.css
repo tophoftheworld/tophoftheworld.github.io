@@ -460,29 +460,280 @@ button:hover {
     margin-right: 0.5rem;
 }
 
-@media (max-width: 768px) {
+/* Mobile: scroll wrapper and card list hidden on desktop */
+.mobile-payroll-scroll {
+    display: none;
+}
+
+.employee-cards-mobile {
+    display: none;
+    margin-bottom: 2rem;
+}
+
+/* Mobile/tablet: 992px so layout applies when admin shell is in mobile mode (iframe is narrow) */
+@media (max-width: 992px) {
+    /* Natural body scroll: page scrolls, summary sticky at top (no nested scroll in iframe). */
+    html,
+    body {
+        min-height: 100%;
+        overflow-x: hidden;
+        overflow-y: auto;
+    }
+
+    .container {
+        padding-top: 0.5rem;
+        padding-bottom: 0.5rem;
+    }
+
+    /* Hide table container so only mobile payroll view uses space */
+    .data-table-container {
+        display: none !important;
+    }
+
+    /* Hide redundant logo + "Admin Dashboard" (parent admin portal already shows these) */
+    .admin-header .logo-section,
+    .admin-header .app-title {
+        display: none !important;
+    }
+
     .admin-header {
         flex-direction: column;
-        align-items: flex-start;
+        align-items: stretch;
+        gap: 0;
+        margin-bottom: 0.5rem;
+        flex-shrink: 0;
     }
 
-    .controls {
-        flex-direction: column;
-        align-items: flex-start;
-        width: 100%;
-    }
-
-    .control-item {
-        width: 100%;
-    }
-
-    select,
-    button {
-        width: 100%;
-    }
-
-    .summary-cards {
+    /* Compact filter bar: hide Period and Branch on mobile; keep Refresh only */
+    .admin-header .controls {
+        display: grid;
         grid-template-columns: 1fr;
+        gap: 0.5rem 0.75rem;
+        width: 100%;
+        align-items: end;
+    }
+
+    .admin-header .control-item {
+        width: auto;
+        min-width: 0;
+    }
+
+    /* Hide Period and Branch dropdowns on mobile; period is chosen via summary card modal */
+    .admin-header .control-item:first-child,
+    .admin-header .control-item:nth-child(2) {
+        display: none !important;
+    }
+
+    /* Hide Active Employees toggle on mobile; active-only is default */
+    .admin-header .control-item:nth-child(3) {
+        display: none !important;
+    }
+
+    .admin-header .control-label {
+        font-size: 0.75rem;
+        margin-bottom: 0.2rem;
+    }
+
+    .admin-header .controls select {
+        width: 100%;
+        min-height: 40px;
+        padding: 0.4rem 0.5rem;
+        font-size: 0.85rem;
+    }
+
+    .admin-header .controls .refresh-btn {
+        grid-column: 1 / -1;
+        width: 100%;
+        min-height: 40px;
+        justify-self: stretch;
+    }
+
+    /* Hide export, add employee, batch edit on mobile */
+    .export-btn,
+    #addEmployeeBtn,
+    .batch-edit-period-btn {
+        display: none !important;
+    }
+
+    /* Hide summary cards on mobile so employee list is above the fold */
+    .summary-cards {
+        display: none !important;
+    }
+
+    /* Hide table (keep container for single-employee detail view and overlay), show mobile scroll + cards */
+    .data-table-container #employeeTable {
+        display: none !important;
+    }
+
+    .mobile-payroll-view {
+        display: block;
+    }
+
+    .mobile-payroll-scroll {
+        display: block;
+    }
+
+    .mobile-summary-card {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: linear-gradient(145deg, #ffffff 0%, #f8faf9 100%);
+        background-color: #fff;
+        color: #1a1a1a;
+        border-radius: 12px;
+        padding: 0;
+        margin-bottom: 1rem;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+        border: 1px solid rgba(43, 147, 72, 0.12);
+        overflow: hidden;
+    }
+
+    .mobile-cards-wrapper {
+        position: relative;
+    }
+
+    .mobile-summary-card--clickable {
+        cursor: pointer;
+    }
+
+    .mobile-summary-card--clickable:hover {
+        background: linear-gradient(145deg, #f8faf9 0%, #f0f7f2 100%);
+        border-color: rgba(43, 147, 72, 0.2);
+    }
+
+    .mobile-summary-card__title {
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #5a6b5d;
+        padding: 0.75rem 1.25rem 0.25rem;
+        margin: 0;
+    }
+
+    .mobile-summary-card__hero {
+        padding: 0.5rem 1.25rem 1rem;
+        background: linear-gradient(135deg, rgba(43, 147, 72, 0.08) 0%, rgba(30, 122, 58, 0.04) 100%);
+        border-top: 1px solid rgba(43, 147, 72, 0.1);
+        border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+    }
+
+    .mobile-summary-card__hero-label {
+        display: block;
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: #4a5d4e;
+        margin-bottom: 0.2rem;
+    }
+
+    .mobile-summary-card__hero-value {
+        display: block;
+        font-size: 1.75rem;
+        font-weight: 800;
+        color: #1e7a3a;
+        letter-spacing: -0.02em;
+        line-height: 1.2;
+    }
+
+    .mobile-summary-card__meta {
+        padding: 0.6rem 1.25rem 1rem;
+    }
+
+    .mobile-summary-card__row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.3rem;
+    }
+
+    .mobile-summary-card__row:last-child {
+        margin-bottom: 0;
+    }
+
+    .mobile-summary-card__label {
+        font-size: 0.8rem;
+        color: #6b7b6e;
+        font-weight: 500;
+    }
+
+    .mobile-summary-card__value {
+        font-size: 0.9rem;
+        font-weight: 700;
+        color: #2d3b2f;
+    }
+
+    .mobile-loading-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(255, 255, 255, 0.8);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        gap: 0.75rem;
+        z-index: 50;
+        border-radius: 10px;
+    }
+
+    .mobile-loading-overlay .loading-message {
+        font-size: 0.9rem;
+        color: #333;
+    }
+
+    .period-select-modal__content {
+        background: white;
+        border-radius: 12px;
+        padding: 1.25rem;
+        max-width: 90vw;
+        max-height: 80vh;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+    }
+
+    .period-select-modal__close {
+        position: absolute;
+        top: 0.5rem;
+        right: 0.5rem;
+        font-size: 1.5rem;
+        cursor: pointer;
+        color: #666;
+    }
+
+    .period-select-modal__title {
+        font-size: 1rem;
+        margin-bottom: 1rem;
+        color: #1a1a1a;
+    }
+
+    .period-select-modal__list {
+        list-style: none;
+        overflow-y: auto;
+        max-height: 60vh;
+    }
+
+    .period-select-modal__list li {
+        padding: 0.75rem 1rem;
+        border-radius: 8px;
+        cursor: pointer;
+        color: #1a1a1a;
+        border-bottom: 1px solid #eee;
+    }
+
+    .period-select-modal__list li:last-child {
+        border-bottom: none;
+    }
+
+    .period-select-modal__list li:hover,
+    .period-select-modal__list li:focus {
+        background: #f0f4f0;
+    }
+
+    .employee-cards-mobile {
+        display: block;
     }
 
     .data-table {
@@ -494,8 +745,337 @@ button:hover {
         padding: 0.5rem 0.75rem;
     }
 
-    .pagination {
-        flex-wrap: wrap;
+    /* Remove pagination on mobile; show all active in one list */
+    .pagination,
+    #pagination {
+        display: none !important;
+    }
+
+    /* Mobile employee cards: single row, salary never wraps, adequate height */
+    .employee-card-mobile {
+        background: white;
+        border-radius: 10px;
+        padding: 1rem 1.25rem;
+        min-height: 72px;
+        margin-bottom: 0.65rem;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+        border: 1px solid #eee;
+        display: flex;
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: 0.5rem 0.75rem;
+        cursor: pointer;
+    }
+
+    .employee-card-mobile__main {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+    }
+
+    .employee-card-mobile__right {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 0.25rem;
+        flex-shrink: 0;
+    }
+
+    .employee-card-mobile__avatar {
+        width: 44px;
+        height: 44px;
+        border-radius: 8px;
+        object-fit: cover;
+        flex-shrink: 0;
+        border: 1px solid #eee;
+    }
+
+    .employee-card-mobile__avatar-placeholder {
+        width: 44px;
+        height: 44px;
+        border-radius: 8px;
+        background: #f0f0f0;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #888;
+        font-size: 1rem;
+    }
+
+    .employee-card-mobile__info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .employee-card-mobile__name {
+        font-weight: 600;
+        font-size: 1rem;
+        color: #333;
+        margin-bottom: 0.15rem;
+        line-height: 1.3;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .employee-card-mobile__meta {
+        font-size: 0.8rem;
+        color: #666;
+        line-height: 1.25;
+    }
+
+    .employee-card-mobile__salary {
+        font-size: 1.05rem;
+        font-weight: 700;
+        color: #2b9348;
+        margin: 0;
+    }
+
+    .employee-card-mobile__amounts {
+        display: none;
+    }
+
+    .employee-card-mobile__status-badge {
+        font-size: 0.7rem;
+        font-weight: 600;
+        padding: 0.2rem 0.5rem;
+        border-radius: 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+    }
+
+    .employee-card-mobile__status-badge.paid {
+        background: #e8f5e9;
+        color: #2e7d32;
+    }
+
+    .employee-card-mobile__status-badge.unpaid {
+        background: #ffebee;
+        color: #c62828;
+    }
+
+    .employee-card-mobile__right .action-btn {
+        min-height: 36px;
+        min-width: 44px;
+        padding: 0.35rem 0.6rem;
+        font-size: 0.85rem;
+    }
+
+    /* Modals: full viewport / scrollable on mobile */
+    .modal .modal-content {
+        max-width: 100%;
+        margin: 1rem;
+        max-height: calc(100vh - 2rem);
+        overflow-y: auto;
+    }
+
+    .modal .form-actions .submit-btn,
+    .modal .form-actions .cancel-btn {
+        min-height: 44px;
+        padding: 0.75rem 1rem;
+    }
+
+    .modal .close-modal {
+        min-width: 44px;
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        top: 0.5rem;
+        right: 0.5rem;
+    }
+
+    /* Mobile-only employee detail modal */
+    .employee-detail-mobile-modal {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        padding: 1rem;
+    }
+
+    .employee-detail-mobile-modal__content {
+        background: white;
+        border-radius: 12px;
+        max-height: min(calc(100vh - 2rem), calc(100dvh - 4rem));
+        width: 100%;
+        max-width: 480px;
+        position: relative;
+        padding: 1rem 1.25rem;
+        padding-top: 2.5rem;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .employee-detail-mobile-modal__body {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .employee-detail-mobile-modal__body .employee-detail-mobile__header,
+    .employee-detail-mobile-modal__body .employee-detail-mobile__summary,
+    .employee-detail-mobile-modal__body .employee-detail-mobile__actions {
+        flex-shrink: 0;
+    }
+
+    .employee-detail-mobile-modal__day-cards-scroll {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+    }
+
+    .employee-detail-mobile-modal__content:hover {
+        cursor: default;
+    }
+
+    .employee-detail-mobile-modal__close {
+        position: absolute;
+        top: 0.75rem;
+        right: 0.75rem;
+        font-size: 1.5rem;
+        cursor: pointer;
+        color: #666;
+        min-width: 44px;
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .employee-detail-mobile__header {
+        margin-bottom: 0.5rem;
+    }
+
+    .employee-detail-mobile__name {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #333;
+        margin: 0;
+    }
+
+    .employee-detail-mobile__summary {
+        margin-bottom: 1rem;
+    }
+
+    .employee-detail-mobile__summary-card {
+        background: white;
+        border-radius: 10px;
+        padding: 0.75rem 1rem;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+        border: 1px solid rgba(0, 0, 0, 0.06);
+    }
+
+    .employee-detail-mobile__summary-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.4rem;
+    }
+
+    .employee-detail-mobile__summary-row:last-child {
+        margin-bottom: 0;
+    }
+
+    .employee-detail-mobile__summary-label {
+        font-size: 0.85rem;
+        color: #666;
+    }
+
+    .employee-detail-mobile__summary-value {
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: #333;
+    }
+
+    .employee-detail-mobile__summary-status--paid {
+        color: #2e7d32;
+    }
+
+    .employee-detail-mobile__summary-status--unpaid {
+        color: #c62828;
+    }
+
+    .employee-detail-mobile__actions {
+        margin-bottom: 1rem;
+    }
+
+    .employee-detail-mobile__actions .action-btn {
+        min-height: 44px;
+        width: 100%;
+        justify-content: center;
+    }
+
+    .employee-detail-mobile__day-cards {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .employee-detail-mobile__day-card {
+        background: white;
+        border-radius: 10px;
+        padding: 1rem 1.25rem;
+        border: 1px solid #eee;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+        font-size: 0.8rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+
+    .employee-detail-mobile__day-card__left {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .employee-detail-mobile__day-card__date {
+        font-weight: 700;
+        font-size: 0.95rem;
+        color: #333;
+        margin-bottom: 0.35rem;
+    }
+
+    .employee-detail-mobile__day-card__photos {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 0.4rem;
+    }
+
+    .employee-detail-mobile__day-card__thumb {
+        width: 44px;
+        height: 44px;
+        border-radius: 8px;
+        object-fit: cover;
+        border: 1px solid #ddd;
+        cursor: pointer;
+    }
+
+    .employee-detail-mobile__day-card__meta {
+        color: #666;
+        font-size: 0.8rem;
+        line-height: 1.35;
+    }
+
+    .employee-detail-mobile__day-card__pay {
+        font-weight: 700;
+        font-size: 1.1rem;
+        color: #2b9348;
+        margin: 0;
+        flex-shrink: 0;
     }
 }
 

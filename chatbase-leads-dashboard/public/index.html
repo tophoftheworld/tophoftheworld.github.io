@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chatbase Leads Dashboard</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Chatbase Leads Dashboard</h1>
+      <p class="subtle">Mobile matcha bar and workshop leads</p>
+    </div>
+    <button id="sync-now-btn" class="btn btn-primary" type="button">Sync now</button>
+  </header>
+
+  <section class="kpi-grid" id="kpi-grid">
+    <article class="kpi-card"><h2>Total</h2><p id="kpi-total">0</p></article>
+    <article class="kpi-card"><h2>New</h2><p id="kpi-new">0</p></article>
+    <article class="kpi-card"><h2>Qualified</h2><p id="kpi-qualified">0</p></article>
+    <article class="kpi-card"><h2>Needs Attention</h2><p id="kpi-needs-attention">0</p></article>
+  </section>
+
+  <section class="panel">
+    <h2>Filters</h2>
+    <form id="filters-form" class="filters">
+      <label>Status
+        <select id="filter-status" name="status">
+          <option value="">All</option>
+          <option value="new">New</option>
+          <option value="qualified">Qualified</option>
+          <option value="follow_up">Follow up</option>
+          <option value="proposal_sent">Proposal sent</option>
+          <option value="won">Won</option>
+          <option value="lost">Lost</option>
+        </select>
+      </label>
+      <label>Inquiry type
+        <select id="filter-inquiry-type" name="inquiryType">
+          <option value="">All</option>
+          <option value="mobile_bar">Mobile bar</option>
+          <option value="workshop">Workshop</option>
+          <option value="unknown">Unknown</option>
+        </select>
+      </label>
+      <label>Missing required fields
+        <select id="filter-missing-required" name="missingRequired">
+          <option value="">All</option>
+          <option value="true">Yes</option>
+          <option value="false">No</option>
+        </select>
+      </label>
+      <label>Search
+        <input type="text" id="filter-search" name="search" placeholder="Name, email, phone, venue">
+      </label>
+      <label>Start date
+        <input type="date" id="filter-start-date" name="startDate">
+      </label>
+      <label>End date
+        <input type="date" id="filter-end-date" name="endDate">
+      </label>
+      <div class="filter-actions">
+        <button class="btn" type="submit">Apply</button>
+        <button class="btn btn-secondary" type="button" id="reset-filters-btn">Reset</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="panel">
+    <div class="panel-title-row">
+      <h2>Leads</h2>
+      <p id="leads-count" class="subtle">0 records</p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Lead</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Booking details</th>
+            <th>Last activity</th>
+          </tr>
+        </thead>
+        <tbody id="leads-tbody">
+          <tr><td colspan="5" class="empty">No leads yet.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <script src="js/config.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

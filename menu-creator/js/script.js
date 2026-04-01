@@ -85,6 +85,7 @@ import {
     const fullscreenPreviewBtnEl = $('fullscreenPreviewBtn');
 
     let drinksCache = [];
+    let loadedMenuDrinks = [];
     let fullscreenPreviewActive = false;
     let fullscreenPreviewEscHandler = null;
 
@@ -115,6 +116,88 @@ import {
                 state.tileTemplate = state.tileBg.map(col => col.map(v => v || 'white'));
             }
         } catch (e) { /* ignore */ }
+    }
+
+    function getReferencedDrinkIds() {
+        const ids = new Set();
+        if (!Array.isArray(state.tileTemplateProps)) return ids;
+        state.tileTemplateProps.forEach((col) => {
+            if (!Array.isArray(col)) return;
+            col.forEach((props) => {
+                if (props && Array.isArray(props.drinkIds)) props.drinkIds.forEach((id) => ids.add(id));
+            });
+        });
+        return ids;
+    }
+
+    function saveMenuToFile() {
+        const stateClone = JSON.parse(JSON.stringify(state));
+        const drinkIds = getReferencedDrinkIds();
+        const drinksSnapshot = Array.from(drinkIds).map((id) => {
+            const d = drinksCache.find((x) => x.id === id);
+            return d ? { id: d.id, name: d.name, description: d.description, price: d.price, category: d.category } : null;
+        }).filter(Boolean);
+        const payload = {
+            version: 1,
+            savedAt: new Date().toISOString(),
+            state: stateClone,
+            drinksSnapshot
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'menu-' + new Date().toISOString().slice(0, 10) + '.json';
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    function applyLoadedState(loaded) {
+        Object.assign(state, loaded);
+        if (!Array.isArray(state.columnWidths) || state.columnWidths.length !== state.columnCount) {
+            state.columnWidths = Array.from({ length: state.columnCount }, () => 100 / state.columnCount);
+        }
+        if (!Array.isArray(state.columnRows) || state.columnRows.length !== state.columnCount) {
+            const def = getDefaultState();
+            state.columnRows = def.columnRows.slice(0, state.columnCount);
+            while (state.columnRows.length < state.columnCount) {
+                state.columnRows.push({ rowCount: 2, rowHeights: [50, 50] });
+            }
+        }
+        ensureLockArrays();
+        if (state.tileBg && !state.tileTemplate) {
+            state.tileTemplate = state.tileBg.map(col => col.map(v => v || 'white'));
+        }
+    }
+
+    function loadMenuFromFile(file) {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            try {
+                const text = reader.result;
+                if (!text || typeof text !== 'string') {
+                    alert('Invalid or empty menu file.');
+                    return;
+                }
+                const data = JSON.parse(text);
+                if (!data || typeof data.state !== 'object') {
+                    alert('Invalid or empty menu file.');
+                    return;
+                }
+                applyLoadedState(data.state);
+                loadedMenuDrinks = Array.isArray(data.drinksSnapshot) ? data.drinksSnapshot : [];
+                saveState();
+                applyStateToForm();
+                renderColumnWidthInputs();
+                renderColumnRowsSection();
+                renderTiles();
+            } catch (e) {
+                console.error('Load menu failed:', e);
+                alert('Invalid or empty menu file.');
+            }
+        };
+        reader.readAsText(file);
     }
 
     function ensureLockArrays() {
@@ -181,6 +264,7 @@ import {
     function getUniqueCategories() {
         const set = new Set();
         drinksCache.forEach(d => { if (d.category) set.add(d.category); });
+        loadedMenuDrinks.forEach(d => { if (d && d.category) set.add(d.category); });
         return Array.from(set).sort();
     }
 
@@ -251,7 +335,7 @@ import {
     function getMenuTemplateHtml(props) {
         const category = (props && props.category) ? String(props.category).trim() : '';
         const drinkIds = (props && Array.isArray(props.drinkIds)) ? props.drinkIds : [];
-        const drinks = drinkIds.map(id => drinksCache.find(d => d.id === id)).filter(Boolean);
+        const drinks = drinkIds.map(id => drinksCache.find(d => d.id === id) || loadedMenuDrinks.find(d => d.id === id)).filter(Boolean);
         const sectionTitle = category || 'Matcha Lattes';
         const icedLabel = 'Iced';
         const categoryTag = (props && props.categoryTag != null) ? String(props.categoryTag).trim() : '';
@@ -1105,7 +1189,10 @@ import {
                     categoryTagLabel.style.marginTop = '0.35rem';
                     propsPanel.appendChild(categoryTagLabel);
                     propsPanel.appendChild(categoryTagInput);
-                    const drinksInCategory = currentCategory ? drinksCache.filter(d => (d.category || '').trim() === currentCategory) : [];
+                    const fromCache = currentCategory ? drinksCache.filter(d => (d.category || '').trim() === currentCategory) : [];
+                    const fromLoaded = currentCategory ? (loadedMenuDrinks || []).filter(d => d && (d.category || '').trim() === currentCategory) : [];
+                    const seenIds = new Set(fromCache.map(d => d.id));
+                    const drinksInCategory = fromCache.concat(fromLoaded.filter(d => !seenIds.has(d.id)));
 
                     const onMenuLabel = document.createElement('label');
                     onMenuLabel.textContent = 'On menu (drag to reorder)';
@@ -1115,7 +1202,7 @@ import {
                     const onMenuList = document.createElement('div');
                     onMenuList.className = 'menu-props-on-menu';
                     currentDrinkIds.forEach((id) => {
-                        const d = drinksCache.find(x => x.id === id);
+                        const d = drinksCache.find(x => x.id === id) || loadedMenuDrinks.find(x => x.id === id);
                         if (!d) return;
                         const row = document.createElement('div');
                         row.className = 'menu-props-drink-row';
@@ -1644,6 +1731,7 @@ import {
         });
 
         $('resetBtn').addEventListener('click', () => {
+            loadedMenuDrinks = [];
             const def = getDefaultState();
             state.orientation = def.orientation;
             state.unit = def.unit;
@@ -1699,6 +1787,16 @@ import {
         if (cancelDrinkBtnEl) cancelDrinkBtnEl.addEventListener('click', closeDrinkModal);
         if (exportPhotoBtnEl) exportPhotoBtnEl.addEventListener('click', exportAsPng);
         if (fullscreenPreviewBtnEl) fullscreenPreviewBtnEl.addEventListener('click', toggleFullscreenPreview);
+        const saveMenuBtnEl = $('saveMenuBtn');
+        const loadMenuBtnEl = $('loadMenuBtn');
+        const loadMenuInputEl = $('loadMenuInput');
+        if (saveMenuBtnEl) saveMenuBtnEl.addEventListener('click', saveMenuToFile);
+        if (loadMenuBtnEl) loadMenuBtnEl.addEventListener('click', () => loadMenuInputEl && loadMenuInputEl.click());
+        if (loadMenuInputEl) loadMenuInputEl.addEventListener('change', () => {
+            const file = loadMenuInputEl.files && loadMenuInputEl.files[0];
+            loadMenuFromFile(file);
+            loadMenuInputEl.value = '';
+        });
         if (drinkModalBackdropEl) {
             drinkModalBackdropEl.addEventListener('click', (e) => {
                 if (e.target === drinkModalBackdropEl) closeDrinkModal();

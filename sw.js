@@ -121,11 +121,14 @@ self.addEventListener('fetch', event => {
                         // Clone the response since it can only be consumed once
                         const responseToCache = response.clone();
 
-                        // Cache the network response for future use
-                        caches.open(DYNAMIC_CACHE)
-                            .then(cache => {
-                                cache.put(event.request, responseToCache);
-                            });
+                        // Only cache http(s) URLs (Cache API rejects chrome-extension:, etc.)
+                        const url = (event.request.url || '').toLowerCase();
+                        if (url.startsWith('http://') || url.startsWith('https://')) {
+                            caches.open(DYNAMIC_CACHE)
+                                .then(cache => {
+                                    cache.put(event.request, responseToCache);
+                                });
+                        }
 
                         return response;
                     })

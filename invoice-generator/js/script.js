@@ -569,10 +569,55 @@ function calculateTotal() {
     return packageTotal + customTotal;
 }
 
+// Basic markdown to HTML for description (bold, italic, lists, \n = line break)
+function renderBasicMarkdown(text) {
+    if (!text || !text.trim()) return '';
+    // 1) Literal backslash-n -> real newline (so \n is hidden and acts as line break)
+    const backslashN = String.fromCharCode(92) + 'n';
+    let normalized = text.split(backslashN).join('\n');
+    // 2) Normalize line endings
+    normalized = normalized.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const lines = normalized.split('\n');
+    const out = [];
+    let inList = false;
+    let paraLines = [];
+    function flushParagraph() {
+        if (paraLines.length === 0) return;
+        const html = paraLines.map(l => inlineMarkdown(l.trim())).join('<br>');
+        out.push('<p>' + html + '</p>');
+        paraLines = [];
+    }
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const bulletMatch = line.match(/^\s*[-*]\s+(.*)$/);
+        if (bulletMatch) {
+            flushParagraph();
+            if (!inList) { out.push('<ul class="custom-line-item-bullets">'); inList = true; }
+            out.push('<li>' + inlineMarkdown(bulletMatch[1].trim()) + '</li>');
+        } else {
+            if (inList) { out.push('</ul>'); inList = false; }
+            if (line.trim()) paraLines.push(line.trim());
+            else flushParagraph();
+        }
+    }
+    flushParagraph();
+    if (inList) out.push('</ul>');
+    return out.length ? out.join('') : escapeHtml(text).replace(/\n/g, '<br>');
+}
+function inlineMarkdown(s) {
+    let h = escapeHtml(s);
+    h = h.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    h = h.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    h = h.replace(/__(.+?)__/g, '<strong>$1</strong>');
+    h = h.replace(/_(.+?)_/g, '<em>$1</em>');
+    return h;
+}
+
 // Custom Line Items Functions
 function addCustomLineItem() {
     const newItem = {
         id: Date.now(),
+        name: '',
         description: '',
         quantity: 1,
         price: 0
@@ -611,10 +656,16 @@ function renderCustomLineItems() {
                     style="background: #e63946; color: white; border: none; padding: 0.375rem 0.75rem; border-radius: 4px; cursor: pointer; font-size: 0.8125rem;">Remove</button>
             </div>
             <div style="margin-bottom: 0.5rem;">
-                <label style="display: block; font-size: 0.8125rem; font-weight: 500; color: #666; margin-bottom: 0.25rem;">Description:</label>
-                <input type="text" class="line-item-description" data-id="${item.id}" 
-                    placeholder="e.g., Additional Equipment" value="${escapeHtml(item.description)}"
+                <label style="display: block; font-size: 0.8125rem; font-weight: 500; color: #666; margin-bottom: 0.25rem;">Name:</label>
+                <input type="text" class="line-item-name" data-id="${item.id}"
+                    placeholder="e.g., Additional Equipment" value="${escapeHtml(item.name || '')}"
                     style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; font-size: 0.875rem;">
+            </div>
+            <div style="margin-bottom: 0.5rem;">
+                <label style="display: block; font-size: 0.8125rem; font-weight: 500; color: #666; margin-bottom: 0.25rem;">Description (optional, markdown):</label>
+                <textarea class="line-item-description" data-id="${item.id}" rows="3"
+                    placeholder="**bold** *italic*; new line = line break; blank line = new paragraph; - for bullets"
+                    style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; font-size: 0.875rem; resize: vertical;"></textarea>
             </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
                 <div>
@@ -631,16 +682,20 @@ function renderCustomLineItems() {
                 </div>
             </div>
         `;
+        const descTextarea = itemDiv.querySelector('.line-item-description');
+        if (descTextarea) descTextarea.value = item.description || ''; // set via .value so \n is preserved
         container.appendChild(itemDiv);
     });
     
     // Add event listeners
-    container.querySelectorAll('.line-item-description, .line-item-quantity, .line-item-price').forEach(input => {
+    container.querySelectorAll('.line-item-name, .line-item-description, .line-item-quantity, .line-item-price').forEach(input => {
         input.addEventListener('input', function() {
             const id = parseInt(this.dataset.id);
             const item = customLineItems.find(i => i.id === id);
             if (item) {
-                if (this.classList.contains('line-item-description')) {
+                if (this.classList.contains('line-item-name')) {
+                    item.name = this.value;
+                } else if (this.classList.contains('line-item-description')) {
                     item.description = this.value;
                 } else if (this.classList.contains('line-item-quantity')) {
                     item.quantity = parseFloat(this.value) || 0;
@@ -788,19 +843,23 @@ function updatePreview() {
         });
     }
 
-    // Add custom line items
+    // Add custom line items (name = title; description = optional detail below, with bullet/plain format)
     customLineItems.forEach(item => {
-        if (!item.description) return;
+        const name = (item.name || item.description || '').trim(); // backward compat: old items had only description
+        if (!name) return;
         
         const quantity = item.quantity || 0;
         const price = item.price || 0;
         const subtotal = quantity * price;
         total += subtotal;
         
+        const hasSeparateDescription = item.name && item.description && item.description.trim();
+        const descHtml = hasSeparateDescription ? renderBasicMarkdown(item.description) : '';
         const row = document.createElement('tr');
         row.innerHTML = `
             <td class="col-description">
-                <div class="package-name">${escapeHtml(item.description)}</div>
+                <div class="package-name">${escapeHtml(name)}</div>
+                ${descHtml ? `<div class="custom-line-item-description">${descHtml}</div>` : ''}
                 ${quantity > 1 ? `<div class="event-details"><strong>Quantity:</strong> ${quantity}</div>` : ''}
             </td>
             <td class="col-subtotal text-right">Php ${formatCurrency(subtotal)}</td>

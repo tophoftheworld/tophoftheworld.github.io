@@ -37,12 +37,17 @@ let weeklyDate = (() => {
   const saved = localStorage.getItem('weekly-selected-date');
   if (saved) {
     const date = new Date(saved);
-    if (!isNaN(date.getTime())) return date;
+    if (!isNaN(date.getTime())) return startOfWeekMonday(date);
   }
-  return new Date(); // Default to today
+  return startOfWeekMonday(new Date()); // Default to current week
 })();
 let weeklyData = {}; // Will store 7 days of usage data
-let weeklyQuantityType = localStorage.getItem('weekly-quantity-type') || 'used'; // 'used' or 'closing'
+let weeklyQuantityType = localStorage.getItem('weekly-quantity-type') || 'used'; // 'used', 'closing', or 'movement'
+const validWeeklyQuantityTypes = new Set(['used', 'closing', 'movement']);
+if (!validWeeklyQuantityTypes.has(weeklyQuantityType)) {
+  weeklyQuantityType = 'used';
+  localStorage.setItem('weekly-quantity-type', weeklyQuantityType);
+}
 let isWeeklyDatePickerActive = false; // Track if weekly date picker is active
 let dashboardLoading = false; // Track if dashboard is currently loading data
 let isMovingItems = false; // Track if we're currently moving items to prevent background sync override
@@ -88,6 +93,14 @@ function getDateKey(date = new Date()) {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`; // Returns "YYYY-MM-DD" in local time
+}
+
+function startOfWeekMonday(date) {
+  const normalized = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const dayOfWeek = normalized.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+  const offsetToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  normalized.setDate(normalized.getDate() + offsetToMonday);
+  return normalized;
 }
 
 document.addEventListener('DOMContentLoaded', async function () {
@@ -469,24 +482,14 @@ function setupEventListeners() {
     updateWeeklyDateDisplay();
   }
 
-  const weeklyRefreshBtn = document.getElementById('weeklyRefreshBtn');
-  if (weeklyRefreshBtn) {
-    weeklyRefreshBtn.addEventListener('click', async () => {
-      weeklyRefreshBtn.disabled = true;
-      weeklyRefreshBtn.textContent = 'Refreshing...';
-      
-      await loadWeeklyViewData();
-      
-      weeklyRefreshBtn.disabled = false;
-      weeklyRefreshBtn.textContent = 'Refresh Data';
-    });
-  }
-
   // Weekly quantity type segmented control
   const weeklyQuantityBtns = document.querySelectorAll('[data-quantity-type]');
   weeklyQuantityBtns.forEach(btn => {
     btn.addEventListener('click', async (e) => {
-      weeklyQuantityType = e.target.dataset.quantityType;
+      weeklyQuantityType = e.currentTarget.dataset.quantityType;
+      if (!validWeeklyQuantityTypes.has(weeklyQuantityType)) {
+        weeklyQuantityType = 'used';
+      }
       localStorage.setItem('weekly-quantity-type', weeklyQuantityType);
       
       // Update button states
@@ -2351,15 +2354,27 @@ async function loadWeeklyViewData() {
         // Calculate usage for each item
         Object.keys(quantities).forEach(itemId => {
           const itemQuantities = quantities[itemId];
+          if (!itemQuantities || typeof itemQuantities !== 'object') {
+            return;
+          }
           const opening = itemQuantities.opening?.value || 0;
           const closing = itemQuantities.closing?.value || 0;
           const added = itemQuantities.added?.value || 0;
+          let removed = 0;
+          if (Array.isArray(itemQuantities.adjustments)) {
+            itemQuantities.adjustments.forEach(adj => {
+              const value = Number(adj?.value) || 0;
+              if (adj?.reason === 'pulled-out' || adj?.reason === 'wastage') {
+                removed += value;
+              }
+            });
+          }
           
           // Only calculate usage if closing data has been entered
           const hasClosingData = itemQuantities.closing && itemQuantities.closing.checked;
           const used = hasClosingData ? opening + added - closing : 0;
           
-          console.log(`Item ${itemId} on ${dateStr}: opening=${opening}, added=${added}, closing=${closing}, hasClosingData=${hasClosingData}, used=${used}`);
+          console.log(`Item ${itemId} on ${dateStr}: opening=${opening}, added=${added}, removed=${removed}, closing=${closing}, hasClosingData=${hasClosingData}, used=${used}`);
           
           if (!weeklyData[itemId]) {
             weeklyData[itemId] = {};
@@ -2367,7 +2382,9 @@ async function loadWeeklyViewData() {
           weeklyData[itemId][dateStr] = {
             used: used,
             closing: closing,
-            hasClosingData: hasClosingData
+            hasClosingData: hasClosingData,
+            added: added,
+            removed: removed
           };
         });
       } else {
@@ -2391,6 +2408,10 @@ async function loadWeeklyViewData() {
 function renderWeeklyView() {
   console.log('=== RENDER WEEKLY VIEW START ===');
   const container = document.getElementById('weeklyTable');
+  if (!validWeeklyQuantityTypes.has(weeklyQuantityType)) {
+    weeklyQuantityType = 'used';
+    localStorage.setItem('weekly-quantity-type', weeklyQuantityType);
+  }
   
   if (!container) {
     console.error('weeklyTable container not found in renderWeeklyView!');
@@ -2471,7 +2492,23 @@ function renderWeeklyView() {
         
         // Show the actual value only if there's data
         if (weeklyData[item.id] && weeklyData[item.id].hasOwnProperty(dateStr)) {
-          if (weeklyQuantityType === 'used' && !hasClosingData) {
+          if (weeklyQuantityType === 'movement') {
+            const addedValue = dayData ? dayData.added || 0 : 0;
+            const removedValue = dayData ? dayData.removed || 0 : 0;
+            const unit = item.unit || '';
+            const addedText = addedValue > 0 ? `+${formatNumberWithCommas(addedValue)}${unit ? ` ${unit}` : ''}` : '';
+            const removedText = removedValue > 0 ? `-${formatNumberWithCommas(removedValue)}${unit ? ` ${unit}` : ''}` : '';
+            if (!addedText && !removedText) {
+              row.cells.push('-');
+            } else {
+              row.cells.push(
+                `<div class="movement-cell">` +
+                `${addedText ? `<span class="movement-added">${addedText}</span>` : ''}` +
+                `${removedText ? `<span class="movement-removed">${removedText}</span>` : ''}` +
+                `</div>`
+              );
+            }
+          } else if (weeklyQuantityType === 'used' && !hasClosingData) {
             // Don't show usage if no closing data
             row.cells.push('-');
           } else if (weeklyQuantityType === 'closing' && !hasClosingData) {
@@ -2552,7 +2589,7 @@ function buildWeeklyTable(headers, rows) {
         }
         let cellClass = '';
         if (isDateColumn || isTotalColumn) {
-          cellClass = 'quantity-cell used';
+          cellClass = weeklyQuantityType === 'movement' ? 'movement-cell-wrapper' : 'quantity-cell used';
         }
         if (isTotalColumn) {
           cellClass += ' total-column';
@@ -2963,7 +3000,7 @@ function selectDashboardDate(dateKey) {
 
 function selectWeeklyDate(dateKey) {
   const [year, month, day] = dateKey.split('-').map(Number);
-  weeklyDate = new Date(year, month - 1, day);
+  weeklyDate = startOfWeekMonday(new Date(year, month - 1, day));
   localStorage.setItem('weekly-selected-date', weeklyDate.toISOString());
   updateWeeklyDateDisplay();
   closeDateModal();

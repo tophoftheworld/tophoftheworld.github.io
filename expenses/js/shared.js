@@ -6,6 +6,12 @@ export let suppliers = [];
 
 // Firebase dependencies - will be imported at module level
 let db;
+let app = null;
+let storage = null;
+let storageRefFn = null;
+let uploadBytesFn = null;
+let getDownloadURLFn = null;
+let firebaseInitPromise = null;
 let collection, doc, getDocs, getDoc, setDoc, deleteDoc, query, where, orderBy, serverTimestamp, writeBatch;
 
 // Firebase Sync State
@@ -21,9 +27,46 @@ const DELETION_TRACKING_TTL = 5 * 60 * 1000; // 5 minutes - after this, allow re
 let deletionTimestamps = new Map(); // Track when each supplier was deleted (supplierId -> timestamp)
 let expenseDeletionTimestamps = new Map(); // Track when each expense was deleted (expenseId -> timestamp)
 
+
+// Server-side deletion propagation (prevents resurrecting deleted records from stale devices)
+const COL_EXPENSE_DELETIONS = 'expense_deletions';
+const COL_SUPPLIER_DELETIONS = 'supplier_deletions';
+const FIRESTORE_BATCH_OP_LIMIT = 400;
+
+function tombstonePayload() {
+    return { deletedAt: serverTimestamp(), deviceId: getDeviceId() };
+}
+
+async function commitBatchOps(ops) {
+    if (!db || !ops.length) {
+        return;
+    }
+    for (let i = 0; i < ops.length; i += FIRESTORE_BATCH_OP_LIMIT) {
+        const chunk = ops.slice(i, i + FIRESTORE_BATCH_OP_LIMIT);
+        const batch = writeBatch(db);
+        for (const op of chunk) {
+            if (op.kind === 'set') {
+                batch.set(op.ref, op.data, { merge: op.merge === true });
+            } else {
+                batch.delete(op.ref);
+            }
+        }
+        await batch.commit();
+    }
+}
 // Initialize Firebase and load dependencies
 export async function initializeFirebase() {
+    if (firebaseInitPromise) {
+        return firebaseInitPromise;
+    }
+
     try {
+        // Already initialized
+        if (db && storage && storageRefFn && uploadBytesFn && getDownloadURLFn) {
+            return true;
+        }
+
+        firebaseInitPromise = (async () => {
         // Import Firebase configuration
         const firebaseConfig = await import('./firebase-config.js');
         const result = await firebaseConfig.initializeFirebaseConfig();
@@ -34,6 +77,7 @@ export async function initializeFirebase() {
         }
         
         db = result.db;
+        app = result.app;
 
         // Make db available globally for testing
         window.db = db;
@@ -52,11 +96,25 @@ export async function initializeFirebase() {
         serverTimestamp = firestoreModule.serverTimestamp;
         writeBatch = firestoreModule.writeBatch;
 
+        // Import Storage functions (for receipt image URL migration / storage uploads)
+        const storageModule = await import('https://www.gstatic.com/firebasejs/11.6.0/firebase-storage.js');
+        storage = storageModule.getStorage(app);
+        storageRefFn = storageModule.ref;
+        uploadBytesFn = storageModule.uploadBytes;
+        getDownloadURLFn = storageModule.getDownloadURL;
+
         console.log('Firebase initialized successfully');
         console.log('Database object:', db);
+        setupBeforeUnloadSync();
         return true;
+        })();
+
+        const ok = await firebaseInitPromise;
+        firebaseInitPromise = null;
+        return ok;
     } catch (error) {
         console.error('Firebase initialization failed:', error);
+        firebaseInitPromise = null;
         return false;
     }
 }
@@ -146,6 +204,37 @@ export async function fetchReceiptImageFromFirebase(expenseId) {
     }
 }
 
+// Upload a receipt image (stored as a data URL) to Firebase Storage, then return a public download URL.
+// The calling code stores the URL in Firestore under `expenses.receiptImage`.
+export async function uploadReceiptImageToStorage(expenseId, receiptDataUrl) {
+    if (!expenseId || !receiptDataUrl || typeof receiptDataUrl !== 'string') {
+        return null;
+    }
+
+    // Ensure Firebase (Firestore + Storage) is initialized.
+    if (!db || !storage || !storageRefFn || !uploadBytesFn || !getDownloadURLFn) {
+        const ok = await initializeFirebase();
+        if (!ok) return null;
+    }
+
+    try {
+        const mimeMatch = receiptDataUrl.match(/^data:([^;]+);base64,/);
+        const contentType = mimeMatch?.[1] || 'image/jpeg';
+
+        // Convert data URL -> Blob in-browser
+        const blob = await (await fetch(receiptDataUrl)).blob();
+
+        const fileRef = storageRefFn(storage, `expense-receipts/${expenseId}`);
+        await uploadBytesFn(fileRef, blob, { contentType });
+        const downloadUrl = await getDownloadURLFn(fileRef);
+
+        return downloadUrl;
+    } catch (error) {
+        console.warn('[ReceiptUpload] Failed to upload receipt image:', error);
+        return null;
+    }
+}
+
 export function getSuppliers() {
     return [...suppliers];
 }
@@ -223,6 +312,19 @@ export async function deleteExpense(expenseId) {
                 console.error('Failed to save to localStorage:', error);
             }
             
+        // Write a deletion tombstone so other devices won't resurrect this expense.
+        if (db) {
+            try {
+                await setDoc(
+                    doc(db, COL_EXPENSE_DELETIONS, expenseId),
+                    tombstonePayload(),
+                    { merge: true }
+                );
+            } catch (error) {
+                console.warn('Failed to write expense deletion tombstone:', error);
+            }
+        }
+        
             // DELETE EXPENSE FROM FIREBASE - fire and forget for speed
             // Don't wait for sync, just mark for deletion and let background sync handle it
             if (db) {
@@ -291,6 +393,71 @@ export async function deleteSupplier(supplierId, deleteAssociatedExpenses = true
         } catch (error) {
             console.warn('Failed to save deletion tracking:', error);
         }
+
+        // If deleting associated expenses, mark them deleted permanently for cross-device safety.
+        if (deleteAssociatedExpenses && expensesToDelete.length > 0) {
+            const now = Date.now();
+            expensesToDelete.forEach(expense => {
+                deletedExpenseIds.add(expense.id);
+                expenseDeletionTimestamps.set(expense.id, now);
+            });
+
+            try {
+                const trackingData = {
+                    ids: Array.from(deletedExpenseIds),
+                    timestamps: Object.fromEntries(expenseDeletionTimestamps)
+                };
+                localStorage.setItem('expenseTracker_deletedExpenses', JSON.stringify(trackingData));
+            } catch (error) {
+                console.warn('Failed to save expense deletion tracking for bulk delete:', error);
+            }
+        }
+
+        // Write deletion tombstones so other devices won't resurrect deleted records.
+        if (db) {
+            try {
+                const tombstoneOps = [];
+
+                // Supplier tombstones (for all requested supplier IDs).
+                supplierIds.forEach(supplierId => {
+                    tombstoneOps.push({
+                        kind: 'set',
+                        ref: doc(db, COL_SUPPLIER_DELETIONS, supplierId),
+                        data: tombstonePayload(),
+                        merge: true
+                    });
+                });
+
+                // Expense tombstones (only if requested).
+                if (deleteAssociatedExpenses && expensesToDelete.length > 0) {
+                    expensesToDelete.forEach(expense => {
+                        tombstoneOps.push({
+                            kind: 'set',
+                            ref: doc(db, COL_EXPENSE_DELETIONS, expense.id),
+                            data: tombstonePayload(),
+                            merge: true
+                        });
+                    });
+                }
+
+                await commitBatchOps(tombstoneOps);
+            } catch (error) {
+                console.warn('Failed to write deletion tombstones for bulk delete:', error);
+            }
+        }
+
+        // Write a supplier deletion tombstone so other devices don't resurrect it.
+        if (db) {
+            try {
+                await setDoc(
+                    doc(db, COL_SUPPLIER_DELETIONS, supplierId),
+                    tombstonePayload(),
+                    { merge: true }
+                );
+            } catch (error) {
+                console.warn('Failed to write supplier deletion tombstone:', error);
+            }
+        }
         
         try {
             // Delete associated expenses if requested
@@ -299,16 +466,50 @@ export async function deleteSupplier(supplierId, deleteAssociatedExpenses = true
                 const expensesToDelete = expenses.filter(e => 
                     e.supplierName.toLowerCase() === supplierName.toLowerCase()
                 );
+
+                // Mark associated expenses as deleted (permanent) for cross-device safety.
+                if (expensesToDelete.length > 0) {
+                    const now = Date.now();
+                    expensesToDelete.forEach(expense => {
+                        deletedExpenseIds.add(expense.id);
+                        expenseDeletionTimestamps.set(expense.id, now);
+                    });
+
+                    // Persist expense deletion tracking to localStorage immediately.
+                    try {
+                        const trackingData = {
+                            ids: Array.from(deletedExpenseIds),
+                            timestamps: Object.fromEntries(expenseDeletionTimestamps)
+                        };
+                        localStorage.setItem('expenseTracker_deletedExpenses', JSON.stringify(trackingData));
+                    } catch (error) {
+                        console.warn('Failed to save expense deletion tracking for supplier delete:', error);
+                    }
+
+                    // Write tombstones for those expenses (prevents resurrecting from stale devices).
+                    if (db) {
+                        try {
+                            const ops = expensesToDelete.map(expense => ({
+                                kind: 'set',
+                                ref: doc(db, COL_EXPENSE_DELETIONS, expense.id),
+                                data: tombstonePayload(),
+                                merge: true
+                            }));
+                            await commitBatchOps(ops);
+                        } catch (error) {
+                            console.warn('Failed to write expense deletion tombstones:', error);
+                        }
+                    }
+                }
                 
                 // Delete expenses from Firebase
                 if (db && expensesToDelete.length > 0) {
                     try {
-                        const batch = writeBatch(db);
-                        expensesToDelete.forEach(expense => {
-                            const expenseRef = doc(db, 'expenses', expense.id);
-                            batch.delete(expenseRef);
-                        });
-                        await batch.commit();
+                        const ops = expensesToDelete.map(expense => ({
+                            kind: 'delete',
+                            ref: doc(db, 'expenses', expense.id)
+                        }));
+                        await commitBatchOps(ops);
                         console.log(`Deleted ${expensesToDelete.length} associated expense(s) from Firebase`);
                     } catch (error) {
                         console.error('Failed to delete associated expenses from Firebase:', error);
@@ -374,6 +575,86 @@ export async function deleteSupplier(supplierId, deleteAssociatedExpenses = true
         }
     }
     return false;
+}
+
+/**
+ * Merge source suppliers into a target. Rewrites expenses to the target supplier identity
+ * and deletes merged supplier rows (same behavior as mobile performSupplierMerge).
+ */
+export async function mergeSuppliersIntoTarget(targetSupplierId, sourceSupplierIds) {
+    if (!targetSupplierId || !sourceSupplierIds?.length) {
+        return { success: false, error: 'Invalid arguments', deleted: 0, transferred: 0 };
+    }
+
+    const target = suppliers.find((s) => s.id === targetSupplierId);
+    if (!target) {
+        return { success: false, error: 'Target supplier not found', deleted: 0, transferred: 0 };
+    }
+
+    const idSet = new Set(sourceSupplierIds.filter((id) => id && id !== targetSupplierId));
+    const sources = [...idSet].map((id) => suppliers.find((s) => s.id === id)).filter(Boolean);
+    if (!sources.length) {
+        return { success: false, error: 'No suppliers to merge', deleted: 0, transferred: 0 };
+    }
+
+    const supplierNamesToMatch = sources.map((s) => s.name.toLowerCase());
+    const supplierIdsToRemove = new Set(sources.map((s) => s.id));
+
+    let transferred = 0;
+    const now = new Date().toISOString();
+    const updatedExpenses = expenses.map((expense) => {
+        const expenseSupplierLower = (expense.supplierName || '').toLowerCase();
+        if (supplierNamesToMatch.includes(expenseSupplierLower)) {
+            transferred++;
+            return {
+                ...expense,
+                supplierName: target.name,
+                businessName: target.businessName || expense.businessName,
+                tin: target.tin || expense.tin,
+                address: target.address || expense.address,
+                isVatRegistered: target.isVatRegistered,
+                updatedAt: now,
+            };
+        }
+        return expense;
+    });
+
+    setExpenses(updatedExpenses);
+    saveToLocalStorage();
+    invalidateItemMatchesCache();
+
+    const suppliersToDelete = [...sources];
+    supplierNamesToMatch.forEach((nameToMatch) => {
+        suppliers.forEach((supplier) => {
+            if (
+                supplier.id !== target.id &&
+                !supplierIdsToRemove.has(supplier.id) &&
+                supplier.name.toLowerCase() === nameToMatch
+            ) {
+                const hasExpenses = expenses.some(
+                    (e) => e.supplierName.toLowerCase() === supplier.name.toLowerCase()
+                );
+                if (!hasExpenses) {
+                    suppliersToDelete.push(supplier);
+                    supplierIdsToRemove.add(supplier.id);
+                }
+            }
+        });
+    });
+
+    const uniqueSuppliersToDelete = suppliersToDelete.filter(
+        (supplier, index, self) => index === self.findIndex((s) => s.id === supplier.id)
+    );
+
+    let deleted = 0;
+    await Promise.all(
+        uniqueSuppliersToDelete.map(async (supplier) => {
+            const ok = await deleteSupplier(supplier.id);
+            if (ok) deleted++;
+        })
+    );
+
+    return { success: true, deleted, transferred };
 }
 
 // Optimized bulk deletion function - deletes multiple suppliers efficiently
@@ -451,14 +732,16 @@ export async function deleteSuppliersBulk(supplierIds, progressCallback = null, 
         // Delete all suppliers and associated expenses from Firebase in batches
         if (db) {
             try {
-                const batch = writeBatch(db);
+                const ops = [];
                 const suppliersToRemove = [];
                 
                 // Add expense deletions to batch if requested
                 if (deleteAssociatedExpenses && expensesToDelete.length > 0) {
                     expensesToDelete.forEach(expense => {
-                        const expenseRef = doc(db, 'expenses', expense.id);
-                        batch.delete(expenseRef);
+                        ops.push({
+                            kind: 'delete',
+                            ref: doc(db, 'expenses', expense.id)
+                        });
                     });
                 }
                 
@@ -467,8 +750,10 @@ export async function deleteSuppliersBulk(supplierIds, progressCallback = null, 
                     const index = suppliers.findIndex(s => s.id === supplierId);
                     if (index > -1) {
                         suppliersToRemove.push({ index, id: supplierId });
-                        const supplierRef = doc(db, 'suppliers', supplierId);
-                        batch.delete(supplierRef);
+                        ops.push({
+                            kind: 'delete',
+                            ref: doc(db, 'suppliers', supplierId)
+                        });
                     }
                     
                     // Progress: Building batch
@@ -486,8 +771,8 @@ export async function deleteSuppliersBulk(supplierIds, progressCallback = null, 
                 }
 
                 // Commit all deletions in one batch operation
-                if (suppliersToRemove.length > 0 || (deleteAssociatedExpenses && expensesToDelete.length > 0)) {
-                    await batch.commit();
+                if (ops.length > 0) {
+                    await commitBatchOps(ops);
                     console.log(`Bulk deleted ${suppliersToRemove.length} suppliers${deleteAssociatedExpenses && expensesToDelete.length > 0 ? ` and ${expensesToDelete.length} expenses` : ''} from Firebase`);
                     
                     // Progress: Updating local state
@@ -711,11 +996,9 @@ export function loadFromLocalStorage() {
                 const filteredExpenses = expenses.filter(expense => {
                     if (deletedExpenseIds.has(expense.id)) {
                         const deletionTime = expenseDeletionTimestamps.get(expense.id) || 0;
-                        const timeSinceDeletion = Date.now() - deletionTime;
-                        if (timeSinceDeletion < DELETION_TRACKING_TTL) {
-                            console.log('Filtering out deleted expense from localStorage:', expense.id);
-                            return false;
-                        }
+                        console.log('Filtering out deleted expense from localStorage:', expense.id, { deletionTime });
+                        // Expense deletions are permanent and should never be restored from localStorage.
+                        return false;
                     }
                     return true;
                 });
@@ -866,6 +1149,60 @@ export async function syncToFirebase() {
         // Clean up old deletions before syncing
         cleanupOldDeletions();
 
+        // Refresh server-side tombstones so cross-device deletions can't be resurrected
+        // during this sync, even if this device hasn't fetched recently.
+        try {
+            const [expenseDeletionsSnapshot, supplierDeletionsSnapshot] = await Promise.all([
+                getDocs(collection(db, COL_EXPENSE_DELETIONS)),
+                getDocs(collection(db, COL_SUPPLIER_DELETIONS))
+            ]);
+
+            const now = Date.now();
+            const toMillis = (ts) => {
+                if (!ts) return now;
+                if (typeof ts.toMillis === 'function') return ts.toMillis();
+                if (typeof ts.seconds === 'number') return ts.seconds * 1000 + (ts.nanoseconds || 0) / 1e6;
+                return now;
+            };
+
+            expenseDeletionsSnapshot.docs.forEach(tombstoneDoc => {
+                const deletedAtMs = toMillis(tombstoneDoc.data()?.deletedAt);
+                deletedExpenseIds.add(tombstoneDoc.id);
+                expenseDeletionTimestamps.set(tombstoneDoc.id, deletedAtMs);
+            });
+
+            supplierDeletionsSnapshot.docs.forEach(tombstoneDoc => {
+                const deletedAtMs = toMillis(tombstoneDoc.data()?.deletedAt);
+                if (now - deletedAtMs < DELETION_TRACKING_TTL) {
+                    deletedSupplierIds.add(tombstoneDoc.id);
+                    deletionTimestamps.set(tombstoneDoc.id, deletedAtMs);
+                }
+            });
+
+            // Persist updated deletion tracking so reloads remain consistent.
+            try {
+                const expenseTracking = {
+                    ids: Array.from(deletedExpenseIds),
+                    timestamps: Object.fromEntries(expenseDeletionTimestamps)
+                };
+                localStorage.setItem('expenseTracker_deletedExpenses', JSON.stringify(expenseTracking));
+            } catch (error) {
+                console.warn('Failed to persist expense deletion tracking from tombstones during sync:', error);
+            }
+
+            try {
+                const supplierTracking = {
+                    ids: Array.from(deletedSupplierIds),
+                    timestamps: Object.fromEntries(deletionTimestamps)
+                };
+                localStorage.setItem('expenseTracker_deletedSuppliers', JSON.stringify(supplierTracking));
+            } catch (error) {
+                console.warn('Failed to persist supplier deletion tracking from tombstones during sync:', error);
+            }
+        } catch (error) {
+            console.warn('Failed to refresh tombstones during sync:', error);
+        }
+
         // Fetch current Firebase suppliers to find what needs to be deleted
         let firebaseSupplierIds = new Set();
         if (db) {
@@ -877,19 +1214,29 @@ export async function syncToFirebase() {
             }
         }
 
-        // Sync expenses with batch writes for better performance
-        const batch = writeBatch(db);
-        
+        // Build operations list and commit in chunks to respect Firestore batch limits.
+        // Tombstoned items are never recreated.
+        const ops = [];
+
         // Track local expense IDs
         const localExpenseIds = new Set();
 
+        // Track local supplier IDs
+        const localSupplierIds = new Set();
+
         expenses.forEach(expense => {
             localExpenseIds.add(expense.id);
-            const docRef = doc(db, 'expenses', expense.id);
-            batch.set(docRef, {
-                ...expense,
-                syncedAt: serverTimestamp(),
-                deviceId: getDeviceId()
+            if (deletedExpenseIds.has(expense.id)) {
+                return; // deleted remotely; never recreate on this device
+            }
+            ops.push({
+                kind: 'set',
+                ref: doc(db, 'expenses', expense.id),
+                data: {
+                    ...expense,
+                    syncedAt: serverTimestamp(),
+                    deviceId: getDeviceId()
+                }
             });
         });
         
@@ -911,26 +1258,33 @@ export async function syncToFirebase() {
         firebaseExpenseIds.forEach(expenseId => {
             const isNotInLocal = !localExpenseIds.has(expenseId);
             const isInDeletionTracking = deletedExpenseIds.has(expenseId);
-            
+
             // Delete if expense was removed from local OR explicitly marked for deletion
             if (isNotInLocal || isInDeletionTracking) {
-                const expenseRef = doc(db, 'expenses', expenseId);
-                batch.delete(expenseRef);
+                ops.push({
+                    kind: 'delete',
+                    ref: doc(db, 'expenses', expenseId)
+                });
                 expenseDeletionCount++;
                 const reason = isInDeletionTracking ? 'deletion tracking' : 'not in local array';
                 console.log(`Marking expense for deletion in Firebase (${reason}):`, expenseId);
             }
         });
 
-        // Sync suppliers that exist locally
-        const localSupplierIds = new Set();
+        // Sync suppliers that exist locally (tombstoned suppliers are skipped)
         suppliers.forEach(supplier => {
             localSupplierIds.add(supplier.id);
-            const docRef = doc(db, 'suppliers', supplier.id);
-            batch.set(docRef, {
-                ...supplier,
-                syncedAt: serverTimestamp(),
-                deviceId: getDeviceId()
+            if (deletedSupplierIds.has(supplier.id)) {
+                return; // deleted remotely; never recreate on this device
+            }
+            ops.push({
+                kind: 'set',
+                ref: doc(db, 'suppliers', supplier.id),
+                data: {
+                    ...supplier,
+                    syncedAt: serverTimestamp(),
+                    deviceId: getDeviceId()
+                }
             });
         });
 
@@ -941,18 +1295,20 @@ export async function syncToFirebase() {
         firebaseSupplierIds.forEach(supplierId => {
             const isNotInLocal = !localSupplierIds.has(supplierId);
             const isInDeletionTracking = deletedSupplierIds.has(supplierId);
-            
+
             // Delete if supplier was removed from local OR explicitly marked for deletion
             if (isNotInLocal || isInDeletionTracking) {
-                const supplierRef = doc(db, 'suppliers', supplierId);
-                batch.delete(supplierRef);
+                ops.push({
+                    kind: 'delete',
+                    ref: doc(db, 'suppliers', supplierId)
+                });
                 deletionCount++;
                 const reason = isInDeletionTracking ? 'deletion tracking' : 'not in local array';
                 console.log(`Marking supplier for deletion in Firebase (${reason}):`, supplierId);
             }
         });
 
-        await batch.commit();
+        await commitBatchOps(ops);
         console.log('Firebase sync completed successfully', { 
             expenses: expenses.length, 
             suppliers: suppliers.length,
@@ -961,9 +1317,9 @@ export async function syncToFirebase() {
         });
         showSyncStatus('✓ Synced', 'success');
 
-        // Clear deletion tracking for successfully synced deletions
-        // Only clear if deletion was successful (supplier/expense not in local and not in Firebase anymore)
-        if (deletionCount > 0 || expenseDeletionCount > 0) {
+        // Clear deletion tracking for successfully synced supplier deletions.
+        // Expense deletions are permanent; never clear `deletedExpenseIds` to avoid resurrection.
+        if (deletionCount > 0) {
             // Re-fetch to verify deletions
             try {
                 const suppliersSnapshot = await getDocs(collection(db, 'suppliers'));
@@ -986,33 +1342,6 @@ export async function syncToFirebase() {
                     localStorage.setItem('expenseTracker_deletedSuppliers', JSON.stringify(trackingData));
                 } catch (error) {
                     console.warn('Failed to persist supplier deletion tracking:', error);
-                }
-                
-                // Also verify expense deletions
-                try {
-                    const expensesSnapshot = await getDocs(collection(db, 'expenses'));
-                    const remainingExpenseIds = new Set(expensesSnapshot.docs.map(doc => doc.id));
-                    
-                    deletedExpenseIds.forEach(id => {
-                        // If expense is not in Firebase anymore and not in local, clear tracking
-                        if (!remainingExpenseIds.has(id) && !localExpenseIds.has(id)) {
-                            deletedExpenseIds.delete(id);
-                            expenseDeletionTimestamps.delete(id);
-                        }
-                    });
-                    
-                    // Persist updated expense tracking
-                    try {
-                        const trackingData = {
-                            ids: Array.from(deletedExpenseIds),
-                            timestamps: Object.fromEntries(expenseDeletionTimestamps)
-                        };
-                        localStorage.setItem('expenseTracker_deletedExpenses', JSON.stringify(trackingData));
-                    } catch (error) {
-                        console.warn('Failed to persist expense deletion tracking:', error);
-                    }
-                } catch (error) {
-                    console.warn('Failed to verify expense deletions:', error);
                 }
             } catch (error) {
                 console.warn('Failed to verify deletions:', error);
@@ -1051,10 +1380,57 @@ export async function fetchFromFirebase() {
     try {
         console.log('Fetching data from Firebase...');
 
-        const [expensesSnapshot, suppliersSnapshot] = await Promise.all([
+        const [expensesSnapshot, suppliersSnapshot, expenseDeletionsSnapshot, supplierDeletionsSnapshot] = await Promise.all([
             getDocs(collection(db, 'expenses')),
-            getDocs(collection(db, 'suppliers'))
+            getDocs(collection(db, 'suppliers')),
+            getDocs(collection(db, COL_EXPENSE_DELETIONS)),
+            getDocs(collection(db, COL_SUPPLIER_DELETIONS))
         ]);
+
+        // Apply server-side tombstones to prevent cross-device resurrection.
+        // Expense deletions are treated as permanent; supplier deletions follow DELETION_TRACKING_TTL.
+        const now = Date.now();
+        const toMillis = (ts) => {
+            if (!ts) return now;
+            if (typeof ts.toMillis === 'function') return ts.toMillis();
+            if (typeof ts.seconds === 'number') return ts.seconds * 1000 + (ts.nanoseconds || 0) / 1e6;
+            return now;
+        };
+
+        expenseDeletionsSnapshot.docs.forEach(tombstoneDoc => {
+            const deletedAtMs = toMillis(tombstoneDoc.data()?.deletedAt);
+            deletedExpenseIds.add(tombstoneDoc.id);
+            expenseDeletionTimestamps.set(tombstoneDoc.id, deletedAtMs);
+        });
+
+        supplierDeletionsSnapshot.docs.forEach(tombstoneDoc => {
+            const deletedAtMs = toMillis(tombstoneDoc.data()?.deletedAt);
+            if (now - deletedAtMs < DELETION_TRACKING_TTL) {
+                deletedSupplierIds.add(tombstoneDoc.id);
+                deletionTimestamps.set(tombstoneDoc.id, deletedAtMs);
+            }
+        });
+
+        // Persist updated deletion tracking so reloads remain consistent.
+        try {
+            const expenseTracking = {
+                ids: Array.from(deletedExpenseIds),
+                timestamps: Object.fromEntries(expenseDeletionTimestamps)
+            };
+            localStorage.setItem('expenseTracker_deletedExpenses', JSON.stringify(expenseTracking));
+        } catch (error) {
+            console.warn('Failed to persist expense deletion tracking from tombstones:', error);
+        }
+
+        try {
+            const supplierTracking = {
+                ids: Array.from(deletedSupplierIds),
+                timestamps: Object.fromEntries(deletionTimestamps)
+            };
+            localStorage.setItem('expenseTracker_deletedSuppliers', JSON.stringify(supplierTracking));
+        } catch (error) {
+            console.warn('Failed to persist supplier deletion tracking from tombstones:', error);
+        }
 
         const firebaseExpenses = expensesSnapshot.docs.map(doc => ({
             id: doc.id,
@@ -2036,6 +2412,8 @@ export function createExpenseObject(data, options = {}) {
         return data[key] !== undefined ? data[key] : defaultValue;
     };
 
+    const explicitId = getValue('id', null);
+
     // Process items - ensure they have correct totals
     let items = [];
     if (data.items && Array.isArray(data.items)) {
@@ -2112,7 +2490,7 @@ export function createExpenseObject(data, options = {}) {
 
     // Build expense object
     const expense = {
-        id: isEditing && existingExpense ? existingExpense.id : (existingExpense?.id || generateId()),
+        id: isEditing && existingExpense ? existingExpense.id : (explicitId || existingExpense?.id || generateId()),
         date: getValue('date', existingExpense?.date || getTodayLocal()),
         branch: getValue('branch', existingExpense?.branch || null),
         allocation: getValue('allocation', existingExpense?.allocation || 'Store'),

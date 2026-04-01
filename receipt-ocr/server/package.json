@@ -1,0 +1,20 @@
+{
+  "name": "receipt-ocr-vision-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HTTPS proxy for Google Cloud Vision DOCUMENT_TEXT_DETECTION (receipt OCR)",
+  "main": "index.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "@google-cloud/documentai": "^9.6.0",
+    "@google-cloud/vision": "^4.3.2",
+    "cors": "^2.8.5",
+    "express": "^4.21.0"
+  }
+}

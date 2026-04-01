@@ -775,6 +775,36 @@ body {
     color: #333;
 }
 
+/* Custom line item description block (below name in invoice preview) */
+.custom-line-item-description {
+    margin-top: 0.35rem;
+}
+
+.custom-line-item-description p {
+    margin: 0.15rem 0 0 0;
+    font-size: 0.875rem;
+    color: #333;
+    line-height: 1.4;
+}
+
+.custom-line-item-description p:first-child {
+    margin-top: 0;
+}
+
+/* Custom line item description bullets (invoice preview) */
+.custom-line-item-bullets {
+    margin: 0.35rem 0 0 0;
+    padding-left: 1.25rem;
+    font-size: 0.875rem;
+    color: #333;
+    line-height: 1.4;
+    list-style: disc;
+}
+
+.custom-line-item-bullets li {
+    margin-bottom: 0.15rem;
+}
+
 .event-details {
     margin-top: 0;
     padding-top: 0;

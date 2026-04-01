@@ -1,0 +1,75 @@
+{
+  "categories": [
+    { "id": "matcha", "name": "MATCHA" },
+    { "id": "hojicha", "name": "HOJICHA" },
+    { "id": "coffee", "name": "COFFEE" }
+  ],
+  "items": [
+    {
+      "categoryId": "matcha",
+      "name": "Matchanese Tea",
+      "description": "Hand-whisked Ceremonial Matcha with Water",
+      "price": 0,
+      "type": "",
+      "shorthand": "MT",
+      "customizations": { "serving": true, "sweetness": true, "strengthLevel": true }
+    },
+    {
+      "categoryId": "matcha",
+      "name": "Signature Matchanese Latte",
+      "description": "Hand-whisked Ceremonial Matcha over Milk",
+      "price": 0,
+      "type": "",
+      "shorthand": "SML"
+    },
+    {
+      "categoryId": "matcha",
+      "name": "Matchanese Seasalt Latte",
+      "description": "Our Signature Matchanese Latte topped with Salted Cream",
+      "price": 0,
+      "type": "",
+      "shorthand": "MSL"
+    },
+    {
+      "categoryId": "matcha",
+      "name": "Matchanese Einspanner",
+      "description": "Our Signature Matchanese Latte topped with Sweet Almond Cream",
+      "price": 0,
+      "type": "",
+      "shorthand": "ME"
+    },
+    {
+      "categoryId": "hojicha",
+      "name": "Hojicha Latte",
+      "description": "Hōjicha Cold Whisked with Milk",
+      "price": 0,
+      "type": "",
+      "shorthand": "HL"
+    },
+    {
+      "categoryId": "hojicha",
+      "name": "Hojicha Einspanner",
+      "description": "Hōjicha Latte topped with Sweet Almond Cream",
+      "price": 0,
+      "type": "",
+      "shorthand": "HE"
+    },
+    {
+      "categoryId": "coffee",
+      "name": "Café Americano",
+      "description": "Double Shot of Espresso with Water",
+      "price": 0,
+      "type": "",
+      "shorthand": "CA",
+      "customizations": { "serving": true, "sweetness": true, "strengthLevel": true }
+    },
+    {
+      "categoryId": "coffee",
+      "name": "Café Latte",
+      "description": "Double Shot of Espresso with Milk",
+      "price": 0,
+      "type": "",
+      "shorthand": "CL"
+    }
+  ]
+}

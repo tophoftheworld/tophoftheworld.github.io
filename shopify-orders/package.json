@@ -1,0 +1,9 @@
+﻿{
+  "name": "shopify-orders-dashboard",
+  "private": true,
+  "type": "module",
+  "description": "Local Shopify orders table; double-click Open-Dashboard.cmd (Windows + Node).",
+  "scripts": {
+    "start": "node server.mjs"
+  }
+}

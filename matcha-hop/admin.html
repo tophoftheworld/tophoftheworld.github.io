@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Matcha Hop – Admin</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="admin-body">
+  <div class="admin-layout">
+    <div class="admin-panel">
+      <div class="admin-mode-tabs" role="tablist" aria-label="Admin mode">
+        <button type="button" role="tab" id="admin-mode-locations" data-mode="locations" class="admin-mode-tab active" aria-selected="true">Locations</button>
+        <button type="button" role="tab" id="admin-mode-brands" data-mode="brands" class="admin-mode-tab" aria-selected="false">Brands</button>
+      </div>
+      <div id="admin-locations-wrap" class="admin-mode-content">
+      <div class="admin-header">
+        <h1>Matcha Hop – Admin</h1>
+        <div class="admin-search-row">
+          <label for="admin-search-query" class="admin-search-label">Search</label>
+          <input type="text" id="admin-search-query" class="admin-search-input" value="matcha cafe" placeholder="e.g. matcha cafe, matcha marikina, coffee shop" aria-label="Search query for Google Places" />
+          <button type="button" id="admin-load-btn" class="admin-btn-refresh">Search</button>
+        </div>
+      </div>
+      <p class="admin-map-view-desc">Search runs in the visible map area—pan/zoom to a region (e.g. Manila, Marikina), enter any query, then click Search. List shows cafes in the visible map; use "Show all unclassified" on the Unclassified tab to see every unclassified cafe.</p>
+      <label class="admin-show-all-toggle">
+        <input type="checkbox" id="admin-show-all-unclassified" aria-describedby="admin-show-all-unclassified-desc">
+        <span>Show all unclassified (ignore map)</span>
+      </label>
+      <p id="admin-show-all-unclassified-desc" class="admin-show-all-desc">Show every unclassified cafe, not just those in the map area.</p>
+      <div class="admin-filters" role="tablist" aria-label="Filter by classification">
+        <button type="button" role="tab" id="filter-unclassified" data-filter="unclassified" class="admin-tab active">Unclassified</button>
+        <button type="button" role="tab" id="filter-matcha_cafe" data-filter="matcha_cafe" class="admin-tab">Matcha Cafe</button>
+        <button type="button" role="tab" id="filter-cafe_specialty_matcha" data-filter="cafe_specialty_matcha" class="admin-tab">Specialty</button>
+        <button type="button" role="tab" id="filter-regular_cafe" data-filter="regular_cafe" class="admin-tab">Regular</button>
+        <button type="button" role="tab" id="filter-na" data-filter="na" class="admin-tab">N/A</button>
+        <button type="button" role="tab" id="filter-all" data-filter="all" class="admin-tab">All</button>
+      </div>
+      <div class="admin-update-place-data">
+        <button type="button" id="admin-update-place-data-btn" class="admin-btn-refresh">Update place data from Google</button>
+        <span id="admin-update-place-data-status" class="admin-update-place-data-status" aria-live="polite"></span>
+        <p class="admin-update-place-data-desc">Re-fetches photo, rating, and opening hours from Google for all saved locations and brands (and places with reviews), and updates Firebase.</p>
+      </div>
+      <div id="admin-list-wrap" class="admin-list-wrap">
+        <p id="admin-loading" class="admin-loading" aria-live="polite">Loading cafes…</p>
+        <ul id="admin-list" class="admin-list" aria-live="polite" hidden></ul>
+      </div>
+      </div>
+      <div id="admin-brands-wrap" class="admin-mode-content hidden">
+        <div class="admin-brands-header">
+          <h2>Brands</h2>
+          <p class="admin-brands-desc">Manage brands for the app gallery. Add brands, assign locations (or leave empty for pop-ups), and reorder.</p>
+        </div>
+        <ul id="admin-brands-list" class="admin-brands-list" aria-live="polite"></ul>
+        <div id="admin-add-brand-form" class="admin-add-brand-form">
+          <label for="admin-brand-name">Brand name</label>
+          <input type="text" id="admin-brand-name" placeholder="e.g. Matcha Manila">
+          <p class="admin-brand-cafes-label">Locations (optional – select cafes to merge; leave empty for pop-up / no location)</p>
+          <div id="admin-brand-cafes-list" class="admin-brand-cafes-list"></div>
+          <div class="admin-form-actions">
+            <button type="button" id="admin-brand-save">Save</button>
+            <button type="button" id="admin-brand-cancel">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="admin-map-panel">
+      <div id="admin-map" class="admin-map-wrap"></div>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+  <script>
+    window.onGoogleMapsReady = function() {
+      var s = document.createElement('script');
+      s.type = 'module';
+      s.src = 'js/admin.js';
+      document.body.appendChild(s);
+    };
+    (function() {
+      var key = window.GOOGLE_MAPS_API_KEY || 'YOUR_API_KEY';
+      var script = document.createElement('script');
+      script.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(key) + '&libraries=places&callback=onGoogleMapsReady';
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    })();
+  </script>
+</body>
+</html>

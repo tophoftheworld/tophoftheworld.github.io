@@ -1,4 +1,5 @@
 {
+  "oatUpgradePrice": 30,
   "categories": [
     {
       "id": "matcha-lattes",
@@ -7,6 +8,30 @@
     {
       "id": "hojicha-lattes",
       "name": "Hōjicha Lattes"
+    },
+    {
+      "id": "matcha-specials",
+      "name": "Matcha Specials"
+    },
+    {
+      "id": "cookies",
+      "name": "Cookies"
+    },
+    {
+      "id": "desserts",
+      "name": "Desserts"
+    },
+    {
+      "id": "tools",
+      "name": "Tools"
+    },
+    {
+      "id": "matcha-powder",
+      "name": "Matcha Powder"
+    },
+    {
+      "id": "merch",
+      "name": "Merch"
     }
   ],
   "items": [
@@ -45,12 +70,29 @@
     },
     {
       "categoryId": "matcha-lattes",
+      "name": "Peach Mango Matchanese Latte",
+      "description": "Our Signature Matcha Latte with Peach Syrup and Mango Puree",
+      "price": 250,
+      "type": "Iced",
+      "shorthand": "PMML"
+    },
+    {
+      "categoryId": "matcha-lattes",
       "name": "Earl Grey Matchanese Latte",
       "description": "Our Signature Matcha Latte with Homemade Earl Grey Syrup",
       "price": 250,
       "tags": ["New!"],
       "type": "Iced",
       "shorthand": "EGML"
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Coco Oat Matchanese Latte",
+      "description": "Matcha Cold Whisked with Oat Milk over Coconut Juice",
+      "price": 230,
+      "tags": ["Must-Try!"],
+      "type": "Iced",
+      "shorthand": "COML"
     },
     {
       "categoryId": "hojicha-lattes",
@@ -93,6 +135,175 @@
       "tags": ["New!"],
       "type": "Iced",
       "shorthand": "EGHL"
+    },
+    {
+      "categoryId": "matcha-specials",
+      "name": "Polvoron Matchanese Latte",
+      "description": "Our Signature Matcha Latte with Toasted Milk and Rice Krispies",
+      "price": 270,
+      "tags": ["Limited Drink"],
+      "type": "Iced",
+      "shorthand": "PML"
+    },
+    {
+      "categoryId": "matcha-specials",
+      "name": "Banoffee Matcha Latte",
+      "description": "Our Signature Matcha Latte topped with our Banoffee",
+      "price": 250,
+      "type": "Iced",
+      "shorthand": "BML"
+    },
+    {
+      "categoryId": "cookies",
+      "name": "Matcha Bomb",
+      "description": "Matcha cookie per piece",
+      "price": 180,
+      "type": "Cookie",
+      "shorthand": "MB"
+    },
+    {
+      "categoryId": "cookies",
+      "name": "Matcha Biscoff",
+      "description": "Matcha Biscoff cookie per piece",
+      "price": 180,
+      "type": "Cookie",
+      "shorthand": "MBS"
+    },
+    {
+      "categoryId": "cookies",
+      "name": "Ube Matcha",
+      "description": "Ube Matcha cookie per piece",
+      "price": 180,
+      "type": "Cookie",
+      "shorthand": "UM"
+    },
+    {
+      "categoryId": "cookies",
+      "name": "Matcha White Chocolate",
+      "description": "Matcha White Chocolate cookie per piece",
+      "price": 180,
+      "type": "Cookie",
+      "shorthand": "MWC"
+    },
+    {
+      "categoryId": "cookies",
+      "name": "Matcha Dark Chocolate",
+      "description": "Matcha Dark Chocolate cookie per piece",
+      "price": 180,
+      "type": "Cookie",
+      "shorthand": "MDC"
+    },
+    {
+      "categoryId": "cookies",
+      "name": "Matcha Smores",
+      "description": "Matcha Smores cookie per piece",
+      "price": 180,
+      "type": "Cookie",
+      "shorthand": "MS"
+    },
+    {
+      "categoryId": "desserts",
+      "name": "Warabi Mochi",
+      "description": "Warabi Mochi per box/cup",
+      "price": 270,
+      "type": "Dessert",
+      "shorthand": "WM"
+    },
+    {
+      "categoryId": "desserts",
+      "name": "Matcha Banoffee",
+      "description": "Matcha Banoffee per box/cup",
+      "price": 240,
+      "type": "Dessert",
+      "shorthand": "MBF"
+    },
+    {
+      "categoryId": "desserts",
+      "name": "Matcha Tiramisu",
+      "description": "Matcha Tiramisu per box/cup",
+      "price": 250,
+      "type": "Dessert",
+      "shorthand": "MT"
+    },
+    {
+      "categoryId": "desserts",
+      "name": "Dubai Chewy Cookie (Solo)",
+      "description": "Dubai Chewy Cookie single piece",
+      "price": 220,
+      "type": "Dessert",
+      "shorthand": "DCC"
+    },
+    {
+      "categoryId": "desserts",
+      "name": "Dubai Chewy Cookie (Box of 4)",
+      "description": "Dubai Chewy Cookie box of 4",
+      "price": 800,
+      "type": "Dessert",
+      "shorthand": "DCC4"
+    },
+    {
+      "categoryId": "tools",
+      "name": "Whisk",
+      "description": "Chasen whisk",
+      "price": 850,
+      "type": "Tool",
+      "shorthand": "WH"
+    },
+    {
+      "categoryId": "tools",
+      "name": "Scoop",
+      "description": "Chashaku scoop",
+      "price": 150,
+      "type": "Tool",
+      "shorthand": "SC"
+    },
+    {
+      "categoryId": "tools",
+      "name": "Whisk & Scoop",
+      "description": "Chasen and chashaku set",
+      "price": 950,
+      "type": "Tool",
+      "shorthand": "WHSC"
+    },
+    {
+      "categoryId": "tools",
+      "name": "Katakuchi & Kusenaoshi",
+      "description": "Matcha bowl and tea caddy",
+      "price": 1250,
+      "type": "Tool",
+      "shorthand": "KK"
+    },
+    {
+      "categoryId": "tools",
+      "name": "Full Set",
+      "description": "Katakuchi, kusenaoshi, whisk, scoop",
+      "price": 2150,
+      "type": "Tool",
+      "shorthand": "FULL"
+    },
+    {
+      "categoryId": "matcha-powder",
+      "name": "Aki Matcha (30g)",
+      "description": "Matcha powder 30g",
+      "price": 850,
+      "type": "Matcha Powder",
+      "shorthand": "AKI"
+    },
+    {
+      "categoryId": "merch",
+      "name": "Cap",
+      "description": "Cap",
+      "price": 650,
+      "type": "Merch",
+      "shorthand": "CAP"
+    },
+    {
+      "categoryId": "merch",
+      "name": "Stickers",
+      "description": "Stickers",
+      "price": 100,
+      "type": "Merch",
+      "shorthand": "STK"
     }
   ]
 }

@@ -15,8 +15,49 @@ import {
 
 let allRequests = [];
 let currentFilter = 'pending';
+let currentRequestTypeFilter = 'all';
 let currentAdminId = 'admin'; // Will be set from auth
 let selectedRequests = new Set(); // Track selected request IDs
+
+// PayCalculator and dependencies for amount preview
+let HOLIDAYS_2025 = {};
+let holidaysLoaded = false;
+let payCalculator = null;
+let salesDataCache = null;
+
+async function loadHolidays() {
+    if (holidaysLoaded) return HOLIDAYS_2025;
+    try {
+        const holidayDoc = await getDoc(doc(db, "config", "holidays_2025"));
+        if (holidayDoc.exists()) {
+            HOLIDAYS_2025 = holidayDoc.data();
+            holidaysLoaded = true;
+        }
+        return HOLIDAYS_2025;
+    } catch (error) {
+        console.error("Failed to load holidays:", error);
+        return {};
+    }
+}
+
+async function loadSalesData(branch = 'sm-north') {
+    if (salesDataCache) return salesDataCache;
+    try {
+        const snapshot = await getDocs(collection(db, 'sales-data', branch, 'daily'));
+        const salesData = {};
+        snapshot.docs.forEach(d => {
+            const data = d.data();
+            if (data.totalSales || (data.cash || 0) + (data.gcash || 0) + (data.maya || 0) + (data.card || 0) + (data.grab || 0) > 0) {
+                salesData[d.id] = data;
+            }
+        });
+        salesDataCache = salesData;
+        return salesData;
+    } catch (error) {
+        console.error("Error loading sales data:", error);
+        return {};
+    }
+}
 
 // Format timestamp to relative time
 function formatRelativeTime(timestamp) {
@@ -82,14 +123,51 @@ function time24to12(time24) {
     return `${hours12}:${minutes} ${meridian}`;
 }
 
-// Normalize time string by removing seconds for comparison
-// This ensures "10:34 AM" matches "10:34:09 AM"
+// Normalize time string by removing seconds and normalizing hour for comparison
+// Ensures "10:34 AM" matches "10:34:09 AM", "9:45 AM" matches "09:45:02 AM"
 function normalizeTimeForComparison(timeStr) {
     if (!timeStr || timeStr === '--' || timeStr === 'null') return '';
-    
-    // Remove seconds if they exist (format: "HH:MM:SS AM/PM" -> "HH:MM AM/PM")
-    // This regex matches a colon followed by two digits before the space and AM/PM
-    return timeStr.replace(/:\d{2}(\s[AP]M)/i, '$1');
+    let s = timeStr.trim();
+    // Only remove seconds when present (HH:MM:SS AM/PM -> HH:MM AM/PM)
+    const withSeconds = /^(\d{1,2}:\d{2}):\d{2}(\s*[AP]M)$/i;
+    s = s.replace(withSeconds, '$1$2').trim() || s;
+    // Normalize leading zero on hour so "09:45 AM" and "9:45 AM" compare equal
+    s = s.replace(/^0(\d):/, '$1:');
+    return s;
+}
+
+/** Returns a canonical 12h string (e.g. "9:45 AM") for comparison so seconds-only or 24h vs 12h do not count as change. */
+function toComparableTimeString(value) {
+    if (value == null || value === '' || value === '--') return '';
+    let s;
+    if (typeof value === 'object' && value && typeof value.toDate === 'function') {
+        const d = value.toDate();
+        const hours = d.getHours();
+        const minutes = d.getMinutes();
+        const meridian = hours >= 12 ? 'PM' : 'AM';
+        let h12 = hours % 12;
+        if (h12 === 0) h12 = 12;
+        s = `${h12}:${String(minutes).padStart(2, '0')} ${meridian}`;
+    } else if (typeof value === 'string') {
+        s = value.trim();
+        if (!s) return '';
+        const hasMeridian = /[AP]M/i.test(s);
+        if (hasMeridian) {
+            s = s.replace(/^(\d{1,2}:\d{2}):\d{2}(\s*[AP]M)/i, '$1$2').trim();
+            s = s.replace(/^0(\d):/, '$1:');
+        } else {
+            const match = s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+            if (match) {
+                const h = parseInt(match[1], 10);
+                const m = match[2];
+                s = time24to12(`${String(h).padStart(2, '0')}:${m}`);
+                s = s.replace(/^0(\d):/, '$1:');
+            }
+        }
+    } else {
+        return '';
+    }
+    return s;
 }
 
 // Get payroll period for a given date
@@ -130,6 +208,95 @@ function getPayrollPeriodForDate(dateStr) {
     }
     
     return 'N/A';
+}
+
+/**
+ * Compute current vs requested daily pay for a payroll request (for amount preview).
+ * Returns { currentPay, requestedPay, diff } for edit requests, { requestedPay } for new_date, or { error }.
+ */
+async function getPayPreviewForRequest(request) {
+    const isNewDate = request.type === 'new_date';
+    const requestedData = request.requestedData || {};
+    const currentData = request.currentData || {};
+
+    try {
+        const employeeSnap = await getDoc(doc(db, "employees", request.employeeId));
+        if (!employeeSnap.exists()) {
+            return { error: 'Employee or base rate not found' };
+        }
+        const empData = employeeSnap.data();
+        const baseRate = empData.baseRate ?? empData.base_rate ?? empData.dailyRate ?? empData.daily_rate ?? 0;
+        if (!baseRate || baseRate <= 0) {
+            return { error: 'Employee or base rate not found' };
+        }
+
+        const employee = {
+            id: request.employeeId,
+            baseRate: baseRate,
+            salesBonusEligible: empData.salesBonusEligible ?? empData.sales_bonus_eligible ?? empData.salesBonus ?? false
+        };
+
+        await loadHolidays();
+        if (employee.salesBonusEligible) {
+            await loadSalesData('sm-north');
+        }
+        if (!payCalculator) {
+            payCalculator = new window.PayCalculator(HOLIDAYS_2025, salesDataCache || {});
+        }
+
+        const requestedDate = requestedData.date || request.date;
+        const requestedEntry = {
+            date: requestedDate,
+            timeIn: requestedData.timeIn ?? null,
+            timeOut: requestedData.timeOut ?? null,
+            branch: requestedData.branch ?? 'Podium',
+            shift: requestedData.shift ?? 'Opening',
+            hasOTPay: !!request.requestOT
+        };
+        if (!requestedEntry.timeIn || !requestedEntry.timeOut) {
+            return { error: 'Amount preview unavailable' };
+        }
+
+        const requestedResult = payCalculator.calculateDailyPay(requestedEntry, employee, 'detailed');
+        const requestedPay = (requestedResult && typeof requestedResult === 'object' && 'total' in requestedResult)
+            ? requestedResult.total : (typeof requestedResult === 'number' ? requestedResult : 0);
+
+        if (isNewDate) {
+            return { requestedPay };
+        }
+
+        let currentHasOTPay = false;
+        const currentDate = currentData.date || request.date;
+        try {
+            const attendanceRef = doc(db, "attendance", request.employeeId, "dates", currentDate);
+            const attendanceSnap = await getDoc(attendanceRef);
+            if (attendanceSnap.exists()) {
+                currentHasOTPay = !!attendanceSnap.data().hasOTPay;
+            }
+        } catch (_) {}
+
+        const currentEntry = {
+            date: currentDate,
+            timeIn: currentData.timeIn ?? null,
+            timeOut: currentData.timeOut ?? null,
+            branch: currentData.branch ?? 'Podium',
+            shift: currentData.shift ?? 'Opening',
+            hasOTPay: currentHasOTPay
+        };
+        if (!currentEntry.timeIn || !currentEntry.timeOut) {
+            return { error: 'Amount preview unavailable' };
+        }
+
+        const currentResult = payCalculator.calculateDailyPay(currentEntry, employee, 'detailed');
+        const currentPay = (currentResult && typeof currentResult === 'object' && 'total' in currentResult)
+            ? currentResult.total : (typeof currentResult === 'number' ? currentResult : 0);
+        const diff = requestedPay - currentPay;
+
+        return { currentPay, requestedPay, diff };
+    } catch (err) {
+        console.error('Pay preview error:', err);
+        return { error: 'Amount preview unavailable' };
+    }
 }
 
 // Show confirmation modal
@@ -190,18 +357,37 @@ function showConfirmModal(title, message, okText, okClass, onConfirm, hideCancel
     });
 }
 
-// Fetch all requests
+// Fetch all requests (payroll + substitution)
 async function fetchRequests() {
     try {
-        const requestsRef = collection(db, "payroll_requests");
-        const q = query(requestsRef, orderBy("requestedAt", "desc"));
-        const snapshot = await getDocs(q);
-        
-        allRequests = [];
-        snapshot.forEach(doc => {
-            allRequests.push({ id: doc.id, ...doc.data() });
+        const payrollRef = collection(db, "payroll_requests");
+        const payrollQ = query(payrollRef, orderBy("requestedAt", "desc"));
+        const payrollSnap = await getDocs(payrollQ);
+
+        const substitutionRef = collection(db, "substitution_requests");
+        const substitutionSnap = await getDocs(substitutionRef);
+
+        const payroll = [];
+        payrollSnap.forEach(d => {
+            payroll.push({ id: d.id, ...d.data(), _sourceCollection: "payroll_requests" });
         });
-        
+        const substitution = [];
+        substitutionSnap.forEach(d => {
+            const data = d.data();
+            substitution.push({
+                id: d.id,
+                ...data,
+                type: data.type || "substitution",
+                _sourceCollection: "substitution_requests"
+            });
+        });
+
+        allRequests = [...payroll, ...substitution].sort((a, b) => {
+            const ta = a.requestedAt?.toMillis?.() ?? (a.requestedAt ? new Date(a.requestedAt).getTime() : 0);
+            const tb = b.requestedAt?.toMillis?.() ?? (b.requestedAt ? new Date(b.requestedAt).getTime() : 0);
+            return tb - ta;
+        });
+
         renderRequests();
     } catch (error) {
         console.error("Error fetching requests:", error);
@@ -209,21 +395,65 @@ async function fetchRequests() {
     }
 }
 
+/** Returns { label, cssClass } for request type badge (Schedule Reliever, New Date, Overtime, Change Time In/Out). */
+function getRequestTypeLabel(request) {
+    const isSubstitution = request.type === 'substitution' || request._sourceCollection === 'substitution_requests';
+    if (isSubstitution) {
+        return { label: 'Schedule Reliever', cssClass: 'request-type-reliever' };
+    }
+    if (request.type === 'new_date') {
+        return {
+            label: request.requestOT ? 'New Date + Overtime' : 'New Date',
+            cssClass: 'request-type-payroll'
+        };
+    }
+    const hasTimeChange = request.currentData && request.requestedData && (
+        toComparableTimeString(request.currentData?.timeIn) !== toComparableTimeString(request.requestedData?.timeIn) ||
+        toComparableTimeString(request.currentData?.timeOut) !== toComparableTimeString(request.requestedData?.timeOut)
+    );
+    const currentDate = request.currentData?.date || request.date;
+    const requestedDate = request.requestedData?.date || request.date;
+    const hasDateChange = currentDate !== requestedDate;
+    const hasBranchChange = (request.currentData?.branch || '') !== (request.requestedData?.branch || '');
+    const hasShiftChange = (request.currentData?.shift || '') !== (request.requestedData?.shift || '');
+    const hasEdit = hasTimeChange || hasDateChange || hasBranchChange || hasShiftChange;
+    if (hasEdit) {
+        return { label: 'Change Time In/Out', cssClass: 'request-type-payroll' };
+    }
+    if (request.requestOT) {
+        return { label: 'Overtime', cssClass: 'request-type-payroll' };
+    }
+    return { label: 'Payroll', cssClass: 'request-type-payroll' };
+}
+
 // Render requests based on current filter
 function renderRequests() {
     const container = document.getElementById('requestsContainer');
     if (!container) return;
-    
-    const filteredRequests = currentFilter === 'all' 
-        ? allRequests 
-        : allRequests.filter(r => r.status === currentFilter);
+
+    let filtered = allRequests;
+    if (currentRequestTypeFilter === 'payroll') {
+        filtered = filtered.filter(r => r._sourceCollection === 'payroll_requests');
+    } else if (currentRequestTypeFilter === 'reliever') {
+        filtered = filtered.filter(r => r._sourceCollection === 'substitution_requests');
+    }
+    const filteredRequests = currentFilter === 'all'
+        ? filtered
+        : filtered.filter(r => r.status === currentFilter);
     
     if (filteredRequests.length === 0) {
+        const statusWord = currentFilter === 'all' ? '' : currentFilter;
+        const typeWord = currentRequestTypeFilter === 'all' ? '' : currentRequestTypeFilter;
+        const parts = [typeWord, statusWord].filter(Boolean);
+        const label = parts.length ? parts.join(' ') + ' requests' : 'requests';
+        const subtext = (currentFilter !== 'all' || currentRequestTypeFilter !== 'all')
+            ? 'Try changing the type or status filter to see other requests.'
+            : 'Requests will appear here when employees submit them.';
         container.innerHTML = `
             <div class="empty-state">
                 <div class="empty-state-icon">📭</div>
-                <div class="empty-state-text">No ${currentFilter === 'all' ? '' : currentFilter} requests found</div>
-                <div class="empty-state-subtext">${currentFilter === 'all' ? 'Requests will appear here when employees submit them.' : 'Try changing the filter to see other requests.'}</div>
+                <div class="empty-state-text">No ${label} found</div>
+                <div class="empty-state-subtext">${subtext}</div>
             </div>
         `;
         return;
@@ -233,13 +463,29 @@ function renderRequests() {
         const initials = getInitials(request.employeeName);
         const timeAgo = formatRelativeTime(request.requestedAt);
         const statusClass = `request-status-${request.status}`;
-        
+        const typeInfo = getRequestTypeLabel(request);
+        const typeBadge = `<span class="request-type-badge ${typeInfo.cssClass}">${typeInfo.label}</span>`;
+        const isSubstitution = request.type === 'substitution' || request._sourceCollection === 'substitution_requests';
+
         // Build preview text - only show fields that actually changed
         let previewText = '';
-        
-        // Handle new date requests differently
-        if (request.type === "new_date") {
-            previewText = `<div class="request-preview-item"><span class="request-preview-value">New Date Request</span></div>`;
+        let dateDisplay = '';
+
+        if (isSubstitution) {
+            dateDisplay = `<div class="request-preview-item"><span class="request-preview-label">Date:</span><span class="request-preview-value">${formatDate(request.date)}</span></div>`;
+            const branchLabel = (request.branch || '').charAt(0).toUpperCase() + (request.branch || '').slice(1);
+            const shiftLabel = ((request.shiftType || '') + '').replace(/^./, c => c.toUpperCase());
+            previewText = `
+                <div class="request-preview-item">
+                    <span class="request-preview-label">Shift:</span>
+                    <span class="request-preview-value">${branchLabel} ${shiftLabel}</span>
+                </div>
+                <div class="request-preview-item">
+                    <span class="request-preview-value">${request.employeeName || 'Unknown'} → ${request.requestedRelieverName || 'Unknown'}</span>
+                </div>
+            `;
+        } else if (request.type === "new_date") {
+            previewText = '';
             const requestedTimeIn = formatTime(request.requestedData?.timeIn);
             const requestedTimeOut = formatTime(request.requestedData?.timeOut);
             if (requestedTimeIn !== '--' && requestedTimeOut !== '--') {
@@ -266,16 +512,13 @@ function renderRequests() {
                     </div>
                 `;
             }
-            if (request.requestOT === true) {
-                previewText += '<div class="request-preview-item"><span class="request-preview-value">+ Overtime Pay Request</span></div>';
-            }
         } else {
-            // Check for time in change (normalize to avoid false positives from rounding)
+            // Check for time in change (use comparable strings so seconds/format don't count)
             const currentTimeIn = formatTime(request.currentData?.timeIn);
             const requestedTimeIn = formatTime(request.requestedData?.timeIn);
-            const normalizedCurrentTimeIn = normalizeTimeForComparison(currentTimeIn);
-            const normalizedRequestedTimeIn = normalizeTimeForComparison(requestedTimeIn);
-            if (normalizedCurrentTimeIn !== normalizedRequestedTimeIn && normalizedCurrentTimeIn !== '' && normalizedRequestedTimeIn !== '') {
+            const comparableCurrentTimeIn = toComparableTimeString(request.currentData?.timeIn);
+            const comparableRequestedTimeIn = toComparableTimeString(request.requestedData?.timeIn);
+            if (comparableCurrentTimeIn !== comparableRequestedTimeIn && comparableCurrentTimeIn !== '' && comparableRequestedTimeIn !== '') {
                 previewText += `
                     <div class="request-preview-item">
                         <span class="request-preview-label">Time In:</span>
@@ -284,12 +527,12 @@ function renderRequests() {
                 `;
             }
             
-            // Check for time out change (normalize to avoid false positives from rounding)
+            // Check for time out change (use comparable strings so seconds/format don't count)
             const currentTimeOut = formatTime(request.currentData?.timeOut);
             const requestedTimeOut = formatTime(request.requestedData?.timeOut);
-            const normalizedCurrentTimeOut = normalizeTimeForComparison(currentTimeOut);
-            const normalizedRequestedTimeOut = normalizeTimeForComparison(requestedTimeOut);
-            if (normalizedCurrentTimeOut !== normalizedRequestedTimeOut && normalizedCurrentTimeOut !== '' && normalizedRequestedTimeOut !== '') {
+            const comparableCurrentTimeOut = toComparableTimeString(request.currentData?.timeOut);
+            const comparableRequestedTimeOut = toComparableTimeString(request.requestedData?.timeOut);
+            if (comparableCurrentTimeOut !== comparableRequestedTimeOut && comparableCurrentTimeOut !== '' && comparableRequestedTimeOut !== '') {
                 previewText += `
                     <div class="request-preview-item">
                         <span class="request-preview-label">Time Out:</span>
@@ -321,33 +564,28 @@ function renderRequests() {
                     </div>
                 `;
             }
-            
-            // Only show OT request in preview if it was actually requested (requestOT is true)
-            // Note: This will show even if OT was already applied, but the detail modal will filter it out
-            if (request.requestOT === true) {
-                previewText += '<div class="request-preview-item"><span class="request-preview-value">+ Overtime Pay Request</span></div>';
-            }
         }
         
         // Capitalize status
         const statusText = request.status.charAt(0).toUpperCase() + request.status.slice(1);
-        
-        // Build date display
-        let dateDisplay = '';
-        if (request.type === "new_date") {
-            dateDisplay = `<div class="request-preview-item"><span class="request-preview-label">Date:</span><span class="request-preview-value">${formatDate(request.date)}</span></div>`;
-        } else {
-            const currentDate = request.currentData?.date || request.date;
-            const requestedDate = request.requestedData?.date || request.date;
-            dateDisplay = currentDate !== requestedDate 
-                ? `<div class="request-preview-item">
+
+        // Build date display (for payroll; substitution already set above)
+        if (!isSubstitution) {
+            if (request.type === "new_date") {
+                dateDisplay = `<div class="request-preview-item"><span class="request-preview-label">Date:</span><span class="request-preview-value">${formatDate(request.date)}</span></div>`;
+            } else {
+                const currentDate = request.currentData?.date || request.date;
+                const requestedDate = request.requestedData?.date || request.date;
+                dateDisplay = currentDate !== requestedDate
+                    ? `<div class="request-preview-item">
                     <span class="request-preview-label">Date:</span>
                     <span class="request-preview-value">${formatDate(currentDate)} → ${formatDate(requestedDate)}</span>
                    </div>`
-                : `<div class="request-preview-item">
+                    : `<div class="request-preview-item">
                     <span class="request-preview-label">Date:</span>
                     <span class="request-preview-value">${formatDate(request.date)}</span>
                    </div>`;
+            }
         }
         
         // Add quick action buttons for pending requests (desktop - icon only)
@@ -401,8 +639,11 @@ function renderRequests() {
                     <div class="request-avatar">${initials}</div>
                     <div class="request-content">
                         <div class="request-header">
-                            <span class="request-name">${request.employeeName || 'Unknown'}</span>
-                            <span class="request-date">${timeAgo}</span>
+                            <div class="request-header-left">
+                                <span class="request-name">${request.employeeName || 'Unknown'}</span>
+                                <span class="request-date">${timeAgo}</span>
+                            </div>
+                            ${typeBadge}
                         </div>
                         <div class="request-preview">
                             ${dateDisplay}
@@ -452,11 +693,86 @@ async function openRequestDetail(request) {
     const modalTitle = document.getElementById('modalTitle');
     const modalContent = document.getElementById('modalContent');
     const modalActions = document.getElementById('modalActions');
-    
+
     if (!modal || !modalTitle || !modalContent || !modalActions) return;
-    
+
+    const isSubstitution = request.type === 'substitution' || request._sourceCollection === 'substitution_requests';
+    if (isSubstitution) {
+        modalTitle.textContent = `Reliever request from ${request.employeeName}`;
+        const branchLabel = ((request.branch || '') + '').replace(/^./, c => c.toUpperCase());
+        const shiftLabel = ((request.shiftType || '') + '').replace(/^./, c => c.toUpperCase());
+        const statusText = (request.status || '').charAt(0).toUpperCase() + (request.status || '').slice(1);
+        const content = `
+            <div class="request-detail-section">
+                <h3>Shift Details</h3>
+                <div class="request-detail-row">
+                    <div>
+                        <div class="request-detail-label">Date</div>
+                        <div class="request-detail-value">${formatDate(request.date)}</div>
+                    </div>
+                    <div>
+                        <div class="request-detail-label">Branch</div>
+                        <div class="request-detail-value">${branchLabel || '--'}</div>
+                    </div>
+                </div>
+                <div class="request-detail-row">
+                    <div>
+                        <div class="request-detail-label">Shift type</div>
+                        <div class="request-detail-value">${shiftLabel || '--'}</div>
+                    </div>
+                    <div>
+                        <div class="request-detail-label">Status</div>
+                        <div class="request-detail-value">${statusText}</div>
+                    </div>
+                </div>
+                <div class="request-detail-row">
+                    <div>
+                        <div class="request-detail-label">Requester</div>
+                        <div class="request-detail-value">${request.employeeName || 'Unknown'}</div>
+                    </div>
+                    <div>
+                        <div class="request-detail-label">Requested reliever</div>
+                        <div class="request-detail-value">${request.requestedRelieverName || 'Unknown'}</div>
+                    </div>
+                </div>
+                <div class="request-detail-row">
+                    <div>
+                        <div class="request-detail-label">Requested</div>
+                        <div class="request-detail-value">${formatRelativeTime(request.requestedAt)}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+        modalContent.innerHTML = content;
+        let actionsHtml = '';
+        if (request.status === 'pending') {
+            actionsHtml = `
+                <button class="modal-btn modal-btn-approve modal-btn-primary" onclick="approveRequest('${request.id}')">Approve</button>
+                <div class="modal-actions-row">
+                    <button class="modal-btn modal-btn-reject" onclick="rejectRequest('${request.id}')">Reject</button>
+                </div>
+            `;
+        } else {
+            actionsHtml = `
+                <div class="request-detail-row">
+                    <div>
+                        <div class="request-detail-label">Reviewed</div>
+                        <div class="request-detail-value">${request.reviewedAt ? formatRelativeTime(request.reviewedAt) : 'N/A'}</div>
+                    </div>
+                    <div>
+                        <div class="request-detail-label">Reviewed By</div>
+                        <div class="request-detail-value">${request.reviewedBy || 'N/A'}</div>
+                    </div>
+                </div>
+            `;
+        }
+        modalActions.innerHTML = actionsHtml;
+        modal.classList.add('show');
+        return;
+    }
+
     modalTitle.textContent = `Request from ${request.employeeName}`;
-    
+
     // Handle new date requests differently
     const isNewDateRequest = request.type === "new_date";
     
@@ -508,35 +824,31 @@ async function openRequestDetail(request) {
         }
     }
     
-    // Build Shift Details section - always show CURRENT date info
+    // Build Shift Details section - always show CURRENT date info (omit Employee; title already has name)
     let content = `
         <div class="request-detail-section">
             <h3>Shift Details</h3>
             <div class="request-detail-row">
                 <div>
-                    <div class="request-detail-label">Employee</div>
-                    <div class="request-detail-value">${request.employeeName || 'Unknown'}</div>
-                </div>
-                <div>
                     <div class="request-detail-label">Date</div>
                     <div class="request-detail-value">${formatDate(shiftDetailsDate)}</div>
                 </div>
-            </div>
-            <div class="request-detail-row">
                 <div>
                     <div class="request-detail-label">Payroll Period</div>
                     <div class="request-detail-value">${payrollPeriod}</div>
                 </div>
+            </div>
+            <div class="request-detail-row">
                 <div>
                     <div class="request-detail-label">Branch</div>
                     <div class="request-detail-value">${branch}</div>
                 </div>
-            </div>
-            <div class="request-detail-row">
                 <div>
                     <div class="request-detail-label">Shift</div>
                     <div class="request-detail-value">${shift}</div>
                 </div>
+            </div>
+            <div class="request-detail-row">
                 <div>
                     <div class="request-detail-label">Status</div>
                     <div class="request-detail-value">${statusText}</div>
@@ -576,21 +888,6 @@ async function openRequestDetail(request) {
             </div>
         `;
         
-        if (request.requestedData?.branch) {
-            requestDetailsContent += `
-                <div class="request-detail-row">
-                    <div>
-                        <div class="request-detail-label">Branch</div>
-                        <div class="request-detail-value">${request.requestedData.branch}</div>
-                    </div>
-                    <div>
-                        <div class="request-detail-label">Shift</div>
-                        <div class="request-detail-value">${request.requestedData.shift || '--'}</div>
-                    </div>
-                </div>
-            `;
-        }
-        
         if (request.requestOT) {
             requestDetailsContent += `
                 <div class="request-detail-row">
@@ -608,12 +905,11 @@ async function openRequestDetail(request) {
             const currentTimeOut = formatTime(request.currentData?.timeOut || '--');
             const requestedTimeOut = formatTime(request.requestedData?.timeOut || '--');
             
-            // Normalize times for comparison (remove seconds) to avoid false positives
-            // when times are the same but one has seconds and the other doesn't
-            const normalizedCurrentTimeIn = normalizeTimeForComparison(currentTimeIn);
-            const normalizedRequestedTimeIn = normalizeTimeForComparison(requestedTimeIn);
-            const normalizedCurrentTimeOut = normalizeTimeForComparison(currentTimeOut);
-            const normalizedRequestedTimeOut = normalizeTimeForComparison(requestedTimeOut);
+            // Use comparable strings so seconds-only or 24h vs 12h format don't count as change
+            const comparableCurrentTimeIn = toComparableTimeString(request.currentData?.timeIn);
+            const comparableRequestedTimeIn = toComparableTimeString(request.requestedData?.timeIn);
+            const comparableCurrentTimeOut = toComparableTimeString(request.currentData?.timeOut);
+            const comparableRequestedTimeOut = toComparableTimeString(request.requestedData?.timeOut);
             
             let hasChanges = false;
             
@@ -634,8 +930,8 @@ async function openRequestDetail(request) {
                 `;
             }
             
-            // Time In change (only show if times actually differ after normalization)
-            if (normalizedCurrentTimeIn !== normalizedRequestedTimeIn && normalizedCurrentTimeIn !== '' && normalizedRequestedTimeIn !== '') {
+            // Time In change (only show if times actually differ after canonical comparison)
+            if (comparableCurrentTimeIn !== comparableRequestedTimeIn && comparableCurrentTimeIn !== '' && comparableRequestedTimeIn !== '') {
                 hasChanges = true;
                 requestDetailsContent += `
                     <div class="request-detail-row">
@@ -651,8 +947,8 @@ async function openRequestDetail(request) {
                 `;
             }
             
-            // Time Out change (only show if times actually differ after normalization)
-            if (normalizedCurrentTimeOut !== normalizedRequestedTimeOut && normalizedCurrentTimeOut !== '' && normalizedRequestedTimeOut !== '') {
+            // Time Out change (only show if times actually differ after canonical comparison)
+            if (comparableCurrentTimeOut !== comparableRequestedTimeOut && comparableCurrentTimeOut !== '' && comparableRequestedTimeOut !== '') {
                 hasChanges = true;
                 requestDetailsContent += `
                     <div class="request-detail-row">
@@ -723,6 +1019,14 @@ async function openRequestDetail(request) {
     requestDetailsContent += '</div>';
     content += requestDetailsContent;
     
+    // Amount preview (payroll requests only) - fill async
+    content += `
+        <div class="request-detail-section amount-preview-section">
+            <h3>Amount preview</h3>
+            <div id="amountPreviewContent" class="amount-preview-content">Calculating…</div>
+        </div>
+    `;
+    
     if (request.reason) {
         content += `
             <div class="request-detail-section">
@@ -734,13 +1038,38 @@ async function openRequestDetail(request) {
     
     modalContent.innerHTML = content;
     
+    // Load amount preview async
+    (async () => {
+        const previewEl = document.getElementById('amountPreviewContent');
+        if (!previewEl) return;
+        const result = await getPayPreviewForRequest(request);
+        if (!previewEl.parentElement) return;
+        if (result.error) {
+            previewEl.textContent = result.error;
+            previewEl.classList.add('amount-preview-unavailable');
+            return;
+        }
+        previewEl.classList.remove('amount-preview-unavailable');
+        const fmt = (n) => (n ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        if (request.type === 'new_date') {
+            previewEl.innerHTML = `After approval: <strong class="amount-preview-value">₱${fmt(result.requestedPay)}</strong>`;
+        } else {
+            const diff = result.diff ?? 0;
+            const diffStr = diff >= 0 ? `+₱${fmt(diff)}` : `-₱${fmt(-diff)}`;
+            const diffClass = diff >= 0 ? 'amount-preview-diff-positive' : 'amount-preview-diff-negative';
+            previewEl.innerHTML = `Current: <strong>₱${fmt(result.currentPay)}</strong> → After: <strong class="amount-preview-value">₱${fmt(result.requestedPay)}</strong> <span class="amount-preview-diff ${diffClass}">(${diffStr})</span>`;
+        }
+    })();
+    
     // Build action buttons
     let actionsHtml = '';
     if (request.status === 'pending') {
         actionsHtml = `
-            <button class="modal-btn modal-btn-edit" onclick="openEditModal('${request.id}')">Edit & Approve</button>
-            <button class="modal-btn modal-btn-approve" onclick="approveRequest('${request.id}')">Approve</button>
-            <button class="modal-btn modal-btn-reject" onclick="rejectRequest('${request.id}')">Reject</button>
+            <button class="modal-btn modal-btn-approve modal-btn-primary" onclick="approveRequest('${request.id}')">Approve</button>
+            <div class="modal-actions-row">
+                <button class="modal-btn modal-btn-edit" onclick="openEditModal('${request.id}')">Edit & Approve</button>
+                <button class="modal-btn modal-btn-reject" onclick="rejectRequest('${request.id}')">Reject</button>
+            </div>
         `;
     } else {
         actionsHtml = `
@@ -756,8 +1085,8 @@ async function openRequestDetail(request) {
             </div>
         `;
     }
-    
-    modalActions.innerHTML = actionsHtml + '<button class="modal-btn modal-btn-cancel" onclick="closeModal()">Close</button>';
+
+    modalActions.innerHTML = actionsHtml;
     
     modal.classList.add('show');
 }
@@ -785,24 +1114,74 @@ async function _approveRequest(requestId) {
             );
             return false;
         }
-        
-        // Update request status
-        const requestRef = doc(db, "payroll_requests", requestId);
+
+        const sourceCollection = request._sourceCollection || 'payroll_requests';
+        const requestRef = doc(db, sourceCollection, requestId);
+
+        if (sourceCollection === 'substitution_requests') {
+            const shiftRef = doc(db, 'schedules', request.weekKey, 'shifts', request.scheduleShiftId);
+            const shiftSnap = await getDoc(shiftRef);
+            if (!shiftSnap.exists()) {
+                await showConfirmModal(
+                    'Error',
+                    'Shift no longer exists. It may have been removed.',
+                    'OK',
+                    'modal-btn-approve',
+                    null,
+                    true
+                );
+                return false;
+            }
+            const shiftData = shiftSnap.data();
+            if (shiftData.employeeId !== request.employeeId) {
+                await showConfirmModal(
+                    'Error',
+                    'Shift has already been reassigned. Cannot approve.',
+                    'OK',
+                    'modal-btn-approve',
+                    null,
+                    true
+                );
+                return false;
+            }
+            await updateDoc(shiftRef, { employeeId: request.requestedRelieverId });
+            await updateDoc(requestRef, {
+                status: 'approved',
+                reviewedAt: Timestamp.now(),
+                reviewedBy: currentAdminId
+            });
+            selectedRequests.delete(requestId);
+            const modal = document.getElementById('requestDetailModal');
+            if (modal && modal.classList.contains('show')) {
+                closeModal();
+            }
+            await showConfirmModal(
+                'Success',
+                'Reliever request approved. The shift has been reassigned.',
+                'OK',
+                'modal-btn-approve',
+                null,
+                true
+            );
+            await fetchRequests();
+            return true;
+        }
+
         await updateDoc(requestRef, {
             status: 'approved',
             reviewedAt: Timestamp.now(),
             reviewedBy: currentAdminId
         });
-        
+
         // Get current and requested dates
         const currentDate = request.currentData?.date || request.date;
         const requestedDate = request.requestedData?.date || request.date;
         const dateChanged = currentDate !== requestedDate;
-        
+
         // Get requested branch and shift
         const requestedBranch = request.requestedData?.branch || request.currentData?.branch || null;
         const requestedShift = request.requestedData?.shift || request.currentData?.shift || null;
-        
+
         // Handle new date requests (type === "new_date")
         if (request.type === "new_date") {
             // Create new date entry
@@ -940,7 +1319,9 @@ async function approveRequest(requestId) {
 // Internal function to reject request (without confirmation modal)
 async function _rejectRequest(requestId) {
     try {
-        const requestRef = doc(db, "payroll_requests", requestId);
+        const request = allRequests.find(r => r.id === requestId);
+        const sourceCollection = request?._sourceCollection || 'payroll_requests';
+        const requestRef = doc(db, sourceCollection, requestId);
         await updateDoc(requestRef, {
             status: 'rejected',
             reviewedAt: Timestamp.now(),
@@ -1008,7 +1389,10 @@ async function openEditModal(requestId) {
         );
         return;
     }
-    
+    if (request._sourceCollection === 'substitution_requests' || request.type === 'substitution') {
+        return;
+    }
+
     const modal = document.getElementById('editRequestModal');
     if (!modal) return;
     
@@ -1520,36 +1904,49 @@ window.bulkRejectRequests = bulkRejectRequests;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
-    // Set up filter (desktop)
     const statusFilter = document.getElementById('statusFilter');
-    if (statusFilter) {
-        // Set default filter to pending
-        statusFilter.value = currentFilter;
-        statusFilter.addEventListener('change', (e) => {
-            currentFilter = e.target.value;
-            // Clear selection when filter changes
+    const statusFilterMobile = document.getElementById('statusFilterMobile');
+    const requestTypeFilter = document.getElementById('requestTypeFilter');
+    const requestTypeFilterMobile = document.getElementById('requestTypeFilterMobile');
+
+    // Set up request type filter (desktop)
+    if (requestTypeFilter) {
+        requestTypeFilter.value = currentRequestTypeFilter;
+        requestTypeFilter.addEventListener('change', (e) => {
+            currentRequestTypeFilter = e.target.value;
             selectedRequests.clear();
-            // Sync mobile filter
-            const mobileFilter = document.getElementById('statusFilterMobile');
-            if (mobileFilter) {
-                mobileFilter.value = currentFilter;
-            }
+            if (requestTypeFilterMobile) requestTypeFilterMobile.value = currentRequestTypeFilter;
             renderRequests();
         });
     }
-    
-    // Set up filter (mobile)
-    const statusFilterMobile = document.getElementById('statusFilterMobile');
+    // Set up request type filter (mobile)
+    if (requestTypeFilterMobile) {
+        requestTypeFilterMobile.value = currentRequestTypeFilter;
+        requestTypeFilterMobile.addEventListener('change', (e) => {
+            currentRequestTypeFilter = e.target.value;
+            selectedRequests.clear();
+            if (requestTypeFilter) requestTypeFilter.value = currentRequestTypeFilter;
+            renderRequests();
+        });
+    }
+
+    // Set up status filter (desktop)
+    if (statusFilter) {
+        statusFilter.value = currentFilter;
+        statusFilter.addEventListener('change', (e) => {
+            currentFilter = e.target.value;
+            selectedRequests.clear();
+            if (statusFilterMobile) statusFilterMobile.value = currentFilter;
+            renderRequests();
+        });
+    }
+    // Set up status filter (mobile)
     if (statusFilterMobile) {
         statusFilterMobile.value = currentFilter;
         statusFilterMobile.addEventListener('change', (e) => {
             currentFilter = e.target.value;
-            // Clear selection when filter changes
             selectedRequests.clear();
-            // Sync desktop filter
-            if (statusFilter) {
-                statusFilter.value = currentFilter;
-            }
+            if (statusFilter) statusFilter.value = currentFilter;
             renderRequests();
         });
     }

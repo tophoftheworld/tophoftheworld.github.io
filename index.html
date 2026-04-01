@@ -550,8 +550,8 @@
             
             // Add cache-busting parameter to force reload
             let iframeUrl = config.url + '?v=' + Date.now();
-            // Pass logged-in user to 2025 Wrapped so it can show their stats
-            if (appName === '2025 Wrapped' && typeof getCurrentUserData === 'function') {
+            // Pass logged-in user to 2025 Wrapped and Schedule for personalised views
+            if ((appName === '2025 Wrapped' || appName === 'Schedule') && typeof getCurrentUserData === 'function') {
                 const userData = getCurrentUserData();
                 if (userData && userData.employeeCode) {
                     iframeUrl += '&employeeId=' + encodeURIComponent(userData.employeeCode);

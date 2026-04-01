@@ -163,10 +163,19 @@ async function syncInventoryItemsFromFirebaseInBackground() {
       });
     });
     
-    // Check if data has changed
-    const currentItemsJson = JSON.stringify(inventoryItems.map(item => ({ id: item.id, name: item.name, category: item.category })));
-    const freshItemsJson = JSON.stringify(freshItems.map(item => ({ id: item.id, name: item.name, category: item.category })));
-    
+    // Always update inventoryItems from Firebase to capture any field changes
+    // (restockAmount, description, unit, enabledBranches, etc.) not just structural ones
+    const currentItemsJson = JSON.stringify(inventoryItems.map(item => ({
+      id: item.id, name: item.name, category: item.category,
+      restockAmount: item.restockAmount, description: item.description,
+      subtitle: item.subtitle, unit: item.unit, order: item.order
+    })));
+    const freshItemsJson = JSON.stringify(freshItems.map(item => ({
+      id: item.id, name: item.name, category: item.category,
+      restockAmount: item.restockAmount, description: item.description,
+      subtitle: item.subtitle, unit: item.unit, order: item.order
+    })));
+
     if (currentItemsJson !== freshItemsJson) {
       console.log('🔄 Background sync: Inventory items have changed, updating');
       inventoryItems = freshItems;
@@ -3237,6 +3246,32 @@ window.downloadRunningLowReport = async function downloadRunningLowReport() {
             downloadBtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/><path d="M12 6v6l4 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
         }
 
+        // Fetch fresh inventory items from Firebase before generating the report
+        // to avoid using a stale localStorage cache (race condition on page load)
+        try {
+            console.log('Fetching fresh inventory items from Firebase...');
+            const snapshot = await getDocs(collection(db, 'inventory', '_config', 'items'));
+            const freshItems = [];
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                const enabled = data.enabledBranches === undefined
+                    ? true
+                    : data.enabledBranches.includes(currentBranch);
+                if (!enabled) return;
+                freshItems.push({
+                    id: doc.id,
+                    ...data,
+                    order: data.order || data.displayOrder || 0,
+                    restockAmount: data.restockAmount || data.defaultRestockLevel || 0
+                });
+            });
+            inventoryItems = freshItems;
+            cacheInventoryItems(inventoryItems);
+            console.log('Fresh inventory items loaded:', inventoryItems.length);
+        } catch (fetchError) {
+            console.warn('Could not fetch fresh inventory items, using cached data:', fetchError);
+        }
+
         // Get running low items
         console.log('Getting running low items data...');
         const runningLowItems = getRunningLowItemsData();
@@ -3290,7 +3325,7 @@ window.downloadRunningLowReport = async function downloadRunningLowReport() {
                             Out of Stock
                         </div>
                         ${outOfStockItems.map(item => {
-                            const itemName = item.name + (item.subtitle ? ` (${item.subtitle})` : '');
+                            const itemName = item.name + (item.description ? ` (${item.description})` : '');
                             const quantity = formatNumberWithCommas(item.currentQty) + ' ' + item.unit;
                             return `
                             <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
@@ -3308,7 +3343,7 @@ window.downloadRunningLowReport = async function downloadRunningLowReport() {
                             Running Low
                         </div>
                         ${runningLowOnlyItems.map(item => {
-                            const itemName = item.name + (item.subtitle ? ` (${item.subtitle})` : '');
+                            const itemName = item.name + (item.description ? ` (${item.description})` : '');
                             const quantity = formatNumberWithCommas(item.currentQty) + ' ' + item.unit;
                             return `
                             <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">

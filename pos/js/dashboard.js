@@ -5,14 +5,50 @@ let selectedDate = new Date();
 let allEventsData = {};
 let currentChartType = 'daily';
 let salesChart = null;
-/** 'daily' | 'week' | 'month' */
-let dataScope = 'daily';
+/** 'day' | 'range' */
+let dataScope = 'day';
 /** For package service, order.total = cups (not pesos). Used by payment/orders/modal/chart. */
 let currentEventIsPackage = false;
-/** Cached range data for chart when scope is week/month */
+/** Cached range data for chart when scope is range */
 let lastRangeChartData = null;
+/** Peak Hours chart: show only 9 AM through 12 MN (operating hours). */
+const PEAK_HOURS_START = 9;  // 9 AM
+const PEAK_HOURS_END = 0;    // 12 MN (hour 0)
 let lastRangeStart = '';
 let lastRangeEnd = '';
+/** Invalidates in-flight loads when the user changes scope/dates/event quickly (prevents stale UI). */
+let dashboardLoadGeneration = 0;
+
+const MANUAL_SALES_STORAGE_KEY = 'posDashboardManualSales';
+
+function getManualSalesMap() {
+    try {
+        return JSON.parse(localStorage.getItem(MANUAL_SALES_STORAGE_KEY) || '{}');
+    } catch {
+        return {};
+    }
+}
+
+/** Optional per-day total override (pesos or cups). `undefined` = use POS sum. */
+function getSalesOverride(eventKey, dateStr) {
+    const map = getManualSalesMap();
+    const n = map[eventKey]?.[dateStr];
+    if (typeof n !== 'number' || Number.isNaN(n) || n < 0) return undefined;
+    return n;
+}
+
+function setSalesOverride(eventKey, dateStr, rawValue) {
+    const map = getManualSalesMap();
+    if (!map[eventKey]) map[eventKey] = {};
+    const num = typeof rawValue === 'string' ? parseFloat(rawValue.trim()) : Number(rawValue);
+    if (rawValue === '' || rawValue == null || Number.isNaN(num) || num < 0) {
+        delete map[eventKey][dateStr];
+        if (Object.keys(map[eventKey]).length === 0) delete map[eventKey];
+    } else {
+        map[eventKey][dateStr] = num;
+    }
+    localStorage.setItem(MANUAL_SALES_STORAGE_KEY, JSON.stringify(map));
+}
 
 // Initialize dashboard
 document.addEventListener('DOMContentLoaded', async () => {
@@ -24,9 +60,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 function setupEventListeners() {
     const eventSelector = document.getElementById('eventSelector');
     const dateSelector = document.getElementById('dateSelector');
+    const rangeStartDate = document.getElementById('rangeStartDate');
+    const rangeEndDate = document.getElementById('rangeEndDate');
     const refreshBtn = document.getElementById('refreshBtn');
 
     if (dateSelector) dateSelector.value = getLocalDateString(selectedDate);
+    setDefaultRangeDates();
+    toggleRangeControls();
 
     if (eventSelector) eventSelector.addEventListener('change', async (e) => {
         currentEvent = e.target.value;
@@ -36,6 +76,14 @@ function setupEventListeners() {
     if (dateSelector) dateSelector.addEventListener('change', async (e) => {
         selectedDate = new Date(e.target.value + 'T00:00:00');
         await loadDashboardData();
+    });
+
+    if (rangeStartDate) rangeStartDate.addEventListener('change', async () => {
+        if (dataScope === 'range') await loadDashboardData();
+    });
+
+    if (rangeEndDate) rangeEndDate.addEventListener('change', async () => {
+        if (dataScope === 'range') await loadDashboardData();
     });
 
     if (refreshBtn) refreshBtn.addEventListener('click', async () => {
@@ -50,8 +98,10 @@ function setupEventListeners() {
     if (manageEventsBtn) manageEventsBtn.addEventListener('click', showEventManagementModal);
 
     setupSalesReportDownloadListener();
+    setupHistoryExportListener();
+    setupSalesHistoryEditListener();
 
-    // Data scope toggle: Daily vs Week/Month
+    // Data scope toggle: Day vs Range
     document.querySelectorAll('.scope-toggle-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const scope = e.target.dataset.scope;
@@ -60,6 +110,7 @@ function setupEventListeners() {
             document.querySelectorAll('.scope-toggle-btn').forEach(b => {
                 b.classList.toggle('active', b.dataset.scope === dataScope);
             });
+            toggleRangeControls();
             loadDashboardData();
         });
     });
@@ -75,7 +126,7 @@ function setupEventListeners() {
 
             currentChartType = chartType;
 
-            if (dataScope === 'week' || dataScope === 'month') {
+            if (dataScope === 'range') {
                 if (chartType === 'daily' && lastRangeChartData) {
                     updateSalesChartFromRange(lastRangeChartData, lastRangeStart, lastRangeEnd);
                 } else {
@@ -161,14 +212,18 @@ async function loadAvailableEvents() {
 }
 
 async function loadDashboardData() {
+    const gen = ++dashboardLoadGeneration;
     try {
         showLoadingState();
 
-        if (dataScope === 'daily') {
+        if (dataScope === 'day') {
+            updateDailySalesHistoryTitle('day');
             setScopeSectionTitles('day');
             setChartSectionForScope('daily');
             const dayData = await loadSelectedDayData(currentEvent);
+            if (gen !== dashboardLoadGeneration) return;
             currentEventIsPackage = (await getCurrentEventServiceType()) === 'package';
+            if (gen !== dashboardLoadGeneration) return;
             updateStatsFromData(dayData, 'day');
             updatePaymentBreakdown(dayData);
             updateRecentOrders(dayData);
@@ -184,11 +239,12 @@ async function loadDashboardData() {
             // History = selected day only. Use data we already have; no extra fetch.
             renderSingleDayHistory(dayData);
         } else {
-            const isMonth = dataScope === 'month';
-            setScopeSectionTitles(isMonth ? 'month' : 'week');
-            setChartSectionForScope(isMonth ? 'month' : 'week');
-            const { start: startStr, end: endStr } = isMonth ? getMonthRange(selectedDate) : getWeekRange(selectedDate);
+            updateDailySalesHistoryTitle('range');
+            setScopeSectionTitles('range');
+            setChartSectionForScope('range');
+            const { start: startStr, end: endStr } = getSelectedRange();
             const rangeData = await loadRangeData(currentEvent, startStr, endStr);
+            if (gen !== dashboardLoadGeneration) return;
             updateStatsFromData(rangeData, 'range');
             updatePaymentBreakdown(rangeData);
             updateRecentOrders(rangeData);
@@ -204,8 +260,8 @@ async function loadDashboardData() {
                 updateSalesChartFromRange(lastRangeChartData, startStr, endStr);
             }, 100);
 
-            // Week/Month: load the full history table for the range (or keep 60-day for context)
-            setTimeout(() => loadAllEventsData(), 0);
+            await renderRangeSalesHistory(startStr, endStr, rangeData);
+            if (gen !== dashboardLoadGeneration) return;
         }
 
     } catch (error) {
@@ -225,7 +281,7 @@ async function loadSelectedDayData(eventName) {
             orders: [],
             sales: 0,
             cups: 0,
-            paymentMethods: { cash: 0, gcash: 0, maya: 0 },
+            paymentMethods: { cash: 0, gcash: 0, card: 0 },
             topItems: {}
         };
 
@@ -281,7 +337,7 @@ async function loadSelectedDayData(eventName) {
         return dayData;
     } catch (error) {
         console.error(`Error loading selected day data:`, error);
-        return { orders: [], sales: 0, paymentMethods: { cash: 0, gcash: 0, maya: 0 }, topItems: {} };
+        return { orders: [], sales: 0, paymentMethods: { cash: 0, gcash: 0, card: 0 }, topItems: {} };
     }
 }
 
@@ -291,65 +347,97 @@ async function loadRangeData(eventName, startStr, endStr) {
             orders: [],
             sales: 0,
             cups: 0,
-            paymentMethods: { cash: 0, gcash: 0, maya: 0 },
+            paymentMethods: { cash: 0, gcash: 0, card: 0 },
             topItems: {},
-            dailySales: {}
+            dailySales: {},
+            orderDailySales: {},
+            liveOrderDays: new Set()
         };
 
         const start = new Date(startStr + 'T00:00:00');
         const end = new Date(endStr + 'T00:00:00');
+        const dateStrs = [];
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+            dateStrs.push(getLocalDateString(d));
+        }
+
+        const liveOrderDays = new Set();
+
+        const snapshotsByDate = await Promise.all(
+            dateStrs.map(async (dateStr) => {
+                try {
+                    const dayRef = collection(db, `pos-orders/${eventName}/${dateStr}`);
+                    const daySnapshot = await getDocs(dayRef);
+                    return { dateStr, daySnapshot };
+                } catch (dayError) {
+                    return { dateStr, daySnapshot: null };
+                }
+            })
+        );
+
+        for (const { dateStr, daySnapshot } of snapshotsByDate) {
+            let dayTotal = 0;
+            if (!daySnapshot) {
+                rangeData.dailySales[dateStr] = 0;
+                continue;
+            }
+
+            daySnapshot.forEach(orderDoc => {
+                const orderData = orderDoc.data();
+                if (orderData.status === 'deleted') return;
+
+                liveOrderDays.add(dateStr);
+                const order = { ...orderData, firebaseId: orderDoc.id, date: dateStr };
+                rangeData.orders.push(order);
+                const total = orderData.total || 0;
+                dayTotal += total;
+
+                const method = (orderData.paymentMethod || 'cash').toLowerCase();
+                if (rangeData.paymentMethods[method] !== undefined) {
+                    rangeData.paymentMethods[method] += total;
+                }
+
+                if (orderData.items) {
+                    orderData.items.forEach(item => {
+                        const itemName = item.name || 'Unknown Item';
+                        if (!rangeData.topItems[itemName]) {
+                            rangeData.topItems[itemName] = { count: 0, total: 0 };
+                        }
+                        rangeData.topItems[itemName].count += item.quantity || 1;
+                        rangeData.topItems[itemName].total += (item.price || 0) * (item.quantity || 1);
+                        const itemNameLower = itemName.toLowerCase();
+                        if (!itemNameLower.includes('cookie') && !itemNameLower.includes('mochi') &&
+                            !itemNameLower.includes('cake') && !itemNameLower.includes('pastry') &&
+                            !itemNameLower.includes('bread') && !itemNameLower.includes('sandwich')) {
+                            rangeData.cups += item.quantity || 1;
+                        }
+                    });
+                }
+            });
+
+            rangeData.dailySales[dateStr] = dayTotal;
+        }
+
+        rangeData.orderDailySales = { ...rangeData.dailySales };
+        rangeData.liveOrderDays = liveOrderDays;
 
         for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
             const dateStr = getLocalDateString(d);
-            try {
-                const dayRef = collection(db, `pos-orders/${eventName}/${dateStr}`);
-                const daySnapshot = await getDocs(dayRef);
-                let dayTotal = 0;
-
-                daySnapshot.forEach(orderDoc => {
-                    const orderData = orderDoc.data();
-                    if (orderData.status === 'deleted') return;
-
-                    const order = { ...orderData, firebaseId: orderDoc.id, date: dateStr };
-                    rangeData.orders.push(order);
-                    const total = orderData.total || 0;
-                    rangeData.sales += total;
-                    dayTotal += total;
-
-                    const method = (orderData.paymentMethod || 'cash').toLowerCase();
-                    if (rangeData.paymentMethods[method] !== undefined) {
-                        rangeData.paymentMethods[method] += total;
-                    }
-
-                    if (orderData.items) {
-                        orderData.items.forEach(item => {
-                            const itemName = item.name || 'Unknown Item';
-                            if (!rangeData.topItems[itemName]) {
-                                rangeData.topItems[itemName] = { count: 0, total: 0 };
-                            }
-                            rangeData.topItems[itemName].count += item.quantity || 1;
-                            rangeData.topItems[itemName].total += (item.price || 0) * (item.quantity || 1);
-                            const itemNameLower = itemName.toLowerCase();
-                            if (!itemNameLower.includes('cookie') && !itemNameLower.includes('mochi') &&
-                                !itemNameLower.includes('cake') && !itemNameLower.includes('pastry') &&
-                                !itemNameLower.includes('bread') && !itemNameLower.includes('sandwich')) {
-                                rangeData.cups += item.quantity || 1;
-                            }
-                        });
-                    }
-                });
-
-                rangeData.dailySales[dateStr] = dayTotal;
-            } catch (dayError) {
-                rangeData.dailySales[getLocalDateString(d)] = 0;
-            }
+            const orderAmt = rangeData.orderDailySales[dateStr] ?? 0;
+            const override = getSalesOverride(eventName, dateStr);
+            rangeData.dailySales[dateStr] = override !== undefined ? override : orderAmt;
         }
+
+        rangeData.sales = Object.values(rangeData.dailySales).reduce((a, b) => a + (Number(b) || 0), 0);
 
         rangeData.orders.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
         return rangeData;
     } catch (error) {
         console.error('Error loading range data:', error);
-        return { orders: [], sales: 0, cups: 0, paymentMethods: { cash: 0, gcash: 0, maya: 0 }, topItems: {}, dailySales: {} };
+        return {
+            orders: [], sales: 0, cups: 0, paymentMethods: { cash: 0, gcash: 0, card: 0 },
+            topItems: {}, dailySales: {}, orderDailySales: {}, liveOrderDays: new Set()
+        };
     }
 }
 
@@ -402,7 +490,7 @@ async function loadEventData(eventName) {
             orders: [],
             totalSales: 0,
             dailySales: {},
-            paymentMethods: { cash: 0, gcash: 0, maya: 0 },
+            paymentMethods: { cash: 0, gcash: 0, card: 0 },
             topItems: {}
         };
 
@@ -476,7 +564,7 @@ async function loadEventData(eventName) {
             orders: [],
             totalSales: 0,
             dailySales: {},
-            paymentMethods: { cash: 0, gcash: 0, maya: 0 },
+            paymentMethods: { cash: 0, gcash: 0, card: 0 },
             topItems: {}
         };
     }
@@ -498,11 +586,24 @@ async function updateStatsFromData(data, scope) {
     const cupsEl = document.getElementById('todayCups');
 
     if (isPackageMode) {
-        const totalCups = data.orders.reduce((total, order) => total + (order.total || 0), 0);
+        let totalCups;
+        if (!isDay && data.dailySales) {
+            totalCups = Object.values(data.dailySales).reduce((a, b) => a + (Number(b) || 0), 0);
+        } else {
+            const dateStrDay = getLocalDateString(selectedDate);
+            const o = getSalesOverride(currentEvent, dateStrDay);
+            totalCups = data.orders.reduce((total, order) => total + (order.total || 0), 0);
+            if (o !== undefined) totalCups = o;
+        }
         if (salesEl) salesEl.textContent = `${totalCups} cups`;
         if (cupsEl) cupsEl.textContent = '0';
     } else {
-        if (salesEl) salesEl.textContent = formatCurrency(data.sales);
+        let salesAmt = data.sales;
+        if (isDay) {
+            const o = getSalesOverride(currentEvent, getLocalDateString(selectedDate));
+            if (o !== undefined) salesAmt = o;
+        }
+        if (salesEl) salesEl.textContent = formatCurrency(salesAmt);
         if (cupsEl) cupsEl.textContent = (data.cups || 0).toString();
     }
     if (ordersEl) ordersEl.textContent = data.orders.length.toString();
@@ -524,10 +625,6 @@ function updateEODSummaryDisplay(dayData) {
         eodSection.style.display = 'block';
         eodContent.innerHTML = `
             <div class="eod-dashboard-grid">
-                <div class="eod-dashboard-item">
-                    <div class="eod-dashboard-label">Starting Cash</div>
-                    <div class="eod-dashboard-value">₱${formatCurrency(eodSummary.startingCash).replace('₱', '')}</div>
-                </div>
                 <div class="eod-dashboard-item">
                     <div class="eod-dashboard-label">Expenses</div>
                     <div class="eod-dashboard-value negative">₱${formatCurrency(eodSummary.expenses).replace('₱', '')}</div>
@@ -575,8 +672,8 @@ function updatePaymentBreakdown(dayData) {
             <span class="payment-amount">${fmt(dayData.paymentMethods.gcash)}</span>
         </div>
         <div class="payment-item">
-            <span class="payment-method">Maya</span>
-            <span class="payment-amount">${fmt(dayData.paymentMethods.maya)}</span>
+            <span class="payment-method">Card</span>
+            <span class="payment-amount">${fmt(dayData.paymentMethods.card)}</span>
         </div>
     `;
 }
@@ -717,11 +814,9 @@ function updateSalesByItemReport(data) {
         return;
     }
 
-    const dateLabel = dataScope === 'daily'
+    const dateLabel = dataScope === 'day'
         ? getLocalDateString(selectedDate)
-        : dataScope === 'week'
-            ? `${getWeekRange(selectedDate).start} to ${getWeekRange(selectedDate).end}`
-            : `${getMonthRange(selectedDate).start} to ${getMonthRange(selectedDate).end}`;
+        : `${getSelectedRange().start} to ${getSelectedRange().end}`;
 
     const eventSelector = document.getElementById('eventSelector');
     const eventName = eventSelector ? eventSelector.options[eventSelector.selectedIndex]?.text || currentEvent : currentEvent;
@@ -864,15 +959,39 @@ async function updateHourlySalesChart() {
     simpleChart.style.display = 'none';
 
     try {
-        const hourlyData = await getHourlyData(currentEvent);
-        const labels = Array.from({ length: 24 }, (_, i) => {
-            const hour = i === 0 ? 12 : i > 12 ? i - 12 : i;
-            const ampm = i < 12 ? 'AM' : 'PM';
-            return `${hour}${ampm}`;
+        const previousDate = new Date(selectedDate);
+        previousDate.setDate(previousDate.getDate() - 1);
+        const [hourlyData, hourlyDataPrev] = await Promise.all([
+            getHourlyData(currentEvent, selectedDate),
+            getHourlyData(currentEvent, previousDate)
+        ]);
+        // 9 AM through 12 MN: hours 9,10,...,23,0 (16 slots)
+        const operatingHours = [...Array.from({ length: 24 - PEAK_HOURS_START }, (_, i) => PEAK_HOURS_START + i), PEAK_HOURS_END];
+        const labels = operatingHours.map((h) => {
+            const hour = h === 0 ? 12 : h > 12 ? h - 12 : h;
+            const ampm = h === 0 ? 'MN' : h < 12 ? 'AM' : 'PM';
+            return `${hour} ${ampm}`;
         });
+        const chartData = operatingHours.map((h) => hourlyData[h]);
+        const previousDayData = operatingHours.map((h) => hourlyDataPrev[h]);
+        const cumulative = chartData.reduce((acc, val, i) => {
+            acc.push((acc[i - 1] || 0) + val);
+            return acc;
+        }, []);
+        const previousDayCumulative = previousDayData.reduce((acc, val, i) => {
+            acc.push((acc[i - 1] || 0) + val);
+            return acc;
+        }, []);
 
         const chartLabel = currentEventIsPackage ? 'Hourly Cups' : 'Hourly Sales (₱)';
-        renderChart(canvas, labels, hourlyData, chartLabel, '#2b9348', currentEventIsPackage);
+        const prevDateStr = previousDate.toLocaleDateString('en', { month: 'short', day: 'numeric' });
+        const yesterdayLabel = currentEventIsPackage ? `Day before (${prevDateStr})` : `Day before (${prevDateStr})`;
+        renderChart(canvas, labels, chartData, chartLabel, '#2b9348', currentEventIsPackage, {
+            cumulative,
+            previousDayData,
+            previousDayCumulative,
+            previousDayLabel: yesterdayLabel
+        });
     } catch (error) {
         console.error('Error loading hourly data:', error);
         // Fallback to simple chart
@@ -882,7 +1001,7 @@ async function updateHourlySalesChart() {
     }
 }
 
-function renderChart(canvas, labels, data, label, color, isCups = false) {
+function renderChart(canvas, labels, data, label, color, isCups = false, extra = {}) {
     const ctx = canvas.getContext('2d');
 
     if (salesChart) {
@@ -890,31 +1009,67 @@ function renderChart(canvas, labels, data, label, color, isCups = false) {
     }
 
     const formatValue = (v) => isCups ? `${v} cups` : formatCurrency(v);
+    const cumulative = extra.cumulative || null;
+    const previousDayData = extra.previousDayData || null;
+    const previousDayCumulative = extra.previousDayCumulative || null;
+    const previousDayLabel = extra.previousDayLabel || 'Yesterday';
+
+    const dataset = {
+        label: label,
+        data: data,
+        borderColor: color,
+        backgroundColor: color.replace(')', ', 0.1)').replace('rgb', 'rgba'),
+        tension: 0.3,
+        fill: true,
+        pointRadius: 4,
+        pointBackgroundColor: color
+    };
+    if (cumulative) dataset.cumulative = cumulative;
+
+    const datasets = [dataset];
+    if (previousDayData && previousDayData.length === labels.length) {
+        const prevColor = 'rgba(100, 100, 100, 0.8)';
+        const prevDataset = {
+            label: previousDayLabel,
+            data: previousDayData,
+            borderColor: prevColor,
+            backgroundColor: 'rgba(100, 100, 100, 0.05)',
+            borderWidth: 1.5,
+            borderDash: [5, 5],
+            tension: 0.3,
+            fill: false,
+            pointRadius: 2,
+            pointBackgroundColor: prevColor,
+            order: 0  // lower order = drawn last = on top
+        };
+        if (previousDayCumulative && previousDayCumulative.length === previousDayData.length) {
+            prevDataset.cumulative = previousDayCumulative;
+            prevDataset.cumulativeLabel = isCups ? 'Cumulative cups (day before)' : 'Cumulative sales (₱) (day before)';
+        }
+        dataset.order = 1;  // Chart.js: higher order = drawn first (behind)
+        datasets.push(prevDataset);
+    }
 
     salesChart = new Chart(ctx, {
         type: 'line',
         data: {
             labels: labels,
-            datasets: [{
-                label: label,
-                data: data,
-                borderColor: color,
-                backgroundColor: color.replace(')', ', 0.1)').replace('rgb', 'rgba'),
-                tension: 0.3,
-                fill: true,
-                pointRadius: 4,
-                pointBackgroundColor: color
-            }]
+            datasets: datasets
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-                legend: { display: false },
+                legend: { display: datasets.length > 1 },
                 tooltip: {
                     callbacks: {
                         label: function (context) {
-                            return `${context.dataset.label}: ${formatValue(context.raw)}`;
+                            const lines = [`${context.dataset.label}: ${formatValue(context.raw)}`];
+                            if (context.dataset.cumulative != null && context.dataset.cumulative[context.dataIndex] != null) {
+                                const cumLabel = context.dataset.cumulativeLabel || (isCups ? 'Cumulative cups' : 'Cumulative sales (₱)');
+                                lines.push(`${cumLabel}: ${formatValue(context.dataset.cumulative[context.dataIndex])}`);
+                            }
+                            return lines;
                         }
                     }
                 }
@@ -931,10 +1086,11 @@ function renderChart(canvas, labels, data, label, color, isCups = false) {
     });
 }
 
-async function getHourlyData(eventName) {
+async function getHourlyData(eventName, date) {
     try {
-        const selectedDateStr = getLocalDateString(selectedDate);
-        const dayRef = collection(db, `pos-orders/${eventName}/${selectedDateStr}`);
+        const useDate = date || selectedDate;
+        const dateStr = getLocalDateString(useDate);
+        const dayRef = collection(db, `pos-orders/${eventName}/${dateStr}`);
         const daySnapshot = await getDocs(dayRef);
 
         // Initialize hourly data (24 hours)
@@ -961,145 +1117,122 @@ async function getHourlyData(eventName) {
     }
 }
 
+function salesHistoryEditIconSvg() {
+    return `<svg class="sales-history-edit-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+}
+
+function formatHistorySalesText(amount, isPackage) {
+    const n = Number(amount) || 0;
+    return isPackage ? `${n} cups` : formatCurrency(n);
+}
+
 /** Render Daily Sales History for the selected day only (no extra fetch). */
 function renderSingleDayHistory(dayData) {
     const eventsGrid = document.getElementById('eventsGrid');
     if (!eventsGrid) return;
 
     const dateStr = getLocalDateString(selectedDate);
-    const dateObj = new Date(dateStr);
-    const dayOfWeek = dateObj.toLocaleDateString('en', { weekday: 'short' });
-    const dateDisplay = dateObj.toLocaleDateString('en', { month: 'short', day: 'numeric' });
+    const dateObj = new Date(dateStr + 'T12:00:00');
+    const dayOfWeek = dateObj.toLocaleDateString('en', { weekday: 'long' });
+    const dateDisplay = dateObj.toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' });
 
     getCurrentEventServiceType().then(serviceType => {
         const isPackage = serviceType === 'package';
-        const salesCell = isPackage ? `${dayData.orders.reduce((s, o) => s + (o.total || 0), 0)} cups` : formatCurrency(dayData.sales);
-        let html = `
-            <table class="sales-history-table">
+        const orderTotal = isPackage
+            ? (dayData.orders || []).reduce((s, o) => s + (o.total || 0), 0)
+            : (dayData.sales || 0);
+        const o = getSalesOverride(currentEvent, dateStr);
+        const effective = o !== undefined ? o : orderTotal;
+        const salesText = formatHistorySalesText(effective, isPackage);
+        const pkg = isPackage ? '1' : '0';
+
+        const html = `
+            <table class="sales-history-table" data-package-mode="${pkg}">
                 <thead>
                     <tr>
-                        <th>Day</th>
                         <th>Date</th>
+                        <th>Day</th>
                         <th>Sales</th>
-                        <th>Orders</th>
-                        ${!isPackage ? '<th>Cups</th>' : ''}
+                        <th class="sales-history-col-actions" aria-label="Actions"></th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr>
-                        <td>${dayOfWeek}</td>
+                    <tr class="sales-history-row" data-history-date="${dateStr}" data-order-total="${orderTotal}" data-effective="${effective}">
                         <td>${dateDisplay}</td>
-                        <td>${salesCell}</td>
-                        <td>${dayData.orders.length}</td>
-                        ${!isPackage ? `<td>${dayData.cups || 0}</td>` : ''}
+                        <td>${dayOfWeek}</td>
+                        <td class="sales-history-sales-cell sales-history-sales-text">${salesText}</td>
+                        <td class="sales-history-col-actions">
+                            <button type="button" class="sales-history-edit-btn" data-edit-date="${dateStr}" aria-label="Edit sales for ${dateDisplay}">
+                                ${salesHistoryEditIconSvg()}
+                            </button>
+                        </td>
                     </tr>
                 </tbody>
             </table>
         `;
-        eventsGrid.innerHTML = dayData.orders.length === 0 && dayData.sales === 0
-            ? '<div class="loading">No sales for selected day</div>'
-            : html;
+        eventsGrid.innerHTML = html;
     });
 }
 
-async function loadAllEventsData() {
+/** Range history grid: no extra Firestore reads — uses loadRangeData output only. */
+async function renderRangeSalesHistory(startDate, endDate, rangeData) {
     const eventsGrid = document.getElementById('eventsGrid');
     if (!eventsGrid) return;
-    eventsGrid.innerHTML = '<div class="loading">Loading sales data...</div>';
 
     try {
-        const salesData = [];
-
-        // Get last 60 days of data for CURRENT EVENT ONLY
-        const today = new Date();
-        for (let i = 0; i < 60; i++) {
-            const date = new Date(today.getTime() - (i * 24 * 60 * 60 * 1000));
-            const dateStr = getLocalDateString(date);
-
-            try {
-                const dayRef = collection(db, `pos-orders/${currentEvent}/${dateStr}`);
-                const daySnapshot = await getDocs(dayRef);
-
-                if (!daySnapshot.empty) {
-                    let dailyTotal = 0;
-                    let orderCount = 0;
-                    let cupCount = 0;
-
-                    daySnapshot.forEach(orderDoc => {
-                        const orderData = orderDoc.data();
-                        if (orderData.status !== 'deleted') {
-                            dailyTotal += orderData.total || 0;
-                            orderCount++;
-
-                            // Count cups from drinks (exclude desserts)
-                            if (orderData.items) {
-                                orderData.items.forEach(item => {
-                                    const itemName = (item.name || '').toLowerCase();
-                                    // Check if it's NOT a dessert
-                                    if (!itemName.includes('cookie') &&
-                                        !itemName.includes('mochi') &&
-                                        !itemName.includes('cake') &&
-                                        !itemName.includes('pastry') &&
-                                        !itemName.includes('bread') &&
-                                        !itemName.includes('sandwich')) {
-                                        cupCount += item.quantity || 1;
-                                    }
-                                });
-                            }
-                        }
-                    });
-
-                    if (orderCount > 0) {
-                        salesData.push({
-                            date: dateStr,
-                            total: dailyTotal,
-                            orders: orderCount,
-                            cups: cupCount
-                        });
-                    }
-                }
-            } catch (error) {
-                continue;
-            }
-        }
-
-        if (salesData.length === 0) {
-            eventsGrid.innerHTML = '<div class="loading">No sales data found</div>';
-            return;
-        }
-
         const serviceType = await getCurrentEventServiceType();
         const isPackageMode = serviceType === 'package';
+        const orderDaily = rangeData.orderDailySales && typeof rangeData.orderDailySales === 'object'
+            ? rangeData.orderDailySales
+            : {};
+        const daily = rangeData.dailySales && typeof rangeData.dailySales === 'object'
+            ? rangeData.dailySales
+            : {};
 
+        const start = new Date(startDate + 'T00:00:00');
+        const end = new Date(endDate + 'T00:00:00');
+        const salesData = [];
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+            const dateStr = getLocalDateString(d);
+            const orderTotal = orderDaily[dateStr] ?? 0;
+            const effective = daily[dateStr] ?? orderTotal;
+            salesData.push({ date: dateStr, orderTotal, effective });
+        }
+
+        const pkg = isPackageMode ? '1' : '0';
         let html = `
-            <table class="sales-history-table">
+            <table class="sales-history-table" data-package-mode="${pkg}">
                 <thead>
                     <tr>
-                        <th>Day</th>
                         <th>Date</th>
+                        <th>Day</th>
                         <th>Sales</th>
-                        <th>Orders</th>
-                        ${!isPackageMode ? '<th>Cups</th>' : ''}
+                        <th class="sales-history-col-actions" aria-label="Actions"></th>
                     </tr>
                 </thead>
                 <tbody>
         `;
 
         salesData.forEach(record => {
-            const dateObj = new Date(record.date);
-            const dayOfWeek = dateObj.toLocaleDateString('en', { weekday: 'short' });
+            const dateObj = new Date(record.date + 'T12:00:00');
+            const dayOfWeek = dateObj.toLocaleDateString('en', { weekday: 'long' });
             const dateDisplay = dateObj.toLocaleDateString('en', {
                 month: 'short',
-                day: 'numeric'
+                day: 'numeric',
+                year: 'numeric'
             });
+            const salesText = formatHistorySalesText(record.effective, isPackageMode);
 
             html += `
-                <tr>
-                    <td>${dayOfWeek}</td>
+                <tr class="sales-history-row" data-history-date="${record.date}" data-order-total="${record.orderTotal}" data-effective="${record.effective}">
                     <td>${dateDisplay}</td>
-                    <td>${isPackageMode ? record.total + ' cups' : formatCurrency(record.total)}</td>
-                    <td>${record.orders}</td>
-                    ${!isPackageMode ? `<td>${record.cups}</td>` : ''}
+                    <td>${dayOfWeek}</td>
+                    <td class="sales-history-sales-cell sales-history-sales-text">${salesText}</td>
+                    <td class="sales-history-col-actions">
+                        <button type="button" class="sales-history-edit-btn" data-edit-date="${record.date}" aria-label="Edit sales for ${dateDisplay}">
+                            ${salesHistoryEditIconSvg()}
+                        </button>
+                    </td>
                 </tr>
             `;
         });
@@ -1109,7 +1242,7 @@ async function loadAllEventsData() {
         eventsGrid.innerHTML = html;
 
     } catch (error) {
-        console.error('Error loading sales data:', error);
+        console.error('Error rendering sales history:', error);
         eventsGrid.innerHTML = '<div class="error">Error loading sales data</div>';
     }
 }
@@ -1122,55 +1255,46 @@ function getLocalDateString(date = new Date()) {
     return `${year}-${month}-${day}`;
 }
 
-function getThisWeekRange() {
-    const today = new Date();
-    const startOfWeek = new Date(today.getTime() - (today.getDay() * 24 * 60 * 60 * 1000));
-    const endOfWeek = new Date(startOfWeek.getTime() + (6 * 24 * 60 * 60 * 1000));
+function setDefaultRangeDates() {
+    const startInput = document.getElementById('rangeStartDate');
+    const endInput = document.getElementById('rangeEndDate');
+    if (!startInput || !endInput) return;
+    if (startInput.value && endInput.value) return;
 
-    return {
-        start: getLocalDateString(startOfWeek),
-        end: getLocalDateString(endOfWeek)
-    };
+    const end = new Date();
+    const start = new Date();
+    start.setDate(end.getDate() - 30);
+    startInput.value = getLocalDateString(start);
+    endInput.value = getLocalDateString(end);
 }
 
-function getThisMonthRange() {
-    const today = new Date();
-    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-
-    return {
-        start: getLocalDateString(startOfMonth),
-        end: getLocalDateString(endOfMonth)
-    };
-}
-
-/** Week containing date (Sun–Sat). Start and end as YYYY-MM-DD. */
-function getWeekRange(date) {
-    const d = new Date(date);
-    const day = d.getDay();
-    const startOfWeek = new Date(d);
-    startOfWeek.setDate(d.getDate() - day);
-    const endOfWeek = new Date(startOfWeek);
-    endOfWeek.setDate(startOfWeek.getDate() + 6);
-    return {
-        start: getLocalDateString(startOfWeek),
-        end: getLocalDateString(endOfWeek)
-    };
-}
-
-/** Month containing date. Start and end as YYYY-MM-DD. */
-function getMonthRange(date) {
-    const d = new Date(date);
-    const startOfMonth = new Date(d.getFullYear(), d.getMonth(), 1);
-    const endOfMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-    return {
-        start: getLocalDateString(startOfMonth),
-        end: getLocalDateString(endOfMonth)
-    };
+function getSelectedRange() {
+    const startInput = document.getElementById('rangeStartDate');
+    const endInput = document.getElementById('rangeEndDate');
+    const fallbackEnd = getLocalDateString(new Date());
+    const fallbackStartDate = new Date();
+    fallbackStartDate.setDate(fallbackStartDate.getDate() - 30);
+    const fallbackStart = getLocalDateString(fallbackStartDate);
+    let start = startInput?.value || fallbackStart;
+    let end = endInput?.value || fallbackEnd;
+    if (start > end) [start, end] = [end, start];
+    return { start, end };
 }
 
 function formatCurrency(amount) {
     return `₱${amount.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/** ASCII-only amounts for jsPDF built-in fonts (Helvetica cannot render ₱ / some locale spaces reliably). */
+function formatCurrencyPdfSafe(amount) {
+    const n = Number(amount);
+    const safe = Number.isFinite(n) ? n : 0;
+    const neg = safe < 0;
+    const abs = Math.abs(safe);
+    const [intRaw, frac = '00'] = abs.toFixed(2).split('.');
+    const intPart = intRaw.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    const core = `PHP ${intPart}.${frac}`;
+    return neg ? `-${core}` : core;
 }
 
 function formatDateTime(timestamp) {
@@ -1184,7 +1308,7 @@ function formatDateTime(timestamp) {
 }
 
 function setScopeSectionTitles(scope) {
-    const suffix = scope === 'day' ? 'Selected Day' : scope === 'week' ? 'Selected Week' : 'Selected Month';
+    const suffix = scope === 'day' ? 'Selected Day' : 'Selected Range';
     const paymentTitle = document.getElementById('paymentSectionTitle');
     const ordersTitle = document.getElementById('ordersSectionTitle');
     const topItemsTitle = document.getElementById('topItemsSectionTitle');
@@ -1195,17 +1319,326 @@ function setScopeSectionTitles(scope) {
     if (salesByItemTitle) salesByItemTitle.textContent = `Sales by Item Report (${suffix})`;
 }
 
-/** On Daily: hide "All Days" / "Peak Hours" toggle and set title to Peak Hours. On Week/Month: show toggle and "Daily Sales". */
+/** On Daily: hide "All Days" / "Hourly Sales" toggle and set title to Hourly Sales. On Week/Month: show toggle and "Daily Sales". */
 function setChartSectionForScope(scope) {
     const wrap = document.getElementById('chartToggleWrap');
     const titleEl = document.getElementById('chartSectionTitle');
     if (scope === 'daily') {
         if (wrap) wrap.style.display = 'none';
-        if (titleEl) titleEl.textContent = 'Peak Hours (Selected Day)';
+        if (titleEl) titleEl.textContent = 'Hourly Sales (Selected Day)';
     } else {
         if (wrap) wrap.style.display = '';
         if (titleEl) titleEl.textContent = 'Daily Sales';
     }
+}
+
+function updateDailySalesHistoryTitle(scope) {
+    const titleEl = document.getElementById('dailySalesHistoryTitle');
+    if (!titleEl) return;
+    if (scope === 'range') {
+        const { start, end } = getSelectedRange();
+        titleEl.textContent = `Daily Sales History (${start} to ${end})`;
+        return;
+    }
+    titleEl.textContent = `Daily Sales History (${getLocalDateString(selectedDate)})`;
+}
+
+function toggleRangeControls() {
+    const rangeControls = document.getElementById('rangeControls');
+    const dateSelector = document.getElementById('dateSelector');
+    if (rangeControls) rangeControls.style.display = dataScope === 'range' ? 'inline-flex' : 'none';
+    if (dateSelector) dateSelector.style.display = dataScope === 'range' ? 'none' : '';
+}
+
+function getHistoryTableCellPdfText(td, isPackageMode) {
+    const input = td.querySelector('input.sales-history-edit-input')
+        || td.querySelector('input.manual-sales-input');
+    if (input) {
+        const raw = parseFloat(input.value);
+        if (input.value.trim() === '' || Number.isNaN(raw) || raw < 0) {
+            return isPackageMode ? '0 cups' : formatCurrencyPdfSafe(0);
+        }
+        return isPackageMode ? `${raw} cups` : formatCurrencyPdfSafe(raw);
+    }
+    const fromDom = normalizePdfText(td.textContent.trim());
+    if (!isPackageMode && /(PHP|₱)\s*[-\d,.]+/.test(fromDom)) {
+        const num = parseFloat(fromDom.replace(/^(PHP|₱)\s*/i, '').replace(/,/g, ''));
+        if (!Number.isNaN(num)) return formatCurrencyPdfSafe(num);
+    }
+    if (isPackageMode && /^\s*\d+(\.\d+)?\s*cups?\s*$/i.test(fromDom)) {
+        const num = parseFloat(fromDom.replace(/cups?/gi, ''));
+        if (!Number.isNaN(num)) return `${num} cups`;
+    }
+    return fromDom;
+}
+
+async function exportDailySalesHistoryPdf() {
+    const btn = document.getElementById('exportHistoryPdfBtn');
+    const table = document.querySelector('#eventsGrid .sales-history-table');
+    if (!btn || !table || !window.jspdf?.jsPDF) return;
+
+    const originalText = btn.textContent;
+    btn.textContent = 'Generating PDF...';
+    btn.disabled = true;
+
+    try {
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        const pageHeight = pdf.internal.pageSize.getHeight();
+        const margin = 12;
+        const contentWidth = pageWidth - (margin * 2);
+        const rowHeight = 8;
+        const lineHeight = 6;
+        let y = margin;
+
+        const logoDataUrl = await loadImageAsDataUrl('../shared/assets/images/matchanese-logo-full.png');
+        if (logoDataUrl) {
+            const logoSize = await getImageSizeFromDataUrl(logoDataUrl);
+            const maxLogoWidth = 56;
+            const logoWidth = maxLogoWidth;
+            const logoHeight = logoSize ? (logoSize.height / logoSize.width) * logoWidth : 12;
+            pdf.addImage(logoDataUrl, 'PNG', margin, y, logoWidth, logoHeight);
+            y += logoHeight + 6;
+        }
+
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(16);
+        pdf.text('Daily Sales History Report', margin, y);
+        y += 8;
+
+        const titleEl = document.getElementById('dailySalesHistoryTitle');
+        const titleText = (titleEl?.textContent || '').trim();
+        const eventSelector = document.getElementById('eventSelector');
+        const eventName = eventSelector?.options?.[eventSelector.selectedIndex]?.textContent?.trim() || currentEvent;
+        const periodText = titleText.replace('Daily Sales History', '').replace(/[()]/g, '').trim();
+
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(10);
+        pdf.text(`Event: ${eventName}`, margin, y);
+        y += lineHeight;
+        if (periodText) {
+            pdf.text(`Period: ${periodText}`, margin, y);
+            y += lineHeight;
+        }
+        pdf.text(`Generated: ${new Date().toLocaleString()}`, margin, y);
+        y += 8;
+
+        const serviceType = await getCurrentEventServiceType();
+        const isPackageModePdf = serviceType === 'package';
+
+        const headerEls = Array.from(table.querySelectorAll('thead th')).filter(
+            (th) => !th.classList.contains('sales-history-col-actions')
+        );
+        const headers = headerEls.map((th) => normalizePdfText(th.textContent.trim()));
+        const rows = Array.from(table.querySelectorAll('tbody tr')).map((tr) =>
+            Array.from(tr.querySelectorAll('td'))
+                .filter((td) => !td.classList.contains('sales-history-col-actions'))
+                .map((td) => getHistoryTableCellPdfText(td, isPackageModePdf))
+        );
+        const colWidths = headers.map((_, index) => {
+            if (index === 0) return contentWidth * 0.30;
+            if (index === 1) return contentWidth * 0.26;
+            return contentWidth * 0.44;
+        });
+
+        const drawHeader = () => {
+            pdf.setFillColor(43, 147, 72);
+            pdf.rect(margin, y, contentWidth, rowHeight, 'F');
+            pdf.setTextColor(255, 255, 255);
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(10);
+            let x = margin + 2;
+            headers.forEach((header, i) => {
+                pdf.text(header, x, y + 5.3);
+                x += colWidths[i];
+            });
+            pdf.setTextColor(0, 0, 0);
+            pdf.setFont('helvetica', 'normal');
+            y += rowHeight;
+        };
+
+        const tableStartY = y;
+        drawHeader();
+
+        rows.forEach((cells, rowIndex) => {
+            if (y + rowHeight > pageHeight - margin) {
+                pdf.addPage();
+                y = margin;
+                drawHeader();
+            }
+
+            if (rowIndex % 2 === 0) {
+                pdf.setFillColor(248, 249, 250);
+                pdf.rect(margin, y, contentWidth, rowHeight, 'F');
+            }
+
+            let x = margin + 2;
+            pdf.setFontSize(9.5);
+            cells.forEach((cell, i) => {
+                const isNumericColumn = i >= 2;
+                const maxWidth = colWidths[i] - 3;
+                if (isNumericColumn) {
+                    const numericText = cell;
+                    const textWidth = pdf.getTextWidth(numericText);
+                    const rightX = x + maxWidth - textWidth;
+                    pdf.text(numericText, Math.max(x, rightX), y + 5.2);
+                } else {
+                    const wrapped = pdf.splitTextToSize(cell, maxWidth);
+                    pdf.text(wrapped, x, y + 5.2);
+                }
+                x += colWidths[i];
+            });
+            y += rowHeight;
+        });
+
+        pdf.setDrawColor(220, 220, 220);
+        pdf.rect(margin, tableStartY, contentWidth, y - tableStartY);
+
+        const totalPages = pdf.getNumberOfPages();
+        for (let pageNum = 1; pageNum <= totalPages; pageNum += 1) {
+            pdf.setPage(pageNum);
+            pdf.setFontSize(9);
+            pdf.setTextColor(120, 120, 120);
+            pdf.text(`Page ${pageNum} of ${totalPages}`, pageWidth - margin - 20, pageHeight - 6);
+        }
+
+        const range = dataScope === 'range' ? getSelectedRange() : null;
+        const periodLabel = range ? `${range.start}_to_${range.end}` : getLocalDateString(selectedDate);
+        const eventKey = (currentEvent || 'event').replace(/\s+/g, '-');
+        pdf.save(`daily-sales-history-${eventKey}-${periodLabel}.pdf`);
+    } catch (error) {
+        console.error('Failed to export history PDF:', error);
+        alert('Failed to export PDF. Please try again.');
+    } finally {
+        btn.textContent = originalText || 'Export PDF';
+        btn.disabled = false;
+    }
+}
+
+async function loadImageAsDataUrl(url) {
+    try {
+        const response = await fetch(url);
+        if (!response.ok) return null;
+        const blob = await response.blob();
+        return await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+    } catch (error) {
+        return null;
+    }
+}
+
+async function getImageSizeFromDataUrl(dataUrl) {
+    return await new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve({ width: img.naturalWidth || img.width, height: img.naturalHeight || img.height });
+        img.onerror = () => resolve(null);
+        img.src = dataUrl;
+    });
+}
+
+function normalizePdfText(text) {
+    if (!text) return '';
+    return text
+        .replace(/₱/g, 'PHP ')
+        .replace(/[\u202f\u00a0]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function beginSalesHistoryRowEdit(tr) {
+    if (!tr || tr.classList.contains('is-editing')) return;
+    const table = tr.closest('table.sales-history-table');
+    const isPackage = table?.dataset.packageMode === '1';
+    const dateStr = tr.dataset.historyDate;
+    if (!dateStr) return;
+    const effective = Number.parseFloat(tr.dataset.effective);
+    const val = Number.isFinite(effective) ? effective : 0;
+    tr.classList.add('is-editing');
+    const salesTd = tr.querySelector('.sales-history-sales-cell');
+    const actionsTd = tr.querySelector('.sales-history-col-actions');
+    if (!salesTd || !actionsTd) return;
+    const step = isPackage ? '1' : '0.01';
+    salesTd.innerHTML = `<input type="number" class="sales-history-edit-input" min="0" step="${step}" value="${val}" aria-label="Sales amount">`;
+    salesTd.classList.remove('sales-history-sales-text');
+    actionsTd.innerHTML = `
+        <button type="button" class="sales-history-save-btn" data-save-date="${dateStr}">Save</button>
+        <button type="button" class="sales-history-cancel-btn">Cancel</button>
+    `;
+    const inp = salesTd.querySelector('input');
+    inp?.focus();
+    inp?.select?.();
+}
+
+function finalizeSalesHistorySave(dateStr, rawInput, orderTotalRaw) {
+    const orderTotal = Number.parseFloat(orderTotalRaw);
+    const trimmed = (rawInput ?? '').toString().trim();
+    if (trimmed === '') {
+        setSalesOverride(currentEvent, dateStr, '');
+        loadDashboardData();
+        return;
+    }
+    const num = parseFloat(trimmed);
+    if (Number.isNaN(num) || num < 0) {
+        loadDashboardData();
+        return;
+    }
+    const ot = Number.isFinite(orderTotal) ? orderTotal : 0;
+    if (Math.abs(num - ot) < 0.0005) {
+        setSalesOverride(currentEvent, dateStr, '');
+    } else {
+        setSalesOverride(currentEvent, dateStr, num);
+    }
+    loadDashboardData();
+}
+
+function setupSalesHistoryEditListener() {
+    const grid = document.getElementById('eventsGrid');
+    if (!grid || grid.dataset.salesHistoryEditDelegated) return;
+    grid.dataset.salesHistoryEditDelegated = '1';
+    grid.addEventListener('click', (e) => {
+        const editBtn = e.target.closest?.('.sales-history-edit-btn');
+        if (editBtn) {
+            e.preventDefault();
+            const tr = editBtn.closest('tr');
+            beginSalesHistoryRowEdit(tr);
+            return;
+        }
+        const saveBtn = e.target.closest?.('.sales-history-save-btn');
+        if (saveBtn) {
+            e.preventDefault();
+            const tr = saveBtn.closest('tr');
+            const dateStr = saveBtn.dataset.saveDate || tr?.dataset.historyDate;
+            const input = tr?.querySelector('input.sales-history-edit-input');
+            if (!dateStr || !input) return;
+            finalizeSalesHistorySave(dateStr, input.value, tr.dataset.orderTotal);
+            return;
+        }
+        const cancelBtn = e.target.closest?.('.sales-history-cancel-btn');
+        if (cancelBtn) {
+            e.preventDefault();
+            loadDashboardData();
+        }
+    });
+    grid.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+        const input = e.target;
+        if (!input.matches?.('input.sales-history-edit-input')) return;
+        const tr = input.closest('tr');
+        const dateStr = tr?.dataset.historyDate;
+        if (!dateStr) return;
+        e.preventDefault();
+        finalizeSalesHistorySave(dateStr, input.value, tr.dataset.orderTotal);
+    });
+}
+
+function setupHistoryExportListener() {
+    const btn = document.getElementById('exportHistoryPdfBtn');
+    if (btn) btn.addEventListener('click', exportDailySalesHistoryPdf);
 }
 
 function showLoadingState() {
@@ -1879,7 +2312,8 @@ function downloadMenuTemplate() {
 }
 
 function getDefaultMenuData() {
-    // Import the default menu data
+    // Optional top-level keys for POS: oatUpgradePrice (number), strengthLevelPrices (object "1","2","3" -> price).
+    // Omit for defaults: oat +50, strength 1=0, 2=40, 3=80.
     return {
         categories: [
             { id: "matcha-lattes", name: "Matcha Lattes" },

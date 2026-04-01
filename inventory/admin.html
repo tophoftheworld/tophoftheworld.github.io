@@ -1051,6 +1051,24 @@
       color: #2b9348;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     }
+
+    .movement-cell {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      align-items: center;
+      line-height: 1.2;
+    }
+
+    .movement-added {
+      color: #2b9348;
+      font-weight: 600;
+    }
+
+    .movement-removed {
+      color: #d32f2f;
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>
@@ -1171,10 +1189,8 @@
               <div class="segmented-control">
                 <button class="segmented-btn active" data-quantity-type="used">Show Usage</button>
                 <button class="segmented-btn" data-quantity-type="closing">Show Stock</button>
+                <button class="segmented-btn" data-quantity-type="movement">Show Movement</button>
               </div>
-            </div>
-            <div class="control-group">
-              <button class="btn btn-primary" id="weeklyRefreshBtn">Refresh Data</button>
             </div>
           </div>
         </div>

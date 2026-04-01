@@ -12,7 +12,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"
         integrity="sha512-ElRFoEQdI5Ht6kZvyzXhYG9NqjtkmlkfYk0wr6wHxU9JEHakS7UJZNeml5ALk+8IKlU6jDgMabC3vkumRokgJA=="
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <link rel="stylesheet" href="css/admin.css?v=1013">
+    <link rel="stylesheet" href="css/admin.css?v=1030">
 </head>
 
 <body>
@@ -45,8 +45,8 @@
 
         <!-- Main Controls - All Filters and Actions -->
         <div class="main-controls">
-            <!-- Filter Controls Row 1 -->
-            <div class="filter-row">
+            <!-- Filter Controls Row 1 (hidden on Suppliers/Analytics; action-row stays visible) -->
+            <div class="filter-row" id="adminFilterSection">
                 <div class="left-filters">
                     <div class="branch-selector">
                         <span class="branch-label">Branch:</span>
@@ -155,7 +155,6 @@
                             <th data-sort="branch">Branch</th>
                             <th data-sort="payment">Payment</th>
                             <th data-sort="vat">VAT</th>
-                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody id="expenseTableBody">
@@ -180,7 +179,6 @@
                             <th data-sort="vat">VAT Status</th>
                             <th data-sort="transactions">Transactions</th>
                             <th data-sort="total">Total Amount</th>
-                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody id="supplierTableBody">
@@ -292,7 +290,7 @@
     </div>
 
     <!-- Load admin script at the bottom to ensure DOM is ready -->
-    <script type="module" src="./js/admin.js?v=1024"></script>
+    <script type="module" src="./js/admin.js?v=1030"></script>
 
 </body>
 

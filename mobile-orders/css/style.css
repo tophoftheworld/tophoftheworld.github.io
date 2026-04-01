@@ -161,6 +161,28 @@ body {
     border-color: #2d6b05;
 }
 
+.archive-list-toggle-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: white;
+    color: #666;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.archive-list-toggle-btn:hover {
+    border-color: #999;
+    color: #333;
+}
+
 .controls input[type="file"]:focus,
 .controls select:focus {
     outline: none;
@@ -342,6 +364,110 @@ body {
     line-height: 1.4;
 }
 
+.items-more {
+    margin-left: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #888;
+}
+
+.order-items-inline {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    text-align: left;
+}
+
+.order-item-line {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    justify-content: flex-start;
+}
+
+.order-item-qty {
+    font-weight: 800;
+    color: #439407;
+    min-width: 20px;
+}
+
+.order-item-dot {
+    color: #888;
+    font-weight: 700;
+}
+
+.order-item-name {
+    color: #333;
+    font-size: 13px;
+    flex: 1;
+    word-break: break-word;
+}
+
+.notes-inline {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: flex-start;
+    text-align: left;
+}
+
+.order-notes-textarea {
+    width: 100%;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background: white;
+    padding: 10px;
+    font-size: 13px;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 70px;
+}
+
+.notes-actions {
+    margin-top: 8px;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.notes-save-btn {
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    padding: 8px 12px;
+    background: white;
+    color: #439407;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.notes-save-btn:hover {
+    border-color: #439407;
+    color: #2d6b05;
+}
+
+.delete-section {
+    margin-top: 12px;
+}
+
+.delete-order-btn {
+    width: 100%;
+    border: 1px solid #dc2626;
+    border-radius: 12px;
+    padding: 10px 12px;
+    background: white;
+    color: #ef4444;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.delete-order-btn:hover {
+    background: #fff5f5;
+    transform: translateY(-0.5px);
+}
+
 .action-buttons {
     display: flex;
     gap: 10px;
@@ -350,24 +476,26 @@ body {
 
 .action-btn {
     flex: 1;
-    border: none;
+    border: 1px solid #439407;
     border-radius: 12px;
-    padding: 12px 16px;
-    color: white;
+    padding: 10px 14px;
+    color: #439407;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s;
-    font-size: 14px;
+    font-size: 13px;
+    background: transparent;
 }
 
 .action-btn.ship {
-    background: #439407;
-    box-shadow: 0 4px 12px rgba(67, 148, 7, 0.3);
+    background: transparent;
+    color: #439407;
+    box-shadow: none;
 }
 
 .action-btn.ship:hover {
-    background: #2d6b05;
-    transform: translateY(-1px);
+    background: rgba(67, 148, 7, 0.08);
+    transform: translateY(-0.5px);
 }
 
 .action-btn.pickup {
@@ -381,13 +509,16 @@ body {
 }
 
 .action-btn.pack {
-    background: #f59e0b;
-    box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+    background: #439407;
+    color: white;
+    box-shadow: 0 4px 12px rgba(67, 148, 7, 0.18);
+    border-color: #439407;
 }
 
 .action-btn.pack:hover {
-    background: #d97706;
-    transform: translateY(-1px);
+    background: #2d6b05;
+    border-color: #2d6b05;
+    transform: translateY(-0.5px);
 }
 
 .toast {
@@ -581,6 +712,13 @@ body {
     margin-bottom: 8px;
 }
 
+.group-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+}
+
 .group-name {
     font-size: 22px;
     font-weight: 500;
@@ -621,6 +759,27 @@ body {
     color: #439407;
     font-weight: 400;
     margin: 0;
+}
+
+.archive-group-btn {
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    background: transparent;
+    color: #ef4444;
+    font-weight: 700;
+    font-size: 12px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    text-decoration: none;
+}
+
+.archive-group-btn:hover {
+    opacity: 0.9;
+}
+
+.unarchive-group-btn {
+    color: #439407;
 }
 
 /* Responsive Design */

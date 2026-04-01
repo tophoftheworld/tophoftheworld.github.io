@@ -777,6 +777,18 @@ body {
     color: #fff;
 }
 
+.range-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.range-separator {
+    color: #666;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
 /* Event Management Modal Styles */
 .event-management {
     padding: 20px 0;
@@ -1199,19 +1211,88 @@ select option[style*="color: #999"] {
 }
 
 .sales-history-table th:nth-child(1) {
-    width: 25%;
+    width: 24%;
 }
 
 .sales-history-table th:nth-child(2) {
-    width: 30%;
+    width: 18%;
 }
 
 .sales-history-table th:nth-child(3) {
-    width: 22.5%;
+    width: 46%;
 }
 
-.sales-history-table th:nth-child(4) {
-    width: 22.5%;
+.sales-history-table .manual-sales-input,
+.sales-history-table .sales-history-edit-input {
+    width: 100%;
+    max-width: 12rem;
+    padding: 6px 10px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font: inherit;
+}
+
+.sales-history-col-actions {
+    width: 1%;
+    white-space: nowrap;
+    text-align: right;
+    vertical-align: middle;
+}
+
+.sales-history-table th.sales-history-col-actions {
+    width: 12%;
+    min-width: 3.75rem;
+}
+
+.sales-history-sales-cell.sales-history-sales-text {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.sales-history-edit-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 8px;
+    border: none;
+    background: transparent;
+    color: #2b9348;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.sales-history-edit-btn:hover {
+    background: #eef8f1;
+}
+
+.sales-history-edit-icon {
+    display: block;
+}
+
+.sales-history-save-btn,
+.sales-history-cancel-btn {
+    font-size: 12px;
+    padding: 5px 10px;
+    margin-left: 6px;
+    border-radius: 6px;
+    cursor: pointer;
+    border: 1px solid #ccc;
+    background: #fff;
+}
+
+.sales-history-save-btn {
+    margin-left: 0;
+    background: #2b9348;
+    color: #fff;
+    border-color: #2b9348;
+}
+
+.sales-history-cancel-btn:hover {
+    background: #f5f5f5;
+}
+
+tr.sales-history-row.is-editing .sales-history-col-actions {
+    vertical-align: middle;
 }
 
 .sales-history-table th {
@@ -1233,7 +1314,7 @@ select option[style*="color: #999"] {
     background: #fafafa;
 }
 
-.sales-history-table td:nth-child(2) {
+.sales-history-table td:nth-child(1) {
     font-weight: 600;
     color: #2b9348;
 }
@@ -1429,4 +1510,16 @@ select option[style*="color: #999"] {
 
 .sales-by-item-table tbody tr:hover {
     background: #fafafa;
+}
+
+.data-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.data-section-header h3 {
+    margin-bottom: 0;
 }

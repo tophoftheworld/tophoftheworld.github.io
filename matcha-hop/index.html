@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Matcha Hop – Cafe map</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle fill='%231d8a00' cx='16' cy='16' r='14'/%3E%3Ccircle fill='none' stroke='white' stroke-width='2' cx='16' cy='16' r='14'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="app-with-tabs">
+  <div class="app-shell">
+    <main class="app-main" role="main">
+      <!-- Map tab -->
+      <section id="panel-map" class="tab-panel tab-panel--map is-active" aria-labelledby="tab-map">
+        <div id="map" class="map-full"></div>
+        <div class="search-bar">
+          <div class="search-bar-inner">
+            <input type="text" id="search-input" placeholder="Search matcha cafes..." autocomplete="off">
+            <button type="button" id="search-clear" class="search-bar-clear hidden" aria-label="Clear search">×</button>
+          </div>
+          <span id="search-results-label" class="search-results-label hidden" aria-live="polite">Showing search results</span>
+        </div>
+        <div id="location-page" class="location-page hidden" aria-hidden="true">
+          <button type="button" id="location-page-back" class="location-page-back" aria-label="Back to map">← Back</button>
+          <div class="location-page-hero">
+            <img id="location-page-image" class="location-page-image" alt="" src="">
+          </div>
+          <div class="location-page-name-row">
+            <h3 id="location-page-name" class="location-page-name"></h3>
+            <div class="location-page-heart-wrap">
+              <button type="button" id="location-page-heart" class="location-page-heart-btn" aria-label="Heart this location"><svg class="heart-icon heart-icon--outline" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#1d8a00" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg></button>
+              <span id="location-page-heart-count" class="location-page-heart-count"></span>
+            </div>
+          </div>
+          <p id="location-page-address" class="location-page-address"></p>
+          <section class="location-page-section location-page-feed" aria-labelledby="location-page-feed-heading">
+            <h4 id="location-page-feed-heading" class="location-page-section-heading">Posts</h4>
+            <div id="location-page-feed" class="location-page-feed-list"></div>
+          </section>
+          <button type="button" id="location-page-post-matcha" class="location-page-post-matcha-btn">Share your Matcha</button>
+        </div>
+      </section>
+
+      <!-- Brands tab -->
+      <section id="panel-brands" class="tab-panel tab-panel--brands" aria-labelledby="tab-brands">
+        <div class="brands-view">
+          <div class="brands-scroll">
+            <div id="brands-gallery" class="brands-gallery"></div>
+          </div>
+          <div id="brands-filter-bar" class="brands-filter-bar" role="tablist" aria-label="Filter brands">
+            <button type="button" role="tab" id="brands-filter-all" class="brands-filter-btn is-active" data-filter="all" aria-selected="true">All</button>
+            <button type="button" role="tab" id="brands-filter-cafe" class="brands-filter-btn" data-filter="cafe" aria-selected="false">Cafes</button>
+            <button type="button" role="tab" id="brands-filter-popup" class="brands-filter-btn" data-filter="popup" aria-selected="false">Pop-ups</button>
+          </div>
+        </div>
+        <div id="brand-page" class="brand-page hidden" aria-hidden="true">
+          <button type="button" id="brand-page-back" class="brand-page-back" aria-label="Back to gallery">← Back</button>
+          <div class="brand-page-hero">
+            <img id="brand-page-image" class="brand-page-image" alt="" src="">
+          </div>
+          <div class="brand-page-name-row">
+            <h3 id="brand-page-name" class="brand-page-name"></h3>
+            <div class="brand-page-heart-wrap">
+              <button type="button" id="brand-page-heart" class="brand-page-heart-btn" aria-label="Heart this brand"><svg class="heart-icon heart-icon--outline" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#1d8a00" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg></button>
+              <span id="brand-page-heart-count" class="brand-page-heart-count"></span>
+            </div>
+          </div>
+          <p id="brand-page-no-location" class="brand-page-no-location hidden">No physical location (e.g. pop-up)</p>
+          <section class="brand-page-section brand-page-locations" aria-labelledby="brand-page-locations-heading">
+            <h4 id="brand-page-locations-heading" class="brand-page-section-heading">Locations</h4>
+            <ul id="brand-page-branches" class="brand-page-branches" aria-label="Branches"></ul>
+          </section>
+          <section class="brand-page-section brand-page-popups" aria-labelledby="brand-page-popups-heading">
+            <h4 id="brand-page-popups-heading" class="brand-page-section-heading">Pop-Ups</h4>
+            <ul id="brand-page-popups" class="brand-page-popups-list" aria-label="Pop-ups"></ul>
+            <button type="button" id="brand-page-add-popup" class="brand-page-add-popup-btn">Add pop-up</button>
+          </section>
+          <section class="brand-page-section brand-page-feed" aria-labelledby="brand-page-feed-heading">
+            <h4 id="brand-page-feed-heading" class="brand-page-section-heading">Posts</h4>
+            <div id="brand-page-feed" class="brand-page-feed-list"></div>
+          </section>
+          <button type="button" id="brand-page-post-matcha" class="brand-page-post-matcha-btn">Share your Matcha</button>
+        </div>
+        <div id="add-popup-modal" class="add-popup-modal hidden" aria-hidden="true" role="dialog" aria-labelledby="add-popup-modal-title">
+          <div class="add-popup-modal-backdrop"></div>
+          <div class="add-popup-modal-box">
+            <h3 id="add-popup-modal-title" class="add-popup-modal-title">Add pop-up</h3>
+            <div class="add-popup-form">
+              <label for="add-popup-location">Location</label>
+              <input type="text" id="add-popup-location" placeholder="Search for a place..." autocomplete="off">
+              <div id="add-popup-results" class="add-popup-results hidden"></div>
+              <label id="add-popup-daterange-label">Date range</label>
+              <div id="add-popup-daterange" class="add-popup-daterange" role="application" aria-labelledby="add-popup-daterange-label"></div>
+            </div>
+            <div class="add-popup-modal-actions add-popup-modal-actions-main">
+              <button type="button" id="add-popup-delete" class="add-popup-btn add-popup-btn--danger hidden" aria-hidden="true">Delete</button>
+              <button type="button" id="add-popup-cancel" class="add-popup-btn add-popup-btn--secondary">Cancel</button>
+              <button type="button" id="add-popup-submit" class="add-popup-btn add-popup-btn--primary">Submit</button>
+            </div>
+            <div id="add-popup-delete-confirm" class="add-popup-delete-confirm hidden" aria-hidden="true">
+              <p class="add-popup-delete-confirm-text">Delete this pop-up?</p>
+              <div class="add-popup-modal-actions">
+                <button type="button" id="add-popup-delete-cancel" class="add-popup-btn add-popup-btn--secondary">Cancel</button>
+                <button type="button" id="add-popup-delete-confirm-btn" class="add-popup-btn add-popup-btn--danger">Delete</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Feed tab -->
+      <section id="panel-feed" class="tab-panel tab-panel--feed" aria-labelledby="tab-feed">
+        <div class="panel-heading">
+          <h2>Feed</h2>
+        </div>
+        <div id="feed-list" class="scroll-list photo-feed-list"></div>
+      </section>
+
+      <!-- My post tab -->
+      <section id="panel-mylogs" class="tab-panel tab-panel--mylogs" aria-labelledby="tab-mylogs">
+        <div class="panel-heading">
+          <h2>My post</h2>
+        </div>
+        <div id="mylogs-list" class="scroll-list photo-feed-list"></div>
+      </section>
+    </main>
+
+    <nav class="tab-bar" role="tablist" aria-label="Main navigation">
+      <button type="button" role="tab" id="tab-map" class="tab-bar-item is-active" aria-selected="true" data-panel="panel-map">
+        <span class="tab-bar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
+        <span class="tab-bar-label">Map</span>
+      </button>
+      <button type="button" role="tab" id="tab-brands" class="tab-bar-item" aria-selected="false" data-panel="panel-brands">
+        <span class="tab-bar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></span>
+        <span class="tab-bar-label">Brands</span>
+      </button>
+      <button type="button" id="tab-bar-add" class="tab-bar-add" aria-label="Add"><span class="tab-bar-add-icon" aria-hidden="true">+</span></button>
+      <button type="button" role="tab" id="tab-feed" class="tab-bar-item" aria-selected="false" data-panel="panel-feed">
+        <span class="tab-bar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg></span>
+        <span class="tab-bar-label">Feed</span>
+      </button>
+      <button type="button" role="tab" id="tab-mylogs" class="tab-bar-item" aria-selected="false" data-panel="panel-mylogs">
+        <span class="tab-bar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></span>
+        <span class="tab-bar-label">My post</span>
+      </button>
+    </nav>
+  </div>
+
+  <div id="bottom-sheet" class="bottom-sheet closed" aria-hidden="true">
+    <div class="bottom-sheet-handle"></div>
+    <div id="bottom-sheet-content" class="bottom-sheet-content"></div>
+  </div>
+
+  <div id="log-form-overlay" class="overlay hidden">
+    <div id="log-form-panel" class="log-form-panel"></div>
+    <div id="log-form-brand-picker-modal" class="log-form-brand-picker-modal hidden" role="dialog" aria-labelledby="log-form-brand-picker-modal-title" aria-modal="true">
+      <div class="log-form-brand-picker-backdrop"></div>
+      <div class="log-form-brand-picker-box">
+        <div id="log-form-modal-step1" class="log-form-modal-step">
+          <h3 id="log-form-brand-picker-modal-title" class="log-form-brand-picker-modal-title">Select cafe</h3>
+          <input type="text" id="log-form-brand-picker-search" class="log-form-brand-picker-search" placeholder="Search brands..." autocomplete="off">
+          <div id="log-form-brand-picker-filters" class="log-form-brand-picker-filters" role="tablist" aria-label="Filter by type">
+            <button type="button" role="tab" id="log-form-brand-filter-all" class="log-form-brand-filter-btn is-active" data-filter="all" aria-selected="true">All</button>
+            <button type="button" role="tab" id="log-form-brand-filter-cafe" class="log-form-brand-filter-btn" data-filter="cafe" aria-selected="false">Cafes</button>
+            <button type="button" role="tab" id="log-form-brand-filter-popup" class="log-form-brand-filter-btn" data-filter="popup" aria-selected="false">Pop-ups</button>
+          </div>
+          <div id="log-form-brand-picker-gallery" class="log-form-brand-picker-gallery"></div>
+        </div>
+        <div id="log-form-modal-step2" class="log-form-modal-step hidden">
+          <button type="button" id="log-form-modal-step2-back" class="log-form-modal-step2-back" aria-label="Back to brands">← Back</button>
+          <h3 id="log-form-modal-step2-title" class="log-form-brand-picker-modal-title">Choose location</h3>
+          <div id="log-form-location-picker-gallery" class="log-form-brand-picker-gallery log-form-location-picker-gallery"></div>
+        </div>
+        <button type="button" id="log-form-brand-picker-close" class="log-form-brand-picker-close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="log-detail-overlay" class="log-detail-overlay hidden" aria-hidden="true">
+    <div id="log-detail-panel" class="log-detail-panel"></div>
+  </div>
+
+  <div id="cafe-picker-overlay" class="cafe-picker-overlay hidden" aria-hidden="true">
+    <div id="cafe-picker-panel" class="cafe-picker-panel"></div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+  <script>
+    window.onGoogleMapsReady = function() {
+      var s = document.createElement('script');
+      s.type = 'module';
+      s.src = 'js/loader.js';
+      document.body.appendChild(s);
+    };
+    (function() {
+      var key = window.GOOGLE_MAPS_API_KEY || 'YOUR_API_KEY';
+      var script = document.createElement('script');
+      script.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(key) + '&libraries=places&callback=onGoogleMapsReady';
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    })();
+  </script>
+</body>
+</html>

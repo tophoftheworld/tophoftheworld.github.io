@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Logistics Planner | Matchanese</title>
+    <link rel="icon" href="../icons/icon-64.png" type="image/png" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+    <div class="container">
+        <header class="admin-header">
+            <div class="top-row">
+                <h1 class="app-title">Logistics planner</h1>
+                <div class="view-toggle" role="tablist" aria-label="View mode">
+                    <button type="button" class="toggle-btn is-active" id="oneWeekViewBtn" data-view-mode="1w">1 week</button>
+                    <button type="button" class="toggle-btn" id="twoWeekViewBtn" data-view-mode="2w">2 weeks</button>
+                </div>
+            </div>
+
+            <div class="timeline-row">
+                <button type="button" class="btn-icon" id="prevWeekBtn" aria-label="Previous period">‹</button>
+                <span class="week-title" id="weekTitle">Week</span>
+                <button type="button" class="btn-icon" id="nextWeekBtn" aria-label="Next period">›</button>
+                <button type="button" class="btn-secondary" id="copyPrevBtn">Copy from previous week</button>
+            </div>
+
+            <div class="summary-row" aria-label="Allocation summary">
+                <div class="summary-card">
+                    <span class="summary-label" id="summaryLabel">Total allocated this week</span>
+                    <strong class="summary-value" id="summaryAllocated">0 g</strong>
+                </div>
+                <div class="summary-card summary-card-target">
+                    <label class="summary-label" for="orderTargetKg">Order target (kg)</label>
+                    <input type="number" id="orderTargetKg" class="order-target-input" min="0" step="0.5" placeholder="5 or 10" />
+                    <span class="target-hint" id="targetHint" aria-live="polite"></span>
+                </div>
+            </div>
+        </header>
+
+        <div class="grid-wrap">
+            <div class="supply-grid" id="supplyGrid">
+                <div class="grid-header" id="gridHeader"></div>
+                <div class="grid-body" id="gridBody"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Allocation modal -->
+    <div class="modal" id="allocationModal" role="dialog" aria-labelledby="allocationModalTitle">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <button type="button" class="close-modal" id="closeAllocationModal" aria-label="Close">&times;</button>
+            <h2 id="allocationModalTitle">Add allocation</h2>
+            <form id="allocationForm">
+                <input type="hidden" id="allocId" />
+                <input type="hidden" id="allocRowId" />
+                <div class="form-group">
+                    <label for="allocStartDay">Start day</label>
+                    <select id="allocStartDay" required></select>
+                </div>
+                <div class="form-group">
+                    <label for="allocSpanDays">Duration (days)</label>
+                    <input type="number" id="allocSpanDays" min="1" max="7" value="1" required />
+                </div>
+                <div class="form-group">
+                    <label for="allocGrams">Pack size</label>
+                    <select id="allocGrams" required>
+                        <option value="500">500 g</option>
+                        <option value="1000">1 kg</option>
+                        <option value="1500">1.5 kg</option>
+                        <option value="2000">2 kg</option>
+                        <option value="2500">2.5 kg</option>
+                        <option value="3000">3 kg</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="allocShipmentRef">Shipment note (optional)</label>
+                    <input type="text" id="allocShipmentRef" list="shipmentSuggestions" placeholder="e.g. March 24 delivery" autocomplete="off" />
+                    <datalist id="shipmentSuggestions"></datalist>
+                </div>
+                <div class="form-group">
+                    <label for="allocBatchId">Delivery batch</label>
+                    <div class="batch-row">
+                        <select id="allocBatchId">
+                            <option value="">Unbatched</option>
+                        </select>
+                        <button type="button" class="btn-secondary btn-small" id="newBatchBtn">+ New batch</button>
+                    </div>
+                    <div class="batch-details" id="batchDetails">Unbatched</div>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="danger-btn" id="deleteAllocationBtn" style="display: none; margin-right: auto;">Delete</button>
+                    <button type="button" class="cancel-btn" id="cancelAllocationBtn">Cancel</button>
+                    <button type="submit" class="submit-btn">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Row modal -->
+    <div class="modal" id="rowModal" role="dialog" aria-labelledby="rowModalTitle">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <button type="button" class="close-modal" id="closeRowModal" aria-label="Close">&times;</button>
+            <h2 id="rowModalTitle">Allocation row</h2>
+            <form id="rowForm">
+                <input type="hidden" id="rowEditId" />
+                <div class="form-group">
+                    <label for="rowLabelInput">Label</label>
+                    <input type="text" id="rowLabelInput" required placeholder="e.g. SM North, Podium, Ice Cream Supplier" />
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="cancel-btn" id="cancelRowBtn">Cancel</button>
+                    <button type="submit" class="submit-btn">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Generic confirmation modal -->
+    <div class="modal" id="confirmModal" role="dialog" aria-labelledby="confirmTitle">
+        <div class="modal-content modal-sm" onclick="event.stopPropagation()">
+            <button type="button" class="close-modal" id="closeConfirmModal" aria-label="Close">&times;</button>
+            <h2 id="confirmTitle">Confirm action</h2>
+            <p id="confirmMessage" class="confirm-message"></p>
+            <div class="form-actions">
+                <button type="button" class="cancel-btn" id="confirmCancelBtn">Cancel</button>
+                <button type="button" class="danger-btn" id="confirmOkBtn">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Copy mode modal -->
+    <div class="modal" id="copyModeModal" role="dialog" aria-labelledby="copyModeTitle">
+        <div class="modal-content modal-sm" onclick="event.stopPropagation()">
+            <button type="button" class="close-modal" id="closeCopyModeModal" aria-label="Close">&times;</button>
+            <h2 id="copyModeTitle">Copy from previous week</h2>
+            <p class="confirm-message">Choose what to copy into this empty period.</p>
+            <div class="copy-mode-actions">
+                <button type="button" class="btn-secondary" id="copyRowsOnlyBtn">Copy rows only</button>
+                <button type="button" class="submit-btn" id="copyFullWeekBtn">Copy rows + allocations</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- New batch modal -->
+    <div class="modal" id="batchModal" role="dialog" aria-labelledby="batchModalTitle">
+        <div class="modal-content modal-sm" onclick="event.stopPropagation()">
+            <button type="button" class="close-modal" id="closeBatchModal" aria-label="Close">&times;</button>
+            <h2 id="batchModalTitle">Create batch</h2>
+            <form id="batchForm">
+                <div class="form-group">
+                    <label for="batchNameInput">Batch name</label>
+                    <input type="text" id="batchNameInput" placeholder="e.g. Delivery Apr 3" required />
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="cancel-btn" id="cancelBatchBtn">Cancel</button>
+                    <button type="submit" class="submit-btn">Create</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>

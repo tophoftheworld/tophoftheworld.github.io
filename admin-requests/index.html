@@ -7,7 +7,7 @@
     <link rel="icon" href="data:,">
     
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css?v=20250117-2">
+    <link rel="stylesheet" href="css/style.css?v=20250223-11">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
@@ -21,7 +21,15 @@
             </div>
             <div class="controls">
                 <div class="control-item">
-                    <label class="control-label">Filter</label>
+                    <label class="control-label">Type</label>
+                    <select id="requestTypeFilter">
+                        <option value="all">All</option>
+                        <option value="payroll">Payroll</option>
+                        <option value="reliever">Reliever</option>
+                    </select>
+                </div>
+                <div class="control-item">
+                    <label class="control-label">Status</label>
                     <select id="statusFilter">
                         <option value="all">All Requests</option>
                         <option value="pending" selected>Pending</option>
@@ -58,7 +66,15 @@
         
         <div class="mobile-controls">
             <div class="control-item">
-                <label class="control-label">Filter</label>
+                <label class="control-label">Type</label>
+                <select id="requestTypeFilterMobile">
+                    <option value="all">All</option>
+                    <option value="payroll">Payroll</option>
+                    <option value="reliever">Reliever</option>
+                </select>
+            </div>
+            <div class="control-item">
+                <label class="control-label">Status</label>
                 <select id="statusFilterMobile">
                     <option value="all">All Requests</option>
                     <option value="pending" selected>Pending</option>
@@ -81,14 +97,14 @@
                     Reject Selected
                 </button>
             </div>
-            <button class="refresh-btn" id="refreshBtnMobile">
+            <button class="refresh-btn refresh-btn-mobile" id="refreshBtnMobile" title="Refresh" aria-label="Refresh">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M21 2v6h-6"></path>
                     <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
                     <path d="M3 22v-6h6"></path>
                     <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
                 </svg>
-                Refresh
+                <span class="refresh-btn-text">Refresh</span>
             </button>
         </div>
 
@@ -123,8 +139,8 @@
             <h2 id="confirmTitle">Confirm Action</h2>
             <p id="confirmMessage"></p>
             <div class="confirm-actions">
-                <button class="modal-btn modal-btn-cancel" id="confirmCancel">Cancel</button>
                 <button class="modal-btn" id="confirmOk"></button>
+                <button class="modal-btn modal-btn-cancel" id="confirmCancel">Cancel</button>
             </div>
         </div>
     </div>
@@ -200,14 +216,14 @@
                 </div>
                 
                 <div class="modal-actions">
-                    <button type="button" class="modal-btn modal-btn-cancel" onclick="closeEditModal()">Cancel</button>
                     <button type="submit" class="modal-btn modal-btn-approve">Approve with Changes</button>
                 </div>
             </form>
         </div>
     </div>
 
-    <script type="module" src="js/script.js?v=20250120-1"></script>
+    <script src="../shared/js/PayCalculator.js"></script>
+    <script type="module" src="js/script.js?v=20250315-2"></script>
 </body>
 </html>
 

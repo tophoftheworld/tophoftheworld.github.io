@@ -91,6 +91,12 @@
                 <p class="form-hint">Captures the menu canvas as an image. For photo tiles with multiple images, the first photo is used.</p>
             </div>
             <div class="form-section">
+                <button type="button" id="saveMenuBtn" class="btn btn-primary">Save menu</button>
+                <button type="button" id="loadMenuBtn" class="btn btn-secondary">Load menu</button>
+                <input type="file" id="loadMenuInput" accept=".json" hidden aria-hidden="true">
+                <p class="form-hint">Save the current layout and tiles to a JSON file. Load a previously saved menu (includes image links and drink data).</p>
+            </div>
+            <div class="form-section">
                 <button type="button" id="resetBtn" class="btn btn-secondary">Reset to default</button>
             </div>
             </div><!-- /#layoutPanel -->

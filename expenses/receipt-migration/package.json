@@ -1,0 +1,17 @@
+{
+  "name": "expenses-receipt-migration",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "migrate-receipts.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "run": "node migrate-receipts.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.7.0"
+  }
+}
+

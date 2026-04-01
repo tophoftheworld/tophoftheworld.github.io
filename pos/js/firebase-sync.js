@@ -1,4 +1,4 @@
-import { db, collection, addDoc, updateDoc, doc, getDocs, query, orderBy, limit, setDoc, getDoc } from './firebase-setup.js';
+import { db, collection, addDoc, updateDoc, doc, getDocs, query, orderBy, limit, setDoc, getDoc, onSnapshot } from './firebase-setup.js';
 import { menuData } from './menu-data.js';
 
 let syncQueue = [];
@@ -274,4 +274,29 @@ export async function saveEventToFirebase(eventData) {
         console.error('Error saving event:', error);
         throw error;
     }
+}
+
+let unsubscribeOrderListener = null;
+
+export function subscribeToOrders(event, date, onUpdate) {
+    // Detach any existing listener before attaching a new one
+    if (unsubscribeOrderListener) {
+        unsubscribeOrderListener();
+        unsubscribeOrderListener = null;
+    }
+
+    const dateStr = getLocalDateString(date);
+    const ordersRef = collection(db, `pos-orders/${event}/${dateStr}`);
+
+    console.log(`Subscribing to real-time orders for ${event} / ${dateStr}`);
+
+    unsubscribeOrderListener = onSnapshot(ordersRef, (snapshot) => {
+        snapshot.docChanges().forEach(change => {
+            if (change.type === 'added' || change.type === 'modified') {
+                onUpdate(change.doc);
+            }
+        });
+    }, (error) => {
+        console.error('Order listener error:', error);
+    });
 }

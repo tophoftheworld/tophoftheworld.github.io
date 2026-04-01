@@ -13,7 +13,7 @@
     <meta property="og:description" content="Matchanese Employee Scheduling System">
 
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css?v=16">
+    <link rel="stylesheet" href="css/style.css?v=43">
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 </head>
 
@@ -117,6 +117,32 @@
         </div>
     </div>
 
+    <!-- Shift details modal (My Schedule card tap) -->
+    <div class="modal" id="shiftDetailsModal">
+        <div class="modal-content shift-details-modal__content" onclick="event.stopPropagation()">
+            <span class="close-modal" id="closeShiftDetailsModal" aria-label="Close">&times;</span>
+            <h2 class="shift-details-modal__title">Shift details</h2>
+            <div class="shift-details-modal__body">
+                <p class="shift-details-modal__row"><span class="shift-details-modal__label">Date</span><span id="shiftDetailsDate"></span></p>
+                <p class="shift-details-modal__row"><span class="shift-details-modal__label">Branch</span><span id="shiftDetailsBranch"></span></p>
+                <p class="shift-details-modal__row"><span class="shift-details-modal__label">Shift type</span><span id="shiftDetailsShiftType"></span></p>
+                <p class="shift-details-modal__row shift-details-modal__time" id="shiftDetailsTimeRow"><span class="shift-details-modal__label">Time</span><span id="shiftDetailsTime"></span></p>
+                <p class="shift-details-modal__row shift-details-modal__actual-time" id="shiftDetailsActualTimeRow" style="display: none;"><span class="shift-details-modal__label">Actual</span><span id="shiftDetailsActualTime"></span></p>
+            </div>
+            <div class="shift-details-modal__actions" id="shiftDetailsActions">
+                <div class="shift-details-reliever-form" id="shiftDetailsRelieverForm" style="display: none;">
+                    <label for="shiftDetailsRelieverSelect" class="shift-details-modal__label">Select reliever</label>
+                    <select id="shiftDetailsRelieverSelect">
+                        <option value="">Select reliever</option>
+                    </select>
+                    <button type="button" class="submit-btn" id="shiftDetailsSubmitRequestBtn"><span class="btn-spinner"></span><span class="btn-text">Submit request</span></button>
+                </div>
+                <p class="shift-details-pending-msg" id="shiftDetailsPendingMsg" style="display: none;">Reliever request pending</p>
+                <button type="button" class="submit-btn" id="shiftDetailsRequestSubstitutionBtn" style="display: none;">Request Reliever</button>
+            </div>
+        </div>
+    </div>
+
     <div class="container">
         <div class="admin-header">
             <div class="header-content">
@@ -216,30 +242,40 @@
 
         <!-- Mobile Daily View -->
         <div id="mobileDailyView" class="mobile-daily-view" style="display: none;">
-            <!-- Mobile Day Navigation -->
-            <div class="mobile-day-navigation">
-                <button class="mobile-nav-btn" id="prevDayBtn">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M16 6 Q16 4 14 4 L8 10 Q6 12 8 14 L14 20 Q16 20 16 18 L16 6 Z" fill="currentColor"/>
-                    </svg>
-                </button>
-                <div class="mobile-day-info">
-                    <div class="mobile-month-year" id="mobileMonthYear">September 2025</div>
-                    <div class="mobile-day-strip" id="mobileDayStrip">
-                        <!-- Day strip will be populated by JavaScript -->
-                    </div>
+
+            <!-- Sticky calendar header -->
+            <div class="mobile-cal-header">
+
+                <!-- Month title — tap to expand/collapse full calendar -->
+                <div class="mobile-month-row" id="mobileMonthRow">
+                    <span id="mobileMonthTitle"></span>
+                    <span class="mobile-cal-chevron" id="mobileCalChevron">▼</span>
                 </div>
-                <button class="mobile-nav-btn" id="nextDayBtn">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M8 6 Q8 4 10 4 L16 10 Q18 12 16 14 L10 20 Q8 20 8 18 L8 6 Z" fill="currentColor"/>
-                    </svg>
-                </button>
+
+                <!-- Full month calendar (hidden by default) -->
+                <div class="mobile-full-calendar" id="mobileFullCalendar">
+                    <div class="mobile-cal-grid" id="mobileCalGrid"></div>
+                </div>
+
+                <!-- Week strip (always visible) -->
+                <div class="mobile-week-strip" id="mobileWeekStrip"></div>
+
+                <!-- Mode toggle + branch selector (Branch) / debug employee selector (My Schedule) -->
+                <div class="mobile-controls-bar">
+                    <div class="mobile-mode-toggle">
+                        <button id="mobileBranchViewBtn" class="mobile-toggle-btn active">Branch</button>
+                        <button id="mobileMyScheduleBtn" class="mobile-toggle-btn">My Schedule</button>
+                    </div>
+                    <select id="mobileBranchSelect" class="mobile-branch-select"></select>
+                    <span id="mobileEmployeeSelectLabel" class="mobile-control-label" style="display:none">Employee:</span>
+                    <select id="mobileEmployeeSelect" class="mobile-branch-select mobile-employee-select" style="display:none" title="Debug: pick employee"></select>
+                </div>
+
             </div>
 
-            <!-- Mobile Daily Schedule -->
-            <div class="mobile-daily-schedule" id="mobileDailySchedule">
-                <!-- Shift group rows will be populated by JavaScript -->
-            </div>
+            <!-- Scrollable schedule content -->
+            <div id="mobileScheduleContent" class="mobile-schedule-content"></div>
+
         </div>
 
         <!-- Employee View -->
@@ -250,7 +286,8 @@
         </div>
     </div>
 
-    <script type="module" src="js/script.js?v=16"></script>
+    <div id="scheduleToast" class="schedule-toast" aria-live="polite"></div>
+    <script type="module" src="js/script.js?v=42"></script>
 </body>
 
 </html>

@@ -15,7 +15,7 @@
 
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-    <link rel="stylesheet" href="css/admin-style.css">
+    <link rel="stylesheet" href="css/admin-style.css?v=1.26">
 </head>
 
 <body>
@@ -669,6 +669,64 @@
             </table>
         </div>
 
+        <!-- Mobile: fixed-height view; summary fixed at top, only cards area scrolls -->
+        <div class="mobile-payroll-view mobile-payroll-scroll" id="mobilePayrollScroll">
+            <div class="mobile-summary-card mobile-summary-card--clickable" id="mobileSummaryCard" role="button" tabindex="0" aria-label="Period summary, tap to change period">
+                <div class="mobile-summary-card__title">Period summary</div>
+                <div class="mobile-summary-card__hero">
+                    <span class="mobile-summary-card__hero-label">Total Payroll</span>
+                    <span class="mobile-summary-card__hero-value" id="mobileSummaryTotalPayroll">₱0.00</span>
+                </div>
+                <div class="mobile-summary-card__meta">
+                    <div class="mobile-summary-card__row mobile-summary-card__row--period" id="mobileSummaryPeriodRow">
+                        <span class="mobile-summary-card__label">Period</span>
+                        <span class="mobile-summary-card__value mobile-summary-card__period-label" id="mobileSummaryPeriodLabel">—</span>
+                    </div>
+                    <div class="mobile-summary-card__row">
+                        <span class="mobile-summary-card__label">Active employees</span>
+                        <span class="mobile-summary-card__value" id="mobileSummaryActive">0</span>
+                    </div>
+                </div>
+            </div>
+            <div class="mobile-cards-wrapper" id="mobileCardsWrapper">
+                <div class="mobile-loading-overlay" id="mobileLoadingOverlay" style="display: none;" aria-hidden="true">
+                    <div class="spinner"></div>
+                    <div class="loading-message">Loading data...</div>
+                </div>
+                <div class="employee-cards-mobile" id="employeeCardsMobile" aria-hidden="true">
+                    <!-- Populated by JS when viewport < 992px -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Mobile: period selection modal -->
+        <div class="modal period-select-modal" id="periodSelectModal" aria-hidden="true" style="display: none;">
+            <div class="period-select-modal__content" onclick="event.stopPropagation()">
+                <span class="close-modal period-select-modal__close" id="periodSelectModalClose" aria-label="Close">×</span>
+                <h3 class="period-select-modal__title">Select payroll period</h3>
+                <ul class="period-select-modal__list" id="periodSelectModalList" role="listbox">
+                    <!-- Populated by JS from window.payrollPeriods -->
+                </ul>
+            </div>
+        </div>
+
+        <!-- Mobile-only employee detail modal (day cards, close, Record payment) -->
+        <div class="modal employee-detail-mobile-modal" id="employeeDetailMobileModal" aria-hidden="true" style="display: none;">
+            <div class="employee-detail-mobile-modal__content" onclick="event.stopPropagation()">
+                <span class="close-modal employee-detail-mobile-modal__close" id="employeeDetailMobileClose" aria-label="Close">×</span>
+                <div class="employee-detail-mobile-modal__body">
+                    <div class="employee-detail-mobile__header">
+                        <h2 class="employee-detail-mobile__name" id="employeeDetailMobileName"></h2>
+                    </div>
+                    <div class="employee-detail-mobile__summary" id="employeeDetailMobileSummary"></div>
+                    <div class="employee-detail-mobile__actions" id="employeeDetailMobileActions"></div>
+                    <div class="employee-detail-mobile-modal__day-cards-scroll">
+                        <div class="employee-detail-mobile__day-cards" id="employeeDetailMobileDayCards"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="pagination" id="pagination">
             <button class="page-btn" data-page="1">1</button>
             <button class="page-btn active" data-page="2">2</button>
@@ -679,8 +737,8 @@
 
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="../shared/js/PayCalculator.js?v=1.08"></script>
-    <script type="module" src="js/admin-script.js?v=1.15"></script>
+    <script src="../shared/js/PayCalculator.js?v=1.10"></script>
+    <script type="module" src="js/admin-script.js?v=1.23"></script>
 </body>
 
 </html>
