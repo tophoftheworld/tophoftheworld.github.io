@@ -8,14 +8,14 @@
     <link rel="icon" href="data:,">
     
     <meta property="og:type" content="website">
-    <meta property="og:url" content="https://matchanese.site/attendance/">
-    <meta property="og:title" content="Matchanese Attendance">
-    <meta property="og:description" content="Matchanese Employee Attendance System">
-    <meta property="og:image" content="https://matchanese.site/attendance/img/banner.jpg">
+    <meta property="og:url" content="https://matchanese.site/admin-payroll/">
+    <meta property="og:title" content="Matchanese Admin Payroll">
+    <meta property="og:description" content="Matchanese payroll admin">
+    <meta property="og:image" content="https://matchanese.site/admin-payroll/img/matchanese-logo.png">
 
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-    <link rel="stylesheet" href="css/admin-style.css?v=1.26">
+    <link rel="stylesheet" href="css/admin-style.css?v=2.0.18">
 </head>
 
 <body>
@@ -51,6 +51,7 @@
                     <label for="addShiftSchedule">Shift</label>
                     <select id="addShiftSchedule" required>
                         <option value="Opening">Opening (9:30 AM - 6:30 PM)</option>
+                        <option value="Adjusted Opening">Adjusted Opening (10:30 AM - 7:30 PM)</option>
                         <option value="Opening Half-Day">Opening Half-Day (9:30 AM - 1:30 PM)</option>
                         <option value="Midshift">Midshift (11:00 AM - 8:00 PM)</option>
                         <option value="Closing">Closing (1:00 PM - 10:00 PM)</option>
@@ -204,6 +205,7 @@
                             <label for="editShiftSchedule">Shift Type</label>
                             <select id="editShiftSchedule" class="shift-type-select" required>
                                 <option value="Opening">Opening (9:30 AM - 6:30 PM)</option>
+                                <option value="Adjusted Opening">Adjusted Opening (10:30 AM - 7:30 PM)</option>
                                 <option value="Opening Half-Day">Opening Half-Day (9:30 AM - 1:30 PM)</option>
                                 <option value="Midshift">Midshift (11:00 AM - 8:00 PM)</option>
                                 <option value="Closing">Closing (1:00 PM - 10:00 PM)</option>
@@ -326,6 +328,7 @@
                     <select id="batchEditShift">
                         <option value="">Keep Current</option>
                         <option value="Opening">Opening (9:30 AM - 6:30 PM)</option>
+                        <option value="Adjusted Opening">Adjusted Opening (10:30 AM - 7:30 PM)</option>
                         <option value="Opening Half-Day">Opening Half-Day (9:30 AM - 1:30 PM)</option> <!-- Add this -->
                         <option value="Midshift">Midshift (11:00 AM - 8:00 PM)</option>
                         <option value="Closing">Closing (1:00 PM - 10:00 PM)</option>
@@ -527,6 +530,47 @@
         </div>
     </div>
 
+    <div class="modal" id="periodEarningsModal" style="display: none;" aria-hidden="true">
+        <div class="modal-content" style="max-width: 640px;">
+            <span class="close-modal" id="periodEarningsModalClose" role="button" tabindex="0">&times;</span>
+            <h2>Period earnings (bonuses / adjustments)</h2>
+            <p class="form-hint" style="margin-bottom: 1rem;">Lines are summed into totals via <code>calculatePayrollPeriodV2</code>. Uses collection <code>payroll_period_earnings_v2</code>.</p>
+            <form id="periodEarningsForm" class="inline-form" style="margin-bottom: 1rem;">
+                <div class="form-row" style="flex-wrap: wrap; gap: 0.5rem; align-items: flex-end;">
+                    <div class="form-group">
+                        <label for="periodEarningsEmployeeId">Employee ID</label>
+                        <select id="periodEarningsEmployeeId" required style="min-width: 12rem;">
+                            <option value="">Select…</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="periodEarningsAmount">Amount (₱)</label>
+                        <input type="number" id="periodEarningsAmount" min="0" step="0.01" required placeholder="0.00" />
+                    </div>
+                    <div class="form-group" style="flex: 1; min-width: 10rem;">
+                        <label for="periodEarningsNote">Note (optional)</label>
+                        <input type="text" id="periodEarningsNote" placeholder="e.g. 13th month" />
+                    </div>
+                    <button type="submit" class="submit-btn">Add line</button>
+                </div>
+            </form>
+            <div style="overflow-x: auto;">
+                <table class="data-table" style="width: 100%; font-size: 0.9rem;">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>ID</th>
+                            <th>Amount</th>
+                            <th>Note</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="periodEarningsTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
     <div class="container">
         <div class="admin-header">
             <div class="logo-section">
@@ -566,7 +610,7 @@
                 <!-- <div class="control-item">
                     <button class="danger-btn" id="clearLogsBtn">🧹 Clear Logs</button>
                 </div> -->
-                <button class="employee-btn" id="addEmployeeBtn">
+                <button class="employee-btn" id="addEmployeeBtn" type="button">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
@@ -575,6 +619,9 @@
                         <line x1="22" x2="16" y1="11" y2="11"></line>
                     </svg>
                     Add Employee
+                </button>
+                <button class="employee-btn" id="periodEarningsBtn" type="button" title="Bonuses and adjustments for this period">
+                    Period earnings
                 </button>
                 <button class="export-btn" id="exportBtn">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -649,6 +696,9 @@
                 <!-- Add this line below the spinner -->
                 <!-- <div class="loading-message" id="refreshIndicator">Loading data...</div> -->
             </div>
+            <div id="payrollTableBlockingScrim" class="payroll-blocking-scrim payroll-blocking-scrim--table" style="display: none;" aria-hidden="true">
+                <div class="payroll-blocking-scrim__backdrop" aria-hidden="true"></div>
+            </div>
 
             <table class="data-table" id="employeeTable">
                 <thead>
@@ -693,6 +743,9 @@
                     <div class="spinner"></div>
                     <div class="loading-message">Loading data...</div>
                 </div>
+                <div id="payrollMobileBlockingScrim" class="payroll-blocking-scrim payroll-blocking-scrim--mobile-cards" style="display: none;" aria-hidden="true">
+                    <div class="payroll-blocking-scrim__backdrop" aria-hidden="true"></div>
+                </div>
                 <div class="employee-cards-mobile" id="employeeCardsMobile" aria-hidden="true">
                     <!-- Populated by JS when viewport < 992px -->
                 </div>
@@ -735,10 +788,19 @@
         </div>
     </div>
 
+    <!-- Viewport-centered loading card; roster blur stays in .data-table-container / mobile wrapper only -->
+    <div id="payrollBlockingPanelHost" class="payroll-blocking-panel-host" style="display: none;" aria-hidden="true">
+        <div class="payroll-blocking-scrim__panel">
+            <div class="spinner"></div>
+            <p class="payroll-blocking-scrim__message">Loading payroll data…</p>
+            <p class="payroll-blocking-scrim__detail" aria-live="polite"></p>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="../shared/js/PayCalculator.js?v=1.10"></script>
-    <script type="module" src="js/admin-script.js?v=1.23"></script>
+    <script src="../shared/js/PayCalculator.js?v=2.0.4"></script>
+    <script type="module" src="js/admin-script.js?v=2.0.18"></script>
 </body>
 
 </html>

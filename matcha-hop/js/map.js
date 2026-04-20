@@ -131,12 +131,18 @@ function getMyCafeDotIcon() {
 }
 
 const OVERLAP_PADDING_PX = 4;
+const MARKER_ICON_SIZE = 14.3;
+const MARKER_ICON_SVG = {
+  check: `<svg viewBox="0 0 24 24" width="${MARKER_ICON_SIZE}" height="${MARKER_ICON_SIZE}" aria-hidden="true" focusable="false"><path d="M9.2 16.2 4.9 11.9l1.4-1.4 2.9 2.9 8.4-8.4 1.4 1.4z" fill="currentColor"/></svg>`,
+  heart: `<svg viewBox="0 0 24 24" width="${MARKER_ICON_SIZE}" height="${MARKER_ICON_SIZE}" aria-hidden="true" focusable="false"><path d="M12 21.35 10.55 20.03C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54z" fill="currentColor"/></svg>`,
+  star: `<svg viewBox="0 0 24 24" width="${MARKER_ICON_SIZE}" height="${MARKER_ICON_SIZE}" aria-hidden="true" focusable="false"><path d="m12 17.27 6.18 3.73-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" fill="currentColor"/></svg>`,
+};
 
 function rectsOverlap(a, b, padding = OVERLAP_PADDING_PX) {
   return !(a.right < b.left - padding || a.left > b.right + padding || a.bottom < b.top - padding || a.top > b.bottom + padding);
 }
 
-/** Pill-shaped name tag overlay. Logged = green checkmark (left of text or inside dot); selected = green fill, checkmark inverts to white. */
+/** Pill-shaped name tag overlay. Icon precedence: liked+tried heart, liked-only star, tried-only check; selected inverts icon to white. */
 class NameTagOverlay extends google.maps.OverlayView {
   constructor(position, label, onClick, options = {}) {
     super();
@@ -146,7 +152,8 @@ class NameTagOverlay extends google.maps.OverlayView {
     this.cafe = options.cafe ?? null;
     this.starred = options.starred === true;
     this.alwaysDot = options.alwaysDot === true;
-    this.logged = options.logged === true;
+    this.tried = options.tried === true || options.logged === true;
+    this.liked = options.liked === true;
     this.div = null;
     this.showAsDot = this.starred ? false : true;
   }
@@ -161,16 +168,25 @@ class NameTagOverlay extends google.maps.OverlayView {
     if (!this.div) return;
     const classes = ['matcha-hop-name-tag'];
     if (this.showAsDot) classes.push('matcha-hop-dot');
-    if (this.logged) classes.push('logged');
+    if (this.tried) classes.push('tried');
+    if (this.liked) classes.push('liked');
     if (this.cafe && selectedCafeId === this.cafe.id) classes.push('selected');
     this.div.className = classes.join(' ');
     this.div.innerHTML = '';
-    if (this.logged) {
-      const check = document.createElement('span');
-      check.className = 'matcha-hop-check';
-      check.setAttribute('aria-hidden', 'true');
-      check.textContent = '✓';
-      this.div.appendChild(check);
+    const iconEl = document.createElement('span');
+    if (this.liked && this.tried) {
+      iconEl.className = 'matcha-hop-state-icon matcha-hop-heart';
+      iconEl.innerHTML = MARKER_ICON_SVG.heart;
+    } else if (this.liked && !this.tried) {
+      iconEl.className = 'matcha-hop-state-icon matcha-hop-star';
+      iconEl.innerHTML = MARKER_ICON_SVG.star;
+    } else if (!this.liked && this.tried) {
+      iconEl.className = 'matcha-hop-state-icon matcha-hop-check';
+      iconEl.innerHTML = MARKER_ICON_SVG.check;
+    }
+    if (iconEl.className) {
+      iconEl.setAttribute('aria-hidden', 'true');
+      this.div.appendChild(iconEl);
     }
     if (!this.showAsDot) {
       const labelEl = document.createElement('span');
@@ -225,7 +241,8 @@ export function addCuratedPins(cafes, onClick) {
       cafe,
       starred: cafe.starred === true,
       alwaysDot: cafe.classification === 'cafe_specialty_matcha',
-      logged: cafe.logged === true,
+      tried: cafe.tried === true || cafe.logged === true,
+      liked: cafe.liked === true,
     });
     overlay.setMap(map);
     curatedOverlays.push(overlay);
@@ -284,7 +301,7 @@ export function addMyCafePin(cafe, onClick) {
   return marker;
 }
 
-/** Clears separate "my cafe" markers only. Logged state is shown on the single name-tag overlay via .logged class. */
+/** Clears separate "my cafe" markers only. Tried/liked state is shown on the single name-tag overlay. */
 export function refreshMyCafesPins(cafes, onClick) {
   myCafeMarkers.forEach(removeMarker);
   myCafeMarkers = [];

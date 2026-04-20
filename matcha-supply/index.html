@@ -6,7 +6,8 @@
     <title>Logistics Planner | Matchanese</title>
     <link rel="icon" href="../icons/icon-64.png" type="image/png" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="css/style.css" />
+    <!-- Bump ?v= when you change CSS/JS so browsers (and GitHub Pages) fetch the new file -->
+    <link rel="stylesheet" href="css/style.css?v=5" />
 </head>
 <body>
     <div class="container">
@@ -30,6 +31,10 @@
                 <div class="summary-card">
                     <span class="summary-label" id="summaryLabel">Total allocated this week</span>
                     <strong class="summary-value" id="summaryAllocated">0 g</strong>
+                </div>
+                <div class="summary-card summary-card-batch">
+                    <span class="summary-label" id="summaryBatchLabel">Selected batch (this period)</span>
+                    <strong class="summary-value summary-value-muted" id="summaryBatchAllocated">—</strong>
                 </div>
                 <div class="summary-card summary-card-target">
                     <label class="summary-label" for="orderTargetKg">Order target (kg)</label>
@@ -66,6 +71,10 @@
                 <div class="form-group">
                     <label for="allocGrams">Pack size</label>
                     <select id="allocGrams" required>
+                        <option value="100">100 g</option>
+                        <option value="200">200 g</option>
+                        <option value="300">300 g</option>
+                        <option value="400">400 g</option>
                         <option value="500">500 g</option>
                         <option value="1000">1 kg</option>
                         <option value="1500">1.5 kg</option>
@@ -163,6 +172,6 @@
 
     <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="js/app.js"></script>
+    <script src="js/app.js?v=5"></script>
 </body>
 </html>

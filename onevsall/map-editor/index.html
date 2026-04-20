@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>onevsall map editor</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div class="toolbar">
+      <strong>Map Editor</strong>
+      <button data-mode="permanent">Permanent</button>
+      <button data-mode="damageable">Damageable</button>
+      <button data-mode="erase">Erase</button>
+      <button id="saveBtn">Save Map</button>
+      <button id="reloadBtn">Reload Map</button>
+      <span id="modeLabel">mode: permanent</span>
+      <span id="saveStatus"></span>
+    </div>
+    <canvas id="editorCanvas" width="1200" height="700"></canvas>
+    <script src="./app.js"></script>
+  </body>
+</html>

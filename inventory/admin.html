@@ -25,6 +25,163 @@
     .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 8px; }
     .section-title { font-size: 1.05rem; font-weight: 600; color: #333; }
 
+    /* Order View: never cram title + controls + copy into one flex row (avoids horizontal scroll + text beside dropdowns) */
+    .order-view-head { margin-bottom: 12px; }
+    .order-view-head .section-title { margin-bottom: 10px; }
+    .order-view-controls {
+      display: grid;
+      gap: 12px 16px;
+      align-items: center;
+    }
+    @media (min-width: 900px) {
+      .order-view-controls {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+    @media (max-width: 899px) {
+      .order-view-controls {
+        grid-template-columns: 1fr;
+      }
+    }
+    .order-view-control-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .order-view-control-group .order-view-inline-label {
+      flex-shrink: 0;
+    }
+    .order-view-control-group .branch-select {
+      flex: 1 1 0;
+      min-width: 0;
+      width: 100%;
+      max-width: 100%;
+    }
+    .order-view-control-group .order-view-locations-dropdown {
+      flex: 1 1 0;
+      min-width: 0;
+      max-width: 100%;
+    }
+    .order-view-locations-dropdown {
+      position: relative;
+      display: inline-block;
+      vertical-align: middle;
+    }
+    .order-view-locations-dropdown > summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 6px 12px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      background: white;
+      min-width: 0;
+      width: 100%;
+      box-sizing: border-box;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .order-view-locations-dropdown > summary::-webkit-details-marker { display: none; }
+    .order-view-locations-panel {
+      position: absolute;
+      left: 0;
+      top: 100%;
+      margin-top: 4px;
+      z-index: 50;
+      min-width: 220px;
+      max-width: 280px;
+      padding: 10px 12px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    }
+    .order-view-branch-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      user-select: none;
+      padding: 4px 0;
+    }
+    .order-view-branch-label input { margin: 0; cursor: pointer; flex-shrink: 0; }
+    .order-view-branch-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 8px; padding-top: 8px; border-top: 1px solid #eee; }
+    .order-view-control-full {
+      grid-column: 1 / -1;
+      flex-wrap: wrap;
+    }
+    #orderTable .inv-table tbody tr.order-view-row-needs-order {
+      background: #fff5f5;
+      box-shadow: inset 3px 0 0 #c62828;
+    }
+    #orderTable .inv-table tbody tr.order-view-row-needs-order:hover {
+      background: #ffebee;
+    }
+    #orderTable .inv-table .order-view-th-sub {
+      display: block;
+      font-weight: 500;
+      font-size: 0.78rem;
+      color: #555;
+      margin-top: 3px;
+    }
+
+    /* Order View table: centered headers; numeric body cells stay right-aligned */
+    #orderTable .category-header {
+      cursor: pointer;
+    }
+    #orderTable .inv-table {
+      table-layout: auto;
+    }
+    #orderTable .inv-table th {
+      white-space: normal;
+      vertical-align: middle;
+      line-height: 1.3;
+      padding: 10px 8px;
+      text-align: center;
+    }
+    #orderTable .inv-table th.order-view-th-num {
+      font-weight: 400;
+    }
+    #orderTable .inv-table .order-view-th-photo { width: 52px; min-width: 52px; }
+    #orderTable .inv-table .order-view-th-item { min-width: 9rem; }
+    #orderTable .inv-table .order-view-th-desc { min-width: 7rem; }
+    #orderTable .inv-table .order-view-th-num { min-width: 6.5rem; }
+    #orderTable .inv-table .order-view-th-runout { min-width: 7.5rem; }
+    /* Must use !important: global .quantity-cell sets font-weight: 500 !important */
+    #orderTable .inv-table td.quantity-cell.order-view-suggested-cell {
+      font-weight: 700 !important;
+    }
+    #orderTable .inv-table td.order-view-runout-cell {
+      white-space: normal;
+      vertical-align: middle;
+    }
+    #orderTable .inv-table .order-view-runout-date {
+      line-height: 1.25;
+      font-size: 1rem;
+      font-weight: 600;
+    }
+    #orderTable .inv-table .order-view-runout-days {
+      font-size: 0.78rem;
+      color: #555;
+      font-weight: 400;
+      line-height: 1.2;
+      margin-top: 3px;
+    }
+    #orderTable .inv-table td.order-view-runout-urgent .order-view-runout-date,
+    #orderTable .inv-table td.order-view-runout-urgent .order-view-runout-days {
+      color: #c62828;
+    }
+    #orderTable .inv-table td.quantity-cell {
+      white-space: nowrap;
+      text-align: right;
+    }
+    #orderTable .inv-table td.order-view-runout-cell.quantity-cell {
+      white-space: normal;
+    }
+
     /* Buttons */
     .btn { padding: 0.55rem 1rem; border: none; border-radius: 8px; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: all 0.2s; }
     .btn-primary { background: #2b9348; color: white; }
@@ -1079,6 +1236,7 @@
         <div class="task-navigation">
           <button class="task-nav-btn active" data-task="dashboard">Dashboard</button>
           <button class="task-nav-btn" data-task="weekly-view">Weekly View</button>
+          <button class="task-nav-btn" data-task="order-view">Order View</button>
           <button class="task-nav-btn" data-task="master-items">Master Items</button>
           <button class="task-nav-btn" data-task="branch-list">Branch List</button>
         </div>
@@ -1246,6 +1404,51 @@
           </table>
           <div style="text-align: center; padding: 20px; color: #666; font-style: italic;">
             Loading weekly usage data...
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Order View -->
+    <div class="task-section" id="order-view-task">
+      <div class="section">
+        <div class="order-view-head">
+          <div class="section-title">Order View</div>
+          <div class="order-view-controls" title="Pick locations, which week’s usage to copy from, and how far ahead to plan. Stock uses yesterday’s closing (previous calendar day). Week modes plan need for today through Sunday from that usage pattern.">
+            <div class="order-view-control-group">
+              <span class="order-view-inline-label" style="font-size:0.8rem;color:#666;">Locations</span>
+              <details class="order-view-locations-dropdown" id="orderViewLocationsDetails">
+                <summary id="orderViewLocationsSummary">Select locations…</summary>
+                <div class="order-view-locations-panel" id="orderViewBranchFilters" role="group" aria-label="Locations to include"></div>
+              </details>
+            </div>
+            <div class="order-view-control-group">
+              <span class="order-view-inline-label" style="font-size:0.8rem;color:#666;">Usage from</span>
+              <select id="orderUsageBaseline" class="branch-select" aria-label="Which week’s usage to use as the pattern">
+                <option value="prev-week">Last week</option>
+                <option value="two-weeks-ago">2 weeks ago</option>
+                <option value="rolling-avg" disabled>Rolling 4-week average (planned)</option>
+              </select>
+            </div>
+            <div class="order-view-control-group">
+              <span class="order-view-inline-label" style="font-size:0.8rem;color:#666;">Plan for</span>
+              <select id="orderHorizon" class="branch-select" aria-label="How far ahead to estimate need">
+                <option value="week">This week</option>
+                <option value="today">Today</option>
+                <option value="buffered">This week + 20%</option>
+              </select>
+            </div>
+            <div class="order-view-control-group order-view-control-full">
+              <label class="order-view-branch-label" for="orderViewNeedsOrderOnly">
+                <input type="checkbox" id="orderViewNeedsOrderOnly" />
+                Needs order only
+              </label>
+            </div>
+          </div>
+        </div>
+        <div id="orderTable">
+          <div style="text-align: center; padding: 20px; color: #666; font-style: italic;">
+            Open Order View to load suggested orders…
           </div>
         </div>
       </div>
@@ -1420,6 +1623,6 @@
   </div>
 
 
-  <script type="module" src="js/inventory-builder.js?v=43&t=1738600000"></script>
+  <script type="module" src="js/inventory-builder.js?v=67&t=1738600000"></script>
 </body>
 </html>

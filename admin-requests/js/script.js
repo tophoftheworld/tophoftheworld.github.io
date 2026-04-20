@@ -18,6 +18,8 @@ let currentFilter = 'pending';
 let currentRequestTypeFilter = 'all';
 let currentAdminId = 'admin'; // Will be set from auth
 let selectedRequests = new Set(); // Track selected request IDs
+const ATTENDANCE_COLLECTION = 'attendance_v2';
+const APPLY_VERSION = 'v2-apply-2026-04-15';
 
 // PayCalculator and dependencies for amount preview
 let HOLIDAYS_2025 = {};
@@ -56,6 +58,79 @@ async function loadSalesData(branch = 'sm-north') {
     } catch (error) {
         console.error("Error loading sales data:", error);
         return {};
+    }
+}
+
+function buildAttendancePayload(timeIn, timeOut, branch, shift, includeOT = false) {
+    const attendanceData = {
+        clockIn: {
+            time: timeIn,
+            branch: branch,
+            shift: shift
+        },
+        clockOut: {
+            time: timeOut
+        }
+    };
+    if (includeOT) {
+        attendanceData.hasOTPay = true;
+    }
+    return attendanceData;
+}
+
+async function applyPayrollRequestToV2(request, options = {}) {
+    const { editedData = null } = options;
+    const currentDate = request.currentData?.date || request.date;
+    const requestedDate = editedData?.date || request.requestedData?.date || request.date;
+    const dateChanged = currentDate !== requestedDate;
+
+    const timeIn = editedData ? time24to12(editedData.timeIn) : request.requestedData?.timeIn;
+    const timeOut = editedData ? time24to12(editedData.timeOut) : request.requestedData?.timeOut;
+    const branch = editedData?.branch || request.requestedData?.branch || request.currentData?.branch || null;
+    const shift = editedData?.shift || request.requestedData?.shift || request.currentData?.shift || null;
+    const requestedOT = editedData ? !!editedData.ot : !!request.requestOT;
+
+    if (request.type === "new_date") {
+        const newAttendanceRef = doc(db, ATTENDANCE_COLLECTION, request.employeeId, "dates", requestedDate);
+        await setDoc(newAttendanceRef, buildAttendancePayload(timeIn, timeOut, branch, shift, requestedOT));
+        return;
+    }
+
+    if (dateChanged) {
+        let oldHasOTPay = request.currentData?.hasOTPay || false;
+        const oldAttendanceRef = doc(db, ATTENDANCE_COLLECTION, request.employeeId, "dates", currentDate);
+
+        let oldAttendanceSnap = null;
+        try {
+            oldAttendanceSnap = await getDoc(oldAttendanceRef);
+            if (!oldHasOTPay && oldAttendanceSnap.exists()) {
+                oldHasOTPay = oldAttendanceSnap.data().hasOTPay || false;
+            }
+        } catch (error) {
+            console.error("Error fetching old attendance data:", error);
+        }
+
+        const newAttendanceRef = doc(db, ATTENDANCE_COLLECTION, request.employeeId, "dates", requestedDate);
+        await setDoc(newAttendanceRef, buildAttendancePayload(timeIn, timeOut, branch, shift, oldHasOTPay || requestedOT));
+
+        // Reapply safety: only try deleting the old doc if it exists.
+        if (oldAttendanceSnap?.exists()) {
+            await deleteDoc(oldAttendanceRef);
+        } else {
+            console.info("Skipping old date delete during reapply; old doc not found:", request.employeeId, currentDate);
+        }
+        return;
+    }
+
+    if (request.requestedData || editedData) {
+        const attendanceRef = doc(db, ATTENDANCE_COLLECTION, request.employeeId, "dates", currentDate);
+        await setDoc(attendanceRef, buildAttendancePayload(timeIn, timeOut, branch, shift, requestedOT), { merge: true });
+        return;
+    }
+
+    if (requestedOT) {
+        const attendanceRef = doc(db, ATTENDANCE_COLLECTION, request.employeeId, "dates", currentDate);
+        await setDoc(attendanceRef, { hasOTPay: true }, { merge: true });
     }
 }
 
@@ -220,7 +295,7 @@ async function getPayPreviewForRequest(request) {
     const currentData = request.currentData || {};
 
     try {
-        const employeeSnap = await getDoc(doc(db, "employees", request.employeeId));
+        const employeeSnap = await getDoc(doc(db, "employees_v2", request.employeeId));
         if (!employeeSnap.exists()) {
             return { error: 'Employee or base rate not found' };
         }
@@ -268,7 +343,7 @@ async function getPayPreviewForRequest(request) {
         let currentHasOTPay = false;
         const currentDate = currentData.date || request.date;
         try {
-            const attendanceRef = doc(db, "attendance", request.employeeId, "dates", currentDate);
+            const attendanceRef = doc(db, ATTENDANCE_COLLECTION, request.employeeId, "dates", currentDate);
             const attendanceSnap = await getDoc(attendanceRef);
             if (attendanceSnap.exists()) {
                 currentHasOTPay = !!attendanceSnap.data().hasOTPay;
@@ -426,20 +501,55 @@ function getRequestTypeLabel(request) {
     return { label: 'Payroll', cssClass: 'request-type-payroll' };
 }
 
-// Render requests based on current filter
-function renderRequests() {
-    const container = document.getElementById('requestsContainer');
-    if (!container) return;
+function isPayrollRequestRecord(request) {
+    return request._sourceCollection !== 'substitution_requests' && request.type !== 'substitution';
+}
 
+/** Approved payroll not yet stamped appliedTarget === attendance_v2 */
+function isEligibleBulkReapply(request) {
+    if (request.status !== 'approved') return false;
+    if (!isPayrollRequestRecord(request)) return false;
+    return request.appliedTarget !== ATTENDANCE_COLLECTION;
+}
+
+function getFilteredRequestsList() {
     let filtered = allRequests;
     if (currentRequestTypeFilter === 'payroll') {
         filtered = filtered.filter(r => r._sourceCollection === 'payroll_requests');
     } else if (currentRequestTypeFilter === 'reliever') {
         filtered = filtered.filter(r => r._sourceCollection === 'substitution_requests');
     }
-    const filteredRequests = currentFilter === 'all'
+    return currentFilter === 'all'
         ? filtered
         : filtered.filter(r => r.status === currentFilter);
+}
+
+function getSelectableRequestIds() {
+    return getFilteredRequestsList()
+        .filter(r => r.status === 'pending' || isEligibleBulkReapply(r))
+        .map(r => r.id);
+}
+
+function getBulkSelectionMode() {
+    if (selectedRequests.size === 0) return 'none';
+    const sel = Array.from(selectedRequests)
+        .map(id => allRequests.find(r => r.id === id))
+        .filter(Boolean);
+    if (sel.length === 0) return 'none';
+    const pending = sel.filter(r => r.status === 'pending');
+    const reapply = sel.filter(r => isEligibleBulkReapply(r));
+    if (pending.length > 0 && reapply.length > 0) return 'mixed';
+    if (pending.length > 0) return 'approve-reject';
+    if (reapply.length > 0) return 'reapply';
+    return 'none';
+}
+
+// Render requests based on current filter
+function renderRequests() {
+    const container = document.getElementById('requestsContainer');
+    if (!container) return;
+
+    const filteredRequests = getFilteredRequestsList();
     
     if (filteredRequests.length === 0) {
         const statusWord = currentFilter === 'all' ? '' : currentFilter;
@@ -456,6 +566,7 @@ function renderRequests() {
                 <div class="empty-state-subtext">${subtext}</div>
             </div>
         `;
+        updateBulkActionsUI();
         return;
     }
     
@@ -588,6 +699,9 @@ function renderRequests() {
             }
         }
         
+        const isPayrollRequest = !isSubstitution;
+        const eligibleReapply = isEligibleBulkReapply(request);
+
         // Add quick action buttons for pending requests (desktop - icon only)
         const quickActionsDesktop = request.status === 'pending' ? `
             <div class="quick-actions" onclick="event.stopPropagation(); event.preventDefault();">
@@ -603,7 +717,18 @@ function renderRequests() {
                     </svg>
                 </button>
             </div>
-        ` : '';
+        ` : (eligibleReapply ? `
+            <div class="quick-actions" onclick="event.stopPropagation(); event.preventDefault();">
+                <button class="quick-action-btn quick-action-reapply" onclick="event.stopPropagation(); event.preventDefault(); reapplyApprovedRequest('${request.id}'); return false;" title="Reapply to attendance_v2">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="23 4 23 10 17 10"></polyline>
+                        <polyline points="1 20 1 14 7 14"></polyline>
+                        <path d="M3.51 9a9 9 0 0114.13-3.36L23 10"></path>
+                        <path d="M20.49 15a9 9 0 01-14.13 3.36L1 14"></path>
+                    </svg>
+                </button>
+            </div>
+        ` : '');
         
         // Add quick action buttons for pending requests (mobile - full buttons)
         const quickActionsMobile = request.status === 'pending' ? `
@@ -620,10 +745,20 @@ function renderRequests() {
                 </svg>
                 <span>Reject</span>
             </button>
-        ` : '';
+        ` : (eligibleReapply ? `
+            <button class="quick-action-btn quick-action-reapply" onclick="event.stopPropagation(); event.preventDefault(); reapplyApprovedRequest('${request.id}'); return false;" title="Reapply to attendance_v2">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <polyline points="1 20 1 14 7 14"></polyline>
+                    <path d="M3.51 9a9 9 0 0114.13-3.36L23 10"></path>
+                    <path d="M20.49 15a9 9 0 01-14.13 3.36L1 14"></path>
+                </svg>
+                <span>Reapply</span>
+            </button>
+        ` : '');
         
-        // Add checkbox for pending requests
-        const checkboxHtml = request.status === 'pending' ? `
+        // Checkbox: pending (approve/reject) or approved payroll needing v2 reapply
+        const checkboxHtml = (request.status === 'pending' || eligibleReapply) ? `
             <label class="request-checkbox" onclick="event.stopPropagation();">
                 <input type="checkbox" class="request-select-checkbox" data-request-id="${request.id}" 
                        ${selectedRequests.has(request.id) ? 'checked' : ''} 
@@ -633,7 +768,7 @@ function renderRequests() {
         ` : '';
         
         return `
-            <div class="request-item ${request.status === 'pending' ? 'unread' : ''}" data-request-id="${request.id}">
+            <div class="request-item ${(request.status === 'pending' || eligibleReapply) ? 'unread' : ''}" data-request-id="${request.id}">
                 <div class="request-item-top">
                     ${checkboxHtml}
                     <div class="request-avatar">${initials}</div>
@@ -655,7 +790,7 @@ function renderRequests() {
                         <span class="request-status ${statusClass}">${statusText}</span>
                     </div>
                 </div>
-                ${request.status === 'pending' ? `
+                ${(request.status === 'pending' || eligibleReapply) ? `
                 <div class="request-actions-bottom">
                     ${quickActionsMobile}
                 </div>
@@ -806,7 +941,7 @@ async function openRequestDetail(request) {
         
         // Fetch current attendance data to check if OT is already applied
         try {
-            const attendanceRef = doc(db, "attendance", request.employeeId, "dates", currentDate);
+            const attendanceRef = doc(db, ATTENDANCE_COLLECTION, request.employeeId, "dates", currentDate);
             const attendanceSnap = await getDoc(attendanceRef);
             if (attendanceSnap.exists()) {
                 const attendanceData = attendanceSnap.data();
@@ -1073,6 +1208,7 @@ async function openRequestDetail(request) {
         `;
     } else {
         actionsHtml = `
+            ${request.status === 'approved' ? `<button class="modal-btn modal-btn-edit" onclick="reapplyApprovedRequest('${request.id}')">Reapply to attendance_v2</button>` : ''}
             <div class="request-detail-row">
                 <div>
                     <div class="request-detail-label">Reviewed</div>
@@ -1083,6 +1219,17 @@ async function openRequestDetail(request) {
                     <div class="request-detail-value">${request.reviewedBy || 'N/A'}</div>
                 </div>
             </div>
+            ${request.status === 'approved' ? `
+            <div class="request-detail-row">
+                <div>
+                    <div class="request-detail-label">Applied Target</div>
+                    <div class="request-detail-value">${request.appliedTarget || 'Unknown'}</div>
+                </div>
+                <div>
+                    <div class="request-detail-label">Last Applied</div>
+                    <div class="request-detail-value">${request.appliedAt ? formatRelativeTime(request.appliedAt) : 'N/A'}</div>
+                </div>
+            </div>` : ''}
         `;
     }
 
@@ -1167,107 +1314,17 @@ async function _approveRequest(requestId) {
             return true;
         }
 
+        await applyPayrollRequestToV2(request);
+
         await updateDoc(requestRef, {
             status: 'approved',
             reviewedAt: Timestamp.now(),
-            reviewedBy: currentAdminId
+            reviewedBy: currentAdminId,
+            appliedTarget: ATTENDANCE_COLLECTION,
+            appliedAt: Timestamp.now(),
+            applySource: 'approve',
+            applyVersion: APPLY_VERSION
         });
-
-        // Get current and requested dates
-        const currentDate = request.currentData?.date || request.date;
-        const requestedDate = request.requestedData?.date || request.date;
-        const dateChanged = currentDate !== requestedDate;
-
-        // Get requested branch and shift
-        const requestedBranch = request.requestedData?.branch || request.currentData?.branch || null;
-        const requestedShift = request.requestedData?.shift || request.currentData?.shift || null;
-
-        // Handle new date requests (type === "new_date")
-        if (request.type === "new_date") {
-            // Create new date entry
-            const newAttendanceRef = doc(db, "attendance", request.employeeId, "dates", requestedDate);
-            const attendanceData = {
-                clockIn: {
-                    time: request.requestedData.timeIn,
-                    branch: requestedBranch,
-                    shift: requestedShift
-                },
-                clockOut: {
-                    time: request.requestedData.timeOut
-                }
-            };
-            
-            // Add OT if requested
-            if (request.requestOT) {
-                attendanceData.hasOTPay = true;
-            }
-            
-            await setDoc(newAttendanceRef, attendanceData);
-        } else if (dateChanged) {
-            // If date changed, delete old date and create new one
-            // Get old attendance data to preserve OT if it existed
-            // First check currentData.hasOTPay (from request), then check actual attendance data
-            let oldHasOTPay = request.currentData?.hasOTPay || false;
-            if (!oldHasOTPay) {
-                try {
-                    const oldAttendanceRef = doc(db, "attendance", request.employeeId, "dates", currentDate);
-                    const oldAttendanceSnap = await getDoc(oldAttendanceRef);
-                    if (oldAttendanceSnap.exists()) {
-                        oldHasOTPay = oldAttendanceSnap.data().hasOTPay || false;
-                    }
-                } catch (error) {
-                    console.error("Error fetching old attendance data:", error);
-                }
-            }
-            
-            // Delete old date entry
-            const oldAttendanceRef = doc(db, "attendance", request.employeeId, "dates", currentDate);
-            await deleteDoc(oldAttendanceRef);
-            
-            // Create new date entry with requested data
-            const newAttendanceRef = doc(db, "attendance", request.employeeId, "dates", requestedDate);
-            const attendanceData = {
-                clockIn: {
-                    time: request.requestedData.timeIn,
-                    branch: requestedBranch,
-                    shift: requestedShift
-                },
-                clockOut: {
-                    time: request.requestedData.timeOut
-                }
-            };
-            
-            // Preserve OT from old date OR add if requested
-            if (oldHasOTPay || request.requestOT) {
-                attendanceData.hasOTPay = true;
-            }
-            
-            await setDoc(newAttendanceRef, attendanceData);
-        } else if (request.requestedData) {
-            // Update existing date entry
-            const attendanceRef = doc(db, "attendance", request.employeeId, "dates", request.date);
-            const attendanceData = {
-                clockIn: {
-                    time: request.requestedData.timeIn,
-                    branch: requestedBranch,
-                    shift: requestedShift
-                },
-                clockOut: {
-                    time: request.requestedData.timeOut
-                }
-            };
-            
-            // If OT was requested, add it
-            if (request.requestOT) {
-                attendanceData.hasOTPay = true;
-            }
-            
-            await setDoc(attendanceRef, attendanceData, { merge: true });
-        } else if (request.requestOT) {
-            // Just add OT pay if no time changes
-            const attendanceRef = doc(db, "attendance", request.employeeId, "dates", request.date);
-            await setDoc(attendanceRef, { hasOTPay: true }, { merge: true });
-        }
         
         // Remove from selection if selected
         selectedRequests.delete(requestId);
@@ -1280,7 +1337,7 @@ async function _approveRequest(requestId) {
         
         await showConfirmModal(
             'Success',
-            'Request approved and attendance data updated!',
+            'Request approved and attendance_v2 updated!',
             'OK',
             'modal-btn-approve',
             null,
@@ -1306,7 +1363,7 @@ async function _approveRequest(requestId) {
 async function approveRequest(requestId) {
     const confirmed = await showConfirmModal(
         'Approve Request',
-        'Are you sure you want to approve this request? This will update the attendance data.',
+        'Are you sure you want to approve this request? This will update attendance_v2.',
         'Approve',
         'modal-btn-approve'
     );
@@ -1485,107 +1542,20 @@ async function approveWithEdits(requestId, editedData) {
             return false;
         }
         
-        // Update request status
         const requestRef = doc(db, "payroll_requests", requestId);
+        await applyPayrollRequestToV2(request, { editedData });
+
         await updateDoc(requestRef, {
             status: 'approved',
             reviewedAt: Timestamp.now(),
             reviewedBy: currentAdminId,
-            // Store edited values for audit trail
             editedData: editedData,
-            wasEdited: true
+            wasEdited: true,
+            appliedTarget: ATTENDANCE_COLLECTION,
+            appliedAt: Timestamp.now(),
+            applySource: 'approve',
+            applyVersion: APPLY_VERSION
         });
-        
-        // Get current and edited dates
-        const currentDate = request.currentData?.date || request.date;
-        const editedDate = editedData.date;
-        const dateChanged = currentDate !== editedDate;
-        
-        // Convert edited times to 12-hour format for storage
-        const editedTimeIn12 = time24to12(editedData.timeIn);
-        const editedTimeOut12 = time24to12(editedData.timeOut);
-        
-        // Handle new date requests (type === "new_date")
-        if (request.type === "new_date") {
-            // Create new date entry with edited data
-            const newAttendanceRef = doc(db, "attendance", request.employeeId, "dates", editedDate);
-            const attendanceData = {
-                clockIn: {
-                    time: editedTimeIn12,
-                    branch: editedData.branch,
-                    shift: editedData.shift
-                },
-                clockOut: {
-                    time: editedTimeOut12
-                }
-            };
-            
-            // Add OT if checked
-            if (editedData.ot) {
-                attendanceData.hasOTPay = true;
-            }
-            
-            await setDoc(newAttendanceRef, attendanceData);
-        } else if (dateChanged) {
-            // If date changed, delete old date and create new one
-            // Get old attendance data to preserve OT if it existed
-            let oldHasOTPay = request.currentData?.hasOTPay || false;
-            if (!oldHasOTPay) {
-                try {
-                    const oldAttendanceRef = doc(db, "attendance", request.employeeId, "dates", currentDate);
-                    const oldAttendanceSnap = await getDoc(oldAttendanceRef);
-                    if (oldAttendanceSnap.exists()) {
-                        oldHasOTPay = oldAttendanceSnap.data().hasOTPay || false;
-                    }
-                } catch (error) {
-                    console.error("Error fetching old attendance data:", error);
-                }
-            }
-            
-            // Delete old date entry
-            const oldAttendanceRef = doc(db, "attendance", request.employeeId, "dates", currentDate);
-            await deleteDoc(oldAttendanceRef);
-            
-            // Create new date entry with edited data
-            const newAttendanceRef = doc(db, "attendance", request.employeeId, "dates", editedDate);
-            const attendanceData = {
-                clockIn: {
-                    time: editedTimeIn12,
-                    branch: editedData.branch,
-                    shift: editedData.shift
-                },
-                clockOut: {
-                    time: editedTimeOut12
-                }
-            };
-            
-            // Preserve OT from old date OR add if edited
-            if (oldHasOTPay || editedData.ot) {
-                attendanceData.hasOTPay = true;
-            }
-            
-            await setDoc(newAttendanceRef, attendanceData);
-        } else {
-            // Update existing date entry with edited data
-            const attendanceRef = doc(db, "attendance", request.employeeId, "dates", currentDate);
-            const attendanceData = {
-                clockIn: {
-                    time: editedTimeIn12,
-                    branch: editedData.branch,
-                    shift: editedData.shift
-                },
-                clockOut: {
-                    time: editedTimeOut12
-                }
-            };
-            
-            // If OT was checked, add it
-            if (editedData.ot) {
-                attendanceData.hasOTPay = true;
-            }
-            
-            await setDoc(attendanceRef, attendanceData, { merge: true });
-        }
         
         // Remove from selection if selected
         selectedRequests.delete(requestId);
@@ -1598,7 +1568,7 @@ async function approveWithEdits(requestId, editedData) {
         
         await showConfirmModal(
             'Success',
-            'Request approved with your changes!',
+            'Request approved with your changes and applied to attendance_v2!',
             'OK',
             'modal-btn-approve',
             null,
@@ -1620,6 +1590,81 @@ async function approveWithEdits(requestId, editedData) {
     }
 }
 
+async function _reapplyApprovedRequest(requestId, options = {}) {
+    const { silent = false, skipFetch = false, skipSelectionDelete = false } = options;
+    try {
+        const request = allRequests.find(r => r.id === requestId);
+        if (!request) {
+            if (!silent) await showConfirmModal('Error', 'Request not found', 'OK', 'modal-btn-approve', null, true);
+            return false;
+        }
+
+        if (request._sourceCollection === 'substitution_requests' || request.type === 'substitution') {
+            if (!silent) await showConfirmModal('Error', 'Reapply is only available for payroll requests.', 'OK', 'modal-btn-approve', null, true);
+            return false;
+        }
+
+        if (request.status !== 'approved') {
+            if (!silent) await showConfirmModal('Error', 'Only approved requests can be reapplied.', 'OK', 'modal-btn-approve', null, true);
+            return false;
+        }
+
+        const requestRef = doc(db, request._sourceCollection || 'payroll_requests', requestId);
+        const editedData = request.wasEdited && request.editedData ? request.editedData : null;
+        await applyPayrollRequestToV2(request, { editedData });
+
+        await updateDoc(requestRef, {
+            appliedTarget: ATTENDANCE_COLLECTION,
+            appliedAt: Timestamp.now(),
+            applySource: 'reapply',
+            applyVersion: APPLY_VERSION
+        });
+
+        if (!skipSelectionDelete) {
+            selectedRequests.delete(requestId);
+        }
+
+        if (!silent) {
+            await showConfirmModal(
+                'Success',
+                'Request reapplied to attendance_v2.',
+                'OK',
+                'modal-btn-approve',
+                null,
+                true
+            );
+        }
+        if (!skipFetch) {
+            await fetchRequests();
+        }
+        return true;
+    } catch (error) {
+        console.error("Error reapplying approved request:", error);
+        if (!silent) {
+            await showConfirmModal(
+                'Error',
+                'Failed to reapply request. Please try again.',
+                'OK',
+                'modal-btn-approve',
+                null,
+                true
+            );
+        }
+        return false;
+    }
+}
+
+async function reapplyApprovedRequest(requestId) {
+    const confirmed = await showConfirmModal(
+        'Reapply Request',
+        'Reapply this approved request to attendance_v2?',
+        'Reapply',
+        'modal-btn-approve'
+    );
+    if (!confirmed) return;
+    await _reapplyApprovedRequest(requestId, { silent: false, skipFetch: false, skipSelectionDelete: false });
+}
+
 // Show error message
 function showError(message) {
     const container = document.getElementById('requestsContainer');
@@ -1638,7 +1683,7 @@ function showError(message) {
 async function quickApproveRequest(requestId) {
     const confirmed = await showConfirmModal(
         'Approve Request',
-        'Are you sure you want to approve this request? This will update the attendance data.',
+        'Are you sure you want to approve this request? This will update attendance_v2.',
         'Approve',
         'modal-btn-approve'
     );
@@ -1677,21 +1722,17 @@ function handleRequestSelect(requestId, checked) {
 
 // Toggle select all
 function toggleSelectAll(checked) {
-    const filteredRequests = currentFilter === 'all' 
-        ? allRequests.filter(r => r.status === 'pending')
-        : currentFilter === 'pending' 
-            ? allRequests.filter(r => r.status === 'pending')
-            : [];
+    const selectableIds = getSelectableRequestIds();
     
     if (checked) {
-        filteredRequests.forEach(r => selectedRequests.add(r.id));
+        selectableIds.forEach(id => selectedRequests.add(id));
     } else {
-        filteredRequests.forEach(r => selectedRequests.delete(r.id));
+        selectableIds.forEach(id => selectedRequests.delete(id));
     }
     
     // Update all checkboxes
     document.querySelectorAll('.request-select-checkbox').forEach(checkbox => {
-        checkbox.checked = checked && filteredRequests.some(r => r.id === checkbox.dataset.requestId);
+        checkbox.checked = checked && selectableIds.includes(checkbox.dataset.requestId);
     });
     
     updateBulkActionsUI();
@@ -1699,47 +1740,75 @@ function toggleSelectAll(checked) {
 
 // Update select all checkbox state
 function updateSelectAllCheckbox() {
-    const filteredRequests = currentFilter === 'all' 
-        ? allRequests.filter(r => r.status === 'pending')
-        : currentFilter === 'pending' 
-            ? allRequests.filter(r => r.status === 'pending')
-            : [];
+    const selectableIds = getSelectableRequestIds();
     
     const selectAllCheckbox = document.getElementById('selectAllCheckbox');
-    if (selectAllCheckbox && filteredRequests.length > 0) {
-        const allSelected = filteredRequests.every(r => selectedRequests.has(r.id));
-        const someSelected = filteredRequests.some(r => selectedRequests.has(r.id));
+    if (selectAllCheckbox && selectableIds.length > 0) {
+        const allSelected = selectableIds.every(id => selectedRequests.has(id));
+        const someSelected = selectableIds.some(id => selectedRequests.has(id));
         selectAllCheckbox.checked = allSelected;
         selectAllCheckbox.indeterminate = someSelected && !allSelected;
+    } else if (selectAllCheckbox) {
+        selectAllCheckbox.checked = false;
+        selectAllCheckbox.indeterminate = false;
     }
 }
 
 // Update bulk actions UI visibility and selected count
 function updateBulkActionsUI() {
-    const pendingRequests = allRequests.filter(r => r.status === 'pending');
-    const hasPending = pendingRequests.length > 0;
+    const filtered = getFilteredRequestsList();
+    const hasSelectablePending = filtered.some(r => r.status === 'pending');
+    const hasSelectableReapply = filtered.some(r => isEligibleBulkReapply(r));
+    const showRequestsHeader = hasSelectablePending || hasSelectableReapply;
+
     const hasSelection = selectedRequests.size > 0;
+    const bulkMode = getBulkSelectionMode();
     
     // Show/hide requests header (with select all)
     const requestsHeader = document.getElementById('requestsHeader');
     if (requestsHeader) {
-        requestsHeader.style.display = (currentFilter === 'pending' || currentFilter === 'all') && hasPending ? 'flex' : 'none';
+        requestsHeader.style.display = showRequestsHeader ? 'flex' : 'none';
     }
     
     // Show/hide bulk actions in header
     const bulkActions = document.getElementById('bulkActions');
     const bulkActionsMobile = document.getElementById('bulkActionsMobile');
+    const showBulkBar = hasSelection && bulkMode !== 'none' && bulkMode !== 'mixed';
     if (bulkActions) {
-        bulkActions.style.display = hasSelection ? 'flex' : 'none';
+        bulkActions.style.display = showBulkBar ? 'flex' : 'none';
     }
     if (bulkActionsMobile) {
-        bulkActionsMobile.style.display = hasSelection ? 'flex' : 'none';
+        bulkActionsMobile.style.display = showBulkBar ? 'flex' : 'none';
     }
+
+    const bulkApproveBtn = document.getElementById('bulkApproveBtn');
+    const bulkRejectBtn = document.getElementById('bulkRejectBtn');
+    const bulkReapplyBtn = document.getElementById('bulkReapplyBtn');
+    const bulkApproveBtnMobile = document.getElementById('bulkApproveBtnMobile');
+    const bulkRejectBtnMobile = document.getElementById('bulkRejectBtnMobile');
+    const bulkReapplyBtnMobile = document.getElementById('bulkReapplyBtnMobile');
+
+    const showApproveReject = hasSelection && bulkMode === 'approve-reject';
+    const showReapply = hasSelection && bulkMode === 'reapply';
+
+    [bulkApproveBtn, bulkApproveBtnMobile].forEach(btn => {
+        if (btn) btn.style.display = showApproveReject ? 'inline-flex' : 'none';
+    });
+    [bulkRejectBtn, bulkRejectBtnMobile].forEach(btn => {
+        if (btn) btn.style.display = showApproveReject ? 'inline-flex' : 'none';
+    });
+    [bulkReapplyBtn, bulkReapplyBtnMobile].forEach(btn => {
+        if (btn) btn.style.display = showReapply ? 'inline-flex' : 'none';
+    });
     
     // Update selected count
     const selectedCount = document.getElementById('selectedCount');
     if (selectedCount) {
-        selectedCount.textContent = `${selectedRequests.size} selected`;
+        if (hasSelection && bulkMode === 'mixed') {
+            selectedCount.textContent = `${selectedRequests.size} selected (clear: pick only pending or only need-reapply)`;
+        } else {
+            selectedCount.textContent = `${selectedRequests.size} selected`;
+        }
     }
     
     updateSelectAllCheckbox();
@@ -1752,7 +1821,7 @@ async function bulkApproveRequests() {
     
     const confirmed = await showConfirmModal(
         'Approve Selected Requests',
-        `Are you sure you want to approve ${selectedIds.length} request${selectedIds.length > 1 ? 's' : ''}? This will update the attendance data.`,
+        `Are you sure you want to approve ${selectedIds.length} request${selectedIds.length > 1 ? 's' : ''}? This will update attendance_v2.`,
         'Approve',
         'modal-btn-approve'
     );
@@ -1889,6 +1958,75 @@ async function bulkRejectRequests() {
     }
 }
 
+// Bulk reapply selected approved payroll requests (need-reapply only; single confirm)
+async function bulkReapplyRequests() {
+    const selectedIds = Array.from(selectedRequests).filter(id => {
+        const r = allRequests.find(x => x.id === id);
+        return r && isEligibleBulkReapply(r);
+    });
+    if (selectedIds.length === 0) return;
+
+    const confirmed = await showConfirmModal(
+        'Reapply Selected Requests',
+        `Reapply ${selectedIds.length} approved request${selectedIds.length > 1 ? 's' : ''} to attendance_v2?`,
+        'Reapply',
+        'modal-btn-approve'
+    );
+
+    if (!confirmed) return;
+
+    const container = document.getElementById('requestsContainer');
+    container.innerHTML = `
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Reapplying ${selectedIds.length} request${selectedIds.length > 1 ? 's' : ''}...</p>
+        </div>
+    `;
+
+    try {
+        const results = await Promise.allSettled(
+            selectedIds.map(id => _reapplyApprovedRequest(id, { silent: true, skipFetch: true, skipSelectionDelete: true }))
+        );
+
+        const failures = results.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value));
+        const successes = results.filter(r => r.status === 'fulfilled' && r.value);
+
+        selectedRequests.clear();
+        await fetchRequests();
+
+        if (failures.length > 0) {
+            await showConfirmModal(
+                'Partial Success',
+                `Reapplied ${successes.length} request${successes.length !== 1 ? 's' : ''}, but ${failures.length} failed. Please try again.`,
+                'OK',
+                'modal-btn-approve',
+                null,
+                true
+            );
+        } else {
+            await showConfirmModal(
+                'Success',
+                `Successfully reapplied ${successes.length} request${successes.length !== 1 ? 's' : ''}!`,
+                'OK',
+                'modal-btn-approve',
+                null,
+                true
+            );
+        }
+    } catch (error) {
+        console.error("Error in bulk reapply:", error);
+        await showConfirmModal(
+            'Error',
+            'Failed to reapply requests. Please try again.',
+            'OK',
+            'modal-btn-approve',
+            null,
+            true
+        );
+        await fetchRequests();
+    }
+}
+
 // Make functions global
 window.closeModal = closeModal;
 window.approveRequest = approveRequest;
@@ -1897,10 +2035,12 @@ window.openEditModal = openEditModal;
 window.closeEditModal = closeEditModal;
 window.quickApproveRequest = quickApproveRequest;
 window.quickRejectRequest = quickRejectRequest;
+window.reapplyApprovedRequest = reapplyApprovedRequest;
 window.handleRequestSelect = handleRequestSelect;
 window.toggleSelectAll = toggleSelectAll;
 window.bulkApproveRequests = bulkApproveRequests;
 window.bulkRejectRequests = bulkRejectRequests;
+window.bulkReapplyRequests = bulkReapplyRequests;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
@@ -2081,7 +2221,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Confirm before approving
             const confirmed = await showConfirmModal(
                 'Approve with Changes',
-                'Are you sure you want to approve this request with your edits? This will update the attendance data.',
+                'Are you sure you want to approve this request with your edits? This will update attendance_v2.',
                 'Approve',
                 'modal-btn-approve'
             );
@@ -2095,8 +2235,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Set up bulk action buttons
     const bulkApproveBtn = document.getElementById('bulkApproveBtn');
     const bulkRejectBtn = document.getElementById('bulkRejectBtn');
+    const bulkReapplyBtn = document.getElementById('bulkReapplyBtn');
     const bulkApproveBtnMobile = document.getElementById('bulkApproveBtnMobile');
     const bulkRejectBtnMobile = document.getElementById('bulkRejectBtnMobile');
+    const bulkReapplyBtnMobile = document.getElementById('bulkReapplyBtnMobile');
     
     if (bulkApproveBtn) {
         bulkApproveBtn.addEventListener('click', bulkApproveRequests);
@@ -2104,11 +2246,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (bulkRejectBtn) {
         bulkRejectBtn.addEventListener('click', bulkRejectRequests);
     }
+    if (bulkReapplyBtn) {
+        bulkReapplyBtn.addEventListener('click', bulkReapplyRequests);
+    }
     if (bulkApproveBtnMobile) {
         bulkApproveBtnMobile.addEventListener('click', bulkApproveRequests);
     }
     if (bulkRejectBtnMobile) {
         bulkRejectBtnMobile.addEventListener('click', bulkRejectRequests);
+    }
+    if (bulkReapplyBtnMobile) {
+        bulkReapplyBtnMobile.addEventListener('click', bulkReapplyRequests);
     }
     
     // Load requests

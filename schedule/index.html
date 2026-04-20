@@ -13,7 +13,7 @@
     <meta property="og:description" content="Matchanese Employee Scheduling System">
 
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css?v=43">
+    <link rel="stylesheet" href="css/style.css?v=49">
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 </head>
 
@@ -44,6 +44,7 @@
                     <select id="shiftType" required>
                         <option value="">Select shift type</option>
                         <option value="opening">Opening (9:30 AM - 6:30 PM)</option>
+                        <option value="adjustedOpening">Adjusted Opening (10:30 AM - 7:30 PM)</option>
                         <option value="midshift">Midshift (11:00 AM - 8:00 PM)</option>
                         <option value="closing">Closing (1:00 PM - 10:00 PM)</option>
                         <option value="closingHalf">Closing Half Day (6:00 PM - 10:00 PM)</option>
@@ -131,10 +132,12 @@
             </div>
             <div class="shift-details-modal__actions" id="shiftDetailsActions">
                 <div class="shift-details-reliever-form" id="shiftDetailsRelieverForm" style="display: none;">
-                    <label for="shiftDetailsRelieverSelect" class="shift-details-modal__label">Select reliever</label>
-                    <select id="shiftDetailsRelieverSelect">
-                        <option value="">Select reliever</option>
-                    </select>
+                    <div class="shift-details-reliever-form__stack">
+                        <label for="shiftDetailsRelieverSelect" class="shift-details-modal__label">Select reliever</label>
+                        <select id="shiftDetailsRelieverSelect">
+                            <option value="">Select reliever</option>
+                        </select>
+                    </div>
                     <button type="button" class="submit-btn" id="shiftDetailsSubmitRequestBtn"><span class="btn-spinner"></span><span class="btn-text">Submit request</span></button>
                 </div>
                 <p class="shift-details-pending-msg" id="shiftDetailsPendingMsg" style="display: none;">Reliever request pending</p>
@@ -287,7 +290,7 @@
     </div>
 
     <div id="scheduleToast" class="schedule-toast" aria-live="polite"></div>
-    <script type="module" src="js/script.js?v=42"></script>
+    <script type="module" src="js/script.js?v=46"></script>
 </body>
 
 </html>

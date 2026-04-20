@@ -47,9 +47,13 @@ export const BRAND_LIKES_COLLECTION = 'brandLikes';
 export const LOCATION_LIKES_COLLECTION = 'locationLikes';
 
 let _currentUserId = null;
+let _authInitPromise = null;
+let _authDisabled = false;
 
 /** Initialize anonymous auth so we have a stable userId for likes. Call after initFirebase. */
 export function initAuth() {
+  if (_authDisabled) return Promise.resolve(null);
+  if (_authInitPromise) return _authInitPromise;
   const firebase = typeof window !== 'undefined' ? window.firebase : null;
   if (!firebase?.auth) return Promise.resolve(null);
   const auth = firebase.auth();
@@ -57,13 +61,22 @@ export function initAuth() {
     _currentUserId = auth.currentUser.uid;
     return Promise.resolve(_currentUserId);
   }
-  return auth.signInAnonymously().then((cred) => {
+  _authInitPromise = auth.signInAnonymously().then((cred) => {
     _currentUserId = cred.user?.uid ?? null;
     return _currentUserId;
   }).catch((e) => {
-    console.warn('[Matcha Hop] Anonymous auth failed:', e?.message || e);
+    const code = e?.code || '';
+    if (code === 'auth/operation-not-allowed' || code === 'auth/admin-restricted-operation') {
+      _authDisabled = true;
+      console.warn('[Matcha Hop] Anonymous auth disabled in Firebase project.');
+    } else {
+      console.warn('[Matcha Hop] Anonymous auth failed:', e?.message || e);
+    }
     return null;
+  }).finally(() => {
+    _authInitPromise = null;
   });
+  return _authInitPromise;
 }
 
 /** Current user id for likes (anonymous auth). Returns null if auth not available. */

@@ -1,9 +1,9 @@
 // Import Firebase setup
-import { db } from '../../attendance/js/firebase-setup.js';
+import { db } from '../../employee-attendance/js/firebase-setup.js';
 import { doc, getDoc, getDocs, collection, collectionGroup, query, where, addDoc, setDoc, Timestamp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 
 // Version log for cache busting verification
-console.log('✅ Payroll script loaded - Version: 20250117-payslip-fix (Payslip calculation fixed)');
+console.log('✅ Payroll (v2) script loaded — employees_v2 / attendance_v2 — bundle v2.0.1');
 
 // Current user (will be set from parent portal or localStorage)
 let currentUser = "";
@@ -43,6 +43,7 @@ let holidaysLoaded = false;
 
 const SHIFT_SCHEDULES = {
     "Opening": { timeIn: "9:30 AM", timeOut: "6:30 PM" },
+    "Adjusted Opening": { timeIn: "10:30 AM", timeOut: "7:30 PM" },
     "Opening Half-Day": { timeIn: "9:30 AM", timeOut: "1:30 PM" },
     "Midshift": { timeIn: "11:00 AM", timeOut: "8:00 PM" },
     "Closing": { timeIn: "1:00 PM", timeOut: "10:00 PM" },
@@ -98,7 +99,7 @@ async function loadEmployees() {
     if (employeesLoaded) return employees;
 
     try {
-        const employeesRef = collection(db, "employees");
+        const employeesRef = collection(db, "employees_v2");
         const snapshot = await getDocs(employeesRef);
 
         employees = {};
@@ -718,7 +719,7 @@ async function fetchPayrollData(dates) {
         const payrollData = [];
 
         // Get all attendance data for the user
-        const attendanceRef = collection(db, "attendance", currentUser, "dates");
+        const attendanceRef = collection(db, "attendance_v2", currentUser, "dates");
         const snapshot = await getDocs(attendanceRef);
 
         const attendanceMap = {};
@@ -729,7 +730,7 @@ async function fetchPayrollData(dates) {
         // Get employee base rate
         let baseRate = 750;
         try {
-            const employeeDoc = await getDoc(doc(db, "employees", currentUser));
+            const employeeDoc = await getDoc(doc(db, "employees_v2", currentUser));
             if (employeeDoc.exists()) {
                 baseRate = employeeDoc.data().baseRate || 750;
             }
@@ -2067,7 +2068,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Load employee-specific data from Firebase
     if (currentUser) {
         try {
-            const employeeDoc = await getDoc(doc(db, "employees", currentUser));
+            const employeeDoc = await getDoc(doc(db, "employees_v2", currentUser));
             if (employeeDoc.exists()) {
                 const employeeData = employeeDoc.data();
                 payrollEmployeeContext = {
@@ -2198,7 +2199,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             // Check if date already exists in attendance
             try {
-                const attendanceRef = doc(db, "attendance", currentUser, "dates", date);
+                const attendanceRef = doc(db, "attendance_v2", currentUser, "dates", date);
                 const attendanceSnap = await getDoc(attendanceRef);
                 if (attendanceSnap.exists()) {
                     showToast("This date already has attendance data. Please use 'Request Edit' instead.", 'warning');
@@ -2267,7 +2268,7 @@ async function openRequestEditModal(date, timeIn, timeOut, branch = '', shift = 
     
     // Fetch attendance data to check if OT is already applied
     try {
-        const attendanceRef = doc(db, "attendance", currentUser, "dates", date);
+        const attendanceRef = doc(db, "attendance_v2", currentUser, "dates", date);
         const attendanceSnap = await getDoc(attendanceRef);
         
         if (attendanceSnap.exists()) {
@@ -2320,7 +2321,7 @@ async function openRequestEditModal(date, timeIn, timeOut, branch = '', shift = 
     // Check and store if current date has OT pay (for date change requests)
     let currentHasOTPay = false;
     try {
-        const attendanceRef = doc(db, "attendance", currentUser, "dates", date);
+        const attendanceRef = doc(db, "attendance_v2", currentUser, "dates", date);
         const attendanceSnap = await getDoc(attendanceRef);
         if (attendanceSnap.exists()) {
             currentHasOTPay = attendanceSnap.data().hasOTPay || false;

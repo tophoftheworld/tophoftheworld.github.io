@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>onevsall prototype</title>
+    <link rel="stylesheet" href="./css/style.css" />
+  </head>
+  <body>
+    <div class="hud">
+      <div class="hud-row">
+        <strong>onevsall</strong>
+        <span id="status">connecting...</span>
+      </div>
+      <div class="hud-row">
+        <span id="role">role: -</span>
+        <span id="king">king: -</span>
+        <span id="hold">hold: 00:00.0</span>
+        <span id="best">best: 00:00.0</span>
+        <span id="tool">tool: weapon</span>
+        <span id="players">players: 0</span>
+      </div>
+      <div class="hint">
+        Move: WASD/Arrows. Camera follows your player. Minimap shows king, blocks/turrets, and current viewport. King can add/remove bots with +/-.
+      </div>
+    </div>
+    <div class="minimap-wrap">
+      <canvas id="minimapCanvas" width="220" height="140"></canvas>
+    </div>
+    <canvas id="gameCanvas" width="1200" height="700"></canvas>
+    <script src="./js/main.js"></script>
+  </body>
+</html>

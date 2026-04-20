@@ -157,6 +157,15 @@
         return `${g} g`;
     }
 
+    /** 100–500 g in 100 g steps; 500–3000 g in 500 g steps. */
+    function normalizePackGrams(raw) {
+        const g = parseInt(raw, 10);
+        if (Number.isNaN(g)) return 1000;
+        if (g >= 100 && g <= 500 && g % 100 === 0) return g;
+        if (g >= 500 && g <= 3000 && g % 500 === 0) return g;
+        return 1000;
+    }
+
     function openModal(el) { el.classList.add('is-open'); }
     function closeModal(el) { el.classList.remove('is-open'); }
 
@@ -204,8 +213,7 @@
         const localDay = Math.max(0, Math.min(6, parseInt(raw.startDayIndex, 10) || 0));
         let span = Math.max(1, parseInt(raw.spanDays, 10) || 1);
         if (localDay + span > 7) span = 7 - localDay;
-        const parsedGrams = parseInt(raw.grams, 10);
-        const grams = parsedGrams >= 500 && parsedGrams <= 3000 && parsedGrams % 500 === 0 ? parsedGrams : 1000;
+        const grams = normalizePackGrams(raw.grams);
         const shipmentRef = (raw.shipmentRef || '').trim();
         const batchId = raw.batchId ? String(raw.batchId) : '';
         return {
@@ -312,12 +320,28 @@
     function buildAllVirtualClipsMap() {
         const rows = getDisplayRows();
         const map = {};
-        rows.forEach((r) => { map[r.id] = groupAllocationsForRow(r.id); });
+        rows.forEach((r) => { map[String(r.id)] = groupAllocationsForRow(r.id); });
         return map;
     }
 
+    /** Resolve a virtual clip from live store (avoids stale rowId after drag preview). */
+    function findVirtualClipById(clipId) {
+        if (clipId == null || clipId === '') return null;
+        const want = String(clipId);
+        const m = buildAllVirtualClipsMap();
+        const keys = Object.keys(m);
+        for (let i = 0; i < keys.length; i++) {
+            const rowId = keys[i];
+            const clips = m[rowId] || [];
+            for (let j = 0; j < clips.length; j++) {
+                if (String(clips[j].id) === want) return { rowId: String(rowId), clip: clips[j] };
+            }
+        }
+        return null;
+    }
+
     function hasRowConflict(rowId, start, endEx, excludeSourceIds) {
-        const clips = buildAllVirtualClipsMap()[rowId] || [];
+        const clips = buildAllVirtualClipsMap()[String(rowId)] || [];
         return clips.some((c) => {
             const memberIds = c.members.map((m) => m.sourceAllocId);
             const ignored = memberIds.some((id) => excludeSourceIds.has(id));
@@ -433,6 +457,86 @@
     let activeRowMenu = null;
     let createDragSession = null;
     let moveDragSession = null;
+    /** Last clicked allocation clip: drives batch summary + highlight. */
+    let lastSelectedClip = null;
+
+    function selectClip(rowId, clip) {
+        lastSelectedClip = {
+            rowId: String(rowId),
+            clipId: String(clip.id),
+            batchId: String(clip.batchId || ''),
+        };
+    }
+
+    /**
+     * Update batch summary for this block. Called from the clip ROOT in capture phase so
+     * any interaction anywhere on the bar (body, edges, resize handles) runs before child handlers.
+     */
+    function selectionFromAllocationClipRoot(clipRoot) {
+        if (!clipRoot || clipRoot.classList.contains('drag-ghost')) return;
+        const cid = clipRoot.getAttribute('data-clip-id');
+        if (!cid) return;
+        const hit = findVirtualClipById(cid);
+        if (hit) {
+            selectClip(hit.rowId, hit.clip);
+        } else {
+            const track = clipRoot.closest('.track-wrap');
+            const rowId = track && track.getAttribute('data-row-id');
+            if (!rowId) return;
+            lastSelectedClip = {
+                rowId: String(rowId),
+                clipId: String(cid),
+                batchId: String(clipRoot.getAttribute('data-batch-id') || ''),
+            };
+        }
+        renderSummary();
+    }
+
+    function clearClipSelection() {
+        lastSelectedClip = null;
+    }
+
+    /** After persist, map selection to the new virtual clip id if this block was selected. */
+    function resyncSelectionAfterWrite(rowId, start, endEx, grams, batchId, previousClipId) {
+        if (!lastSelectedClip || String(lastSelectedClip.clipId) !== String(previousClipId)) return;
+        const mapAfter = buildAllVirtualClipsMap()[String(rowId)] || [];
+        const match = mapAfter.find((c) => (
+            c.start === start &&
+            c.endEx === endEx &&
+            c.grams === grams &&
+            (c.batchId || '') === (batchId || '')
+        ));
+        if (match) selectClip(String(rowId), match);
+        else clearClipSelection();
+    }
+
+    function formatAllocatedSummaryText(total) {
+        const kg = total / 1000;
+        const kgStr = kg % 1 === 0 ? String(kg) : kg.toFixed(2).replace(/\.?0+$/, '');
+        return total >= 1000 ? `${kgStr} kg (${total.toLocaleString()} g)` : `${total} g`;
+    }
+
+    /** Batched: sum all clips with that batch in the visible period. Unbatched: grams of the selected clip only. */
+    function getSelectedBatchTotal(allClips, selected) {
+        if (!selected) return null;
+        const batchKey = selected.batchId || '';
+        if (!batchKey) {
+            const rid = String(selected.rowId);
+            const rowClips = allClips[rid] || allClips[selected.rowId] || [];
+            const wantId = String(selected.clipId);
+            const c = rowClips.find((x) => String(x.id) === wantId);
+            if (!c) return null;
+            return { total: c.grams || 0, isUnbatchedSingle: true };
+        }
+        const bKey = String(batchKey);
+        let total = 0;
+        Object.values(allClips).forEach((clips) => {
+            clips.forEach((clip) => {
+                if (String(clip.batchId || '') === bKey) total += clip.grams || 0;
+            });
+        });
+        return { total, isUnbatchedSingle: false };
+    }
 
     function updateWeekTitle() {
         const end = addDays(currentWeekStart, getVisibleDayCount() - 1);
@@ -510,9 +614,39 @@
             summaryLabel.textContent = 'Total allocated this week';
         }
 
-        const kg = total / 1000;
-        const kgStr = kg % 1 === 0 ? String(kg) : kg.toFixed(2).replace(/\.?0+$/, '');
-        summaryAllocated.textContent = total >= 1000 ? `${kgStr} kg (${total.toLocaleString()} g)` : `${total} g`;
+        summaryAllocated.textContent = formatAllocatedSummaryText(total);
+
+        const periodPhrase = viewMode === '2w' ? 'this period' : 'this week';
+        const batchLbl = document.getElementById('summaryBatchLabel')
+            || document.querySelector('.summary-card-batch .summary-label');
+        const batchVal = document.getElementById('summaryBatchAllocated')
+            || document.querySelector('.summary-card-batch .summary-value');
+        if (batchLbl && batchVal) {
+            if (!lastSelectedClip) {
+                batchLbl.textContent = `Selected batch (${periodPhrase})`;
+                batchVal.textContent = '—';
+                batchVal.classList.add('summary-value-muted');
+            } else {
+                const sel = getSelectedBatchTotal(allClips, lastSelectedClip);
+                const batch = lastSelectedClip.batchId ? getBatchById(lastSelectedClip.batchId) : null;
+                const batchTitle = lastSelectedClip.batchId
+                    ? (batch ? batch.name : 'Batch')
+                    : 'Unbatched block';
+                if (!sel) {
+                    batchLbl.textContent = `${batchTitle} (${periodPhrase})`;
+                    batchVal.textContent = '—';
+                    batchVal.classList.add('summary-value-muted');
+                } else if (sel.isUnbatchedSingle) {
+                    batchLbl.textContent = `Selected · ${batchTitle} (${periodPhrase})`;
+                    batchVal.textContent = formatAllocatedSummaryText(sel.total);
+                    batchVal.classList.remove('summary-value-muted');
+                } else {
+                    batchLbl.textContent = `Batch total · ${batchTitle} (${periodPhrase})`;
+                    batchVal.textContent = formatAllocatedSummaryText(sel.total);
+                    batchVal.classList.remove('summary-value-muted');
+                }
+            }
+        }
 
         if (viewMode === '1w') {
             orderTargetKg.value = curDoc.orderTargetKg || '';
@@ -527,6 +661,7 @@
 
         targetHint.textContent = '';
         targetHint.className = 'target-hint';
+        const kg = total / 1000;
         if (!Number.isNaN(target) && target > 0) {
             const diff = kg - target;
             if (diff > 0.05) {
@@ -561,6 +696,8 @@
     }
 
     function openAddAllocation(rowId, dayIndex) {
+        clearClipSelection();
+        renderSummary();
         collectShipmentOptions();
         renderBatchOptions('');
         allocationModalTitle.textContent = 'Add allocation';
@@ -576,16 +713,22 @@
     }
 
     function openEditAllocation(clip) {
+        const hit = findVirtualClipById(clip.id);
+        const fresh = hit ? hit.clip : clip;
+        if (hit) selectClip(hit.rowId, hit.clip);
+        else selectClip(fresh.rowId, fresh);
+        renderSummary();
+
         collectShipmentOptions();
-        renderBatchOptions(clip.batchId || '');
+        renderBatchOptions(fresh.batchId || '');
         allocationModalTitle.textContent = 'Edit allocation';
-        allocIdInput.value = clip.id;
-        allocRowIdInput.value = clip.rowId;
-        buildStartDaySelect(clip.start);
-        allocSpanDays.value = String(clip.endEx - clip.start);
+        allocIdInput.value = fresh.id;
+        allocRowIdInput.value = fresh.rowId;
+        buildStartDaySelect(fresh.start);
+        allocSpanDays.value = String(fresh.endEx - fresh.start);
         setMaxSpanByStart();
-        allocGrams.value = String(clip.grams);
-        allocShipmentRef.value = clip.shipmentRef || '';
+        allocGrams.value = String(fresh.grams);
+        allocShipmentRef.value = fresh.shipmentRef || '';
         deleteAllocationBtn.style.display = 'inline-block';
         openModal(allocationModal);
     }
@@ -608,6 +751,18 @@
         let day = Math.floor((x / rect.width) * dayCount);
         day = Math.max(0, Math.min(dayCount - 1, day));
         return day;
+    }
+
+    /** Start day index for a clip of span columns so the block's horizontal center sits under clientX. */
+    function getSpanStartDayFromCenterPointer(trackWrap, dayCount, clientX, span) {
+        const rect = trackWrap.getBoundingClientRect();
+        const w = rect.width;
+        if (w <= 0) return 0;
+        const x = clientX - rect.left;
+        const frac = Math.max(0, Math.min(1, x / w));
+        const centerDay = frac * dayCount;
+        let targetStart = Math.round(centerDay - span / 2);
+        return Math.max(0, Math.min(dayCount - span, targetStart));
     }
 
     function updateCreatePreview() {
@@ -712,6 +867,7 @@
             const trackWrap = document.createElement('div');
             trackWrap.className = 'track-wrap';
             trackWrap.dataset.rowId = row.id;
+            trackWrap.setAttribute('data-row-id', String(row.id));
             const bg = document.createElement('div');
             bg.className = 'track-bg';
             bg.style.gridTemplateColumns = `repeat(${dayCount}, 1fr)`;
@@ -805,14 +961,44 @@
         gridBody.appendChild(addRowLine);
     }
 
-    function clipLabel(start, endEx, grams) {
-        return `${formatGramsDisplay(grams)}`;
+    /** Second line on clip: batch name if set (and found), else shipment note. */
+    function clipSecondaryLine(clip) {
+        const bid = clip.batchId ? String(clip.batchId) : '';
+        if (bid) {
+            const b = getBatchById(bid);
+            if (b && b.name && String(b.name).trim()) return String(b.name).trim();
+        }
+        return (clip.shipmentRef || '').trim();
+    }
+
+    function fillClipBody(body, clip) {
+        body.replaceChildren();
+        const w = document.createElement('span');
+        w.className = 'clip-weight';
+        w.textContent = formatGramsDisplay(clip.grams);
+        body.appendChild(w);
+        const sub = clipSecondaryLine(clip);
+        if (sub) {
+            const s = document.createElement('span');
+            s.className = 'clip-sub';
+            s.textContent = sub;
+            body.appendChild(s);
+        }
     }
 
     function buildClipEl(clip, row, dayCount, trackWrap) {
         const inset = 3;
         const el = document.createElement('div');
         el.className = 'allocation-clip';
+        el.setAttribute('data-clip-id', String(clip.id));
+        el.setAttribute('data-batch-id', clip.batchId ? String(clip.batchId) : '');
+        if (
+            lastSelectedClip &&
+            String(lastSelectedClip.rowId) === String(row.id) &&
+            String(lastSelectedClip.clipId) === String(clip.id)
+        ) {
+            el.classList.add('is-selected');
+        }
         if (clip.batchId) {
             const batch = getBatchById(clip.batchId);
             if (batch) el.classList.add(`batch-shade-${(batch.shadeIndex % BATCH_SHADE_COUNT) + 1}`);
@@ -826,13 +1012,15 @@
         left.className = 'clip-handle clip-handle-left';
         const body = document.createElement('div');
         body.className = 'clip-body';
-        body.textContent = clipLabel(clip.start, clip.endEx, clip.grams);
+        fillClipBody(body, clip);
         const s = getVisibleDays()[clip.start];
         const e = getVisibleDays()[clip.endEx - 1];
         const sName = DAY_NAMES[DOW_ORDER.indexOf(s.getDay())];
         const eName = DAY_NAMES[DOW_ORDER.indexOf(e.getDay())];
         const batchName = clip.batchId ? (getBatchById(clip.batchId)?.name || 'Unbatched') : 'Unbatched';
-        el.title = `${formatGramsDisplay(clip.grams)} · ${sName}-${eName} · ${batchName}`;
+        const sub = clipSecondaryLine(clip);
+        const subPart = sub ? ` · ${sub}` : '';
+        el.title = `${formatGramsDisplay(clip.grams)}${subPart} · ${sName}-${eName} · ${batchName}`;
         const right = document.createElement('div');
         right.className = 'clip-handle clip-handle-right';
 
@@ -841,6 +1029,13 @@
         el.appendChild(right);
         let suppressClickOnce = false;
 
+        function onAnyInteractionWithThisClip() {
+            selectionFromAllocationClipRoot(el);
+        }
+        ['pointerdown', 'mousedown', 'touchstart', 'click'].forEach((evt) => {
+            el.addEventListener(evt, onAnyInteractionWithThisClip, true);
+        });
+
         body.addEventListener('click', (e) => {
             e.stopPropagation();
             if (resizeSession) return;
@@ -848,6 +1043,7 @@
                 suppressClickOnce = false;
                 return;
             }
+            render();
             openEditAllocation(clip);
         });
 
@@ -861,10 +1057,12 @@
             clip.endEx = targetEndEx;
             el.style.left = `calc(${(clip.start / dayCount) * 100}% + ${inset}px)`;
             el.style.width = `calc(${((clip.endEx - clip.start) / dayCount) * 100}% - ${inset * 2}px)`;
-            body.textContent = clipLabel(clip.start, clip.endEx, clip.grams);
+            fillClipBody(body, clip);
             const rowName = getRowById(targetRowId)?.label || '';
             const batchNamePreview = clip.batchId ? (getBatchById(clip.batchId)?.name || 'Unbatched') : 'Unbatched';
-            el.title = `${formatGramsDisplay(clip.grams)} · ${rowName} · ${batchNamePreview}`;
+            const sub = clipSecondaryLine(clip);
+            const subPart = sub ? ` · ${sub}` : '';
+            el.title = `${formatGramsDisplay(clip.grams)}${subPart} · ${rowName} · ${batchNamePreview}`;
             el.classList.toggle('drag-invalid', !isValid);
         }
 
@@ -878,8 +1076,8 @@
             document.body.appendChild(dragGhost);
 
             const rect = el.getBoundingClientRect();
-            const offsetX = ev.clientX - rect.left;
-            const offsetY = ev.clientY - rect.top;
+            const ghostOffsetX = rect.width / 2;
+            const ghostOffsetY = rect.height / 2;
 
             moveDragSession = {
                 clip,
@@ -889,8 +1087,8 @@
                 captureEl: body,
                 startClientX: ev.clientX,
                 startClientY: ev.clientY,
-                ghostOffsetX: offsetX,
-                ghostOffsetY: offsetY,
+                ghostOffsetX,
+                ghostOffsetY,
                 dragGhost,
                 moved: false,
                 originalRowId: clip.rowId,
@@ -900,21 +1098,37 @@
                 targetStart: clip.start,
                 targetEndEx: clip.endEx,
                 valid: true,
+                docEnd: null,
             };
+            const docEnd = (e) => {
+                if (!moveDragSession) return;
+                if (String(moveDragSession.clip.id) !== String(clip.id)) return;
+                const sid = moveDragSession.pointerId;
+                const eid = e.pointerId;
+                if (sid != null && eid != null && sid !== eid) return;
+                finishMoveDrag(e, e.type === 'pointercancel');
+            };
+            moveDragSession.docEnd = docEnd;
+            document.addEventListener('pointerup', docEnd, true);
+            document.addEventListener('pointercancel', docEnd, true);
             el.classList.add('is-dragging');
             dragGhost.style.width = `${rect.width}px`;
             dragGhost.style.height = `${rect.height}px`;
-            dragGhost.style.left = `${ev.clientX - offsetX}px`;
-            dragGhost.style.top = `${ev.clientY - offsetY}px`;
-            body.setPointerCapture(ev.pointerId);
+            dragGhost.style.left = `${ev.clientX - ghostOffsetX}px`;
+            dragGhost.style.top = `${ev.clientY - ghostOffsetY}px`;
+            try {
+                body.setPointerCapture(ev.pointerId);
+            } catch (_) {}
         }
 
         function onMoveDrag(ev) {
-            if (!moveDragSession || moveDragSession.clip.id !== clip.id) return;
-            if (ev.pointerId !== moveDragSession.pointerId) return;
+            if (!moveDragSession || String(moveDragSession.clip.id) !== String(clip.id)) return;
+            const sid = moveDragSession.pointerId;
+            const eid = ev.pointerId;
+            if (sid != null && eid != null && sid !== eid) return;
             const dx = Math.abs(ev.clientX - moveDragSession.startClientX);
             const dy = Math.abs(ev.clientY - moveDragSession.startClientY);
-            if (!moveDragSession.moved && (dx > 3 || dy > 3)) {
+            if (!moveDragSession.moved && (dx > 8 || dy > 8)) {
                 moveDragSession.moved = true;
                 suppressClickOnce = true;
             }
@@ -931,8 +1145,7 @@
                 targetTrackEl = targetTrack;
             }
             const span = moveDragSession.originalEndEx - moveDragSession.originalStart;
-            const day = getDayIndexFromPointer(targetTrackEl, dayCount, ev.clientX);
-            const targetStart = Math.max(0, Math.min(dayCount - span, day));
+            const targetStart = getSpanStartDayFromCenterPointer(targetTrackEl, dayCount, ev.clientX, span);
             const targetEndEx = targetStart + span;
             const excludeIds = new Set(clip.members.map((m) => m.sourceAllocId));
             const valid = !hasRowConflict(targetRowId, targetStart, targetEndEx, excludeIds);
@@ -944,12 +1157,19 @@
         }
 
         function finishMoveDrag(ev, canceled) {
-            if (!moveDragSession || moveDragSession.clip.id !== clip.id) return;
-            if (ev.pointerId !== moveDragSession.pointerId) return;
-            try { moveDragSession.captureEl.releasePointerCapture(moveDragSession.pointerId); } catch (_) {}
+            if (!moveDragSession || String(moveDragSession.clip.id) !== String(clip.id)) return;
+            const session = moveDragSession;
+            const sid = session.pointerId;
+            const eid = ev.pointerId;
+            if (sid != null && eid != null && sid !== eid) return;
+            if (session.docEnd) {
+                document.removeEventListener('pointerup', session.docEnd, true);
+                document.removeEventListener('pointercancel', session.docEnd, true);
+                session.docEnd = null;
+            }
+            try { session.captureEl.releasePointerCapture(ev.pointerId); } catch (_) {}
             el.classList.remove('is-dragging');
             el.classList.remove('drag-invalid');
-            const session = moveDragSession;
             moveDragSession = null;
             if (session.dragGhost && session.dragGhost.parentElement) {
                 session.dragGhost.parentElement.removeChild(session.dragGhost);
@@ -961,18 +1181,21 @@
             }
 
             if (!session.moved) {
+                selectClip(session.originalRowId, clip);
                 openEditAllocation(clip);
                 render();
                 return;
             }
 
             if (!session.valid) {
+                selectClip(session.originalRowId, clip);
                 render();
                 return;
             }
 
             const targetRow = getRowById(session.targetRowId);
             if (!targetRow) {
+                selectClip(session.originalRowId, clip);
                 render();
                 return;
             }
@@ -981,6 +1204,14 @@
             const linkId = session.targetEndEx > 7 && session.targetStart < 7 ? generateId('link') : null;
             writeSegments(session.targetRowId, targetRow.label, session.targetStart, session.targetEndEx, clip.grams, clip.shipmentRef, linkId, clip.batchId || '');
             saveStore();
+            const mapAfterMove = buildAllVirtualClipsMap()[String(session.targetRowId)] || [];
+            const matchAfterMove = mapAfterMove.find((c) => (
+                c.start === session.targetStart &&
+                c.endEx === session.targetEndEx &&
+                c.grams === clip.grams &&
+                (c.batchId || '') === (clip.batchId || '')
+            ));
+            if (matchAfterMove) selectClip(session.targetRowId, matchAfterMove);
             render();
         }
 
@@ -1024,7 +1255,7 @@
             clip.endEx = newEndEx;
             el.style.left = `calc(${(clip.start / dayCount) * 100}% + ${inset}px)`;
             el.style.width = `calc(${((clip.endEx - clip.start) / dayCount) * 100}% - ${inset * 2}px)`;
-            body.textContent = clipLabel(clip.start, clip.endEx, clip.grams);
+            fillClipBody(body, clip);
         }
 
         function onUp(e) {
@@ -1040,10 +1271,12 @@
                 return;
             }
 
+            const prevClipId = clip.id;
             removeMembers(clip.members);
             const linkId = clip.endEx > 7 && clip.start < 7 ? generateId('link') : null;
             writeSegments(clip.rowId, row.label, clip.start, clip.endEx, clip.grams, clip.shipmentRef, linkId, clip.batchId || '');
             saveStore();
+            resyncSelectionAfterWrite(clip.rowId, clip.start, clip.endEx, clip.grams, clip.batchId || '', prevClipId);
             render();
         }
 
@@ -1051,8 +1284,6 @@
         right.addEventListener('pointerdown', (e) => startResize('right', e));
         body.addEventListener('pointerdown', startMoveDrag);
         body.addEventListener('pointermove', onMoveDrag);
-        body.addEventListener('pointerup', (e) => finishMoveDrag(e, false));
-        body.addEventListener('pointercancel', (e) => finishMoveDrag(e, true));
         left.addEventListener('pointermove', onMove);
         right.addEventListener('pointermove', onMove);
         left.addEventListener('pointerup', onUp);
@@ -1150,7 +1381,7 @@
     allocationForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const rowId = allocRowIdInput.value;
-        const row = getDisplayRows().find((r) => r.id === rowId);
+        const row = getDisplayRows().find((r) => String(r.id) === String(rowId));
         if (!row) {
             toast('Row not found.', 'error');
             return;
@@ -1159,13 +1390,12 @@
         const start = parseInt(allocStartDay.value, 10) || 0;
         const span = Math.max(1, parseInt(allocSpanDays.value, 10) || 1);
         const endEx = Math.min(getVisibleDayCount(), start + span);
-        const parsedGrams = parseInt(allocGrams.value, 10);
-        const grams = parsedGrams >= 500 && parsedGrams <= 3000 && parsedGrams % 500 === 0 ? parsedGrams : 1000;
+        const grams = normalizePackGrams(allocGrams.value);
         const shipmentRef = allocShipmentRef.value.trim();
         const batchId = allocBatchId.value || '';
         const editingId = allocIdInput.value;
-        const allClips = buildAllVirtualClipsMap()[rowId] || [];
-        const editingClip = allClips.find((c) => c.id === editingId);
+        const allClips = buildAllVirtualClipsMap()[String(rowId)] || [];
+        const editingClip = allClips.find((c) => String(c.id) === String(editingId));
         const exclude = new Set(editingClip ? editingClip.members.map((m) => m.sourceAllocId) : []);
         if (hasRowConflict(rowId, start, endEx, exclude)) {
             toast('This allocation overlaps an existing clip in the same row.', 'error');
@@ -1177,6 +1407,14 @@
         const linkId = endEx > 7 && start < 7 ? generateId('link') : null;
         writeSegments(rowId, row.label, start, endEx, grams, shipmentRef, linkId, batchId);
         saveStore();
+        const mapAfter = buildAllVirtualClipsMap()[String(rowId)] || [];
+        const match = mapAfter.find((c) => (
+            c.start === start &&
+            c.endEx === endEx &&
+            c.grams === grams &&
+            (c.batchId || '') === (batchId || '')
+        ));
+        if (match) selectClip(String(rowId), match);
         closeModal(allocationModal);
         render();
     });
@@ -1184,7 +1422,7 @@
     deleteAllocationBtn.addEventListener('click', async () => {
         const id = allocIdInput.value;
         const rowId = allocRowIdInput.value;
-        const clip = (buildAllVirtualClipsMap()[rowId] || []).find((c) => c.id === id);
+        const clip = (buildAllVirtualClipsMap()[String(rowId)] || []).find((c) => String(c.id) === String(id));
         if (!clip) {
             closeModal(allocationModal);
             return;
@@ -1192,6 +1430,9 @@
         const ok = await confirmAction('Delete this allocation clip?', 'Delete');
         if (!ok) return;
         removeMembers(clip.members);
+        if (lastSelectedClip && String(lastSelectedClip.rowId) === String(rowId) && String(lastSelectedClip.clipId) === String(id)) {
+            clearClipSelection();
+        }
         saveStore();
         closeModal(allocationModal);
         render();

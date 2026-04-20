@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Legacy vs v2 attendance — compare</title>
+    <style>
+        :root { font-family: system-ui, sans-serif; background: #0f1419; color: #e6edf3; }
+        body { max-width: 100%; margin: 0; padding: 1rem; line-height: 1.45; font-size: 14px; box-sizing: border-box; }
+        h1 { font-size: 1.35rem; font-weight: 600; margin: 0 0 0.35rem; }
+        .note { font-size: 0.8125rem; color: #8b949e; margin: 0.35rem 0; max-width: 48rem; }
+        a { color: #58a6ff; }
+        fieldset { border: 1px solid #30363d; border-radius: 8px; margin: 0.75rem 0; padding: 0.75rem 1rem; max-width: 40rem; }
+        legend { padding: 0 0.5rem; color: #8b949e; font-size: 0.8rem; }
+        label { font-size: 0.8125rem; color: #c9d1d9; }
+        select { margin: 0.35rem 0 0; padding: 0.45rem 0.5rem; min-width: min(100%, 28rem); border-radius: 6px; border: 1px solid #30363d; background: #161b22; color: inherit; font-size: 0.85rem; }
+        button { margin: 0.35rem 0.35rem 0 0; padding: 0.4rem 0.75rem; border-radius: 6px; border: 1px solid #388bfd; background: #21262d; color: #58a6ff; cursor: pointer; font-size: 0.85rem; }
+        button:hover:not(:disabled) { background: #30363d; }
+        button:disabled { opacity: 0.45; cursor: not-allowed; }
+        .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1.25rem; margin-top: 0.5rem; }
+        #summary { margin: 0.75rem 0; font-size: 0.85rem; color: #c9d1d9; max-width: 48rem; }
+        .table-wrap { overflow: auto; border: 1px solid #30363d; border-radius: 8px; margin: 0.75rem 0; max-height: calc(100vh - 12rem); }
+        table { width: 100%; border-collapse: collapse; font-size: 0.875rem; max-width: 40rem; }
+        th, td { border-bottom: 1px solid #21262d; padding: 0.45rem 0.65rem; text-align: left; vertical-align: middle; }
+        th { background: #161b22; color: #8b949e; font-weight: 600; position: sticky; top: 0; z-index: 1; }
+        th:nth-child(3), th:nth-child(4),
+        td.cell-yes, td.cell-no { text-align: center; width: 6.5rem; }
+        tr:hover td { background: rgba(56, 139, 253, 0.05); }
+        tr.row-match td { background: rgba(35, 134, 54, 0.07); }
+        tr.row-mismatch td { background: rgba(248, 81, 73, 0.08); }
+        tr.row-partial td { background: rgba(121, 192, 255, 0.06); }
+        .mono { font-family: ui-monospace, monospace; font-size: 0.8125rem; }
+        .muted { color: #8b949e; }
+        .err { color: #ff7b72; }
+        .name-main { font-weight: 500; }
+        .name-id { font-size: 0.72rem; color: #8b949e; margin-top: 0.15rem; }
+        .mark-yes { color: #3fb950; font-weight: 600; }
+        .mark-no { color: #484f58; }
+        #log { width: 100%; max-width: 48rem; min-height: 5rem; margin-top: 0.75rem; padding: 0.6rem; font-family: ui-monospace, monospace; font-size: 11px; background: #010409; border: 1px solid #30363d; border-radius: 8px; color: #7ee787; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <h1>Attendance: legacy vs new</h1>
+    <p class="note">Pick a pay period, then load. Each row is one person and day. <strong>Legacy database</strong> = <code>attendance</code>; <strong>New database</strong> = <code>attendance_v2</code>. Names come from <code>employees_v2</code>.</p>
+    <p class="note"><a href="./index.html">← Migration tool</a> · <a href="../">Admin payroll</a></p>
+
+    <fieldset>
+        <legend>Compare</legend>
+        <label for="periodSelect">Pay period</label>
+        <div>
+            <select id="periodSelect"></select>
+        </div>
+        <div class="controls">
+            <button type="button" id="btnLoad">Load comparison</button>
+            <label><input type="checkbox" id="chkOnlyDiff" /> Hide rows where both sides are present <strong>and</strong> data matches</label>
+        </div>
+    </fieldset>
+
+    <div id="summary"></div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Date</th>
+                    <th>Legacy database</th>
+                    <th>New database</th>
+                </tr>
+            </thead>
+            <tbody id="compareBody">
+                <tr><td colspan="4" class="muted">Pick a period and click Load comparison.</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <h2 class="note" style="margin-top:1rem;font-size:0.9rem;color:#c9d1d9;">Log</h2>
+    <div id="log"></div>
+
+    <script type="module" src="./compare.js?v=2"></script>
+</body>
+</html>

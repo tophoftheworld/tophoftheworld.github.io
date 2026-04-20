@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Expense supplierId migration</title>
+    <style>
+        :root { font-family: system-ui, sans-serif; background: #0f1419; color: #e6edf3; }
+        body { max-width: 52rem; margin: 1rem auto; padding: 0 1rem; line-height: 1.45; font-size: 14px; }
+        h1 { font-size: 1.35rem; font-weight: 600; margin-bottom: 0.35rem; }
+        .note { font-size: 0.8125rem; color: #8b949e; margin: 0.35rem 0; }
+        a { color: #58a6ff; }
+        .start-here { background: #161b22; border: 1px solid #388bfd; border-radius: 10px; padding: 1rem 1.1rem; margin: 1rem 0; }
+        .start-here ol { margin: 0.5rem 0 0; padding-left: 1.25rem; }
+        .panels { display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: 0.5rem; margin: 0.75rem 0; }
+        .panel { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 0.65rem; font-size: 0.8rem; }
+        .panel .tag { font-size: 0.65rem; color: #8b949e; text-transform: uppercase; margin-bottom: 0.25rem; }
+        .panel strong { font-size: 1.25rem; color: #58a6ff; }
+        button { margin: 0.25rem 0.35rem 0.25rem 0; padding: 0.4rem 0.75rem; border-radius: 6px; border: 1px solid #388bfd; background: #21262d; color: #58a6ff; cursor: pointer; font-size: 0.8125rem; }
+        button:hover:not(:disabled) { background: #30363d; }
+        .btn-ok { border-color: #238636; color: #3fb950; }
+        .btn-warn { border-color: #d29922; color: #d29922; }
+        #ambiguousContainer { margin: 1rem 0; }
+        .ambiguous-row { margin: 0.75rem 0; padding: 0.75rem; background: #161b22; border: 1px solid #30363d; border-radius: 8px; }
+        .ambiguous-row label { display: block; margin-bottom: 0.35rem; font-size: 0.8rem; color: #c9d1d9; }
+        .ambiguous-row select { width: 100%; max-width: 36rem; padding: 0.35rem; border-radius: 6px; border: 1px solid #30363d; background: #0d1117; color: #e6edf3; }
+        #log { width: 100%; min-height: 12rem; margin-top: 0.75rem; padding: 0.6rem; font-family: ui-monospace, monospace; font-size: 11px; background: #010409; border: 1px solid #30363d; border-radius: 8px; color: #7ee787; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <h1>Expense supplierId migration</h1>
+    <p class="note">The expense app links expenses to suppliers by <strong>supplierId only</strong>. This tool assigns <code>supplierId</code> (and refreshes denormalized name/TIN/address) for expenses that are missing it. Run once per environment, then use the normal app.</p>
+    <p class="note"><a href="../admin.html">← Admin</a> · <a href="../index.html">Mobile app</a></p>
+
+    <div class="start-here">
+        <strong>Order of operations</strong>
+        <ol>
+            <li><strong>Initialize Firebase</strong> (only needed for Firestore load/apply).</li>
+            <li><strong>Load from Firestore</strong> (source of truth for multi-device) or <strong>Load from localStorage</strong> (this browser only).</li>
+            <li>For each <strong>ambiguous</strong> supplier name, pick the canonical supplier row in the dropdowns.</li>
+            <li><strong>Apply to Firestore</strong> or <strong>Apply to localStorage</strong> (writes only expenses whose <code>supplierId</code> changed).</li>
+            <li>Open the expense app and sync/fetch so all devices converge.</li>
+        </ol>
+    </div>
+
+    <div>
+        <button type="button" id="btnInit">Initialize Firebase</button>
+        <button type="button" id="btnLoadFs" class="btn-ok">Load from Firestore</button>
+        <button type="button" id="btnLoadLs">Load from localStorage</button>
+        <button type="button" id="btnApplyFs" class="btn-warn">Apply to Firestore</button>
+        <button type="button" id="btnApplyLs" class="btn-warn">Apply to localStorage</button>
+    </div>
+
+    <div class="panels">
+        <div class="panel"><div class="tag">Already have supplierId</div><strong id="statWithId">—</strong></div>
+        <div class="panel"><div class="tag">Auto-assign (unique name)</div><strong id="statAssignable">—</strong></div>
+        <div class="panel"><div class="tag">Ambiguous (need pick)</div><strong id="statAmbiguous">—</strong></div>
+        <div class="panel"><div class="tag">Orphan (no supplier)</div><strong id="statOrphans">—</strong></div>
+    </div>
+
+    <h2 style="font-size:1rem;margin-top:1.25rem;">Ambiguous names</h2>
+    <div id="ambiguousContainer"><p class="note">Load data to analyze.</p></div>
+
+    <h2 style="font-size:1rem;">Log</h2>
+    <pre id="log"></pre>
+
+    <script type="module" src="migrate-supplier-ids.js"></script>
+</body>
+</html>

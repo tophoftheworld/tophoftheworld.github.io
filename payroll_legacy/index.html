@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <meta http-equiv="Last-Modified" content="0" />
+    <title>Matchanese Payroll</title>
+
+    <link rel="icon" href="data:,">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css?v=2.0.1">
+    <meta name="theme-color" content="#2b9348">
+    <script type="module" src="../attendance_legacy/js/firebase-setup.js"></script>
+    <!-- PDF Generation Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <div id="mainInterface">
+            <!-- Payroll View - matches original attendance tab styling -->
+            <div id="payrollView">
+                <div class="payroll-summary">
+                    <div class="summary-card">
+                        <h3>Days Worked</h3>
+                        <p class="summary-value" id="daysWorked">0</p>
+                    </div>
+                    <div class="summary-card">
+                        <h3>Total Pay</h3>
+                        <p class="summary-value" id="totalPay">₱0.00</p>
+                    </div>
+                </div>
+
+                <div class="period-selector">
+                    <select id="payrollPeriod">
+                        <option>Loading periods...</option>
+                    </select>
+                </div>
+
+                <div class="attendance-list">
+                    <div class="attendance-header">Attendance Record</div>
+                    <div id="payrollCardsContainer">
+                        <!-- This will be populated dynamically -->
+                    </div>
+                    <div class="bottom-actions-container">
+                        <button id="requestNewDateBtn" class="request-new-date-btn">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                            Add Date Request
+                        </button>
+                        <div class="download-payslip-container">
+                            <button id="downloadPayslipBtn" class="download-payslip-btn">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="7 10 12 15 17 10"></polyline>
+                                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                                </svg>
+                                Download Payslip
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Payroll Detail Modal -->
+        <div id="payrollDetailModal" class="image-modal" onclick="closePayrollDetailModal()" style="z-index: 3000;">
+            <div class="modal-content" style="padding: 1.5rem; max-width: 90%; width: 500px; text-align: center;"
+                onclick="event.stopPropagation();">
+                <div class="payroll-card" style="margin: 1rem; box-shadow: none; border: none; padding: 0 1rem;">
+                    <div class="payroll-card-main">
+                        <div class="payroll-date-section">
+                            <div class="payroll-date" id="modalPayrollDate">May 29</div>
+                            <div class="payroll-day" id="modalPayrollDay">Thursday</div>
+                        </div>
+                        <div class="payroll-branch-shift">
+                            <div class="payroll-branch" id="modalPayrollBranch">Podium</div>
+                            <div class="payroll-shift" id="modalPayrollShift">Midshift</div>
+                        </div>
+                    </div>
+                    
+                    <div class="payroll-times">
+                        <div class="payroll-time-group">
+                            <div class="payroll-time-label">Time In</div>
+                            <img id="modalTimeInThumb" class="time-thumbnail" src=""
+                                onclick="event.stopPropagation(); openImageModal(this.src)"
+                                style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px; margin: 4px 0; cursor: pointer; border: 1px solid #ddd;">
+                            <div class="payroll-time" id="modalTimeIn">11:41 AM</div>
+                        </div>
+                        <div class="payroll-time-group">
+                            <div class="payroll-time-label">Time Out</div>
+                            <img id="modalTimeOutThumb" class="time-thumbnail" src=""
+                                onclick="event.stopPropagation(); openImageModal(this.src)"
+                                style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px; margin: 4px 0; cursor: pointer; border: 1px solid #ddd;">
+                            <div class="payroll-time" id="modalTimeOut">8:17 PM</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Pay breakdown -->
+                    <div style="margin: 0; background: #f8f9fa; border-radius: 8px; padding: 1rem 1.5rem; width: 100%;">
+                        <div style="display: grid; grid-template-columns: 2fr 1fr 1.5fr; gap: 0.5rem; align-items: center; padding: 0.75rem 0;">
+                            <span style="color: #666; font-size: 1rem; font-weight: 500; text-align: left;">Base Pay</span>
+                            <span></span>
+                            <span class="payroll-late-value" style="color: #333; font-weight: 600;" id="modalBaseRate">₱750.00</span>
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: 2fr 1fr 1.5fr; gap: 0.5rem; align-items: center; padding: 0.75rem 0;">
+                            <span style="color: #666; font-size: 1rem; font-weight: 500; text-align: left;">Meal Allowance</span>
+                            <span></span>
+                            <span class="payroll-late-value" style="color: #333; font-weight: 600;" id="modalMealAllow">₱150.00</span>
+                        </div>
+                        
+                        <div id="modalLateDeductionRow" style="display: grid; grid-template-columns: 2fr 1fr 1.5fr; gap: 0.5rem; align-items: center; padding: 0.75rem 0;">
+                            <span style="color: #666; font-size: 1rem; font-weight: 500; text-align: left;">Late Hours</span>
+                            <span style="font-size: 1rem; color: #333; text-align: center;" id="modalLateHours">37 mins</span>
+                            <span class="payroll-late-value" style="color: #e63946; font-weight: 600;" id="modalLateDeduction">-₱57.81</span>
+                        </div>
+                        
+                        <div id="modalUndertimeDeductionRow" style="display: grid; grid-template-columns: 2fr 1fr 1.5fr; gap: 0.5rem; align-items: center; padding: 0.75rem 0;">
+                            <span style="color: #666; font-size: 1rem; font-weight: 500; text-align: left;">Undertime</span>
+                            <span style="font-size: 1rem; color: #333; text-align: center;" id="modalUndertimeHours">30 mins</span>
+                            <span class="payroll-late-value" style="color: #e63946; font-weight: 600;" id="modalUndertimeDeduction">-₱28.12</span>
+                        </div>
+                        
+                        <div id="modalHolidayBonusRow" style="display: grid; grid-template-columns: 2fr 1fr 1.5fr; gap: 0.5rem; align-items: center; padding: 0.75rem 0;">
+                            <span style="color: #666; font-size: 1rem; font-weight: 500; text-align: left;">Holiday Bonus</span>
+                            <span style="font-size: 1rem; color: #333; text-align: center;" id="modalHolidayType">Regular</span>
+                            <span class="payroll-late-value" style="color: #2b9348; font-weight: 600;" id="modalHolidayBonus">+₱750.00</span>
+                        </div>
+
+                        <div id="modalSalesBonusRow" style="display: grid; grid-template-columns: 2fr 1fr 1.5fr; gap: 0.5rem; align-items: center; padding: 0.75rem 0;">
+                            <span style="color: #666; font-size: 1rem; font-weight: 500; text-align: left;">Sales Bonus 🪙</span>
+                            <span></span>
+                            <span class="payroll-late-value" style="color: #f39c12; font-weight: 600;" id="modalSalesBonus">+₱25.00</span>
+                        </div>
+
+                        <div id="modalOTBonusRow" style="display: grid; grid-template-columns: 2fr 1fr 1.5fr; gap: 0.5rem; align-items: center; padding: 0.75rem 0;">
+                            <span style="color: #666; font-size: 1rem; font-weight: 500; text-align: left;">Overtime Pay</span>
+                            <span style="font-size: 1rem; color: #333; text-align: center;" id="modalOTHours">2.5h</span>
+                            <span class="payroll-late-value" style="color: #2b9348; font-weight: 600;" id="modalOTBonus">+₱234.38</span>
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: 2fr 1fr 1.5fr; gap: 0.5rem; align-items: center; padding: 1.5rem 0 0.5rem 0; border-top: 1px solid #ccc; margin-top: 1rem;">
+                            <span style="color: #666; font-size: 1rem; font-weight: 500; text-align: left;">Total Pay</span>
+                            <span></span>
+                            <span class="payroll-late-value" style="font-weight: 900; color: #2b9348; font-size: 1.3rem;" id="modalTotalPay">₱842.19</span>
+                        </div>
+                    </div>
+                    <div id="requestHistorySection" style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid #f0f0f0; display: none;">
+                        <h3 style="font-size: 0.9rem; color: #666; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.75rem;">Edit History</h3>
+                        <div id="requestHistoryList" style="font-size: 0.85rem; color: #666;">
+                            <!-- History items will be populated here -->
+                        </div>
+                    </div>
+                    <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid #f0f0f0;">
+                        <button id="modalRequestEditBtn" class="request-edit-btn" onclick="event.stopPropagation();">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                            </svg>
+                            <span id="modalRequestEditText">Request Edit</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Image Modal -->
+        <div id="imageModal" class="image-modal">
+            <div class="modal-content">
+                <img id="modalImage" src="" />
+            </div>
+        </div>
+
+        <!-- Request Edit Modal -->
+        <div id="requestEditModal" class="image-modal" onclick="closeRequestEditModal()" style="z-index: 3001;">
+            <div class="modal-content" style="padding: 1.5rem; max-width: 90%; width: 500px; text-align: left;"
+                onclick="event.stopPropagation();">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                    <h2 style="margin: 0; color: #2b9348; font-size: 1.5rem;">Request Edit</h2>
+                    <button onclick="closeRequestEditModal()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #666;">&times;</button>
+                </div>
+                <form id="requestEditForm">
+                    <div style="margin-bottom: 1rem;">
+                        <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Date</label>
+                        <input type="date" id="requestDate" required style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem;">
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                        <div>
+                            <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Time In</label>
+                            <input type="time" id="requestTimeIn" required style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Time Out</label>
+                            <input type="time" id="requestTimeOut" required style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem;">
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                        <div>
+                            <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Branch</label>
+                            <select id="requestBranch" style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem;">
+                                <option value="Podium">Podium</option>
+                                <option value="SM North">SM North</option>
+                                <option value="Pop-up">Pop-up</option>
+                                <option value="Workshop">Workshop</option>
+                                <option value="Other Events">Other Events</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Shift</label>
+                            <select id="requestShift" style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem;">
+                                <option value="Opening">Opening</option>
+                                <option value="Opening Half-Day">Opening Half-Day</option>
+                                <option value="Midshift">Midshift</option>
+                                <option value="Closing">Closing</option>
+                                <option value="Closing Half-Day">Closing Half-Day</option>
+                                <option value="Custom">Custom</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 1rem;">
+                        <label id="requestOTLabel" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                            <input type="checkbox" id="requestOT" style="width: 18px; height: 18px; cursor: pointer;">
+                            <span id="requestOTText" style="font-weight: 600; color: #333;">Request Overtime Pay</span>
+                        </label>
+                        <div id="otAppliedIndicator" style="display: none; margin-top: 0.5rem; padding: 0.5rem; background: #e5e7eb; border-radius: 6px; color: #6b7280; font-size: 0.9rem;">
+                            <span>✓ OT Applied</span>
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 1.5rem;">
+                        <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Reason (required)</label>
+                        <textarea id="requestReason" placeholder="Explain the reason for this request..." rows="3" required style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; font-family: inherit; resize: vertical;"></textarea>
+                    </div>
+                    <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+                        <button type="button" onclick="closeRequestEditModal()" style="padding: 0.75rem 1.5rem; border: 1px solid #ddd; border-radius: 8px; background: white; color: #333; font-weight: 600; cursor: pointer; font-size: 1rem;">Cancel</button>
+                        <button type="submit" style="padding: 0.75rem 1.5rem; border: none; border-radius: 8px; background: #2b9348; color: white; font-weight: 600; cursor: pointer; font-size: 1rem;">Submit Request</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Request New Date Modal -->
+        <div id="requestNewDateModal" class="image-modal" onclick="closeRequestNewDateModal()" style="z-index: 3001;">
+            <div class="modal-content" style="padding: 1.5rem; max-width: 90%; width: 500px; text-align: left;"
+                onclick="event.stopPropagation();">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                    <h2 style="margin: 0; color: #2b9348; font-size: 1.5rem;">Request New Date</h2>
+                    <button onclick="closeRequestNewDateModal()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #666;">&times;</button>
+                </div>
+                <form id="requestNewDateForm">
+                    <div style="margin-bottom: 1rem;">
+                        <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Date</label>
+                        <input type="date" id="newDateDate" required style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem;">
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                        <div>
+                            <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Time In</label>
+                            <input type="time" id="newDateTimeIn" required style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Time Out</label>
+                            <input type="time" id="newDateTimeOut" required style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem;">
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                        <div>
+                            <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Branch</label>
+                            <select id="newDateBranch" style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem;">
+                                <option value="Podium">Podium</option>
+                                <option value="SM North">SM North</option>
+                                <option value="Pop-up">Pop-up</option>
+                                <option value="Workshop">Workshop</option>
+                                <option value="Other Events">Other Events</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Shift</label>
+                            <select id="newDateShift" style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem;">
+                                <option value="Opening">Opening</option>
+                                <option value="Opening Half-Day">Opening Half-Day</option>
+                                <option value="Midshift">Midshift</option>
+                                <option value="Closing">Closing</option>
+                                <option value="Closing Half-Day">Closing Half-Day</option>
+                                <option value="Custom">Custom</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 1rem;">
+                        <label id="newDateOTLabel" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                            <input type="checkbox" id="newDateOT" style="width: 18px; height: 18px; cursor: pointer;">
+                            <span id="newDateOTText" style="font-weight: 600; color: #333;">Request Overtime Pay</span>
+                        </label>
+                    </div>
+                    <div style="margin-bottom: 1.5rem;">
+                        <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Reason (required)</label>
+                        <textarea id="newDateReason" placeholder="Explain the reason for this request..." rows="3" required style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; font-family: inherit; resize: vertical;"></textarea>
+                    </div>
+                    <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+                        <button type="button" onclick="closeRequestNewDateModal()" style="padding: 0.75rem 1.5rem; border: 1px solid #ddd; border-radius: 8px; background: white; color: #333; font-weight: 600; cursor: pointer; font-size: 1rem;">Cancel</button>
+                        <button type="submit" id="newDateSubmitBtn" style="padding: 0.75rem 1.5rem; border: none; border-radius: 8px; background: #2b9348; color: white; font-weight: 600; cursor: pointer; font-size: 1rem;">Submit Request</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="../shared/js/PayCalculator.js?v=2.0.1"></script>
+    <script type="module" src="js/script.js?v=2.0.1"></script>
+</body>
+</html>
+

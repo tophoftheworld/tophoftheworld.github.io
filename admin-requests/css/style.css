@@ -191,6 +191,15 @@ button:hover {
     background-color: #dc2626;
 }
 
+.bulk-reapply-btn {
+    background-color: #f59e0b;
+    color: white;
+}
+
+.bulk-reapply-btn:hover {
+    background-color: #d97706;
+}
+
 .bulk-action-btn svg {
     width: 16px;
     height: 16px;
@@ -404,6 +413,15 @@ button:hover {
 .quick-action-reject:hover {
     color: #dc2626;
     background: rgba(239, 68, 68, 0.1);
+}
+
+.quick-action-reapply {
+    color: #f59e0b;
+}
+
+.quick-action-reapply:hover {
+    color: #d97706;
+    background: rgba(245, 158, 11, 0.12);
 }
 
 .quick-action-btn svg {
@@ -825,6 +843,14 @@ button:hover {
     
     .quick-action-reject:hover {
         background: #dc2626;
+    }
+    
+    .quick-action-reapply {
+        background: #f59e0b;
+    }
+    
+    .quick-action-reapply:hover {
+        background: #d97706;
     }
     
     .quick-action-btn svg {

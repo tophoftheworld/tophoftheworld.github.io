@@ -25,6 +25,7 @@ const LATE_GRACE_MINUTES = 30;
 
 const SHIFT_SCHEDULES = {
     "Opening": { timeIn: "9:30 AM", timeOut: "6:30 PM" },
+    "Adjusted Opening": { timeIn: "10:30 AM", timeOut: "7:30 PM" },
     "Opening Half-Day": { timeIn: "9:30 AM", timeOut: "1:30 PM" },
     "Midshift": { timeIn: "11:00 AM", timeOut: "8:00 PM" },
     "Closing": { timeIn: "1:00 PM", timeOut: "10:00 PM" },

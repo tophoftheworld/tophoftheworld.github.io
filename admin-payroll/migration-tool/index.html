@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Payroll v2 migration</title>
+    <style>
+        :root { font-family: system-ui, sans-serif; background: #0f1419; color: #e6edf3; }
+        body { max-width: 72rem; margin: 1rem auto; padding: 0 1rem; line-height: 1.45; font-size: 14px; }
+        h1 { font-size: 1.35rem; font-weight: 600; margin-bottom: 0.25rem; }
+        h2 { font-size: 1rem; font-weight: 600; margin: 1.25rem 0 0.5rem; color: #c9d1d9; }
+        .note { font-size: 0.8125rem; color: #8b949e; margin: 0.35rem 0; }
+        a { color: #58a6ff; }
+        .start-here { background: #161b22; border: 1px solid #388bfd; border-radius: 10px; padding: 1rem 1.1rem; margin: 1rem 0; }
+        .start-here h2 { margin-top: 0; color: #58a6ff; font-size: 1.05rem; }
+        .start-here ol { margin: 0.5rem 0 0; padding-left: 1.25rem; }
+        .start-here li { margin: 0.45rem 0; }
+        .start-here strong { color: #e6edf3; }
+        fieldset { border: 1px solid #30363d; border-radius: 8px; margin: 0.75rem 0; padding: 0.75rem 1rem; }
+        legend { padding: 0 0.5rem; color: #8b949e; font-size: 0.8rem; }
+        label { display: block; margin: 0.35rem 0 0.2rem; font-size: 0.75rem; color: #8b949e; }
+        input[type="text"] { padding: 0.4rem 0.5rem; border-radius: 6px; border: 1px solid #30363d; background: #161b22; color: inherit; max-width: 14rem; }
+        button { margin: 0.2rem 0.35rem 0.2rem 0; padding: 0.35rem 0.65rem; border-radius: 6px; border: 1px solid #388bfd; background: #21262d; color: #58a6ff; cursor: pointer; font-size: 0.8125rem; }
+        button:hover:not(:disabled) { background: #30363d; }
+        button:disabled { opacity: 0.45; cursor: not-allowed; }
+        button.btn-secondary { border-color: #484f58; color: #8b949e; }
+        button.btn-ok { border-color: #238636; color: #3fb950; }
+        button.btn-row { padding: 0.25rem 0.5rem; font-size: 0.75rem; }
+        .panels { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.5rem; margin: 0.5rem 0; }
+        .panel { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 0.65rem; font-size: 0.8rem; }
+        .panel .tag { font-size: 0.65rem; color: #8b949e; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 0.25rem; }
+        .panel strong { color: #58a6ff; display: block; margin-bottom: 0.35rem; }
+        .panel code { font-size: 0.72rem; word-break: break-all; }
+        .controls-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem; margin: 0.5rem 0; }
+        .global-collection { display: grid; grid-template-columns: 1fr auto; gap: 0.5rem 1rem; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid #21262d; font-size: 0.82rem; }
+        .global-collection:last-child { border-bottom: none; }
+        .global-collection .desc { color: #8b949e; font-size: 0.75rem; margin-top: 0.2rem; }
+        .global-batch-status { font-size: 0.75rem; color: #79c0ff; min-width: 8rem; }
+        .table-wrap { overflow-x: auto; border: 1px solid #30363d; border-radius: 8px; margin: 0.75rem 0; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+        th, td { border-bottom: 1px solid #21262d; padding: 0.45rem 0.5rem; text-align: left; vertical-align: top; }
+        th { background: #161b22; color: #8b949e; font-weight: 600; white-space: nowrap; }
+        tr:hover td { background: rgba(56, 139, 253, 0.06); }
+        .status { display: inline-block; padding: 0.12rem 0.4rem; border-radius: 999px; font-size: 0.7rem; font-weight: 600; }
+        .status-pending { background: #21262d; color: #8b949e; }
+        .status-in_progress { background: rgba(187, 128, 9, 0.25); color: #d29922; }
+        .status-complete { background: rgba(35, 134, 54, 0.22); color: #3fb950; }
+        .status-error { background: rgba(248, 81, 73, 0.2); color: #ff7b72; }
+        .period-id { font-family: ui-monospace, monospace; font-size: 0.68rem; color: #79c0ff; max-width: 12rem; word-break: break-all; }
+        #log { width: 100%; min-height: 10rem; margin-top: 0.75rem; padding: 0.6rem; font-family: ui-monospace, monospace; font-size: 11px; background: #010409; border: 1px solid #30363d; border-radius: 8px; color: #7ee787; white-space: pre-wrap; }
+        .err-hint { font-size: 0.68rem; color: #ff7b72; max-width: 14rem; }
+    </style>
+</head>
+<body>
+    <h1>Payroll v2 migration</h1>
+    <p class="note">Status: <code>migration_v2_status/v2_global_status</code> (one-time employees + payments) and <code>migration_v2_status/{periodId}</code> (attendance only). Period IDs: <code>YYYY-MM-DD_YYYY-MM-DD</code>.</p>
+    <p class="note"><a href="../">← Back to admin payroll</a> · <a href="./compare.html">Legacy vs v2 attendance table</a></p>
+
+    <div class="start-here">
+        <h2>Start here — order of operations</h2>
+        <ol>
+            <li>Period table: first visit scans Firestore (log shows detail); later visits can use cached earliest date. <strong>Load all periods</strong> / <strong>Clear saved scan</strong> as needed.</li>
+            <li><strong>A + B (once each):</strong> Migrate <strong>employees</strong>, then <strong>payments</strong> — master data is not tied to a single pay period (payment doc ids already embed <code>periodId</code>).</li>
+            <li><strong>C (per period):</strong> Migrate <strong>attendance</strong> using the table — each row is one pay period’s date range. Use <strong>one row</strong> to test, then <strong>all periods</strong> when ready.</li>
+            <li><strong>Refresh status</strong> reloads badges. Optional: flat <code>payment_confirmations_v2</code> import at the bottom.</li>
+        </ol>
+    </div>
+
+    <h2>What each step does</h2>
+    <div class="panels">
+        <div class="panel">
+            <div class="tag">A · once</div>
+            <strong>Employees</strong>
+            Legacy <code>employees</code> → <code>employees_v2</code> (full doc merge). Admin uses top-level rates when there is no <code>rateHistory</code> row for a period.
+        </div>
+        <div class="panel">
+            <div class="tag">B · once</div>
+            <strong>Payments</strong>
+            All <code>payment_confirmations</code> in one pass: id <code>{employeeId}_{start}_{end}</code> → <code>payroll_periods_v2/{periodId}/payments/{employeeId}</code>.
+        </div>
+        <div class="panel">
+            <div class="tag">C · per period</div>
+            <strong>Attendance</strong>
+            Legacy <code>attendance/…/dates</code> in that period’s range → <code>attendance_v2</code>. <strong>Smart mode (default):</strong> compares each day to v2; if different, backs up both snapshots + merged result to <code>migration_v2_attendance_diffs</code>, then merges <code>clockIn</code>/<code>clockOut</code> by newer <code>timestamp</code> per half (tie → v2). v2-only days in range are untouched.
+        </div>
+        <div class="panel">
+            <div class="tag">Optional</div>
+            <strong>Old flat v2 payments</strong>
+            Top-level <code>payment_confirmations_v2</code> → nested (separate button below).
+        </div>
+    </div>
+
+    <fieldset>
+        <legend>Period table (drives attendance only)</legend>
+        <p class="note" style="margin:0 0 0.5rem;">Rows list every pay period from oldest legacy data through today. Employees + payments do not need a row to run.</p>
+        <div class="controls-row">
+            <div>
+                <button type="button" id="btnLoadPeriods" class="btn-ok">Load all periods</button>
+            </div>
+            <div>
+                <button type="button" id="btnClearEarliestCache" class="btn-secondary">Clear saved scan</button>
+            </div>
+            <div>
+                <button type="button" id="btnRefreshStatus" class="btn-secondary">Refresh status from Firestore</button>
+            </div>
+        </div>
+    </fieldset>
+
+    <fieldset>
+        <legend>A · B — one-time migrations</legend>
+        <p class="note">Run each button once (or again after fixing errors). Status is stored on <code>migration_v2_status/v2_global_status</code>.</p>
+        <div id="globalCollectionActions">
+            <div class="global-collection">
+                <div>
+                    <strong>A) Employees</strong> — <code>employees</code> → <code>employees_v2</code>.
+                    <div class="desc">Status: <span class="global-batch-status" id="globalStatusEmployees">—</span></div>
+                </div>
+                <div>
+                    <button type="button" id="btnGlobalEmployees" class="btn-ok">Migrate employees (once)</button>
+                </div>
+            </div>
+            <div class="global-collection">
+                <div>
+                    <strong>B) Payments</strong> — all legacy confirmations → nested <code>payroll_periods_v2/…/payments</code>.
+                    <div class="desc">Status: <span class="global-batch-status" id="globalStatusPayments">—</span></div>
+                </div>
+                <div>
+                    <button type="button" id="btnGlobalPayments" class="btn-ok">Migrate payments (once)</button>
+                </div>
+            </div>
+        </div>
+    </fieldset>
+
+    <fieldset>
+        <legend>C — attendance (all periods or one row)</legend>
+        <p class="note">Oldest period first through newest. Progress line: <span class="global-batch-status" id="globalStatusAttendance">—</span></p>
+        <label style="display:flex;align-items:flex-start;gap:0.5rem;max-width:48rem;margin:0.5rem 0;cursor:pointer;font-size:0.8125rem;color:#c9d1d9;">
+            <input type="checkbox" id="chkSmartAttendanceMerge" checked style="margin-top:0.2rem;" />
+            <span><strong>Smart re-merge</strong> — compare legacy vs <code>attendance_v2</code> per day; on any difference, append a doc to <code>migration_v2_attendance_diffs</code> (legacy + v2 + merged + notes), then write the merged day to v2. Uncheck for the old behavior (blind legacy → v2 <code>setDoc</code> merge only).</span>
+        </label>
+        <button type="button" id="btnGlobalAttendance" class="btn-ok">Migrate attendance — all periods in table</button>
+    </fieldset>
+
+    <h2>Per-period attendance</h2>
+    <p class="note"><strong>Attendance</strong> column is the only per-row migration. Test a single period with its row button.</p>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Period</th>
+                    <th>Period ID</th>
+                    <th>Attendance</th>
+                    <th>This period</th>
+                </tr>
+            </thead>
+            <tbody id="periodTableBody">
+                <tr><td colspan="4" class="note" style="padding:1rem;">Loading periods from Firestore… or click “Load all periods”.</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <fieldset>
+        <legend>Optional: old flat v2 payments</legend>
+        <button type="button" id="btnLegacyV2Import" class="btn-secondary">Import all payment_confirmations_v2 → payroll_periods_v2</button>
+    </fieldset>
+
+    <h2>Log</h2>
+    <div id="log"></div>
+
+    <script type="module" src="./migration.js?v=9"></script>
+</body>
+</html>

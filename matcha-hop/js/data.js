@@ -352,6 +352,16 @@ export function getLogs() {
   return [..._logs];
 }
 
+/** Posts by the signed-in (anonymous) user; empty if no uid. Legacy logs without userId are excluded. */
+export function getLogsForCurrentUser() {
+  const uid = getCurrentUserId();
+  if (!uid) return [];
+  const id = docId(uid);
+  return _logs
+    .filter((l) => l.userId != null && docId(l.userId) === id)
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
 export function getLogsByCafeId(cafeId) {
   return _logs
     .filter((l) => docId(l.cafeId) === docId(cafeId))
@@ -409,11 +419,15 @@ async function syncLogToFirestore(entry) {
 
 export function saveLog(log) {
   const id = docId(log.id || uid());
+  const existing = _logs.find((l) => docId(l.id) === id);
+  const userId = log.userId ?? existing?.userId ?? getCurrentUserId() ?? null;
   const photos = Array.isArray(log.photos) && log.photos.length > 0
     ? log.photos
     : (log.photo ? [log.photo] : []);
   const entry = {
     id,
+    userId,
+    userName: log.userName || existing?.userName || null,
     cafeId: log.cafeId ?? null,
     cafe: log.cafe ?? null,
     brandId: log.brandId ?? null,

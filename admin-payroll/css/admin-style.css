@@ -1,3 +1,96 @@
+/* Blocking scrims: list/table + mobile cards blur only their region; panel stays viewport-centered */
+.payroll-blocking-scrim {
+    display: none;
+    pointer-events: auto;
+    cursor: wait;
+}
+
+/* Blur only the roster region (not summary/header), not the whole page */
+.payroll-blocking-scrim--table,
+.payroll-blocking-scrim--mobile-cards {
+    position: absolute;
+    inset: 0;
+    z-index: 60;
+}
+
+.payroll-blocking-scrim--mobile-cards {
+    z-index: 55;
+}
+
+.payroll-blocking-scrim__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.62);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    border-radius: 10px;
+}
+
+/* Panel lives in #payrollBlockingPanelHost (body child) so flex on roster scrim cannot re-center it as rows grow */
+.payroll-blocking-panel-host {
+    position: fixed;
+    inset: 0;
+    z-index: 9350;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+
+.payroll-blocking-scrim--detail {
+    position: absolute;
+    inset: 0;
+    z-index: 25;
+    min-height: 100px;
+    border-radius: 8px;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.62);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+}
+
+.employee-details-load-host {
+    position: relative;
+    min-height: 200px;
+}
+
+.detail-content.detail-content--loading-host {
+    position: relative;
+    min-height: 120px;
+    vertical-align: top;
+}
+
+.payroll-blocking-scrim__panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.35rem 1.75rem;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+    pointer-events: none;
+    max-width: 90vw;
+}
+
+.payroll-blocking-scrim__message {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: #334155;
+    text-align: center;
+}
+
+.payroll-blocking-scrim__detail {
+    margin: 0;
+    font-size: 0.85rem;
+    font-weight: 400;
+    color: #64748b;
+    text-align: center;
+    min-height: 1.25em;
+}
+
 /* Update the loading overlay to only cover the table area */
 .loading-overlay {
     position: absolute;
@@ -935,6 +1028,7 @@ button:hover {
         flex: 1;
         min-height: 0;
         overflow-y: auto;
+        position: relative;
     }
 
     .employee-detail-mobile-modal__content:hover {
@@ -2195,4 +2289,74 @@ input[type="time"]:focus::placeholder {
 
 .toast.info {
     background: #3b82f6;
+}
+
+/* Deferred punch thumbs: placeholder until src is set after first paint */
+img.thumb.thumb-deferred {
+    background: #e6e6e6;
+    box-sizing: border-box;
+}
+
+/* Progressive period load: row shell + shimmer until Firestore returns */
+tr.payroll-row-loading {
+    opacity: 0.92;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.85) 0%, rgba(248, 250, 252, 0.95) 50%, rgba(255, 255, 255, 0.85) 100%);
+    background-size: 200% 100%;
+    animation: payrollRowShimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes payrollRowShimmer {
+    0% {
+        background-position: 100% 0;
+    }
+    100% {
+        background-position: -100% 0;
+    }
+}
+
+.payroll-row-loading__cells {
+    vertical-align: middle;
+    padding: 0.65rem 0.5rem !important;
+}
+
+.payroll-row-loading__hint {
+    display: inline-block;
+    margin-left: 0.5rem;
+    font-size: 0.82rem;
+    color: #64748b;
+}
+
+.payroll-row-loading__shimmer {
+    display: inline-block;
+    width: 120px;
+    height: 10px;
+    border-radius: 4px;
+    background: linear-gradient(90deg, #e2e8f0 0%, #f1f5f9 45%, #e2e8f0 90%);
+    background-size: 200% 100%;
+    animation: payrollRowShimmer 1s ease-in-out infinite;
+    vertical-align: middle;
+}
+
+.employee-card-mobile--loading {
+    opacity: 0.95;
+    pointer-events: none;
+}
+
+.employee-card-mobile__avatar-placeholder--pulse {
+    animation: payrollRowShimmer 1.2s ease-in-out infinite;
+    background: linear-gradient(135deg, #e2e8f0, #f1f5f9) !important;
+}
+
+.employee-card-mobile__meta--loading {
+    color: #94a3b8;
+    font-style: italic;
+}
+
+.employee-card-mobile__salary--skeleton {
+    min-width: 4.5rem;
+    min-height: 1.1rem;
+    border-radius: 4px;
+    background: linear-gradient(90deg, #e2e8f0 0%, #f1f5f9 50%, #e2e8f0 100%);
+    background-size: 200% 100%;
+    animation: payrollRowShimmer 1s ease-in-out infinite;
 }

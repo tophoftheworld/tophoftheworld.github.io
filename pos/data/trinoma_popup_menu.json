@@ -1,0 +1,264 @@
+{
+  "oatUpgradePrice": 0,
+  "strengthLevelPrices": {
+    "1": 0,
+    "2": 40,
+    "3": 80
+  },
+  "categories": [
+    { "id": "matcha-lattes", "name": "Matcha Lattes" },
+    { "id": "matcha-specials", "name": "Matcha Specials" },
+    { "id": "hojicha-lattes", "name": "Hojicha Lattes" },
+    { "id": "cookies", "name": "Cookies" },
+    { "id": "desserts", "name": "Desserts" },
+    { "id": "tools", "name": "Tools" },
+    { "id": "merch", "name": "Merch" }
+  ],
+  "items": [
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Signature Matchanese Latte",
+      "description": "Matcha Cold Whisked with Milk",
+      "price": 220,
+      "type": "Iced",
+      "shorthand": "SML",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Matchanese Seasalt Latte",
+      "description": "Our Signature Matcha Latte topped with Seasalt Cream",
+      "price": 250,
+      "tags": ["Best Seller"],
+      "type": "Iced",
+      "shorthand": "MSL",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Spanish Matchanese Latte",
+      "description": "Our Signature Matcha Latte with Sweetened Milk",
+      "price": 230,
+      "type": "Iced",
+      "shorthand": "SPML",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Earl Grey Matchanese Latte",
+      "description": "Our Signature Matcha Latte with Homemade Earl Grey Syrup",
+      "price": 250,
+      "type": "Iced",
+      "shorthand": "EGML",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Coco Oat Matchanese Latte",
+      "description": "Matcha Cold Whisked with Oat Milk over Coconut Juice",
+      "price": 230,
+      "tags": ["Must-Try!"],
+      "type": "Iced",
+      "shorthand": "COML",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "matcha-specials",
+      "name": "Shoyu Caramel Matchanese Latte",
+      "description": "Our Signature Matcha Latte with Sweet-savory Syrup",
+      "price": 250,
+      "type": "Iced",
+      "shorthand": "SCML",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "matcha-specials",
+      "name": "Mango Coconut Matchanese",
+      "description": "A Refreshing Summer Matcha Drink",
+      "price": 250,
+      "type": "Iced",
+      "shorthand": "MCM",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "matcha-specials",
+      "name": "Matcha Float",
+      "description": "Our Signature Matcha Latte with Ice Cream Float",
+      "price": 290,
+      "type": "Iced",
+      "shorthand": "MFLT",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "hojicha-lattes",
+      "name": "Hojicha Latte",
+      "description": "Hojicha Cold Whisked with Milk",
+      "price": 190,
+      "type": "Iced",
+      "shorthand": "HL",
+      "customizations": { "sweetness": true, "milk": true, "discount": true }
+    },
+    {
+      "categoryId": "hojicha-lattes",
+      "name": "Hojicha Seasalt Latte",
+      "description": "Hojicha Latte topped with Seasalt Cream",
+      "price": 220,
+      "type": "Iced",
+      "shorthand": "HSL",
+      "customizations": { "sweetness": true, "milk": true, "discount": true }
+    },
+    {
+      "categoryId": "hojicha-lattes",
+      "name": "Spanish Hojicha Latte",
+      "description": "Hojicha Latte with Sweetened Milk",
+      "price": 200,
+      "type": "Iced",
+      "shorthand": "SHL",
+      "customizations": { "sweetness": true, "milk": true, "discount": true }
+    },
+    {
+      "categoryId": "cookies",
+      "name": "Matcha Bomb",
+      "description": "Matcha cookie per piece",
+      "price": 180,
+      "type": "Cookie",
+      "shorthand": "MB"
+    },
+    {
+      "categoryId": "cookies",
+      "name": "Matcha Biscoff",
+      "description": "Matcha Biscoff cookie per piece",
+      "price": 180,
+      "type": "Cookie",
+      "shorthand": "MBS"
+    },
+    {
+      "categoryId": "cookies",
+      "name": "Ube Matcha",
+      "description": "Ube Matcha cookie per piece",
+      "price": 180,
+      "type": "Cookie",
+      "shorthand": "UM"
+    },
+    {
+      "categoryId": "cookies",
+      "name": "Matcha White Chocolate",
+      "description": "Matcha White Chocolate cookie per piece",
+      "price": 180,
+      "type": "Cookie",
+      "shorthand": "MWC"
+    },
+    {
+      "categoryId": "cookies",
+      "name": "Matcha Dark Chocolate",
+      "description": "Matcha Dark Chocolate cookie per piece",
+      "price": 180,
+      "type": "Cookie",
+      "shorthand": "MDC"
+    },
+    {
+      "categoryId": "cookies",
+      "name": "Matcha Smores",
+      "description": "Matcha Smores cookie per piece",
+      "price": 180,
+      "type": "Cookie",
+      "shorthand": "MS"
+    },
+    {
+      "categoryId": "desserts",
+      "name": "Warabi Mochi",
+      "description": "Warabi Mochi per box/cup",
+      "price": 270,
+      "type": "Dessert",
+      "shorthand": "WM"
+    },
+    {
+      "categoryId": "desserts",
+      "name": "Matcha Banoffee",
+      "description": "Matcha Banoffee per box/cup",
+      "price": 240,
+      "type": "Dessert",
+      "shorthand": "MBF"
+    },
+    {
+      "categoryId": "desserts",
+      "name": "Matcha Tiramisu",
+      "description": "Matcha Tiramisu per box/cup",
+      "price": 250,
+      "type": "Dessert",
+      "shorthand": "MT"
+    },
+    {
+      "categoryId": "desserts",
+      "name": "Matcha Ice Cream Cup",
+      "description": "Matcha ice cream per cup",
+      "price": 160,
+      "type": "Dessert",
+      "shorthand": "MIC"
+    },
+    {
+      "categoryId": "desserts",
+      "name": "Warabi Mochi Cup",
+      "description": "Warabi mochi per cup",
+      "price": 120,
+      "type": "Dessert",
+      "shorthand": "WMC"
+    },
+    {
+      "categoryId": "tools",
+      "name": "Whisk",
+      "description": "Chasen whisk",
+      "price": 850,
+      "type": "Tool",
+      "shorthand": "WH"
+    },
+    {
+      "categoryId": "tools",
+      "name": "Scoop",
+      "description": "Chashaku scoop",
+      "price": 150,
+      "type": "Tool",
+      "shorthand": "SC"
+    },
+    {
+      "categoryId": "tools",
+      "name": "Whisk & Scoop",
+      "description": "Chasen and chashaku set",
+      "price": 950,
+      "type": "Tool",
+      "shorthand": "WHSC"
+    },
+    {
+      "categoryId": "tools",
+      "name": "Katakuchi & Kusenaoshi",
+      "description": "Matcha bowl and tea caddy",
+      "price": 1250,
+      "type": "Tool",
+      "shorthand": "KK"
+    },
+    {
+      "categoryId": "tools",
+      "name": "Full Set",
+      "description": "Katakuchi, kusenaoshi, whisk, scoop",
+      "price": 2150,
+      "type": "Tool",
+      "shorthand": "FULL"
+    },
+    {
+      "categoryId": "merch",
+      "name": "Cap",
+      "description": "Cap",
+      "price": 650,
+      "type": "Merch",
+      "shorthand": "CAP"
+    },
+    {
+      "categoryId": "merch",
+      "name": "Stickers",
+      "description": "Stickers",
+      "price": 100,
+      "type": "Merch",
+      "shorthand": "STK"
+    }
+  ]
+}

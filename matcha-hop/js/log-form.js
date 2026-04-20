@@ -1,8 +1,9 @@
 /**
- * Post matcha form: share your matcha — photo-first, optional tag brand/location, description. No ratings.
+ * Post matcha form: share your matcha — photo-first, optional tag brand/location, caption. No ratings.
  */
 
 import { saveLog, saveCafe, getGalleryBrands, getCafeByPlaceId, getPopUpsByBrandId, CLASSIFICATIONS } from './data.js';
+import { getStorage, initAuth } from './firebase.js';
 
 function escapeAttr(s) {
   if (s == null) return '';
@@ -18,6 +19,115 @@ function formatDateDisplay(dateStr) {
   const d = new Date(dateStr + 'T12:00:00');
   const formatted = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
   return dateStr === today ? `Today (${formatted})` : formatted;
+}
+
+function makeLogId() {
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function dataUrlToBlob(dataUrl) {
+  if (!dataUrl || typeof dataUrl !== 'string') return null;
+  const parts = dataUrl.split(',');
+  if (parts.length < 2) return null;
+  const meta = parts[0] || '';
+  const b64 = parts[1] || '';
+  const mimeMatch = meta.match(/data:([^;]+);base64/i);
+  const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+  try {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  } catch {
+    return null;
+  }
+}
+
+async function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error('Failed to read blob'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function decodeImageFromBlob(blob) {
+  if (typeof createImageBitmap === 'function') {
+    return createImageBitmap(blob);
+  }
+  const dataUrl = await blobToDataUrl(blob);
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Failed to decode image'));
+    img.src = dataUrl;
+  });
+}
+
+async function compressImageBlob(blob, options = {}) {
+  const maxDimension = options.maxDimension ?? 1600;
+  const quality = options.quality ?? 0.82;
+  if (!blob) return null;
+  let image;
+  try {
+    image = await decodeImageFromBlob(blob);
+  } catch {
+    return blob;
+  }
+  const srcW = image.width || image.naturalWidth || 0;
+  const srcH = image.height || image.naturalHeight || 0;
+  if (!srcW || !srcH) return blob;
+  const scale = Math.min(1, maxDimension / Math.max(srcW, srcH));
+  const targetW = Math.max(1, Math.round(srcW * scale));
+  const targetH = Math.max(1, Math.round(srcH * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = targetW;
+  canvas.height = targetH;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return blob;
+  ctx.drawImage(image, 0, 0, targetW, targetH);
+  if (typeof image.close === 'function') image.close();
+  const outBlob = await new Promise((resolve) => {
+    canvas.toBlob(resolve, 'image/jpeg', quality);
+  });
+  return outBlob || blob;
+}
+
+function uploadErrorMessage(error) {
+  const code = error?.code || '';
+  if (code === 'storage/unauthorized' || code === 'storage/unauthenticated') {
+    return 'Photo upload is blocked by Firebase Storage permissions. Please deploy updated storage rules or enable auth.';
+  }
+  if (code === 'storage/retry-limit-exceeded' || code === 'storage/network-request-failed') {
+    return 'Photo upload failed due to network issues. Please try again.';
+  }
+  if (code === 'storage/canceled') {
+    return 'Photo upload was canceled.';
+  }
+  if (String(error?.message || '').toLowerCase().includes('invalid')) {
+    return 'Photo upload failed due to invalid image data.';
+  }
+  return 'Photo upload failed. Please try again.';
+}
+
+async function uploadLogPhotos(logId, photosBase64) {
+  if (!Array.isArray(photosBase64) || photosBase64.length === 0) return [];
+  await initAuth().catch(() => null);
+  const st = getStorage();
+  if (!st) throw new Error('Storage is not configured');
+  const out = [];
+  for (let i = 0; i < photosBase64.length; i += 1) {
+    const sourceBlob = dataUrlToBlob(photosBase64[i]);
+    if (!sourceBlob) throw new Error('Invalid photo data');
+    const blob = await compressImageBlob(sourceBlob, { maxDimension: 1600, quality: 0.82 });
+    const ext = (blob.type || '').includes('png') ? 'png' : 'jpg';
+    const ref = st.ref(`logs/${logId}/${i + 1}.${ext}`);
+    await ref.put(blob, { contentType: blob.type || 'image/jpeg' });
+    const url = await ref.getDownloadURL();
+    out.push(url);
+  }
+  return out;
 }
 
 export function openLogForm(cafe, onClose, options = {}) {
@@ -55,7 +165,7 @@ export function openLogForm(cafe, onClose, options = {}) {
     <div class="form-section" id="log-form-brand-section">
       <label for="log-form-location-trigger">Location</label>
       <button type="button" id="log-form-location-trigger" class="log-form-location-trigger" aria-haspopup="dialog" aria-expanded="false">
-        <span id="log-form-location-label" class="log-form-location-label ${isBrandLocked && contextBrandName ? '' : 'log-form-location-placeholder'}">${isBrandLocked && contextBrandName ? escapeHtml(contextBrandName) : 'Choose cafe or brand'}</span>
+        <span id="log-form-location-label" class="log-form-location-label ${isBrandLocked && contextBrandName ? '' : 'log-form-location-placeholder'}">${isBrandLocked && contextBrandName ? `<span class="log-form-location-primary">${escapeHtml(contextBrandName)}</span>` : 'Choose cafe or brand'}</span>
         <span id="log-form-location-change" class="log-form-location-change ${isBrandLocked ? '' : 'hidden'}">Change</span>
       </button>
     </div>
@@ -68,11 +178,7 @@ export function openLogForm(cafe, onClose, options = {}) {
       <label>Photos</label>
       <div class="photo-upload">
         <input type="file" id="log-photo-input" accept="image/*" multiple hidden>
-        <button type="button" class="photo-upload-zone" id="log-photo-zone" aria-label="Add photo">
-          <span class="photo-upload-zone-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></span>
-          <span class="photo-upload-zone-text">Add photo</span>
-        </button>
-        <div class="photo-preview-list" id="log-photo-preview-list"></div>
+        <div class="log-photo-strip" id="log-photo-strip" aria-label="Photo strip"></div>
       </div>
       <label for="log-date-display">Date</label>
       <div class="log-form-date-row">
@@ -82,8 +188,8 @@ export function openLogForm(cafe, onClose, options = {}) {
       <label for="log-drink-name">Drink name</label>
       <input type="text" id="log-drink-name" placeholder="e.g. Matcha Latte">
       ${brandLocationSection}
-      <label for="log-notes">Description</label>
-      <textarea id="log-notes" placeholder="Vibe, taste, anything..."></textarea>
+      <label for="log-notes">Caption</label>
+      <textarea id="log-notes" placeholder="Write a caption..."></textarea>
       ${classificationSection}
       <div class="form-actions">
         <button type="button" class="btn-cancel">Cancel</button>
@@ -102,7 +208,8 @@ export function openLogForm(cafe, onClose, options = {}) {
 
   const form = document.getElementById('log-matcha-form');
   const photoInput = document.getElementById('log-photo-input');
-  const previewList = document.getElementById('log-photo-preview-list');
+  const photoStrip = document.getElementById('log-photo-strip');
+  const MAX_PHOTOS = 10;
 
   async function initBrandLocation() {
     if (hasInitialCafe) return;
@@ -147,13 +254,18 @@ export function openLogForm(cafe, onClose, options = {}) {
       }
       locationLabel.classList.remove('log-form-location-placeholder');
       if (locationChange) locationChange.classList.remove('hidden');
+      const brandText = escapeHtml(selectedBrand.name || 'Unnamed');
+      let subtitle = '';
       if (selectedCafe) {
-        locationLabel.textContent = `${selectedBrand.name || 'Unnamed'} – ${selectedCafe.name || selectedCafe.address || 'Location'}`;
+        subtitle = escapeHtml(selectedCafe.address || selectedCafe.name || 'Location');
       } else if (selectedPopUp) {
-        locationLabel.textContent = `${selectedBrand.name || 'Unnamed'} – ${selectedPopUp.name || selectedPopUp.address || 'Pop-up'}`;
+        subtitle = escapeHtml(selectedPopUp.address || selectedPopUp.name || 'Pop-up');
       } else {
-        locationLabel.textContent = selectedBrand.name || 'Unnamed';
+        subtitle = '';
       }
+      locationLabel.innerHTML = subtitle
+        ? `<span class="log-form-location-primary">${brandText}</span><span class="log-form-location-secondary">${subtitle}</span>`
+        : `<span class="log-form-location-primary">${brandText}</span>`;
     }
 
     function showStep1() {
@@ -176,11 +288,12 @@ export function openLogForm(cafe, onClose, options = {}) {
         locationPickerGallery.innerHTML = '';
         cafes.forEach((c) => {
           const name = c.name || c.address || c.id || 'Unnamed';
+          const subtitle = c.address || '';
           const card = document.createElement('button');
           card.type = 'button';
           card.className = 'log-form-brand-card log-form-brand-card--modal log-form-location-card';
           const img = c.photoUrl ? `<img src="${escapeAttr(c.photoUrl)}" alt="" class="card-image">` : '<div class="card-image card-image-placeholder"></div>';
-          card.innerHTML = `${img}<span class="card-name">${escapeHtml(name)}</span>`;
+          card.innerHTML = `${img}<span class="card-name">${escapeHtml(name)}</span>${subtitle ? `<span class="card-subtitle">${escapeHtml(subtitle)}</span>` : ''}`;
           card.addEventListener('click', () => {
             selectedBrand = brand;
             selectedCafe = c;
@@ -195,7 +308,7 @@ export function openLogForm(cafe, onClose, options = {}) {
           const card = document.createElement('button');
           card.type = 'button';
           card.className = 'log-form-brand-card log-form-brand-card--modal log-form-location-card';
-          card.innerHTML = `<span class="card-name">${escapeHtml(label)}</span>`;
+          card.innerHTML = `<span class="card-name">${escapeHtml(label)}</span>${p.address ? `<span class="card-subtitle">${escapeHtml(p.address)}</span>` : ''}`;
           card.addEventListener('click', () => {
             selectedBrand = brand;
             selectedCafe = null;
@@ -319,6 +432,7 @@ export function openLogForm(cafe, onClose, options = {}) {
   resolveBrandForCafe();
 
   function addPhoto(dataUrl) {
+    if (photosBase64.length >= MAX_PHOTOS) return;
     photosBase64.push(dataUrl);
     renderPreviewList();
   }
@@ -329,22 +443,36 @@ export function openLogForm(cafe, onClose, options = {}) {
   }
 
   function renderPreviewList() {
-    previewList.innerHTML = '';
-    previewList.className = 'photo-preview-list';
-    if (photosBase64.length === 0) return;
+    if (!photoStrip) return;
+    photoStrip.innerHTML = '';
     photosBase64.forEach((src, i) => {
       const item = document.createElement('div');
-      item.className = 'photo-preview-item';
+      item.className = 'log-photo-tile log-photo-tile--preview';
       item.innerHTML = `<img src="${escapeAttr(src)}" alt=""><button type="button" class="photo-remove" aria-label="Remove photo">×</button>`;
       item.querySelector('.photo-remove').addEventListener('click', () => removePhoto(i));
-      previewList.appendChild(item);
+      photoStrip.appendChild(item);
     });
+    if (photosBase64.length < MAX_PHOTOS) {
+      const addBtn = document.createElement('button');
+      addBtn.type = 'button';
+      addBtn.className = 'log-photo-tile log-photo-tile--add';
+      addBtn.setAttribute('aria-label', 'Add photo');
+      addBtn.innerHTML = '<span class="log-photo-tile-plus">+</span><span class="log-photo-tile-text">Add</span>';
+      addBtn.addEventListener('click', () => photoInput?.click());
+      photoStrip.appendChild(addBtn);
+    }
   }
 
   function handleFiles(files) {
     if (!files?.length) return;
-    let pending = files.length;
-    Array.from(files).forEach((file) => {
+    const remaining = Math.max(0, MAX_PHOTOS - photosBase64.length);
+    if (remaining <= 0) {
+      if (photoInput) photoInput.value = '';
+      return;
+    }
+    const picked = Array.from(files).slice(0, remaining);
+    let pending = picked.length;
+    picked.forEach((file) => {
       const reader = new FileReader();
       reader.onload = () => {
         addPhoto(reader.result);
@@ -354,11 +482,10 @@ export function openLogForm(cafe, onClose, options = {}) {
     });
   }
 
-  const photoZone = document.getElementById('log-photo-zone');
-  if (photoZone && photoInput) {
-    photoZone.addEventListener('click', () => photoInput.click());
+  if (photoStrip && photoInput) {
     photoInput.addEventListener('change', (e) => handleFiles(e.target.files));
   }
+  renderPreviewList();
 
   const dateDisplay = document.getElementById('log-date-display');
   const dateInput = document.getElementById('log-date');
@@ -384,9 +511,9 @@ export function openLogForm(cafe, onClose, options = {}) {
     const createdAt = dateValue ? new Date(dateValue + 'T12:00:00').getTime() : Date.now();
 
     const hasPhoto = photosBase64.length > 0;
-    const hasDescription = notes.length > 0;
-    if (!hasPhoto && !hasDescription) {
-      alert('Add at least one: a photo or a description.');
+    const hasCaption = notes.length > 0;
+    if (!hasPhoto && !hasCaption) {
+      alert('Add at least one: a photo or a caption.');
       return;
     }
 
@@ -422,17 +549,31 @@ export function openLogForm(cafe, onClose, options = {}) {
       savedCafeForCallback = saved;
     }
 
+    const logId = makeLogId();
+    let uploadedPhotoUrls = [];
+    if (photosBase64.length > 0) {
+      try {
+        uploadedPhotoUrls = await uploadLogPhotos(logId, photosBase64);
+      } catch (uploadErr) {
+        console.error(uploadErr);
+        alert(uploadErrorMessage(uploadErr));
+        return;
+      }
+    }
+
     try {
       await saveLog({
+        id: logId,
         cafeId: savedCafeId || undefined,
         cafe: cafeForLog,
         brandId: selectedBrand ? selectedBrand.id : undefined,
         brandName: selectedBrand ? selectedBrand.name : undefined,
         popupId: selectedPopUp ? selectedPopUp.id : undefined,
+        userName: 'test-user',
         drinkName,
         notes,
-        photos: photosBase64.length ? photosBase64 : undefined,
-        photo: photosBase64[0] || null,
+        photos: uploadedPhotoUrls.length ? uploadedPhotoUrls : undefined,
+        photo: uploadedPhotoUrls[0] || null,
         createdAt,
       });
     } catch (err) {

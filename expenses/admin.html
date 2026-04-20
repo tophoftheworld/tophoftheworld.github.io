@@ -12,7 +12,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"
         integrity="sha512-ElRFoEQdI5Ht6kZvyzXhYG9NqjtkmlkfYk0wr6wHxU9JEHakS7UJZNeml5ALk+8IKlU6jDgMabC3vkumRokgJA=="
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <link rel="stylesheet" href="css/admin.css?v=1030">
+    <link rel="stylesheet" href="css/admin.css?v=1052">
 </head>
 
 <body>
@@ -63,14 +63,6 @@
                         <span class="category-label">Category:</span>
                         <select class="category-dropdown" id="categorySelector">
                             <option value="all">All Categories</option>
-                            <option value="General">General</option>
-                            <option value="Matcha">Matcha</option>
-                            <option value="Suppliers">Suppliers</option>
-                            <option value="Leasing">Leasing</option>
-                            <option value="Salaries">Salaries</option>
-                            <option value="Marketing">Marketing</option>
-                            <option value="Maintenance">Maintenance</option>
-                            <option value="Equipment">Equipment</option>
                         </select>
                     </div>
                 </div>
@@ -253,6 +245,13 @@
             <div class="modal-content" id="mergeSupplierContent">
                 <!-- Content will be populated by JavaScript -->
             </div>
+            <div class="merge-modal-progress" id="mergeModalProgress" aria-hidden="true">
+                <div class="merge-modal-progress-inner">
+                    <div class="merge-modal-progress-spinner" aria-hidden="true"></div>
+                    <p class="merge-modal-progress-step" id="mergeModalProgressStep"></p>
+                    <p class="merge-modal-progress-count" id="mergeModalProgressCount"></p>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -286,11 +285,18 @@
             <div class="modal-content" id="bulkMergeContent">
                 <!-- Content will be populated by JavaScript -->
             </div>
+            <div class="merge-modal-progress" id="bulkMergeModalProgress" aria-hidden="true">
+                <div class="merge-modal-progress-inner">
+                    <div class="merge-modal-progress-spinner" aria-hidden="true"></div>
+                    <p class="merge-modal-progress-step" id="bulkMergeProgressStep"></p>
+                    <p class="merge-modal-progress-count" id="bulkMergeProgressCount"></p>
+                </div>
+            </div>
         </div>
     </div>
 
     <!-- Load admin script at the bottom to ensure DOM is ready -->
-    <script type="module" src="./js/admin.js?v=1030"></script>
+    <script type="module" src="./js/admin.js?v=1064"></script>
 
 </body>
 

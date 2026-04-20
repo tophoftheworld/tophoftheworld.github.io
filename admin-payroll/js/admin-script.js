@@ -1,12 +1,27 @@
-const APP_VERSION = "1.12"; // Bump this to clear cache - Payroll period aligned with mobile (3 days before EOM)
+const APP_VERSION = "2.0.17"; // bump with index.html ?v= when shipping; v2 Firestore paths
 console.log('✅ Admin Payroll script loaded - Version:', APP_VERSION);
 
 // Import Firebase modules
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
-import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, setDoc, query, where } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
-// Add this to your imports at the top of admin-script.js
+import {
+    getFirestore,
+    collection,
+    getDocs,
+    doc,
+    getDoc,
+    updateDoc,
+    setDoc,
+    query,
+    where,
+    orderBy,
+    limit,
+    documentId,
+    deleteDoc,
+    addDoc,
+    serverTimestamp
+} from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 import { deleteObject, getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-storage.js";
-import { deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+import { formatDate, generatePayrollPeriods, getPeriodDatesFromId } from '../../shared/js/payrollPeriods.js';
 
 // Firebase configuration - you'll need to replace this with your actual Firebase config
 const firebaseConfig = {
@@ -22,7 +37,141 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-const storage = getStorage(app);  // Add this line
+const storage = getStorage(app); // Add this line
+
+/** Same key as migration-tool; optional fast path for payroll period list. */
+const MIGRATION_EARLIEST_CACHE_KEY = 'payroll_migration_v2_earliest_v1';
+const PAYROLL_SUMMARY_CACHE_VERSION = 1;
+
+let loadDataRunId = 0;
+/** True while loadData main try runs — suppress nested hideLoading in findOldestRecordAcrossEmployees */
+let payrollBulkLoadInProgress = false;
+let summaryReconcileInProgress = false;
+let summaryModeActive = false;
+
+function readMigrationEarliestDateFromCache() {
+    try {
+        const raw = localStorage.getItem(MIGRATION_EARLIEST_CACHE_KEY);
+        if (!raw) return null;
+        const o = JSON.parse(raw);
+        if (o.v !== 1 || o.projectId !== firebaseConfig.projectId || !o.globalEarliestYmd) return null;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(o.globalEarliestYmd)) return null;
+        const p = o.globalEarliestYmd.split('-').map((x) => parseInt(x, 10));
+        return new Date(p[0], p[1] - 1, p[2]);
+    } catch {
+        return null;
+    }
+}
+
+function populatePeriodEarningsEmployeeSelect() {
+    const sel = document.getElementById('periodEarningsEmployeeId');
+    if (!sel || !employees) return;
+    const v = sel.value;
+    sel.innerHTML = '<option value="">Select…</option>';
+    Object.keys(employees)
+        .sort((a, b) => (employees[a] || '').localeCompare(employees[b] || ''))
+        .forEach((id) => {
+            const opt = document.createElement('option');
+            opt.value = id;
+            opt.textContent = `${employees[id]} (${id})`;
+            sel.appendChild(opt);
+        });
+    if (v && employees[v]) sel.value = v;
+}
+
+async function refreshPeriodEarningsTable() {
+    const tbody = document.getElementById('periodEarningsTableBody');
+    const periodId = periodSelect.value;
+    if (!tbody || !periodId) return;
+    tbody.innerHTML = '<tr><td colspan="5">Loading…</td></tr>';
+    try {
+        const q = query(collection(db, 'payroll_period_earnings_v2'), where('periodId', '==', periodId));
+        const snap = await getDocs(q);
+        tbody.innerHTML = '';
+        if (snap.empty) {
+            tbody.innerHTML = '<tr><td colspan="5">No extra earnings for this period.</td></tr>';
+            return;
+        }
+        snap.forEach((d) => {
+            const r = d.data();
+            const name = employees[r.employeeId] || r.employeeId;
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${escapeHtml(String(name))}</td>
+                <td>${escapeHtml(String(r.employeeId || ''))}</td>
+                <td>₱${Number(r.amount || 0).toFixed(2)}</td>
+                <td>${escapeHtml(String(r.note || ''))}</td>
+                <td><button type="button" class="cancel-btn period-earnings-delete" data-doc-id="${d.id}">Delete</button></td>`;
+            tbody.appendChild(tr);
+        });
+        tbody.querySelectorAll('.period-earnings-delete').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+                if (!confirm('Delete this earnings line?')) return;
+                try {
+                    await deleteDoc(doc(db, 'payroll_period_earnings_v2', btn.getAttribute('data-doc-id')));
+                    showToast('Deleted. Reloading payroll…');
+                    await loadData(periodSelect.value);
+                    await refreshPeriodEarningsTable();
+                } catch (err) {
+                    console.error(err);
+                    showToast('Could not delete', 'error');
+                }
+            });
+        });
+    } catch (e) {
+        console.error(e);
+        tbody.innerHTML = '<tr><td colspan="5">Error loading earnings.</td></tr>';
+    }
+}
+
+async function openPeriodEarningsModal() {
+    const modal = document.getElementById('periodEarningsModal');
+    if (!modal) return;
+    populatePeriodEarningsEmployeeSelect();
+    modal.style.display = 'flex';
+    modal.setAttribute('aria-hidden', 'false');
+    await refreshPeriodEarningsTable();
+}
+
+function closePeriodEarningsModal() {
+    const modal = document.getElementById('periodEarningsModal');
+    if (!modal) return;
+    modal.style.display = 'none';
+    modal.setAttribute('aria-hidden', 'true');
+}
+
+async function submitPeriodEarning(ev) {
+    ev.preventDefault();
+    const periodId = periodSelect.value;
+    const employeeId = document.getElementById('periodEarningsEmployeeId').value.trim();
+    const amount = parseFloat(document.getElementById('periodEarningsAmount').value, 10);
+    const note = document.getElementById('periodEarningsNote').value.trim();
+    if (!employeeId || !employees[employeeId]) {
+        showToast('Select a valid employee', 'error');
+        return;
+    }
+    if (!Number.isFinite(amount)) {
+        showToast('Enter a valid amount', 'error');
+        return;
+    }
+    try {
+        await addDoc(collection(db, 'payroll_period_earnings_v2'), {
+            periodId,
+            employeeId,
+            amount,
+            note,
+            createdAt: serverTimestamp()
+        });
+        showToast('Line added. Reloading payroll…');
+        document.getElementById('periodEarningsAmount').value = '';
+        document.getElementById('periodEarningsNote').value = '';
+        await loadData(periodSelect.value);
+        await refreshPeriodEarningsTable();
+    } catch (err) {
+        console.error(err);
+        showToast('Could not save earnings line', 'error');
+    }
+}
 
 // Toast Notification Functions
 function showToast(message, type = 'success', duration = 3000) {
@@ -88,6 +237,48 @@ let holidaysLoaded = false;
 
 // PayCalculator instance
 let payCalculator = null;
+
+/** @param {string} [periodId] if omitted, uses periodSelect.value */
+function calcPeriodId(periodId) {
+    if (periodId !== undefined && periodId !== null && periodId !== '') return periodId;
+    return typeof periodSelect !== 'undefined' && periodSelect ? periodSelect.value : '';
+}
+
+function mergeEmpRates(employee, periodId) {
+    if (!employee) return employee;
+    return PayCalculator.mergeEmployeeRatesForPeriod(employee, calcPeriodId(periodId));
+}
+
+function calcTotalPaySimple(dates, employee, periodId) {
+    return payCalculator.calculateTotalPay(dates || [], mergeEmpRates(employee, periodId), 'simple');
+}
+
+function calcTotalPayDetailed(dates, employee, periodId) {
+    return payCalculator.calculateTotalPay(dates || [], mergeEmpRates(employee, periodId), 'detailed');
+}
+
+function upsertEmployeeRateHistory(rateHistory, periodId, fields) {
+    const list = Array.isArray(rateHistory) ? [...rateHistory] : [];
+    const idx = list.findIndex((r) => r && r.periodId === periodId);
+    const entry = { periodId, ...fields };
+    if (idx >= 0) list[idx] = { ...list[idx], ...entry };
+    else list.push(entry);
+    return list;
+}
+
+const PAYMENTS_SUBCOL = 'payments';
+
+function v2PaymentsCollRef(periodId) {
+    return collection(db, 'payroll_periods_v2', periodId, PAYMENTS_SUBCOL);
+}
+
+function v2PaymentDocRef(periodId, employeeId) {
+    return doc(db, 'payroll_periods_v2', periodId, PAYMENTS_SUBCOL, employeeId);
+}
+
+function periodPaymentsCacheKey(periodId) {
+    return `payroll_period_payments_v2_${periodId}`;
+}
 
 async function loadHolidays() {
     if (holidaysLoaded) return HOLIDAYS_2025;
@@ -196,7 +387,7 @@ async function handleUtakImport(e) {
     const batch = [];
     for (const [empId, days] of Object.entries(updates)) {
         for (const [dateKey, entry] of Object.entries(days)) {
-            const ref = doc(db, "attendance", empId, "dates", dateKey);
+            const ref = doc(db, "attendance_v2", empId, "dates", dateKey);
 
             console.log("Writing to:", empId, dateKey, entry);
 
@@ -242,6 +433,7 @@ function convertTo12Hour(timeStr) {
 // Shift schedules
 const SHIFT_SCHEDULES = {
     "Opening": { timeIn: "9:30 AM", timeOut: "6:30 PM" },
+    "Adjusted Opening": { timeIn: "10:30 AM", timeOut: "7:30 PM" },
     "Opening Half-Day": { timeIn: "9:30 AM", timeOut: "1:30 PM" },
     "Midshift": { timeIn: "11:00 AM", timeOut: "8:00 PM" },
     "Closing": { timeIn: "1:00 PM", timeOut: "10:00 PM" },
@@ -375,6 +567,19 @@ closeAddEmployeeModal.addEventListener('click', closeAddEmployeeModalFunc);
 cancelAddEmployeeBtn.addEventListener('click', closeAddEmployeeModalFunc);
 addEmployeeForm.addEventListener('submit', saveNewEmployee);
 
+const periodEarningsBtnEl = document.getElementById('periodEarningsBtn');
+if (periodEarningsBtnEl) periodEarningsBtnEl.addEventListener('click', openPeriodEarningsModal);
+const periodEarningsModalCloseEl = document.getElementById('periodEarningsModalClose');
+if (periodEarningsModalCloseEl) periodEarningsModalCloseEl.addEventListener('click', closePeriodEarningsModal);
+const periodEarningsFormEl = document.getElementById('periodEarningsForm');
+if (periodEarningsFormEl) periodEarningsFormEl.addEventListener('submit', submitPeriodEarning);
+const periodEarningsModalEl = document.getElementById('periodEarningsModal');
+if (periodEarningsModalEl) {
+    periodEarningsModalEl.addEventListener('click', (e) => {
+        if (e.target === periodEarningsModalEl) closePeriodEarningsModal();
+    });
+}
+
 closeAddShiftModal.addEventListener('click', closeAddShiftModalFunc);
 cancelAddShiftBtn.addEventListener('click', closeAddShiftModalFunc);
 addShiftForm.addEventListener('submit', saveNewShift);
@@ -416,11 +621,11 @@ async function clearAllTimeLogs() {
     const employeeIds = Object.keys(employees);
 
     for (const employeeId of employeeIds) {
-        const attendanceRef = collection(db, "attendance", employeeId, "dates");
+        const attendanceRef = collection(db, "attendance_v2", employeeId, "dates");
         const snapshot = await getDocs(attendanceRef);
 
         const deletions = snapshot.docs.map(docSnap =>
-            deleteDoc(doc(db, "attendance", employeeId, "dates", docSnap.id))
+            deleteDoc(doc(db, "attendance_v2", employeeId, "dates", docSnap.id))
         );
 
         await Promise.all(deletions);
@@ -433,7 +638,7 @@ async function clearAllTimeLogs() {
 function clearAllPeriodCaches() {
     for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && key.startsWith('attendance_')) {
+        if (key && (key.startsWith('attendance_') || key.startsWith('payroll_summary_'))) {
             localStorage.removeItem(key);
         }
     }
@@ -449,6 +654,105 @@ function getCacheKey(periodId, branchId) {
         console.warn("Error generating cache key:", e);
         return `attendance_fallback_${Date.now()}`;
     }
+}
+
+function getSummaryCacheKey(periodId, branchId) {
+    return `payroll_summary_${periodId}_${branchId}_v${PAYROLL_SUMMARY_CACHE_VERSION}`;
+}
+
+function saveSummaryToCache(periodId, branchId, attendance, paymentStatus = {}) {
+    const cacheKey = getSummaryCacheKey(periodId, branchId);
+    const employeesSummary = {};
+    Object.entries(attendance || {}).forEach(([employeeId, employee]) => {
+        employeesSummary[employeeId] = {
+            id: employeeId,
+            name: employee?.name || employees[employeeId] || employeeId,
+            baseRate: Number(employee?.baseRate || 0),
+            payType: employee?.payType || 'hourly',
+            monthlySalary: Number(employee?.monthlySalary || 0),
+            periodGross: employee?.periodGross ?? null,
+            salesBonusEligible: !!employee?.salesBonusEligible,
+            daysWorked: Number(employee?.daysWorked || 0),
+            lateHours: Number(employee?.lateHours || 0),
+            lastClockIn: employee?.lastClockIn ? new Date(employee.lastClockIn).toISOString() : null,
+            lastClockInPhoto: employee?.lastClockInPhoto || null,
+            totalPayWithBonus: Number(employee?.totalPayWithBonus || 0),
+            payment: paymentStatus?.[employeeId] || null
+        };
+    });
+
+    const payload = {
+        version: APP_VERSION,
+        schemaVersion: PAYROLL_SUMMARY_CACHE_VERSION,
+        timestamp: Date.now(),
+        periodId,
+        branchId,
+        employees: employeesSummary
+    };
+    try {
+        localStorage.setItem(cacheKey, JSON.stringify(payload));
+    } catch (error) {
+        console.warn('Could not save payroll summary cache:', error);
+    }
+}
+
+function getSummaryFromCache(periodId, branchId) {
+    const cacheKey = getSummaryCacheKey(periodId, branchId);
+    try {
+        const raw = localStorage.getItem(cacheKey);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || parsed.version !== APP_VERSION || parsed.schemaVersion !== PAYROLL_SUMMARY_CACHE_VERSION) {
+            localStorage.removeItem(cacheKey);
+            return null;
+        }
+        const isExpired = (Date.now() - (parsed.timestamp || 0)) > (24 * 60 * 60 * 1000);
+        if (isExpired) {
+            localStorage.removeItem(cacheKey);
+            return null;
+        }
+        return parsed;
+    } catch (error) {
+        console.warn('Error reading summary cache:', error);
+        return null;
+    }
+}
+
+function hydrateFromSummaryCache(summaryCache) {
+    if (!summaryCache || !summaryCache.employees) return false;
+    const hydrated = {};
+    Object.entries(summaryCache.employees).forEach(([employeeId, summary]) => {
+        hydrated[employeeId] = {
+            id: employeeId,
+            name: summary?.name || employees[employeeId] || employeeId,
+            dates: [],
+            lastClockIn: summary?.lastClockIn ? new Date(summary.lastClockIn) : null,
+            lastClockInPhoto: summary?.lastClockInPhoto || null,
+            daysWorked: Number(summary?.daysWorked || 0),
+            lateHours: Number(summary?.lateHours || 0),
+            baseRate: Number(summary?.baseRate || 0),
+            salesBonusEligible: !!summary?.salesBonusEligible,
+            payType: summary?.payType || 'hourly',
+            monthlySalary: Number(summary?.monthlySalary || 0),
+            periodGross: summary?.periodGross ?? null,
+            totalPayWithBonus: Number(summary?.totalPayWithBonus || 0),
+            _summaryOnly: true
+        };
+    });
+    attendanceData = hydrated;
+    window.paymentStatus = Object.fromEntries(
+        Object.entries(summaryCache.employees)
+            .filter(([, s]) => !!s?.payment)
+            .map(([id, s]) => [id, s.payment])
+    );
+    return true;
+}
+
+function getEmployeeTotalPayForTable(employee, periodId) {
+    if (employee && employee._summaryOnly && Number.isFinite(employee.totalPayWithBonus)) {
+        return Number(employee.totalPayWithBonus || 0);
+    }
+    return calcTotalPaySimple(employee?.dates || [], employee || {}, periodId);
 }
 
 function saveToCache(cacheKey, data) {
@@ -687,13 +991,13 @@ async function initializePayrollPeriods() {
         // Get current date for the latest date
         const today = new Date();
 
-        // Generate periods
+        // Generate periods (0 = no artificial cap; see shared/js/payrollPeriods.js)
         if (oldestDate) {
             console.log(`Oldest record found: ${formatDate(oldestDate)}`);
 
             // We don't need to go back before the oldest record
             // Just use the exact date as the start
-            window.payrollPeriods = generatePayrollPeriods(oldestDate, today, false);
+            window.payrollPeriods = generatePayrollPeriods(oldestDate, today, false, 0);
             console.log(`Generated ${window.payrollPeriods.length} payroll periods from ${formatDate(oldestDate)} to today`);
 
             // Log the range of periods for debugging
@@ -724,66 +1028,56 @@ async function initializePayrollPeriods() {
 }
 
 async function findOldestRecordAcrossEmployees() {
-    if (!isInitialLoad) {
+    if (!payrollBulkLoadInProgress && !isInitialLoad) {
         showLoading("Finding oldest attendance record...");
     }
 
     try {
-        // Try each employee until we find one with records
         const employeeIds = Object.keys(employees);
+        if (employeeIds.length === 0) {
+            if (!payrollBulkLoadInProgress) hideLoading();
+            return null;
+        }
+
+        const results = await Promise.all(
+            employeeIds.map(async (employeeId) => {
+                const attendanceRef = collection(db, "attendance_v2", employeeId, "dates");
+                const q = query(attendanceRef, orderBy(documentId()), limit(1));
+                const snapshot = await getDocs(q);
+                if (snapshot.empty) return null;
+                const ymd = snapshot.docs[0].id;
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
+                return new Date(
+                    parseInt(ymd.slice(0, 4), 10),
+                    parseInt(ymd.slice(5, 7), 10) - 1,
+                    parseInt(ymd.slice(8, 10), 10)
+                );
+            })
+        );
+
         let oldestDate = null;
-
-        for (let i = 0; i < employeeIds.length; i++) {
-            const employeeId = employeeIds[i];
-            // console.log(`Checking employee ${i + 1}/${employeeIds.length}: ${employees[employeeId]}`);
-
-            const attendanceRef = collection(db, "attendance", employeeId, "dates");
-            const snapshot = await getDocs(attendanceRef);
-
-            if (!snapshot.empty) {
-                // Found an employee with records
-                let allDates = [];
-                snapshot.forEach(doc => {
-                    allDates.push(doc.id);
-                });
-
-                // If we found dates, sort them and get the oldest
-                if (allDates.length > 0) {
-                    allDates.sort();
-                    const employeeOldestDate = new Date(allDates[0]);
-
-                    // Update overall oldest date if needed
-                    if (!oldestDate || employeeOldestDate < oldestDate) {
-                        oldestDate = employeeOldestDate;
-                    }
-
-                    console.log(`Found records for ${employees[employeeId]}, oldest: ${allDates[0]}`);
-
-                    // We found at least one record, so we can continue with other employees
-                    // to find the absolute oldest
-                }
-            }
+        for (const d of results) {
+            if (d && (!oldestDate || d < oldestDate)) oldestDate = d;
         }
 
         if (oldestDate) {
-            console.log(`Oldest record found across all employees: ${oldestDate.toISOString().split('T')[0]}`);
-            hideLoading();
+            console.log(`Oldest record found across all employees: ${formatDate(oldestDate)}`);
+            if (!payrollBulkLoadInProgress) hideLoading();
             return oldestDate;
-        } else {
-            console.log("No records found across any employees");
-            hideLoading();
-            return null;
         }
+        console.log("No records found across any employees");
+        if (!payrollBulkLoadInProgress) hideLoading();
+        return null;
     } catch (error) {
         console.error("Error finding oldest record:", error);
-        hideLoading();
+        if (!payrollBulkLoadInProgress) hideLoading();
         return null;
     }
 }
 
 async function loadAllEmployees() {
     try {
-        const employeesRef = collection(db, "employees");
+        const employeesRef = collection(db, "employees_v2");
         const snapshot = await getDocs(employeesRef);
 
         employees = {};
@@ -800,44 +1094,77 @@ async function loadAllEmployees() {
     }
 }
 
-async function loadSalesData(branch = null) {
+/**
+ * Load sales daily docs. When rangeStartYmd + rangeEndYmd (YYYY-MM-DD) are set, only docs in that id range are read.
+ */
+async function loadSalesData(branch = null, rangeStartYmd = null, rangeEndYmd = null) {
     try {
-        let snapshot;
-        
+        const useRange = !!(rangeStartYmd && rangeEndYmd);
+        let docs;
+
         if (branch === 'podium') {
-            snapshot = await getDocs(collection(db, 'sales-data', 'podium', 'daily'));
+            const col = collection(db, 'sales-data', 'podium', 'daily');
+            const snapshot = useRange
+                ? await getDocs(
+                      query(
+                          col,
+                          where(documentId(), '>=', rangeStartYmd),
+                          where(documentId(), '<=', rangeEndYmd)
+                      )
+                  )
+                : await getDocs(col);
+            docs = snapshot.docs;
         } else if (branch === 'smnorth' || branch === 'sm-north') {
-            snapshot = await getDocs(collection(db, 'sales-data', 'sm-north', 'daily'));
+            const col = collection(db, 'sales-data', 'sm-north', 'daily');
+            const snapshot = useRange
+                ? await getDocs(
+                      query(
+                          col,
+                          where(documentId(), '>=', rangeStartYmd),
+                          where(documentId(), '<=', rangeEndYmd)
+                      )
+                  )
+                : await getDocs(col);
+            docs = snapshot.docs;
         } else {
-            // Load all branches for compatibility
             const [smNorthSnapshot, podiumSnapshot] = await Promise.all([
-                getDocs(collection(db, 'sales-data', 'sm-north', 'daily')),
-                getDocs(collection(db, 'sales-data', 'podium', 'daily'))
+                useRange
+                    ? getDocs(
+                          query(
+                              collection(db, 'sales-data', 'sm-north', 'daily'),
+                              where(documentId(), '>=', rangeStartYmd),
+                              where(documentId(), '<=', rangeEndYmd)
+                          )
+                      )
+                    : getDocs(collection(db, 'sales-data', 'sm-north', 'daily')),
+                useRange
+                    ? getDocs(
+                          query(
+                              collection(db, 'sales-data', 'podium', 'daily'),
+                              where(documentId(), '>=', rangeStartYmd),
+                              where(documentId(), '<=', rangeEndYmd)
+                          )
+                      )
+                    : getDocs(collection(db, 'sales-data', 'podium', 'daily'))
             ]);
-            
-            // Combine both snapshots
-            const allDocs = [
-                ...smNorthSnapshot.docs,
-                ...podiumSnapshot.docs
-            ];
-            
-            // Create a temporary snapshot-like object
-            snapshot = { size: allDocs.length, docs: allDocs };
+            docs = [...smNorthSnapshot.docs, ...podiumSnapshot.docs];
         }
 
         const salesData = {};
-        snapshot.docs.forEach(doc => {
-            const data = doc.data();
-            // Only include sales data if it has total sales amount
-            if (data.totalSales || (data.cash || 0) + (data.gcash || 0) + (data.maya || 0) + (data.card || 0) + (data.grab || 0) > 0) {
-                salesData[doc.id] = data;
+        docs.forEach((d) => {
+            const data = d.data();
+            if (
+                data.totalSales ||
+                (data.cash || 0) + (data.gcash || 0) + (data.maya || 0) + (data.card || 0) + (data.grab || 0) > 0
+            ) {
+                salesData[d.id] = data;
             }
         });
 
-        console.log("Loaded sales data from Firebase:", Object.keys(salesData).length, "records");
+        console.log('Loaded sales data from Firebase:', Object.keys(salesData).length, 'records');
         return salesData;
     } catch (error) {
-        console.error("Error loading sales data:", error);
+        console.error('Error loading sales data:', error);
         return {};
     }
 }
@@ -895,10 +1222,10 @@ async function loadSingleEmployeeData(employeeId, periodId = null) {
         console.log('📡 Fetching employee details and attendance data...');
         const [employeeDoc, attendanceSnapshot] = await Promise.all([
             // Get employee details
-            getDoc(doc(db, "employees", employeeId)),
+            getDoc(doc(db, "employees_v2", employeeId)),
             // Get attendance data for this period only
             getDocs(query(
-                collection(db, "attendance", employeeId, "dates"),
+                collection(db, "attendance_v2", employeeId, "dates"),
                 where("__name__", ">=", formattedStartDate),
                 where("__name__", "<=", formattedEndDate)
             ))
@@ -914,7 +1241,7 @@ async function loadSingleEmployeeData(employeeId, periodId = null) {
         // IMPORTANT: Sales bonus is only for SM North, so always load SM North sales data
         let salesData = {};
         if (employeeDoc.exists() && employeeDoc.data().salesBonusEligible) {
-            salesData = await loadSalesData('sm-north');
+            salesData = await loadSalesData('sm-north', formattedStartDate, formattedEndDate);
         }
         
         // Initialize PayCalculator with minimal data
@@ -1030,7 +1357,12 @@ function updatePeriodDropdown() {
     }
 }
 
-async function loadData(selectedPeriodId = null) {
+async function loadData(selectedPeriodId = null, options = {}) {
+    const {
+        skipSummaryBootstrap = false,
+        forceNetworkRefresh = false,
+        silent = false
+    } = options;
     // Debug: Log every call to loadData
     console.log(`🔍 loadData() called:`, {
         selectedPeriodId,
@@ -1044,7 +1376,9 @@ async function loadData(selectedPeriodId = null) {
         console.log(`🚫 Use loadSingleEmployeeData() instead for single employee views`);
         return;
     }
-    
+
+    const myRun = ++loadDataRunId;
+
     // Use the selected period or current value
     const forcedPeriodId = selectedPeriodId || periodSelect.value;
     console.log("FORCED LOADING FOR PERIOD:", forcedPeriodId);
@@ -1062,6 +1396,36 @@ async function loadData(selectedPeriodId = null) {
     }
 
     const periodId = forcedPeriodId;
+    const forcePeriodListRefresh = refreshBtn.dataset.forceRefresh === 'true';
+    const shouldUseSummaryBootstrap = !skipSummaryBootstrap && !forcePeriodListRefresh && !currentEmployeeView;
+
+    if (shouldUseSummaryBootstrap) {
+        const summaryCache = getSummaryFromCache(periodId, branchId);
+        if (summaryCache && hydrateFromSummaryCache(summaryCache)) {
+            summaryModeActive = true;
+            filterData({ skipPaymentFetch: true });
+            hideLoading();
+
+            if (!summaryReconcileInProgress) {
+                queueMicrotask(async () => {
+                    summaryReconcileInProgress = true;
+                    try {
+                        await loadData(periodId, {
+                            skipSummaryBootstrap: true,
+                            forceNetworkRefresh: true,
+                            silent: true
+                        });
+                    } catch (reconcileError) {
+                        console.warn('Summary reconcile failed:', reconcileError);
+                    } finally {
+                        summaryReconcileInProgress = false;
+                    }
+                });
+            }
+            return;
+        }
+    }
+    summaryModeActive = false;
 
     // Rest of your existing loadData function...
 
@@ -1081,8 +1445,9 @@ async function loadData(selectedPeriodId = null) {
         hideLoading();
 
         // If not a forced refresh and not initial load, we can return early
-        if (!isInitialLoad && refreshBtn.dataset.forceRefresh !== 'true') {
+        if (!forceNetworkRefresh && !isInitialLoad && refreshBtn.dataset.forceRefresh !== 'true') {
             console.log('Using cached data only (no background refresh)');
+            if (myRun === loadDataRunId) hideLoading();
             return;
         }
 
@@ -1091,48 +1456,60 @@ async function loadData(selectedPeriodId = null) {
     } else if (cachedData) {
         console.log('Cache data invalid, invalidating cache');
         localStorage.removeItem(cacheKey);
-        showLoading();
+        if (!silent) showLoading('Loading payroll data…', { fullPageBlocking: true });
     } else {
         // No cache available, show loading indicator
-        showLoading();
+        if (!silent) showLoading('Loading payroll data…', { fullPageBlocking: true });
     }
-
-    // Reset force refresh flag
     refreshBtn.dataset.forceRefresh = 'false';
 
     try {
-        // First, load all employees from Firebase
+        payrollBulkLoadInProgress = true;
         await loadAllEmployees();
+        if (myRun !== loadDataRunId) return;
 
-        // Load sales data for bonus calculations
-        // IMPORTANT: Sales bonus is only for SM North, so always load SM North sales data
-        // regardless of branch filter (branch filter is for attendance, not sales)
-        const salesData = await loadSalesData('sm-north');
+        {
+            const n = Object.keys(employees).length;
+            setPayrollLoadingProgress({
+                phase: 'Loading sales data…',
+                loaded: 0,
+                total: n,
+                indeterminate: true
+            });
+        }
+
+        if (isInitialLoad || forcePeriodListRefresh) {
+            await initializePayrollPeriods();
+            if (myRun !== loadDataRunId) return;
+        }
+
+        const { startDate, endDate } = getPeriodDates(periodId);
+        const formattedStartDate = formatDate(startDate);
+        const formattedEndDate = formatDate(endDate);
+
+        const salesData = await loadSalesData('sm-north', formattedStartDate, formattedEndDate);
+        if (myRun !== loadDataRunId) return;
         window.salesDataCache = salesData;
 
-        // Initialize PayCalculator with current data
         payCalculator = new PayCalculator(HOLIDAYS_2025, salesData);
-        
-        // Invalidate cache if sales bonus feature wasn't included in cached data
+
         if (cachedData) {
             const sampleEmployee = Object.values(cachedData)[0];
             if (sampleEmployee && typeof sampleEmployee.salesBonusEligible === 'undefined') {
                 localStorage.removeItem(cacheKey);
-                // Force a complete reload without cache
                 attendanceData = {};
             }
         }
 
-        // Get all employee IDs
         const employeeIds = Object.keys(employees);
-
-        // We'll use this to track any changes
+        const empLoadTotal = employeeIds.length;
         let hasChanges = false;
+        const cacheWasValidForUi = !!(cachedData && validateCacheData(cacheKey, cachedData));
+        const useProgressiveRowReveal = !cacheWasValidForUi;
 
-        // Initialize data structure if not from cache
-        if (!cachedData) {
+        if (useProgressiveRowReveal) {
             attendanceData = {};
-            employeeIds.forEach(employeeId => {
+            employeeIds.forEach((employeeId) => {
                 attendanceData[employeeId] = {
                     id: employeeId,
                     name: employees[employeeId],
@@ -1142,33 +1519,13 @@ async function loadData(selectedPeriodId = null) {
                     daysWorked: 0,
                     lateHours: 0,
                     baseRate: 0,
-                    salesBonusEligible: false
+                    salesBonusEligible: false,
+                    _payrollRowLoading: true
                 };
             });
         }
 
-        // Initialize payroll periods in background if this is initial load
-        if (isInitialLoad) {
-            // Start payroll period initialization in the background
-            setTimeout(() => {
-                initializePayrollPeriods().then(() => {
-                    console.log("Payroll periods initialized in background");
-                }).catch(error => {
-                    console.error("Error initializing payroll periods in background:", error);
-                });
-            }, 100);
-        } else if (refreshBtn.dataset.forceRefresh === 'true') {
-            // Run synchronously during manual refresh
-            await initializePayrollPeriods();
-        }
-
-        // Get selected period dates
-        const { startDate, endDate } = getPeriodDates(periodId);
-        const formattedStartDate = formatDate(startDate);
-        const formattedEndDate = formatDate(endDate);
-
-        // Fetch employee data in parallel - this is much faster!
-        const employeePromises = employeeIds.map(async (employeeId) => {
+        const fetchOneEmployeeForPeriod = async (employeeId) => {
             try {
                 // Always ensure the employee exists in the data structure
                 if (!attendanceData[employeeId]) {
@@ -1180,12 +1537,13 @@ async function loadData(selectedPeriodId = null) {
                         lastClockInPhoto: null,
                         daysWorked: 0,
                         lateHours: 0,
-                        baseRate: 0
+                        baseRate: 0,
+                        ...(useProgressiveRowReveal ? { _payrollRowLoading: true } : {})
                     };
                 }
 
                 // Get employee base rate
-                const employeeDocRef = doc(db, "employees", employeeId);
+                const employeeDocRef = doc(db, "employees_v2", employeeId);
                 const employeeDoc = await getDoc(employeeDocRef);
                 if (employeeDoc.exists()) {
                     const employeeData = employeeDoc.data();
@@ -1193,16 +1551,25 @@ async function loadData(selectedPeriodId = null) {
                     const oldNickname = attendanceData[employeeId].nickname || '';
                     const newNickname = employeeData.nickname || '';
 
-                    // Base rate handling: preserve historical rates for cached data
+                    attendanceData[employeeId].rateHistory = Array.isArray(employeeData.rateHistory)
+                        ? employeeData.rateHistory
+                        : [];
+                    attendanceData[employeeId].payType = employeeData.payType || 'hourly';
+                    attendanceData[employeeId].monthlySalary = employeeData.monthlySalary || 0;
+                    attendanceData[employeeId].periodGross =
+                        employeeData.periodGross != null ? employeeData.periodGross : null;
+
+                    const effectiveRate =
+                        PayCalculator.getRateForPeriod(attendanceData[employeeId], periodId).baseRate ||
+                        currentLiveRate;
+
+                    // Base rate on bucket reflects period-effective rate for table display
                     const existingRate = attendanceData[employeeId].baseRate || 0;
-                    if (existingRate === 0) {
-                        // No cached rate - use current live rate (first time loading this period)
-                        attendanceData[employeeId].baseRate = currentLiveRate;
+                    if (existingRate === 0 || existingRate !== effectiveRate) {
+                        attendanceData[employeeId].baseRate = effectiveRate;
                         hasChanges = true;
                     }
-                    // If cached rate exists, keep it (preserves historical data)
 
-                    // Always update other employee fields
                     if (oldNickname !== newNickname) {
                         attendanceData[employeeId].nickname = newNickname;
                         hasChanges = true;
@@ -1217,7 +1584,7 @@ async function loadData(selectedPeriodId = null) {
                 }
 
                 // Get attendance data
-                const attendanceRef = collection(db, "attendance", employeeId, "dates");
+                const attendanceRef = collection(db, "attendance_v2", employeeId, "dates");
 
                 // Use a where clause to only fetch dates in range
                 const snapshot = await getDocs(query(
@@ -1272,14 +1639,15 @@ async function loadData(selectedPeriodId = null) {
                         scheduledOut: scheduledOut,
                         timeIn: dateData.clockIn?.time || null,
                         timeOut: dateData.clockOut?.time || null,
-                        timeInPhoto: dateData.clockIn?.selfie || null,
-                        timeOutPhoto: dateData.clockOut?.selfie || null,
+                        timeInPhoto: null,
+                        timeOutPhoto: null,
                         hasOTPay: dateData.hasOTPay || false,
                         transpoAllowance: dateData.transpoAllowance || 0,
                         hasFixedPay: dateData.hasFixedPay || false,
                         fixedPayAmount: dateData.fixedPayAmount || 0,
                         hasDoublePay: dateData.hasDoublePay || false,
-                        hasMealAllowance: dateData.hasMealAllowance !== false
+                        hasMealAllowance: dateData.hasMealAllowance !== false,
+                        salesBonus: dateData.salesBonus || 0
                     };
 
                     // Check if this is a new or updated entry
@@ -1353,37 +1721,93 @@ async function loadData(selectedPeriodId = null) {
                         baseRate: 0
                     };
                 }
+            } finally {
+                if (attendanceData[employeeId]) {
+                    delete attendanceData[employeeId]._payrollRowLoading;
+                }
             }
+        };
+
+        if (useProgressiveRowReveal) {
+            setPayrollLoadingProgress({
+                phase: 'Loading payment records…',
+                loaded: 0,
+                total: empLoadTotal
+            });
+            try {
+                window.paymentStatus = await loadAllPaymentConfirmations(periodId);
+            } catch (payErr) {
+                console.warn('Payment prefetch for progressive load:', payErr);
+                window.paymentStatus = {};
+            }
+            if (myRun !== loadDataRunId) return;
+            filterData({ skipPaymentFetch: true });
+            setPayrollLoadingProgress({
+                phase: 'Fetching attendance…',
+                loaded: 0,
+                total: empLoadTotal
+            });
+        } else {
+            setPayrollLoadingProgress({
+                phase: 'Fetching attendance…',
+                loaded: 0,
+                total: empLoadTotal,
+                indeterminate: true
+            });
+        }
+
+        const PROGRESSIVE_CHUNK = 5;
+        if (useProgressiveRowReveal) {
+            for (let i = 0; i < employeeIds.length; i += PROGRESSIVE_CHUNK) {
+                if (myRun !== loadDataRunId) return;
+                const slice = employeeIds.slice(i, i + PROGRESSIVE_CHUNK);
+                await Promise.all(slice.map((id) => fetchOneEmployeeForPeriod(id)));
+                const loadedCount = Math.min(i + slice.length, employeeIds.length);
+                setPayrollLoadingProgress({
+                    phase: 'Fetching attendance…',
+                    loaded: loadedCount,
+                    total: empLoadTotal
+                });
+                filterData({ skipPaymentFetch: true });
+                await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+            }
+        } else {
+            await Promise.all(employeeIds.map((id) => fetchOneEmployeeForPeriod(id)));
+            setPayrollLoadingProgress({
+                phase: 'Calculating pay…',
+                loaded: empLoadTotal,
+                total: empLoadTotal
+            });
+        }
+        if (myRun !== loadDataRunId) return;
+
+        setPayrollLoadingProgress({
+            phase: 'Syncing sales bonuses…',
+            loaded: empLoadTotal,
+            total: empLoadTotal
         });
 
-        // Wait for all employee data to load
-        await Promise.all(employeePromises);
-        // Make attendance data globally available for PayCalculator
         window.attendanceData = attendanceData;
+        if (payCalculator) {
+            payCalculator.staffingAttendanceData = attendanceData;
+        }
 
-        // ALWAYS recalculate totals to include sales bonuses
         const allBonusUpdates = [];
-        
+
         for (const employeeId of Object.keys(attendanceData)) {
             const employee = attendanceData[employeeId];
             if (employee.dates && employee.dates.length > 0) {
-                // Recalculate total pay including sales bonuses
-                const totalPayWithBonus = payCalculator.calculateTotalPay(employee.dates, employee, 'simple');
-                employee.totalPayWithBonus = totalPayWithBonus; // Store it
-
-                // Also ensure sales bonuses are calculated for each date using PayCalculator
                 employee.dates.forEach((dateObj) => {
                     if (dateObj.timeIn && dateObj.timeOut && dateObj.branch === 'SM North' && employee.salesBonusEligible) {
                         const salesBonus = payCalculator.calculateSalesBonus(dateObj.date, employee);
-                        
+
                         if (dateObj.salesBonus !== salesBonus) {
                             dateObj.salesBonus = salesBonus;
                             hasChanges = true;
-                            
-                            // Queue write to Firestore
+
                             allBonusUpdates.push((async () => {
                                 try {
-                                    const attendanceDocRef = doc(db, "attendance", employeeId, "dates", dateObj.date);
+                                    const attendanceDocRef = doc(db, "attendance_v2", employeeId, "dates", dateObj.date);
                                     await setDoc(attendanceDocRef, { salesBonus: salesBonus }, { merge: true });
                                 } catch (error) {
                                     console.error(`Failed to write salesBonus for ${employeeId} on ${dateObj.date}:`, error);
@@ -1394,16 +1818,48 @@ async function loadData(selectedPeriodId = null) {
                 });
             }
         }
-        
-        // Wait for all bonus updates to complete
+
         if (allBonusUpdates.length > 0) {
             await Promise.all(allBonusUpdates);
         }
+        if (myRun !== loadDataRunId) return;
 
-        // Save updated data with bonuses
+        setPayrollLoadingProgress({
+            phase: 'Finishing up…',
+            loaded: empLoadTotal,
+            total: empLoadTotal
+        });
+
+        for (const employeeId of Object.keys(attendanceData)) {
+            const employee = attendanceData[employeeId];
+            if (employee.dates && employee.dates.length > 0) {
+                employee.totalPayWithBonus = calcTotalPaySimple(employee.dates, employee, periodId);
+            } else {
+                employee.totalPayWithBonus = 0;
+            }
+        }
+
+        Object.values(attendanceData).forEach((rec) => {
+            if (rec && '_payrollRowLoading' in rec) delete rec._payrollRowLoading;
+        });
+
+        summaryModeActive = false;
+        Object.values(attendanceData).forEach((employee) => {
+            if (employee && employee._summaryOnly) delete employee._summaryOnly;
+        });
         saveToCache(cacheKey, attendanceData);
-        filterData();
-        
+        saveSummaryToCache(periodId, branchId, attendanceData, window.paymentStatus || {});
+        if (useProgressiveRowReveal) {
+            filterData({ skipPaymentFetch: true });
+            try {
+                await updateEmployeePaymentStatus(true);
+            } catch (payUiErr) {
+                console.warn('updateEmployeePaymentStatus:', payUiErr);
+            }
+        } else {
+            filterData();
+        }
+
         // After data is loaded and filtered, restore employee view if needed
         const employeeId = getEmployeeFromHash();
         if (employeeId && employees[employeeId] && currentEmployeeView !== employeeId) {
@@ -1411,19 +1867,14 @@ async function loadData(selectedPeriodId = null) {
             currentEmployeeView = employeeId;
             updateViewMode();
             
-            // Use fast loading for single employee
             const container = document.getElementById('employee-details-table');
             if (container) {
-                container.innerHTML = '<div class="spinner"></div>';
-                
-                // Load only this employee's data using fast path
-                loadSingleEmployeeData(employeeId).then(employeeData => {
-                    // Update the view immediately with the fast-loaded data
-                    loadEmployeeDetailsAsMainTable(employeeId, container, employeeData);
-                }).catch(error => {
-                    console.error("Error loading single employee:", error);
+                try {
+                    await loadEmployeeDetailsAsMainTable(employeeId, container);
+                } catch (error) {
+                    console.error('Error loading single employee:', error);
                     container.innerHTML = '<div class="error">Error loading employee data</div>';
-                });
+                }
             }
         }
     } catch (error) {
@@ -1432,6 +1883,7 @@ async function loadData(selectedPeriodId = null) {
             alert("Failed to load data. Please try again.");
         }
     } finally {
+        payrollBulkLoadInProgress = false;
         hideLoading();
     }
 
@@ -1445,7 +1897,7 @@ function invalidateAllCaches() {
     // Clear all attendance caches when sales data might have changed
     for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && key.startsWith('attendance_')) {
+        if (key && (key.startsWith('attendance_') || key.startsWith('payroll_summary_'))) {
             localStorage.removeItem(key);
         }
     }
@@ -1467,7 +1919,7 @@ function clearSingleUserCaches() {
 // Update the filterData() function around line 212:
 // Filter data based on selected period and branch
 // Replace the existing filterData function with this updated version
-function filterData() {
+function filterData(options = {}) {
     const period = periodSelect.value;
     const branch = isMobileLayout() ? 'all' : branchSelect.value;
     const { startDate, endDate } = getPeriodDates(period);
@@ -1482,6 +1934,17 @@ function filterData() {
             singleEmployeeData[currentEmployeeView] = filteredData[currentEmployeeView];
         }
         filteredData = singleEmployeeData;
+    }
+
+    if (summaryModeActive) {
+        if (options.skipPaymentFetch) {
+            renderEmployeeTable();
+            updateSummaryCards();
+        } else {
+            renderEmployeeTable();
+            updateSummaryCards();
+        }
+        return;
     }
 
     // Apply period filters by recalculating key metrics
@@ -1537,8 +2000,12 @@ function filterData() {
         }
     });
 
-    // Load payment data first, then render table
-    loadPaymentDataAndRender();
+    if (options.skipPaymentFetch) {
+        renderEmployeeTable();
+        updateSummaryCards();
+    } else {
+        loadPaymentDataAndRender();
+    }
 }
 
 // Load payment data and render table
@@ -1559,8 +2026,7 @@ async function loadPaymentDataAndRender() {
         updateSummaryCards();
         
         // Clear payment status cache and force update indicators
-        const cacheKey = `payment_confirmations_${periodId}`;
-        localStorage.removeItem(cacheKey);
+        localStorage.removeItem(periodPaymentsCacheKey(periodId));
         await updateEmployeePaymentStatus(true);
         
     } catch (error) {
@@ -1591,7 +2057,7 @@ function updateSummaryCards() {
         const hasAttendance = employee.dates.some(date => date.timeIn);
         if (hasAttendance) {
             activeEmployees++;
-            const branchSpecificPay = payCalculator.calculateTotalPay(employee.dates, employee, 'simple');
+            const branchSpecificPay = getEmployeeTotalPayForTable(employee, period);
             totalPayrollAmount += branchSpecificPay;
         }
     });
@@ -1624,7 +2090,7 @@ function updateSummaryCards() {
             Object.entries(filteredData).forEach(([employeeId, employee]) => {
                 const hasAttendance = employee.dates.some(date => date.timeIn);
                 if (hasAttendance) {
-                    const branchSpecificPay = payCalculator.calculateTotalPay(employee.dates, employee, 'simple');
+                    const branchSpecificPay = getEmployeeTotalPayForTable(employee, periodId);
                     const paymentData = paymentStatuses[employeeId];
                     
                     if (!paymentData) {
@@ -1735,6 +2201,8 @@ function createEmployeeSpecificSummaryCards(employeeId) {
 
     // Check if employee is sales bonus eligible
     const showSalesBonus = employee.salesBonusEligible;
+    const periodId = periodSelect.value;
+    const rateForPeriod = PayCalculator.getRateForPeriod(employee, periodId);
 
     // Create new summary card HTML
     const summaryCardsHTML = `
@@ -1746,7 +2214,7 @@ function createEmployeeSpecificSummaryCards(employeeId) {
             </div>
             <div class="summary-card">
                 <div class="card-title">Base Rate</div>
-                <div class="card-value">₱${(employee.baseRate || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div class="card-value">₱${(rateForPeriod.baseRate || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                 <div class="card-subtitle">Per day</div>
             </div>
             <div class="summary-card">
@@ -1757,7 +2225,7 @@ function createEmployeeSpecificSummaryCards(employeeId) {
 
             <div class="summary-card">
                 <div class="card-title">Total Pay</div>
-                <div class="card-value">₱${payCalculator.calculateTotalPay(employee.dates, employee, 'simple').toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div class="card-value">₱${calcTotalPaySimple(employee.dates, employee, periodId).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                 <div class="card-subtitle">For this period</div>
             </div>
             ${showSalesBonus ? `
@@ -1824,7 +2292,28 @@ function renderMobileCards(cardData) {
     employeeCardsMobileEl.innerHTML = '';
     employeeCardsMobileEl.setAttribute('aria-hidden', 'false');
 
-    cardData.forEach(({ employeeId, employee, totalPay, payableAmount, payableClass, showPaymentButton, daysWorked }) => {
+    cardData.forEach((item) => {
+        if (item.skeleton) {
+            const card = document.createElement('div');
+            card.className = 'employee-card-mobile employee-card-mobile--loading';
+            card.dataset.employeeId = item.employeeId;
+            const nm = escapeHtml(item.name || employees[item.employeeId] || 'Unknown');
+            card.innerHTML = `
+            <div class="employee-card-mobile__main">
+                <div class="employee-card-mobile__avatar-placeholder employee-card-mobile__avatar-placeholder--pulse"></div>
+                <div class="employee-card-mobile__info">
+                    <div class="employee-card-mobile__name">${nm}</div>
+                    <div class="employee-card-mobile__meta employee-card-mobile__meta--loading">Loading…</div>
+                </div>
+            </div>
+            <div class="employee-card-mobile__right">
+                <div class="employee-card-mobile__salary employee-card-mobile__salary--skeleton"></div>
+            </div>
+            `;
+            employeeCardsMobileEl.appendChild(card);
+            return;
+        }
+        const { employeeId, employee, totalPay, payableAmount, payableClass, showPaymentButton, daysWorked } = item;
         const name = employee.name || employees[employeeId] || 'Unknown Employee';
         const photoUrl = employee.lastClockInPhoto || '';
         const totalPayStr = totalPay.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -1841,7 +2330,7 @@ function renderMobileCards(cardData) {
         card.innerHTML = `
             <div class="employee-card-mobile__main">
                 ${photoUrl
-                    ? `<img src="${photoUrl}" class="employee-card-mobile__avatar" alt="">`
+                    ? photoThumbDeferredHtml(photoUrl, 'Last clock-in', 'employee-card-mobile__avatar')
                     : `<div class="employee-card-mobile__avatar-placeholder">${(name || '?').charAt(0).toUpperCase()}</div>`
                 }
                 <div class="employee-card-mobile__info">
@@ -1859,10 +2348,13 @@ function renderMobileCards(cardData) {
         employeeCardsMobileEl.appendChild(card);
     });
 
+    scheduleDeferredThumbLoads(employeeCardsMobileEl);
+
     /* Whole card clickable: opens employee view (modal on mobile). Pay button still works. */
     employeeCardsMobileEl.querySelectorAll('.employee-card-mobile').forEach(cardEl => {
         cardEl.addEventListener('click', function (e) {
-            if (e.target.closest('.payment-btn')) return;
+            if (this.classList.contains('employee-card-mobile--loading')) return;
+            if (e.target.closest('.payment-btn') || e.target.closest('img.thumb')) return;
             const employeeId = this.dataset.employeeId;
             if (!employeeId) return;
             if (isMobileLayout()) {
@@ -1880,7 +2372,7 @@ function renderMobileCards(cardData) {
                         updateViewModeImpl();
                         setTimeout(() => {
                             const detailsContainer = document.getElementById('employee-details-table');
-                            if (detailsContainer && detailsContainer.innerHTML.includes('spinner')) {
+                            if (detailsContainer && !detailsContainer.querySelector('#employeeDetailTable')) {
                                 loadEmployeeDetailsAsMainTable(employeeId, detailsContainer);
                             }
                         }, 1000);
@@ -1904,11 +2396,60 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+function buildEmployeeDetailScrimHtml(message = 'Loading attendance…') {
+    const m = escapeHtml(message);
+    return `<div class="employee-detail-blocking-scrim payroll-blocking-scrim payroll-blocking-scrim--detail" style="display:flex" aria-busy="true">
+        <div class="payroll-blocking-scrim__panel">
+            <div class="spinner"></div>
+            <p class="payroll-blocking-scrim__message">${m}</p>
+        </div>
+    </div>`;
+}
+
+/** Thumbnail markup: no `src` yet so layout/text can paint first; see scheduleDeferredThumbLoads. */
+function photoThumbDeferredHtml(photoUrl, altText, extraClass) {
+    if (!photoUrl) return '';
+    const esc = String(photoUrl).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    const cls = ['thumb', 'thumb-deferred', extraClass || ''].filter(Boolean).join(' ');
+    const alt = escapeHtml(altText || 'Photo');
+    return `<img class="${cls}" alt="${alt}" data-photo="${esc}" data-src="${esc}" decoding="async" loading="lazy">`;
+}
+
+/** After DOM update: assign real `src` on idle / next frame so image fetches do not block first paint. */
+function scheduleDeferredThumbLoads(rootNode) {
+    if (!rootNode) return;
+    const hydrate = () => {
+        rootNode.querySelectorAll('img.thumb-deferred[data-src]').forEach((img) => {
+            const url = img.dataset.src;
+            if (!url) return;
+            img.src = url;
+            img.removeAttribute('data-src');
+            img.classList.remove('thumb-deferred');
+        });
+    };
+    if (typeof requestIdleCallback === 'function') {
+        requestIdleCallback(hydrate, { timeout: 400 });
+    } else {
+        requestAnimationFrame(() => requestAnimationFrame(hydrate));
+    }
+}
+
+(function bindThumbModalOnce() {
+    if (bindThumbModalOnce._done) return;
+    bindThumbModalOnce._done = true;
+    document.addEventListener('click', function (e) {
+        const img = e.target.closest('img.thumb[data-photo]');
+        if (!img || !img.dataset.photo) return;
+        e.stopPropagation();
+        openPhotoModal(img.dataset.photo);
+    });
+})();
+
 function openMobileEmployeeDetail(employeeId) {
     if (!employeeDetailMobileModal || !filteredData[employeeId]) return;
     const employee = filteredData[employeeId];
     const name = employee.name || employees[employeeId] || 'Unknown Employee';
-    const totalPay = payCalculator.calculateTotalPay(employee.dates || [], { id: employeeId, baseRate: employee.baseRate || 0, salesBonusEligible: employee.salesBonusEligible || false }, 'simple');
+    const totalPay = calcTotalPaySimple(employee.dates || [], employee, periodSelect.value);
     const paymentStatus = window.paymentStatus || {};
     const empPayment = paymentStatus[employeeId];
     const remaining = empPayment ? Math.max(0, empPayment.remainingAmount || 0) : totalPay;
@@ -1952,7 +2493,23 @@ function openMobileEmployeeDetail(employeeId) {
         employeeDetailMobileActions.appendChild(payBtn);
     }
 
-    renderMobileDayCards(employeeId);
+    const finishMobileDayCards = () => {
+        renderMobileDayCards(employeeId);
+    };
+    if (employee._payrollRowLoading) {
+        employeeDetailMobileDayCards.innerHTML = buildEmployeeDetailScrimHtml('Loading attendance…');
+        const waitRowLoaded = () => {
+            const em = filteredData[employeeId];
+            if (!em || !em._payrollRowLoading) {
+                finishMobileDayCards();
+                return;
+            }
+            requestAnimationFrame(waitRowLoaded);
+        };
+        requestAnimationFrame(waitRowLoaded);
+    } else {
+        finishMobileDayCards();
+    }
 
     employeeDetailMobileModal.style.display = 'flex';
     employeeDetailMobileModal.setAttribute('aria-hidden', 'false');
@@ -1998,8 +2555,8 @@ function renderMobileDayCards(employeeId) {
             <div class="employee-detail-mobile__day-card__left">
                 <div class="employee-detail-mobile__day-card__date">${dateLabel}</div>
                 <div class="employee-detail-mobile__day-card__photos">
-                    ${timeInPhoto ? `<img src="${timeInPhoto}" class="employee-detail-mobile__day-card__thumb thumb" data-photo="${timeInPhoto}" alt="Clock-in">` : ''}
-                    ${timeOutPhoto ? `<img src="${timeOutPhoto}" class="employee-detail-mobile__day-card__thumb thumb" data-photo="${timeOutPhoto}" alt="Clock-out">` : ''}
+                    ${photoThumbDeferredHtml(timeInPhoto, 'Clock-in', 'employee-detail-mobile__day-card__thumb')}
+                    ${photoThumbDeferredHtml(timeOutPhoto, 'Clock-out', 'employee-detail-mobile__day-card__thumb')}
                 </div>
                 <div class="employee-detail-mobile__day-card__meta">${branch} · ${shift} · ${timeInStr} – ${timeOutStr}</div>
             </div>
@@ -2008,13 +2565,7 @@ function renderMobileDayCards(employeeId) {
         employeeDetailMobileDayCards.appendChild(card);
     });
 
-    employeeDetailMobileDayCards.querySelectorAll('.thumb').forEach(thumb => {
-        thumb.addEventListener('click', function (e) {
-            e.stopPropagation();
-            const photoUrl = this.dataset.photo;
-            if (photoUrl) openPhotoModal(photoUrl);
-        });
-    });
+    scheduleDeferredThumbLoads(employeeDetailMobileDayCards);
 }
 
 function renderEmployeeTable() {
@@ -2073,6 +2624,31 @@ function renderEmployeeTable() {
         row.className = 'expandable-row';
         row.dataset.employeeId = employeeId;
 
+        if (employee._payrollRowLoading) {
+            row.classList.add('payroll-row-loading');
+            const dispName = escapeHtml(employee.name || employees[employeeId] || 'Unknown Employee');
+            row.innerHTML = `
+        <td><span class="employee-name">${dispName}</span></td>
+        <td colspan="7" class="payroll-row-loading__cells">
+          <span class="payroll-row-loading__shimmer"></span>
+          <span class="payroll-row-loading__hint">Loading attendance…</span>
+        </td>
+        `;
+            employeeTableBody.appendChild(row);
+            const detailRow = document.createElement('tr');
+            detailRow.className = 'detail-row';
+            detailRow.dataset.employeeId = employeeId;
+            detailRow.dataset.loaded = 'false';
+            const detailContent = document.createElement('td');
+            detailContent.colSpan = 8;
+            detailContent.className = 'detail-content';
+            detailContent.innerHTML = '<div class="loading-placeholder">Loading…</div>';
+            detailRow.appendChild(detailContent);
+            employeeTableBody.appendChild(detailRow);
+            mobileCardData.push({ skeleton: true, employeeId, name: employee.name || employees[employeeId] || 'Unknown' });
+            return;
+        }
+
         // Use pre-calculated values instead of recalculating
         const daysWorked = employee.daysWorked;
         const lateHours = employee.lateHours;
@@ -2105,7 +2681,7 @@ function renderEmployeeTable() {
             // });
         }
 
-        const payResult = payCalculator.calculateTotalPay(employee.dates, employee, 'simple');
+        const payResult = getEmployeeTotalPayForTable(employee, period);
         // console.log('PayCalculator result:', payResult);
 
         const paymentButtonHtml = showPaymentButton ? `
@@ -2119,11 +2695,7 @@ function renderEmployeeTable() {
         ` : '';
 
         // Calculate payable amount (remaining amount to pay)
-        const totalPay = payCalculator.calculateTotalPay(employee.dates || [], {
-            id: employeeId,
-            baseRate: employee.baseRate || 0,
-            salesBonusEligible: employee.salesBonusEligible || false
-        }, 'simple');
+        const totalPay = getEmployeeTotalPayForTable(employee, period);
         
         // Get payment status for this employee
         const paymentStatus = window.paymentStatus || {};
@@ -2165,9 +2737,7 @@ function renderEmployeeTable() {
         <td>₱${totalPay.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
         <td class="${payableClass}">₱${payableAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
         <td class="time-cell">
-            ${employee.lastClockInPhoto ?
-                        `<img src="${employee.lastClockInPhoto}" class="thumb" data-photo="${employee.lastClockInPhoto}" alt="Last clock-in photo">` :
-                        ``}
+            ${employee.lastClockInPhoto ? photoThumbDeferredHtml(employee.lastClockInPhoto, 'Last clock-in') : ''}
             <span class="date-readable">${lastClockIn}</span>
         </td>
         <td class="action-cell">
@@ -2212,8 +2782,11 @@ function renderEmployeeTable() {
     // Add event listeners for row clicks to expand details
     document.querySelectorAll('.expandable-row').forEach(row => {
         row.addEventListener('click', function (e) {
-            // Don't expand if clicking on a button
-            if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
+            // Don't expand if clicking on a button or punch photo
+            if (e.target.tagName === 'BUTTON' || e.target.closest('button') || e.target.closest('img.thumb')) {
+                return;
+            }
+            if (this.classList.contains('payroll-row-loading')) {
                 return;
             }
 
@@ -2227,15 +2800,6 @@ function renderEmployeeTable() {
 
             this.classList.toggle('expanded');
             detailRow.classList.toggle('expanded');
-        });
-    });
-
-    // Add event listeners for photo thumbnails
-    document.querySelectorAll('.thumb').forEach(thumb => {
-        thumb.addEventListener('click', function (e) {
-            e.stopPropagation();
-            const photoUrl = this.dataset.photo;
-            openPhotoModal(photoUrl);
         });
     });
 
@@ -2288,7 +2852,7 @@ function renderEmployeeTable() {
                     // Additional fallback: directly load employee details if view mode fails
                     setTimeout(() => {
                         const detailsContainer = document.getElementById('employee-details-table');
-                        if (detailsContainer && detailsContainer.innerHTML.includes('spinner')) {
+                        if (detailsContainer && !detailsContainer.querySelector('#employeeDetailTable')) {
                             console.log('View mode may have failed, directly loading employee details');
                             loadEmployeeDetailsAsMainTable(employeeId, detailsContainer);
                         }
@@ -2334,11 +2898,13 @@ function renderEmployeeTable() {
         employeeCardsMobileEl.setAttribute('aria-hidden', 'true');
     }
 
+    scheduleDeferredThumbLoads(employeeTableBody);
+
     setTimeout(updateEmployeePaymentStatus, 500);
 }
 
 async function loadAllPaymentConfirmations(periodId) {
-    const cacheKey = `payment_confirmations_${periodId}`;
+    const cacheKey = periodPaymentsCacheKey(periodId);
 
     // Try cache first
     const cached = localStorage.getItem(cacheKey);
@@ -2355,32 +2921,26 @@ async function loadAllPaymentConfirmations(periodId) {
     }
 
     try {
-        // Get all payment confirmations for this period in one query
-        const paymentsRef = collection(db, "payment_confirmations");
+        const paymentsRef = v2PaymentsCollRef(periodId);
         const snapshot = await getDocs(paymentsRef);
 
         const paymentStatus = {};
-        snapshot.forEach(doc => {
-            const docId = doc.id;
-            // Check if this payment is for the current period
-            if (docId.endsWith(`_${periodId}`)) {
-                const employeeId = docId.replace(`_${periodId}`, '');
-                const paymentData = doc.data();
-                paymentStatus[employeeId] = {
-                    paid: true,
-                    paymentAmount: paymentData.paymentAmount || 0,
-                    totalPay: paymentData.totalPay || 0,
-                    remainingAmount: paymentData.remainingAmount || 0,
-                    paymentType: paymentData.paymentType || 'full',
-                    cashAdvanceNote: paymentData.cashAdvanceNote || '',
-                    transferMethod: paymentData.transferMethod || '',
-                    note: paymentData.note || '',
-                    uploadedAt: paymentData.uploadedAt || ''
-                };
-            }
+        snapshot.forEach((d) => {
+            const employeeId = d.id;
+            const paymentData = d.data();
+            paymentStatus[employeeId] = {
+                paid: true,
+                paymentAmount: paymentData.paymentAmount || 0,
+                totalPay: paymentData.totalPay || 0,
+                remainingAmount: paymentData.remainingAmount || 0,
+                paymentType: paymentData.paymentType || 'full',
+                cashAdvanceNote: paymentData.cashAdvanceNote || '',
+                transferMethod: paymentData.transferMethod || '',
+                note: paymentData.note || '',
+                uploadedAt: paymentData.uploadedAt || ''
+            };
         });
 
-        // Cache the results
         localStorage.setItem(cacheKey, JSON.stringify({
             data: paymentStatus,
             timestamp: Date.now()
@@ -2432,11 +2992,7 @@ async function updateEmployeePaymentStatus(forceUpdate = false) {
         const employeeData = filteredData[employeeId];
         if (!employeeData) return;
         
-        const totalPay = payCalculator.calculateTotalPay(employeeData.dates || [], {
-            id: employeeId,
-            baseRate: employeeData.baseRate || 0,
-            salesBonusEligible: employeeData.salesBonusEligible || false
-        }, 'simple');
+        const totalPay = calcTotalPaySimple(employeeData.dates || [], employeeData, periodId);
         
         // Get remaining amount from payment data if exists, otherwise use total pay
         const paymentData = paymentStatuses[employeeId];
@@ -2564,8 +3120,9 @@ function removeSecondsFromTime(timeStr) {
 
 // Function to load employee details only when needed
 async function loadEmployeeDetails(employeeId, detailRow) {
-    // Show loading indicator in the detail row
-    detailRow.querySelector('.detail-content').innerHTML = '<div class="spinner"></div>';
+    const detailContent = detailRow.querySelector('.detail-content');
+    detailContent.classList.add('detail-content--loading-host');
+    detailContent.innerHTML = buildEmployeeDetailScrimHtml('Loading attendance…');
 
     try {
         const period = periodSelect.value;
@@ -2577,7 +3134,7 @@ async function loadEmployeeDetails(employeeId, detailRow) {
         // console.log("Period range:", formatDate(startDate), "to", formatDate(endDate));
 
         const dates = [];
-        const attendanceRef = collection(db, "attendance", employeeId, "dates");
+        const attendanceRef = collection(db, "attendance_v2", employeeId, "dates");
 
         // Only fetch dates within the period range
         const querySnapshot = await getDocs(query(
@@ -2741,15 +3298,11 @@ async function loadEmployeeDetails(employeeId, detailRow) {
                 <td>${date.branch || 'N/A'}</td>
                 <td>${date.shift || 'N/A'}</td>
                 <td class="time-cell">
-                    ${date.timeInPhoto ?
-                                `<img src="${date.timeInPhoto}" class="thumb" data-photo="${date.timeInPhoto}" alt="Clock-in photo">` :
-                                `<div style="height: 8px;"></div>`}
+                    ${date.timeInPhoto ? photoThumbDeferredHtml(date.timeInPhoto, 'Clock-in') : '<div style="height: 8px;"></div>'}
                     ${date.timeIn ? formatTimeWithoutSeconds(date.timeIn) : 'N/A'}
                 </td>
                 <td class="time-cell">
-                    ${date.timeOutPhoto ?
-                                `<img src="${date.timeOutPhoto}" class="thumb" data-photo="${date.timeOutPhoto}" alt="Clock-out photo">` :
-                                `<div style="height: 8px;"></div>`}
+                    ${date.timeOutPhoto ? photoThumbDeferredHtml(date.timeOutPhoto, 'Clock-out') : '<div style="height: 8px;"></div>'}
                     ${date.timeOut ? formatTimeWithoutSeconds(date.timeOut) : 'N/A'}
                 </td>
                 <td>${date.scheduledIn && date.timeIn ?
@@ -2792,14 +3345,7 @@ async function loadEmployeeDetails(employeeId, detailRow) {
         // Mark as loaded
         detailRow.dataset.loaded = 'true';
 
-        // Add event listeners for new photo thumbnails
-        detailRow.querySelectorAll('.thumb').forEach(thumb => {
-            thumb.addEventListener('click', function (e) {
-                e.stopPropagation();
-                const photoUrl = this.dataset.photo;
-                openPhotoModal(photoUrl);
-            });
-        });
+        scheduleDeferredThumbLoads(detailRow);
 
         // Add event listeners for edit shift buttons in detail rows
         detailRow.querySelectorAll('.edit-shift-btn').forEach(btn => {
@@ -2851,6 +3397,8 @@ async function loadEmployeeDetails(employeeId, detailRow) {
     } catch (error) {
         console.error("Error loading employee details:", error);
         detailRow.querySelector('.detail-content').innerHTML = '<div class="error-message">Failed to load details. Please try again.</div>';
+    } finally {
+        detailRow.querySelector('.detail-content')?.classList.remove('detail-content--loading-host');
     }
 }
 
@@ -2865,6 +3413,7 @@ function guessShift(timeIn, timeOut) {
     // Define shift start times in minutes
     const shifts = [
         { name: "Opening", start: 9 * 60 + 30 },      // 9:30 AM
+        { name: "Adjusted Opening", start: 10 * 60 + 30 }, // 10:30 AM
         { name: "Midshift", start: 11 * 60 },         // 11:00 AM  
         { name: "Closing", start: 13 * 60 },          // 1:00 PM
         { name: "Closing Half-Day", start: 18 * 60 }  // 6:00 PM
@@ -3011,9 +3560,61 @@ function closePhotoModal() {
 // Loading state management
 let loadingState = 'idle'; // 'idle', 'initial', 'refreshing'
 
-function showLoading(message = 'Loading data...') {
+/** Updates viewport-centered payroll loading card (#payrollBlockingPanelHost). */
+function setPayrollLoadingProgress(options = {}) {
+    const {
+        phase = 'Loading payroll data…',
+        loaded = 0,
+        total = 0,
+        indeterminate = false
+    } = options;
+
+    const detailText = (() => {
+        if (total <= 0) return '';
+        if (indeterminate) {
+            return `${total} employee${total === 1 ? '' : 's'} — please wait`;
+        }
+        return `${Math.min(loaded, total)} of ${total} employee${total === 1 ? '' : 's'}`;
+    })();
+
+    const host = document.getElementById('payrollBlockingPanelHost');
+    if (!host) return;
+    const msgEl = host.querySelector('.payroll-blocking-scrim__message');
+    const detEl = host.querySelector('.payroll-blocking-scrim__detail');
+    if (msgEl) msgEl.textContent = phase;
+    if (detEl) detEl.textContent = detailText;
+}
+
+function showLoading(message = 'Loading data...', options = {}) {
     if (loadingState === 'idle') {
         loadingState = 'initial';
+    }
+
+    if (options.fullPageBlocking) {
+        const showMobile = isMobileLayout();
+        ['payrollTableBlockingScrim', 'payrollMobileBlockingScrim'].forEach((id) => {
+            const scrim = document.getElementById(id);
+            if (!scrim) return;
+            const visible = id === 'payrollMobileBlockingScrim' ? showMobile : !showMobile;
+            /* block — not flex — so nothing recenters inside the growing table wrapper */
+            scrim.style.display = visible ? 'block' : 'none';
+            scrim.setAttribute('aria-hidden', visible ? 'false' : 'true');
+        });
+        const panelHost = document.getElementById('payrollBlockingPanelHost');
+        if (panelHost) {
+            panelHost.style.display = 'flex';
+            panelHost.setAttribute('aria-hidden', 'false');
+            const msg = panelHost.querySelector('.payroll-blocking-scrim__message');
+            if (msg) msg.textContent = message;
+            const det = panelHost.querySelector('.payroll-blocking-scrim__detail');
+            if (det) det.textContent = '';
+        }
+        loadingOverlay.style.display = 'none';
+        if (mobileLoadingOverlay) {
+            mobileLoadingOverlay.style.display = 'none';
+            mobileLoadingOverlay.setAttribute('aria-hidden', 'true');
+        }
+        return;
     }
 
     if (isMobileLayout() && mobileLoadingOverlay) {
@@ -3037,6 +3638,18 @@ function showLoading(message = 'Loading data...') {
 
 function hideLoading() {
     loadingState = 'idle';
+    ['payrollTableBlockingScrim', 'payrollMobileBlockingScrim'].forEach((id) => {
+        const scrim = document.getElementById(id);
+        if (scrim) {
+            scrim.style.display = 'none';
+            scrim.setAttribute('aria-hidden', 'true');
+        }
+    });
+    const panelHost = document.getElementById('payrollBlockingPanelHost');
+    if (panelHost) {
+        panelHost.style.display = 'none';
+        panelHost.setAttribute('aria-hidden', 'true');
+    }
     loadingOverlay.style.display = 'none';
     if (mobileLoadingOverlay) {
         mobileLoadingOverlay.style.display = 'none';
@@ -3072,15 +3685,6 @@ function closePeriodSelectModal() {
     }
 }
 
-// Helper function to format date as YYYY-MM-DD
-function formatDate(date) {
-    // Use local timezone date components instead of UTC
-    const year = date.getFullYear();
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const day = date.getDate().toString().padStart(2, '0');
-    return `${year}-${month}-${day}`;
-}
-
 function formatReadableDate(dateStr) {
     const date = new Date(dateStr);
     return date.toLocaleDateString('en-US', {
@@ -3091,10 +3695,10 @@ function formatReadableDate(dateStr) {
 }
 
 function getPeriodDates(periodId) {
-    // Check if payroll periods exists and is an array
+    const fromId = getPeriodDatesFromId(periodId);
     if (!window.payrollPeriods || !Array.isArray(window.payrollPeriods) || window.payrollPeriods.length === 0) {
-        console.warn("Payroll periods not initialized. Using default dates.");
-        // Fallback in case nothing found
+        console.warn("Payroll periods not initialized.");
+        if (fromId) return fromId;
         const today = new Date();
         return {
             startDate: new Date(today.getFullYear(), today.getMonth(), 1),
@@ -3102,12 +3706,13 @@ function getPeriodDates(periodId) {
         };
     }
 
-    // Find the period with matching ID
     const found = window.payrollPeriods.find(p => p.id === periodId);
 
     if (!found) {
+        if (fromId) {
+            return fromId;
+        }
         console.warn(`Period ${periodId} not found, using first available period`);
-        // Fallback to the first period if not found
         const fallback = window.payrollPeriods[0];
         return {
             startDate: fallback.start,
@@ -3115,13 +3720,10 @@ function getPeriodDates(periodId) {
         };
     }
 
-    const result = {
+    return {
         startDate: found.start,
         endDate: found.end
     };
-
-    // console.log(`Period ${periodId} dates:`, formatDate(result.startDate), formatDate(result.endDate));
-    return result;
 }
 
 // Helper function to get all dates in a range
@@ -3253,7 +3855,7 @@ function exportPayrollCSV() {
             const salesBonusEligible = employee.salesBonusEligible ? 'Yes' : 'No';
 
             // Use PayCalculator for accurate breakdown
-            const totalResult = payCalculator.calculateTotalPay(employee.dates, employee, 'detailed');
+            const totalResult = calcTotalPayDetailed(employee.dates, employee, periodSelect.value);
             const totalPayWithBonus = totalResult.total;
 
             // Extract components from breakdown
@@ -3450,7 +4052,7 @@ async function createZipArchive() {
                 }
 
                 // Add row to CSV
-                csv += `${employeeId},${employeeName},${employee.baseRate || 0},${payCalculator.calculateTotalPay(employee.dates, employee, 'simple').toFixed(2)},${date.branch || 'N/A'},${formattedDate},${date.shift || 'N/A'},${date.timeIn || 'N/A'},${date.timeOut || 'N/A'},${hours ? hours.toFixed(1) : 0},${status},${timeInPhotoFilename},${timeOutPhotoFilename}\n`;
+                csv += `${employeeId},${employeeName},${employee.baseRate || 0},${calcTotalPaySimple(employee.dates, employee, periodSelect.value).toFixed(2)},${date.branch || 'N/A'},${formattedDate},${date.shift || 'N/A'},${date.timeIn || 'N/A'},${date.timeOut || 'N/A'},${hours ? hours.toFixed(1) : 0},${status},${timeInPhotoFilename},${timeOutPhotoFilename}\n`;
             });
         });
 
@@ -3571,7 +4173,7 @@ function openImportPayrollModal(employeeId) {
                 <p>Upload a CSV file with payroll data. The CSV should have columns: Date, Branch, Shift, Time In, Time Out, OT Pay, Double Pay, Fixed Pay, Fixed Amount, Meal Allowance, Transportation Allowance, Notes (optional)</p>
                 <p><strong>Date format:</strong> YYYY-MM-DD (e.g., 2025-01-15)</p>
                 <p><strong>Time format:</strong> HH:MM AM/PM (e.g., 9:30 AM, 6:30 PM)</p>
-                <p><strong>Shift options:</strong> Opening, Opening Half-Day, Midshift, Closing, Closing Half-Day, Custom</p>
+                <p><strong>Shift options:</strong> Opening, Adjusted Opening, Opening Half-Day, Midshift, Closing, Closing Half-Day, Custom</p>
                 <p><strong>Note:</strong> You can import data for any date - it doesn't need to be within the current payroll period!</p>
                 
                 <div class="form-group">
@@ -3759,7 +4361,7 @@ async function importPersonPayroll(employeeId, file, overwrite = false) {
             }
             
             // Validate shift (optional but if provided, should be valid)
-            if (shift && !['Opening', 'Opening Half-Day', 'Midshift', 'Closing', 'Closing Half-Day', 'Custom'].includes(shift)) {
+            if (shift && !['Opening', 'Adjusted Opening', 'Opening Half-Day', 'Midshift', 'Closing', 'Closing Half-Day', 'Custom'].includes(shift)) {
                 console.warn(`Unknown shift type: ${shift}, using Custom`);
                 shift = 'Custom';
             }
@@ -3806,7 +4408,7 @@ async function importPersonPayroll(employeeId, file, overwrite = false) {
             }
             
             // Save to Firebase
-            const docRef = doc(db, "attendance", employeeId, "dates", dateStr);
+            const docRef = doc(db, "attendance_v2", employeeId, "dates", dateStr);
             await setDoc(docRef, firebaseData, { merge: true });
             
             console.log(`Successfully saved data for ${dateStr}:`, firebaseData);
@@ -3841,105 +4443,6 @@ async function importPersonPayroll(employeeId, file, overwrite = false) {
     } finally {
         hideLoading();
     }
-}
-
-function generatePayrollPeriods(startDate, endDate, limitCount = false) {
-    // If startDate and endDate are not provided, generate default periods
-    const isDefault = !startDate || !endDate;
-    const periods = [];
-
-    // Start from today's date
-    const today = new Date();
-
-    // If we're generating from existing data, use exact startDate
-    let minDate;
-    if (!isDefault) {
-        // Use the exact start date without going back additional months
-        minDate = new Date(startDate);
-
-        // Round to the beginning of the period containing this date (3 days before end of month = second cutoff)
-        const daysInMonth = new Date(minDate.getFullYear(), minDate.getMonth() + 1, 0).getDate();
-        const secondCutoff = daysInMonth - 3;
-        if (minDate.getDate() <= 12) {
-            // In early period (spans from previous month); round to start of that period
-            minDate.setDate(1);
-            minDate.setMonth(minDate.getMonth() - 1);
-            const daysInPrevMonth = new Date(minDate.getFullYear(), minDate.getMonth() + 1, 0).getDate();
-            minDate.setDate(daysInPrevMonth - 2);
-        } else if (minDate.getDate() <= secondCutoff) {
-            // In late period (13th to end-3); round to 13th
-            minDate.setDate(13);
-        } else {
-            // In early period (same month); round to start of that period
-            minDate.setDate(daysInMonth - 2);
-        }
-    } else {
-        // For default, we'll just go back enough for 3 periods
-        minDate = new Date(today);
-        minDate.setMonth(minDate.getMonth() - 2);
-    }
-
-    // Find the current period end date (aligned with mobile: 3 days before end of month, not fixed 27th)
-    let currentPeriodEnd = new Date();
-    const daysInCurMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-    const secondCutoffThisMonth = daysInCurMonth - 3;
-
-    if (today.getDate() > secondCutoffThisMonth) {
-        currentPeriodEnd = new Date(today.getFullYear(), today.getMonth() + 1, 12);
-    } else if (today.getDate() > 12) {
-        currentPeriodEnd = new Date(today.getFullYear(), today.getMonth(), secondCutoffThisMonth);
-    } else {
-        currentPeriodEnd = new Date(today.getFullYear(), today.getMonth(), 12);
-    }
-
-    // Generate periods going backward
-    let periodEnd = new Date(currentPeriodEnd);
-    let count = 0;
-
-    while ((!isDefault || count < 3) && (isDefault || periodEnd >= minDate)) {
-        let periodStart;
-
-        // If period ends on 12th, it starts on (prev month end - 2), i.e. 3 days before prev month end + 1
-        if (periodEnd.getDate() === 12) {
-            const prevMonth = periodEnd.getMonth() === 0 ? 11 : periodEnd.getMonth() - 1;
-            const prevYear = periodEnd.getMonth() === 0 ? periodEnd.getFullYear() - 1 : periodEnd.getFullYear();
-            const daysInPrevMonth = new Date(prevYear, prevMonth + 1, 0).getDate();
-            const startDay = daysInPrevMonth - 2; // (end - 3) + 1
-            periodStart = new Date(prevYear, prevMonth, startDay);
-
-            if (periodStart < minDate) break;
-        }
-        // If period ends on (month end - 3), it starts on the 13th of same month
-        else {
-            periodStart = new Date(periodEnd.getFullYear(), periodEnd.getMonth(), 13);
-            if (periodStart < minDate) break;
-        }
-
-        // Add all periods including the current one (even if it hasn't ended yet)
-        periods.push({
-            id: `${formatDate(periodStart)}_${formatDate(periodEnd)}`,
-            start: periodStart,
-            end: periodEnd,
-            label: `${periodStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${periodEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
-        });
-        count++;
-
-        // For default mode, stop after 3 periods
-        if (isDefault && count >= 3) break;
-
-        // For non-default, can continue unless limitCount is true
-        if (!isDefault && limitCount && count >= 3) break;
-
-        // Move to the previous period
-        periodEnd = new Date(periodStart);
-        periodEnd.setDate(periodEnd.getDate() - 1);
-
-        // Safety check - limit total number of periods to prevent infinite loop
-        if (count > 50) break;
-    }
-
-    // Sort periods with most recent first
-    return periods.sort((a, b) => b.start - a.start);
 }
 
 function updateViewMode() {
@@ -4050,6 +4553,8 @@ function updateViewModeImpl() {
 
         // Hide the main view buttons in employee view
         document.getElementById('addEmployeeBtn').style.display = 'none';
+        const peBtn = document.getElementById('periodEarningsBtn');
+        if (peBtn) peBtn.style.display = 'none';
         document.querySelector('.push-holidays-btn').style.display = 'none';
 
         const paymentBtn = document.createElement('button');
@@ -4148,7 +4653,7 @@ function updateViewModeImpl() {
 
             // Fourth card: Update to show this employee's pay
             const totalPayCard = document.getElementById('totalPayroll');
-            totalPayCard.textContent = `₱${payCalculator.calculateTotalPay(employee.dates, employee, 'simple').toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;    
+            totalPayCard.textContent = `₱${calcTotalPaySimple(employee.dates, employee, periodSelect.value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;    
         }
 
         // 4. Hide the main employee table and mobile cards (single-employee view)
@@ -4156,20 +4661,15 @@ function updateViewModeImpl() {
         if (employeeCardsMobileEl) employeeCardsMobileEl.style.display = 'none';
 
         // 5. Load the employee details and make them the main table
-        // First check if we already have a details table
         let detailsTable = document.getElementById('employee-details-table');
         if (!detailsTable) {
-            // Create a container for the employee details
             const detailsContainer = document.createElement('div');
             detailsContainer.id = 'employee-details-table';
-
-            // Add loading indicator
-            detailsContainer.innerHTML = '<div class="spinner"></div>';
             tableContainer.appendChild(detailsContainer);
-
-            // Load the employee details
             console.log('About to call loadEmployeeDetailsAsMainTable for:', currentEmployeeView);
             loadEmployeeDetailsAsMainTable(currentEmployeeView, detailsContainer);
+        } else {
+            loadEmployeeDetailsAsMainTable(currentEmployeeView, detailsTable);
         }
     } else {
         // All employees view - restore original view
@@ -4220,6 +4720,8 @@ function updateViewModeImpl() {
 
         // Show the main view buttons
         document.getElementById('addEmployeeBtn').style.display = 'flex';
+        const peBtnMain = document.getElementById('periodEarningsBtn');
+        if (peBtnMain) peBtnMain.style.display = 'flex';
         document.querySelector('.push-holidays-btn').style.display = 'none'; // Keep hidden
 
         // Remove click handler from logo in main view
@@ -4252,12 +4754,45 @@ function updateViewModeImpl() {
 }
 
 async function loadEmployeeDetailsAsMainTable(employeeId, container, preloadedData = null) {
+    const fromRosterMemory = () => {
+        const row =
+            (filteredData && filteredData[employeeId]) ||
+            (attendanceData && attendanceData[employeeId]);
+        if (!row || !Array.isArray(row.dates)) return null;
+        return { dates: JSON.parse(JSON.stringify(row.dates)) };
+    };
+
+    if (!preloadedData && filteredData[employeeId]?._payrollRowLoading) {
+        if (container) {
+            container.classList.add('employee-details-load-host');
+            container.innerHTML = buildEmployeeDetailScrimHtml('Loading attendance…');
+        }
+        await new Promise((resolve) => {
+            const tick = () => {
+                const em = filteredData[employeeId];
+                if (!em || !em._payrollRowLoading) return resolve();
+                requestAnimationFrame(tick);
+            };
+            requestAnimationFrame(tick);
+        });
+    }
+
+    if (!preloadedData) {
+        preloadedData = fromRosterMemory();
+    }
+
+    const skipDetailScrim = preloadedData && Array.isArray(preloadedData.dates);
+    if (!skipDetailScrim && container) {
+        container.classList.add('employee-details-load-host');
+        container.innerHTML = buildEmployeeDetailScrimHtml('Loading attendance…');
+    }
+
     try {
         let dates = [];
         
-        // Use preloaded data if available (fast path)
+        // Use preloaded data if available (fast path: roster / filteredData already has period dates)
         if (preloadedData && preloadedData.dates) {
-            console.log("Using preloaded data for fast display");
+            console.log('Using in-memory or preloaded data for employee detail (no list refetch)');
             dates = preloadedData.dates;
         } else {
             // Fallback to original Firebase query (slow path)
@@ -4270,7 +4805,7 @@ async function loadEmployeeDetailsAsMainTable(employeeId, container, preloadedDa
 
             console.log("Period range:", formatDate(startDate), "to", formatDate(endDate));
 
-            const attendanceRef = collection(db, "attendance", employeeId, "dates");
+            const attendanceRef = collection(db, "attendance_v2", employeeId, "dates");
 
             // Only fetch dates within the period range
             const querySnapshot = await getDocs(query(
@@ -4392,15 +4927,11 @@ async function loadEmployeeDetailsAsMainTable(employeeId, container, preloadedDa
             <td>${date.branch || 'N/A'}</td>
             <td>${date.shift || 'N/A'}</td>
             <td class="time-cell">
-                ${date.timeInPhoto ?
-                                `<img src="${date.timeInPhoto}" class="thumb" data-photo="${date.timeInPhoto}" alt="Clock-in photo">` :
-                                `<div style="height: 8px;"></div>`}
+                ${date.timeInPhoto ? photoThumbDeferredHtml(date.timeInPhoto, 'Clock-in') : '<div style="height: 8px;"></div>'}
                 ${date.timeIn ? formatTimeWithoutSeconds(date.timeIn) : 'N/A'}
             </td>
             <td class="time-cell">
-                ${date.timeOutPhoto ?
-                                `<img src="${date.timeOutPhoto}" class="thumb" data-photo="${date.timeOutPhoto}" alt="Clock-out photo">` :
-                                `<div style="height: 8px;"></div>`}
+                ${date.timeOutPhoto ? photoThumbDeferredHtml(date.timeOutPhoto, 'Clock-out') : '<div style="height: 8px;"></div>'}
                 ${date.timeOut ? formatTimeWithoutSeconds(date.timeOut) : 'N/A'}
             </td>
             <td>${date.scheduledIn && date.timeIn ?
@@ -4464,8 +4995,8 @@ async function loadEmployeeDetailsAsMainTable(employeeId, container, preloadedDa
         // Add event listeners for expandable rows
         detailTable.querySelectorAll('.expandable-row').forEach(row => {
             row.addEventListener('click', function (e) {
-                // Don't expand if clicking on a button
-                if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
+                // Don't expand if clicking on a button or punch photo
+                if (e.target.tagName === 'BUTTON' || e.target.closest('button') || e.target.closest('img.thumb')) {
                     return;
                 }
 
@@ -4487,14 +5018,7 @@ async function loadEmployeeDetailsAsMainTable(employeeId, container, preloadedDa
         container.innerHTML = '';
         container.appendChild(detailTable);
 
-        // Add event listeners for photo thumbnails
-        container.querySelectorAll('.thumb').forEach(thumb => {
-            thumb.addEventListener('click', function (e) {
-                e.stopPropagation();
-                const photoUrl = this.dataset.photo;
-                openPhotoModal(photoUrl);
-            });
-        });
+        scheduleDeferredThumbLoads(container);
 
         // Add event listeners for delete buttons
         container.querySelectorAll('.delete-entry-btn').forEach(btn => {
@@ -4529,6 +5053,8 @@ async function loadEmployeeDetailsAsMainTable(employeeId, container, preloadedDa
     } catch (error) {
         console.error("Error loading employee details:", error);
         container.innerHTML = '<div class="error-message">Failed to load details. Please try again.</div>';
+    } finally {
+        if (container) container.classList.remove('employee-details-load-host');
     }
 }
 
@@ -4794,7 +5320,7 @@ async function cleanupOrphanedPhotos() {
             // For each date, check if document exists but photos might be orphaned
             for (const dateStr of datesToCheck) {
                 // Check if document exists
-                const docRef = doc(db, "attendance", employeeId, "dates", dateStr);
+                const docRef = doc(db, "attendance_v2", employeeId, "dates", dateStr);
                 const docSnap = await getDoc(docRef);
 
                 if (!docSnap.exists()) {
@@ -4873,7 +5399,7 @@ async function deleteAttendanceEntry(employeeId, dateStr) {
 
     try {
         // First, fetch the document to get the image URLs before deletion
-        const entryRef = doc(db, "attendance", employeeId, "dates", dateStr);
+        const entryRef = doc(db, "attendance_v2", employeeId, "dates", dateStr);
         const docSnap = await getDoc(entryRef);
 
         if (docSnap.exists()) {
@@ -4991,14 +5517,28 @@ document.querySelectorAll('.base-rate-input').forEach(input => {
 
             // Update the total pay display
             const daysWorked = attendanceData[employeeId].daysWorked;
-            const totalPay = payCalculator.calculateTotalPay(attendanceData[employeeId].dates, attendanceData[employeeId], 'simple');
+            const periodId = periodSelect.value;
+            const totalPay = calcTotalPaySimple(attendanceData[employeeId].dates, attendanceData[employeeId], periodId);
             const row = this.closest('tr');
             row.querySelector('td:nth-child(5)').textContent = `₱${totalPay.toFixed(2)}`;
 
             // Update in Firebase
-            const employeeDocRef = doc(db, "employees", employeeId);
+            const employeeDocRef = doc(db, "employees_v2", employeeId);
+            const empSnap = await getDoc(employeeDocRef);
+            const prev = empSnap.exists() ? empSnap.data() : {};
+            const payType = prev.payType || attendanceData[employeeId].payType || 'hourly';
+            const monthlySalary = prev.monthlySalary != null ? prev.monthlySalary : (attendanceData[employeeId].monthlySalary || 0);
+            const periodGross = prev.periodGross != null ? prev.periodGross : attendanceData[employeeId].periodGross;
+            const rh = upsertEmployeeRateHistory(prev.rateHistory, periodId, {
+                baseRate: newBaseRate,
+                payType,
+                monthlySalary,
+                ...(periodGross != null && periodGross !== '' ? { periodGross } : {})
+            });
+            attendanceData[employeeId].rateHistory = rh;
             await updateDoc(employeeDocRef, {
-                baseRate: newBaseRate
+                baseRate: newBaseRate,
+                rateHistory: rh
             });
 
             console.log(`Base rate updated for ${employees[employeeId]} to ${newBaseRate}`);
@@ -5019,7 +5559,7 @@ function openEditEmployeeModal(employeeId) {
     // Fill form with current data
     editEmployeeName.value = employees[employeeId] || '';
     // Show current live rate, not cached period rate
-    editBaseRate.value = employee.baseRate || 0;
+    editBaseRate.value = PayCalculator.getRateForPeriod(employee, periodSelect.value).baseRate || 0;
 
     // Set nickname - use stored nickname or generate default
     const storedNickname = employee.nickname;
@@ -5062,29 +5602,34 @@ async function saveEmployeeChanges(e) {
     const newSalesBonusEligible = editSalesBonus.checked;
 
     try {
-        // Update in memory
-        employees[employeeId] = newName;
-        // Only update base rate for current period if we're in the current period
-        const today = new Date();
-        const { endDate } = getPeriodDates(periodSelect.value);
-        if (today <= endDate) {
-            // Current period - update the rate
-            attendanceData[employeeId].baseRate = newBaseRate;
-        } else {
-            // Historical period - don't change cached rate
-            console.log('Base rate change will apply to future periods only');
-        }
+        const periodId = periodSelect.value;
+        const priorEffectiveBase = PayCalculator.getRateForPeriod(attendanceData[employeeId], periodId).baseRate;
 
+        employees[employeeId] = newName;
+        attendanceData[employeeId].baseRate = newBaseRate;
         attendanceData[employeeId].nickname = newNickname;
         attendanceData[employeeId].salesBonusEligible = newSalesBonusEligible;
 
-        // Update Firebase - using setDoc instead of updateDoc
-        const employeeDocRef = doc(db, "employees", employeeId);
+        const employeeDocRef = doc(db, "employees_v2", employeeId);
+        const prevSnap = await getDoc(employeeDocRef);
+        const prevData = prevSnap.exists() ? prevSnap.data() : {};
+        const payType = prevData.payType || attendanceData[employeeId].payType || 'hourly';
+        const monthlySalary = prevData.monthlySalary != null ? prevData.monthlySalary : (attendanceData[employeeId].monthlySalary || 0);
+        const periodGross = prevData.periodGross != null ? prevData.periodGross : attendanceData[employeeId].periodGross;
+        const rateHistory = upsertEmployeeRateHistory(prevData.rateHistory, periodId, {
+            baseRate: newBaseRate,
+            payType,
+            monthlySalary,
+            ...(periodGross != null && periodGross !== '' ? { periodGross } : {})
+        });
+        attendanceData[employeeId].rateHistory = rateHistory;
+
         await setDoc(employeeDocRef, {
             name: newName,
             baseRate: newBaseRate,
             nickname: newNickname,
-            salesBonusEligible: newSalesBonusEligible
+            salesBonusEligible: newSalesBonusEligible,
+            rateHistory
         }, { merge: true });
 
         // Update UI
@@ -5095,7 +5640,7 @@ async function saveEmployeeChanges(e) {
 
             // Update total pay
             const daysWorked = attendanceData[employeeId].daysWorked;
-            const totalPay = payCalculator.calculateTotalPay(attendanceData[employeeId].dates, attendanceData[employeeId], 'simple');
+            const totalPay = calcTotalPaySimple(attendanceData[employeeId].dates, attendanceData[employeeId], periodSelect.value);
             row.querySelector('td:nth-child(5)').textContent = `₱${totalPay.toFixed(2)}`;
         }
 
@@ -5110,16 +5655,12 @@ async function saveEmployeeChanges(e) {
 
         console.log(`Employee ${employeeId} updated: name=${newName}, baseRate=${newBaseRate}, nickname=${newNickname}`);
         
-        // If rate changed, invalidate current period cache to pick up new rate
-        if (employee.baseRate !== newBaseRate) {
+        if (priorEffectiveBase !== newBaseRate) {
             const today = new Date();
             const { endDate } = getPeriodDates(periodSelect.value);
             if (today <= endDate) {
-                // Clear current period cache so it picks up new rate
                 const currentCacheKey = getCacheKey(periodSelect.value, branchSelect.value);
                 localStorage.removeItem(currentCacheKey);
-
-                // Trigger a data reload
                 await loadData();
             }
         }
@@ -5166,8 +5707,8 @@ async function backgroundRefresh() {
         const branchId = branchSelect.value;
 
         // Check when data was last refreshed
-        const cacheKey = getCacheKey(periodId, branchId);
-        const cachedData = localStorage.getItem(cacheKey);
+        const summaryCacheKey = getSummaryCacheKey(periodId, branchId);
+        const cachedData = localStorage.getItem(summaryCacheKey);
 
         // Only refresh if we have cached data that's older than 15 minutes
         if (cachedData) {
@@ -5186,7 +5727,11 @@ async function backgroundRefresh() {
 
         // Force a refresh with the current period and branch
         console.log("Refreshing data in the background");
-        await loadData(periodId);
+        await loadData(periodId, {
+            skipSummaryBootstrap: true,
+            forceNetworkRefresh: true,
+            silent: true
+        });
     } catch (error) {
         console.error("Error in background refresh:", error);
         // Failed silently - no need to alert user since this is in the background
@@ -5421,7 +5966,7 @@ async function saveNewEmployee(e) {
 
     try {
         // Save to Firebase first
-        const employeeDocRef = doc(db, "employees", employeeId);
+        const employeeDocRef = doc(db, "employees_v2", employeeId);
         await setDoc(employeeDocRef, {
             name: employeeName,
             baseRate: baseRate,
@@ -5530,7 +6075,7 @@ async function saveShiftChanges(e) {
         }
 
         // Update in Firebase
-        const docRef = doc(db, "attendance", employeeId, "dates", dateStr);
+        const docRef = doc(db, "attendance_v2", employeeId, "dates", dateStr);
         await updateDoc(docRef, updateData);
 
         // Update local data
@@ -5600,7 +6145,6 @@ async function saveShiftChanges(e) {
         if (currentEmployeeView === employeeId) {
             const container = document.getElementById('employee-details-table');
             if (container) {
-                container.innerHTML = '<div class="spinner"></div>';
                 await loadEmployeeDetailsAsMainTable(employeeId, container);
             }
         }
@@ -5651,7 +6195,7 @@ async function saveBatchChanges(e) {
 
         // Process each date entry
         for (const dateEntry of employee.dates) {
-            const docRef = doc(db, "attendance", employeeId, "dates", dateEntry.date);
+            const docRef = doc(db, "attendance_v2", employeeId, "dates", dateEntry.date);
             const updateData = {};
 
             if (newBranch) {
@@ -5720,7 +6264,14 @@ document.addEventListener('DOMContentLoaded', async function () {
     photoModal.addEventListener('click', closePhotoModal);
     document.querySelector('.photo-modal-content').addEventListener('click', function (e) { e.stopPropagation(); });
 
-    window.payrollPeriods = generatePayrollPeriods(); 
+    const todayBootstrap = new Date();
+    const cachedEarliest = readMigrationEarliestDateFromCache();
+    if (cachedEarliest) {
+        window.payrollPeriods = generatePayrollPeriods(cachedEarliest, todayBootstrap, false, 0);
+        console.log('Payroll periods bootstrapped from migration-tool earliest-date cache');
+    } else {
+        window.payrollPeriods = generatePayrollPeriods();
+    }
     updatePeriodDropdown();
 
     periodSelect.addEventListener('change', async function () {
@@ -5735,7 +6286,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             // Clear existing data and cache
             attendanceData = {};
             localStorage.setItem('last_selected_period', selectedPeriod);
-            localStorage.removeItem(getCacheKey(selectedPeriod, branchSelect.value));
+            // Keep caches so period switch can hydrate instantly, then reconcile in background.
 
             // Pass the explicitly selected period to loadData
             await loadData(selectedPeriod);
@@ -5749,7 +6300,6 @@ document.addEventListener('DOMContentLoaded', async function () {
                 // Then reload the employee details
                 const container = document.getElementById('employee-details-table');
                 if (container) {
-                    container.innerHTML = '<div class="spinner"></div>';
                     await loadEmployeeDetailsAsMainTable(currentEmployeeView, container);
                 }
             }
@@ -5829,7 +6379,6 @@ document.addEventListener('DOMContentLoaded', async function () {
             console.log('🔄 Refresh in single employee view, using fast loading for:', currentEmployeeView);
             const container = document.getElementById('employee-details-table');
             if (container) {
-                container.innerHTML = '<div class="spinner"></div>';
                 loadSingleEmployeeData(currentEmployeeView).then(employeeData => {
                     loadEmployeeDetailsAsMainTable(currentEmployeeView, container, employeeData);
                 }).catch(error => {
@@ -6328,7 +6877,7 @@ async function saveNewShift(e) {
 
     try {
         // Check if shift already exists for this date
-        const docRef = doc(db, "attendance", employeeId, "dates", dateStr);
+        const docRef = doc(db, "attendance_v2", employeeId, "dates", dateStr);
         const docSnap = await getDoc(docRef);
 
         if (docSnap.exists()) {
@@ -6475,13 +7024,13 @@ async function openPaymentModal(employeeId) {
     
     // Calculate total pay for this employee
     const employeeData = filteredData[employeeId];
-    const totalPay = employeeData ? payCalculator.calculateTotalPay(employeeData.dates, employeeData, 'simple') : 0;
+    const totalPay = employeeData ? calcTotalPaySimple(employeeData.dates, employeeData, periodId) : 0;
     document.getElementById('paymentAmount').value = totalPay.toFixed(2);
     document.getElementById('paymentAmountHint').textContent = 'Enter amount to pay (full or partial)';
 
     // Check if payment already exists
     try {
-        const paymentRef = doc(db, "payment_confirmations", `${employeeId}_${periodId}`);
+        const paymentRef = v2PaymentDocRef(periodId, employeeId);
         const paymentSnap = await getDoc(paymentRef);
 
         if (paymentSnap.exists()) {
@@ -6646,7 +7195,7 @@ async function savePaymentConfirmation(e) {
         if (file) {
             // Upload to Firebase Storage
             const filename = `payment_${employeeId}_${periodId}_${Date.now()}.jpg`;
-            const fileRef = storageRef(storage, `payment_confirmations/${filename}`);
+            const fileRef = storageRef(storage, `payroll_periods_v2_screenshots/${filename}`);
 
             // Upload the file directly
             const snapshot = await uploadBytes(fileRef, file);
@@ -6657,15 +7206,16 @@ async function savePaymentConfirmation(e) {
 
         // Calculate total pay for comparison
         const employeeData = filteredData[employeeId];
-        const totalPay = employeeData ? payCalculator.calculateTotalPay(employeeData.dates, employeeData, 'simple') : 0;
+        const totalPay = employeeData ? calcTotalPaySimple(employeeData.dates, employeeData, periodId) : 0;
         
-        // Check for existing payment to accumulate payments
+        let existingData = {};
         let existingPaymentAmount = 0;
         try {
-            const existingPaymentRef = doc(db, "payment_confirmations", `${employeeId}_${periodId}`);
+            const existingPaymentRef = v2PaymentDocRef(periodId, employeeId);
             const existingPaymentDoc = await getDoc(existingPaymentRef);
             if (existingPaymentDoc.exists()) {
-                existingPaymentAmount = existingPaymentDoc.data().paymentAmount || 0;
+                existingData = existingPaymentDoc.data();
+                existingPaymentAmount = existingData.paymentAmount || 0;
             }
         } catch (error) {
             console.log('No existing payment found, starting fresh');
@@ -6676,26 +7226,27 @@ async function savePaymentConfirmation(e) {
         const remainingAmount = totalPay - accumulatedPaymentAmount;
         const paymentType = accumulatedPaymentAmount >= totalPay ? 'full' : 'partial';
 
-        // Save payment data to Firestore
+        const screenshotUrl =
+            downloadURL != null ? downloadURL : (existingData.screenshotUrl || null);
+
         const paymentData = {
             employeeId: employeeId,
             periodId: periodId,
-            screenshotUrl: downloadURL, // Will be null if no file uploaded
+            screenshotUrl,
             transferMethod: transferMethod,
             note: note,
             paymentType: paymentType,
-            paymentAmount: accumulatedPaymentAmount, // Store accumulated amount
+            paymentAmount: accumulatedPaymentAmount,
             totalPay: totalPay,
             remainingAmount: remainingAmount,
             uploadedAt: new Date().toISOString(),
             uploadedBy: 'admin'
         };
 
-        const paymentDocRef = doc(db, "payment_confirmations", `${employeeId}_${periodId}`);
+        const paymentDocRef = v2PaymentDocRef(periodId, employeeId);
         await setDoc(paymentDocRef, paymentData);
 
-        const cacheKey = `payment_confirmations_${periodId}`;
-        localStorage.removeItem(cacheKey);
+        localStorage.removeItem(periodPaymentsCacheKey(periodId));
 
         console.log('[Payment] savePaymentConfirmation: Firestore save ok, reloading table...');
         
@@ -6742,7 +7293,7 @@ async function uploadPaymentScreenshot(imageDataUrl, employeeId, periodId) {
 
         // Create a unique filename
         const filename = `payment_${employeeId}_${periodId}_${Date.now()}.jpg`;
-        const fileRef = storageRef(storage, `payment_confirmations/${filename}`);
+        const fileRef = storageRef(storage, `payroll_periods_v2_screenshots/${filename}`);
 
         // Upload to Firebase Storage
         await uploadBytes(fileRef, blob);
@@ -6773,14 +7324,13 @@ window.showUpdateForm = showUpdateForm;
 document.getElementById('paymentAmount').addEventListener('input', async function() {
     const employeeId = document.getElementById('paymentEmployeeId').value;
     const employeeData = filteredData[employeeId];
-    const totalPay = employeeData ? payCalculator.calculateTotalPay(employeeData.dates, employeeData, 'simple') : 0;
+    const periodId = periodSelect.value;
+    const totalPay = employeeData ? calcTotalPaySimple(employeeData.dates, employeeData, periodId) : 0;
     const newPaymentAmount = parseFloat(this.value) || 0;
     
-    // Check for existing payment
-    const periodId = periodSelect.value;
     let existingPaymentAmount = 0;
     try {
-        const existingPaymentRef = doc(db, "payment_confirmations", `${employeeId}_${periodId}`);
+        const existingPaymentRef = v2PaymentDocRef(periodId, employeeId);
         const existingPaymentDoc = await getDoc(existingPaymentRef);
         if (existingPaymentDoc.exists()) {
             existingPaymentAmount = existingPaymentDoc.data().paymentAmount || 0;
@@ -6833,14 +7383,10 @@ function restoreEmployeeView() {
             // Make sure we're in the right view mode first
             updateViewMode();
             
-            // Then load the employee details using fast path
             const container = document.getElementById('employee-details-table');
             if (container) {
-                container.innerHTML = '<div class="spinner"></div>';
-                loadSingleEmployeeData(employeeId).then(employeeData => {
-                    loadEmployeeDetailsAsMainTable(employeeId, container, employeeData);
-                }).catch(error => {
-                    console.error("Error restoring employee view:", error);
+                loadEmployeeDetailsAsMainTable(employeeId, container).catch((error) => {
+                    console.error('Error restoring employee view:', error);
                     container.innerHTML = '<div class="error">Error loading employee data</div>';
                 });
             } else {
@@ -6942,7 +7488,7 @@ async function duplicateShift(employeeId, dateStr) {
             firebaseData.scheduledOut = scheduledOutValue;
         }
 
-        const docRef = doc(db, "attendance", employeeId, "dates", nextDateStr);
+        const docRef = doc(db, "attendance_v2", employeeId, "dates", nextDateStr);
         await setDoc(docRef, firebaseData);
 
         // Update local data
@@ -6968,7 +7514,6 @@ async function duplicateShift(employeeId, dateStr) {
         if (currentEmployeeView === employeeId) {
             const container = document.getElementById('employee-details-table');
             if (container) {
-                container.innerHTML = '<div class="spinner"></div>';
                 await loadEmployeeDetailsAsMainTable(employeeId, container);
             }
         }
@@ -6983,8 +7528,7 @@ async function duplicateShift(employeeId, dateStr) {
 // Add function to manually refresh payment status indicators
 window.refreshPaymentStatus = async function() {
     const periodId = periodSelect.value;
-    const cacheKey = `payment_confirmations_${periodId}`;
-    localStorage.removeItem(cacheKey);
+    localStorage.removeItem(periodPaymentsCacheKey(periodId));
     await updateEmployeePaymentStatus(true);
     console.log('Payment status indicators refreshed!');
 };
@@ -6995,8 +7539,7 @@ window.forceRefreshPaymentStatus = async function() {
     
     // Clear all payment caches
     const periodId = periodSelect.value;
-    const cacheKey = `payment_confirmations_${periodId}`;
-    localStorage.removeItem(cacheKey);
+    localStorage.removeItem(periodPaymentsCacheKey(periodId));
     
     // Force reload payment data and render
     await loadPaymentDataAndRender();

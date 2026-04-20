@@ -20,6 +20,8 @@ class PayCalculator {
 
         this.HOLIDAYS = holidays;
         this.salesData = salesData; // Make sure this line exists
+        /** @type {Record<string, unknown>|null} */
+        this.staffingAttendanceData = null;
 
         // Configuration constants
         this.DAILY_MEAL_ALLOWANCE = 150;
@@ -31,6 +33,7 @@ class PayCalculator {
         // Shift schedules for reference
         this.SHIFT_SCHEDULES = {
             "Opening": { timeIn: "9:30 AM", timeOut: "6:30 PM" },
+            "Adjusted Opening": { timeIn: "10:30 AM", timeOut: "7:30 PM" },
             "Opening Half-Day": { timeIn: "9:30 AM", timeOut: "1:30 PM" },
             "Midshift": { timeIn: "11:00 AM", timeOut: "8:00 PM" },
             "Closing": { timeIn: "1:00 PM", timeOut: "10:00 PM" },
@@ -47,6 +50,58 @@ class PayCalculator {
                 weekday: 2.5,
                 weekend: 3.0
             }
+        };
+    }
+
+    /**
+     * Effective pay fields for one payroll period: rateHistory row or employee defaults.
+     * @param {Object} employee - Raw employee / attendance bucket (may include rateHistory[])
+     * @param {string} periodId - Payroll period id from admin period picker
+     * @returns {{ baseRate: number, payType: string, monthlySalary: number, periodGross: number|null }}
+     */
+    static getRateForPeriod(employee, periodId) {
+        const e = employee || {};
+        const fallback = {
+            baseRate: Number(e.baseRate) || 0,
+            payType: e.payType || 'hourly',
+            monthlySalary: Number(e.monthlySalary) || 0,
+            periodGross: e.periodGross != null && e.periodGross !== '' ? Number(e.periodGross) : null
+        };
+        if (!periodId || !Array.isArray(e.rateHistory)) {
+            return fallback;
+        }
+        const row = e.rateHistory.find((r) => r && r.periodId === periodId);
+        if (!row) {
+            return fallback;
+        }
+        return {
+            baseRate:
+                row.baseRate != null && row.baseRate !== ''
+                    ? Number(row.baseRate)
+                    : fallback.baseRate,
+            payType: row.payType || fallback.payType,
+            monthlySalary:
+                row.monthlySalary != null && row.monthlySalary !== ''
+                    ? Number(row.monthlySalary)
+                    : fallback.monthlySalary,
+            periodGross:
+                row.periodGross != null && row.periodGross !== ''
+                    ? Number(row.periodGross)
+                    : fallback.periodGross
+        };
+    }
+
+    /**
+     * Employee snapshot to pass into calculateTotalPay with rates resolved for periodId.
+     */
+    static mergeEmployeeRatesForPeriod(employee, periodId) {
+        const r = PayCalculator.getRateForPeriod(employee, periodId);
+        return {
+            ...employee,
+            baseRate: r.baseRate,
+            payType: r.payType,
+            monthlySalary: r.monthlySalary,
+            periodGross: r.periodGross
         };
     }
 
@@ -146,6 +201,43 @@ class PayCalculator {
      * @returns {Object} { total: number, entries: Array, breakdown: Object }
      */
     calculateTotalPay(dateEntries, employee, outputMode = 'detailed') {
+        const normalizedEmployee = this._normalizeEmployeeData(employee);
+
+        if (normalizedEmployee.payType === 'monthly') {
+            const arr = Array.isArray(dateEntries) ? dateEntries : [];
+            const monthlySalary = Number(normalizedEmployee.monthlySalary) || 0;
+            let periodGross = Number(normalizedEmployee.periodGross);
+            if (!Number.isFinite(periodGross) || periodGross <= 0) {
+                periodGross = monthlySalary > 0 ? monthlySalary / 2 : 0;
+            }
+            let addOns = 0;
+            for (const entry of arr) {
+                const n = this._normalizeAttendanceEntry(entry);
+                addOns += n.transpoAllowance || 0;
+                if (n.branch === 'SM North' && normalizedEmployee.salesBonusEligible && n.timeIn && n.timeOut) {
+                    addOns += this.calculateSalesBonus(n.date, employee);
+                }
+            }
+            const total = periodGross + addOns;
+            if (outputMode === 'simple') {
+                return total;
+            }
+            return {
+                total,
+                entries: [],
+                breakdown: {
+                    totalDays: arr.length,
+                    workingDays: arr.filter(e => (e.timeIn || e.clockIn) && (e.timeOut || e.clockOut)).length,
+                    totalBasePay: periodGross,
+                    totalMealAllowance: 0,
+                    totalDeductions: 0,
+                    totalBonuses: addOns,
+                    payType: 'monthly_fixed_period',
+                    periodGross
+                }
+            };
+        }
+
         if (!Array.isArray(dateEntries) || dateEntries.length === 0) {
             return outputMode === 'simple' ? 0 : { total: 0, entries: [], breakdown: {} };
         }
@@ -222,7 +314,10 @@ class PayCalculator {
             id: employee.id || employee.employeeId || employee.employee_id || null,
             name: employee.name || employee.employeeName || employee.employee_name || 'Unknown',
             baseRate: employee.baseRate || employee.base_rate || employee.dailyRate || employee.daily_rate || 0,
-            salesBonusEligible: employee.salesBonusEligible || employee.sales_bonus_eligible || employee.salesBonus || false
+            salesBonusEligible: employee.salesBonusEligible || employee.sales_bonus_eligible || employee.salesBonus || false,
+            payType: employee.payType || employee.pay_type || 'hourly',
+            monthlySalary: employee.monthlySalary != null ? employee.monthlySalary : (employee.monthly_salary != null ? employee.monthly_salary : 0),
+            periodGross: employee.periodGross != null ? employee.periodGross : (employee.period_gross != null ? employee.period_gross : null)
         };
     }
 
@@ -748,7 +843,7 @@ class PayCalculator {
         const totalSales = this.calculateTotalSalesFromData(salesData);
 
         const date = new Date(dateStr);
-        const staffingLevel = this.getStaffingLevel(date, window.attendanceData);
+        const staffingLevel = this.getStaffingLevel(date, this.staffingAttendanceData);
         const quota = this.getQuotaForStaffing(staffingLevel);
 
         return this.calculateSalesBonusAmount(totalSales, quota);
@@ -863,8 +958,11 @@ class PayCalculator {
      * Get staffing level for sales bonus calculation
      */
     getStaffingLevel(date, attendanceData = null) {
-        // If no attendance data provided, use defaults
-        if (!attendanceData && !window.attendanceData) {
+        const globalAtt =
+            (typeof window !== 'undefined' && window.attendanceData) ? window.attendanceData : null;
+        const dataToUse = attendanceData || this.staffingAttendanceData || globalAtt || {};
+
+        if (!dataToUse || Object.keys(dataToUse).length === 0) {
             const dayOfWeek = date.getDay();
             const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
             return isWeekend ? this.SALES_BONUS_CONFIG.defaultStaffing.weekend :
@@ -872,7 +970,6 @@ class PayCalculator {
         }
 
         const dateStr = this._formatDate(date);
-        const dataToUse = attendanceData || window.attendanceData || {};
 
         // Count actual SM North staff for this date
         let staffCount = 0;

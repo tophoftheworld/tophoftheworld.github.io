@@ -1,0 +1,13 @@
+{
+  "name": "onevsall-server",
+  "version": "0.1.0",
+  "description": "One-vs-all dot prototype server",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Matchanese Attendance</title>
+
+    <!-- Add these after your existing meta tags -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Attendance">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" sizes="192x192" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" sizes="512x512" href="icons/icon-512.png">
+
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://matchanese.site/employee-attendance_legacy/">
+    <meta property="og:title" content="Matchanese Attendance (Legacy)">
+    <meta property="og:description" content="Frozen snapshot — legacy Firestore. Use /employee-attendance/ for v2.">
+    <meta property="og:image" content="https://matchanese.site/employee-attendance_legacy/img/banner.jpg">
+
+    <link rel="icon" href="data:,">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link rel="stylesheet" href="css/style.css?v=2.0.1">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="theme-color" content="#2b9348">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <script type="module" src="js/firebase-setup.js"></script>
+
+</head>
+
+<body>
+    <!-- Add this in your admin panel HTML -->
+    
+    <div id="imageModal" class="image-modal">
+        <div class="modal-content">
+            <img id="modalImage" src="" />
+        </div>
+    </div>
+    <div class="container">
+        <div id="mainInterface">
+
+            <div class="header-block">
+                <img src="img/matchanese-logo.png"
+                    class="logo" alt="Matchanese Logo" />
+                <h2 class="greeting"><span id="greetingText">Good Morning,</span><br><span id="userName" class="username"></span></h2>
+            </div>
+
+            <div id="networkStatusWrapper">
+                <!-- <div id="networkStatus" class="network-status">Checking network...</div> -->
+                <div id="syncProgress" class="sync-progress" style="display: none;">
+                    <div class="sync-bar"></div>
+                </div>
+            </div>
+            
+            <style>
+                /* Network Status Styling */
+                #networkStatusWrapper {
+                    position: relative;
+                    width: 100%;
+                    margin: 1rem 0;
+                    padding: 0.5rem;
+                    border-radius: 0.5rem;
+                }
+            
+                .network-status {
+                    padding: 0.5rem 1rem;
+                    font-weight: 600;
+                    border-radius: 99px;
+                    /* Pill shape */
+                    text-align: center;
+                    font-size: 0.9rem;
+                    background-color: #f1f1f1;
+                    transition: all 0.3s ease;
+                }
+            
+                /* Status colors */
+                .network-status.online {
+                    background-color: #e0f7e5;
+                    color: #2b9348;
+                    box-shadow: 0 2px 8px rgba(43, 147, 72, 0.15);
+                }
+            
+                .network-status.offline {
+                    background-color: #ffe7e7;
+                    color: #e63946;
+                    box-shadow: 0 2px 8px rgba(230, 57, 70, 0.15);
+                }
+            
+                .network-status.syncing {
+                    background-color: #fff2df;
+                    color: #ff9500;
+                    box-shadow: 0 2px 8px rgba(255, 149, 0, 0.15);
+                }
+            
+                /* Sync progress bar */
+                .sync-progress {
+                    width: 100%;
+                    height: 4px;
+                    background-color: #e5e5e5;
+                    border-radius: 4px;
+                    overflow: hidden;
+                    margin-top: 4px;
+                }
+            
+                .sync-bar {
+                    height: 100%;
+                    width: 0%;
+                    background-color: #ff9500;
+                    border-radius: 4px;
+                    transition: width 0.5s ease;
+                }
+            
+                /* Login button loading state */
+                #loginButton.loading {
+                    background-color: #bcccbc;
+                    position: relative;
+                    overflow: hidden;
+                }
+            
+                #loginButton.loading::after {
+                    content: "";
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    height: 100%;
+                    width: 30%;
+                    background-color: rgba(255, 255, 255, 0.3);
+                    animation: loading 1.5s infinite;
+                }
+            
+                @keyframes loading {
+                    0% {
+                        transform: translateX(-100%);
+                    }
+            
+                    100% {
+                        transform: translateX(400%);
+                    }
+                }
+            
+                /* Offline badge for photos */
+                .panel-card .offline-badge {
+                    position: absolute;
+                    top: 8px;
+                    right: 8px;
+                    background-color: rgba(230, 57, 70, 0.9);
+                    color: white;
+                    font-size: 0.7rem;
+                    padding: 2px 6px;
+                    border-radius: 99px;
+                    z-index: 20;
+                    font-weight: 600;
+                }
+            </style>
+
+            <div id="summaryCardUI" class="summary-ui">
+                <div class="info-row">
+                    <div class="date-block" id="dateDisplay">
+                        <strong id="dayOfWeek">Wednesday</strong><br>
+                        <span id="fullDate">April 9, 2025</span>
+                        <input type="text" id="datePicker" style="display: none;" />
+                    </div>
+                    <div class="dropdown-stack">
+                        <select class="branch-label" id="branchSelect">
+                            <option selected>Podium</option>
+                            <option>SM North</option>
+                            <option>Pop-up</option>
+                            <option>Workshop</option>
+                            <option>Other Events</option>
+                        </select>
+                        <select class="shift-label" id="shiftSelect">
+                            <option>Opening</option>
+                            <option>Opening Half-Day</option>
+                            <option>Midshift</option>
+                            <option>Closing</option>
+                            <option>Closing Half-Day</option>
+                            <option>Custom</option>
+                        </select>
+                    </div>
+                </div>
+
+
+            
+                <div class="summary-panels">
+                    <div class="panel-card" id="clockInCard">
+                        <img id="clockInPhoto" class="panel-bg" src="" style="display:none;" />
+                        <div class="panel-overlay" id="clockInOverlay">
+                            <span class="panel-status" id="clockInStatusLabel"></span>
+                            <span class="panel-label">Time In</span>
+                            <span class="panel-time" id="clockInTime">9:30<span class="ampm">AM</span></span>
+                        </div>
+                    </div>
+
+
+                    <div class="panel-card" id="clockOutCard">
+                        <img id="clockOutPhoto" class="panel-bg" src="" style="display:none;" />
+                        <div class="panel-overlay" id="clockOutOverlay">
+                            <span class="panel-status" id="clockOutStatusLabel"></span>
+                            <span class="panel-label">Time Out</span>
+                            <span class="panel-time" id="clockOutTime">6:30<span class="ampm">PM</span></span>
+                        </div>
+                    </div>
+
+                </div>
+                <!-- <div class="branch-label" id="branchLabel">Matcha Bar Podium</div> -->
+
+            </div>
+
+            
+
+            <!-- <button id="toggleHistoryBtn" style="margin-top: 20px;">🕓 View Past 15 Logs</button> -->
+            
+            <div id="historyLog" style="display: none; margin-top: 20px;">
+                <h3>📅 Recent Attendance Logs</h3>
+                <div id="historyContent" class="history-table"></div>
+            </div>
+
+            <!-- <br><br><br><br><div class="panel timestamp-panel" id="timestamp">Current Time: --:--</div> -->
+            <!-- <button onclick="logoutUser()" style="background:#ccc; color:#000;">Switch User</button> -->
+            <!-- <button onclick="clearData()" style="background:#e63946; color:white; ">🧹 Clear All Data
+                (Debug)</button> -->
+
+            <!-- <div class="nav-date-row">
+                <button onclick="changeDay(-1)">⬅️</button>
+                <input id="summaryDate" class="date-button" readonly /> -->
+                <!-- <button id="nextBtn" onclick="changeDay(1)">➡️</button>
+            </div> -->
+            <!-- <button id="startBtn" onclick="startPhotoSequence()">Clock In</button> -->
+            <div id="summaryContainer"></div>
+        </div>
+
+        <div id="videoContainer">
+            <div id="closeCameraBtn" style="
+                position: absolute;
+                top: 1.25rem;
+                right: 1.5rem;
+                font-size: 2rem;
+                color: white;
+                z-index: 10001;
+                cursor: pointer;
+                font-weight: 100;
+                user-select: none;">×</div>
+            <video id="video" autoplay playsinline></video>
+            <img id="previewImg" style="display:none" />
+            <button id="captureCircle" onclick="takePhoto()"></button>
+            <div class="camera-controls" id="cameraControls">
+                <button class="retake-btn" onclick="retakePhoto()">Retake</button>
+                <button class="submit-btn" onclick="submitPhoto()">Submit</button>
+            </div>
+        </div>
+
+        <canvas id="snapshot" style="display:none;"></canvas>
+        <!-- <div class="footer">Matchanese Attendance System v0.40</div><br> -->
+
+        <div id="earlyOutModal" class="image-modal">
+            <div class="modal-content" style="padding: 1.5rem; max-width: 90%; text-align: center;">
+                <p style="font-size: 1.2rem; margin-bottom: 1.5rem;">
+                    ⏰ It's not yet time to clock out.<br>Are you sure you want to proceed?
+                </p>
+                <div style="display: flex; gap: 1rem; justify-content: center;">
+                    <button id="cancelEarlyOut" class="retake-btn">Cancel</button>
+                    <button id="confirmEarlyOut" class="submit-btn">Proceed</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Payment Confirmation Modal -->
+        <div id="paymentConfirmationModal" class="image-modal" style="z-index: 3000;">
+            <div class="modal-content" style="padding: 1.5rem; max-width: 90%; text-align: center;"
+                onclick="event.stopPropagation();">
+                <h3 style="margin-top: 0; color: #2b9348;">Payment Confirmation</h3>
+                <img id="paymentModalImage" src=""
+                    style="max-width: 100%; max-height: 70vh; border-radius: 8px; margin: 1rem 0;" />
+                <button onclick="closePaymentConfirmationModal()"
+                    style="background: #2b9348; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 8px; cursor: pointer; font-size: 1rem;">Close</button>
+            </div>
+        </div>
+        <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+        <script src="../shared/js/PayCalculator.js?v=2.0.1"></script>
+        <script type="module" src="js/script.js?v=2.0.1"></script>
+    </div>
+    <!-- Update notification removed - handled by parent portal -->
+</body>
+</html>

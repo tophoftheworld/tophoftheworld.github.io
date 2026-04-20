@@ -73,7 +73,11 @@ html, body {
 
 .scroll-list {
   flex: 1;
+  min-height: 0;
+  height: 100%;
   overflow-y: auto;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
   padding: 12px 0;
   padding-bottom: max(12px, env(safe-area-inset-bottom));
@@ -125,9 +129,7 @@ html, body {
 
 /* Photo-first feed (Feed + My post tabs) */
 .photo-feed-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  display: block;
   padding: 12px 16px;
   padding-bottom: max(12px, env(safe-area-inset-bottom));
 }
@@ -136,19 +138,24 @@ html, body {
   display: block;
   width: 100%;
   padding: 0;
-  margin: 0;
+  margin: 0 0 16px;
   border: none;
-  border-radius: 12px;
+  border-radius: 14px;
   background: #fff;
   text-align: left;
-  cursor: pointer;
+  cursor: default;
   overflow: hidden;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   transition: background 0.15s, box-shadow 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.photo-feed-card:last-child {
+  margin-bottom: 0;
 }
 
 .photo-feed-card:hover,
-.photo-feed-card:focus {
+.photo-feed-card:focus-within {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
@@ -157,8 +164,67 @@ html, body {
   outline-offset: 2px;
 }
 
+/* Feed card layout */
+.feed-card__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.feed-card__avatar {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #d4edd4 0%, #7cb87c 100%);
+}
+
+.feed-card__meta-top {
+  flex: 1;
+  min-width: 0;
+}
+
+.feed-card__username {
+  display: block;
+  margin: 0;
+  font-size: 0.96rem;
+  font-weight: 600;
+  color: #1a1a1a;
+  line-height: 1.2;
+}
+
+.feed-card__time {
+  font-size: 0.78rem;
+  color: #777;
+  white-space: nowrap;
+}
+
+.feed-card__store-wrap {
+  padding: 8px 12px 10px;
+}
+
+.feed-card__store {
+  margin: 0;
+  font-size: 0.97rem;
+  font-weight: 600;
+  color: #1a1a1a;
+  line-height: 1.25;
+}
+
+.feed-card__address {
+  margin: 4px 0 0;
+  font-size: 0.86rem;
+  font-weight: 400;
+  color: #666;
+  line-height: 1.3;
+}
+
 .photo-feed-card__media-wrap {
   width: 100%;
+  height: 0;
+  min-height: 1px;
   background: #ebebeb;
   overflow: hidden;
 }
@@ -166,15 +232,84 @@ html, body {
 .photo-feed-card__media {
   display: block;
   width: 100%;
-  aspect-ratio: 1 / 1;
+  height: 100%;
   object-fit: cover;
 }
 
 .photo-feed-card__media--empty {
-  aspect-ratio: 1 / 1;
+  display: block;
+  width: 100%;
+  height: 100%;
   background: linear-gradient(160deg, #e8ebe8 0%, #d4ddd4 100%);
 }
 
+.feed-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 10px;
+}
+
+.feed-card__action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  color: #333;
+  padding: 4px 0;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.feed-card__action-btn:hover {
+  color: #1d8a00;
+}
+
+.feed-card__ordered {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+  color: #1a1a1a;
+  line-height: 1.3;
+}
+
+.feed-card__label {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #888;
+  margin-right: 8px;
+}
+
+.feed-card__caption-line {
+  margin: 0;
+  font-size: 0.92rem;
+  color: #2f2f2f;
+  line-height: 1.4;
+}
+
+.feed-card__caption-line--placeholder {
+  color: #888;
+  font-style: italic;
+}
+
+.feed-card__caption-user {
+  font-weight: 600;
+}
+
+.feed-card__body {
+  padding: 10px 12px 12px;
+}
+
+.feed-card__comment-form {
+  width: 100%;
+  margin: 0;
+}
+
+/* Legacy caption stack (unused on new feed cards; kept for any older markup) */
 .photo-feed-card__caption {
   display: flex;
   flex-direction: column;
@@ -197,6 +332,17 @@ html, body {
 .photo-feed-card__meta {
   font-size: 0.85rem;
   color: #666;
+}
+
+#panel-feed.tab-panel--feed.is-active,
+#panel-mylogs.tab-panel--mylogs.is-active {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  background: #fcfcfc;
 }
 
 /* ---------- Brands gallery page (full layout) ---------- */
@@ -776,7 +922,7 @@ html, body {
 #location-page {
   position: absolute;
   inset: 0;
-  z-index: 2;
+  z-index: 1100;
   display: flex;
   flex-direction: column;
   background: #fcfcfc;
@@ -801,7 +947,23 @@ html, body {
   text-decoration: underline;
 }
 .location-page-hero {
+  position: relative;
   margin-bottom: 16px;
+  border-radius: 14px;
+  overflow: hidden;
+  min-height: 120px;
+  background: #ebebeb;
+}
+.location-page-hero-placeholder {
+  display: block;
+  width: 100%;
+  max-height: 200px;
+  aspect-ratio: 16 / 10;
+  border-radius: 14px;
+  background: linear-gradient(160deg, #e8ebe8 0%, #d4ddd4 100%);
+}
+.location-page-hero-placeholder.hidden {
+  display: none !important;
 }
 .location-page-image {
   display: block;
@@ -811,6 +973,9 @@ html, body {
   object-fit: cover;
   border-radius: 14px;
   background: #ebebeb;
+}
+.location-page-image.hidden {
+  display: none !important;
 }
 .location-page-name-row {
   display: flex;
@@ -864,24 +1029,10 @@ html, body {
 .location-page-feed-list {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 16px;
 }
-.location-page-feed-list .brand-page-feed-item,
-.location-page-feed-list .log-item-btn {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 10px 0;
-  border: none;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-  border-bottom: 1px solid #f0f0f0;
-}
-.location-page-feed-list .brand-page-feed-item:last-child,
-.location-page-feed-list .log-item-btn:last-child {
-  border-bottom: none;
+.location-page-feed-list .photo-feed-card {
+  flex-shrink: 0;
 }
 .location-page-post-matcha-btn {
   display: block;
@@ -1335,6 +1486,10 @@ html, body {
   padding: 0;
 }
 
+.search-bar.hidden {
+  display: none !important;
+}
+
 .search-bar-inner {
   display: flex;
   align-items: center;
@@ -1394,6 +1549,42 @@ html, body {
 
 .search-results-label.hidden {
   display: none;
+}
+
+.map-recenter-btn {
+  position: absolute;
+  right: 16px;
+  top: max(86px, calc(env(safe-area-inset-top) + 74px));
+  z-index: 1000;
+  width: 42px;
+  height: 42px;
+  border: none;
+  border-radius: 50%;
+  background: #fff;
+  color: #1d8a00;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.14);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.map-recenter-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.map-recenter-btn:hover {
+  background: #f3f9f2;
+}
+
+.map-recenter-btn:focus-visible {
+  outline: 2px solid #1d8a00;
+  outline-offset: 2px;
+}
+
+.map-recenter-btn.hidden {
+  display: none !important;
 }
 
 /* Bottom sheet – fast close when switching tabs so it doesn't linger on other panels */
@@ -1621,13 +1812,45 @@ body.app-with-tabs .bottom-sheet.closed {
 
 .bottom-sheet-content .log-item .log-info {
   flex: 1;
+  min-width: 0;
+}
+
+.bottom-sheet-content .log-item .log-info-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.bottom-sheet-content .log-item .log-info .username {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #2f2f2f;
+}
+
+.bottom-sheet-content .log-item .log-info .caption {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.84rem;
+  color: #555;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bottom-sheet-content .log-item .log-info .caption.caption--placeholder {
+  color: #8a8a8a;
+  font-style: italic;
 }
 
 .bottom-sheet-content .log-item .log-info .drink {
+  display: block;
+  margin-top: 1px;
   font-weight: 600;
 }
 
 .bottom-sheet-content .log-item .log-info .meta {
+  flex-shrink: 0;
   font-size: 0.85rem;
   color: #666;
 }
@@ -1710,34 +1933,56 @@ body.app-with-tabs .bottom-sheet.closed {
   margin-bottom: 16px;
 }
 
-.log-form-panel .photo-upload-zone {
+.log-photo-strip {
   display: flex;
-  align-items: center;
-  justify-content: center;
   gap: 10px;
-  width: 100%;
-  min-height: 80px;
-  padding: 16px;
-  border: 2px dashed #ccc;
+  overflow-x: auto;
+  padding: 2px 0 4px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.log-photo-tile {
+  flex: 0 0 84px;
+  width: 84px;
+  height: 84px;
   border-radius: 12px;
+  position: relative;
+  overflow: hidden;
+}
+
+.log-photo-tile--preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.log-photo-tile--add {
+  border: 2px dashed #cfcfcf;
   background: #fafafa;
-  cursor: pointer;
-  color: #666;
-  font-size: 1rem;
-  transition: border-color 0.2s, background 0.2s;
-}
-.log-form-panel .photo-upload-zone:hover {
-  border-color: #1d8a00;
-  background: #f0f9ee;
-  color: #1d8a00;
-}
-.log-form-panel .photo-upload-zone .photo-upload-zone-icon {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  color: #666;
+  cursor: pointer;
 }
-.log-form-panel .photo-upload-zone .photo-upload-zone-text {
-  font-weight: 500;
+
+.log-photo-tile--add:hover {
+  border-color: #1d8a00;
+  color: #1d8a00;
+  background: #f0f9ee;
+}
+
+.log-photo-tile-plus {
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.log-photo-tile-text {
+  font-size: 0.75rem;
+  margin-top: 2px;
+  font-weight: 600;
 }
 
 .log-form-date-row {
@@ -1795,6 +2040,22 @@ body.app-with-tabs .bottom-sheet.closed {
 .log-form-location-label {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.log-form-location-primary {
+  color: #1a1a1a;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.log-form-location-secondary {
+  color: #777;
+  font-size: 0.85rem;
+  font-weight: 400;
+  line-height: 1.25;
 }
 .log-form-location-label.log-form-location-placeholder {
   color: #888;
@@ -1883,7 +2144,7 @@ body.app-with-tabs .bottom-sheet.closed {
 .log-detail-overlay {
   position: fixed;
   inset: 0;
-  z-index: 2500;
+  z-index: 3200;
   background: rgba(0,0,0,0.4);
   display: flex;
   align-items: flex-end;
@@ -1895,12 +2156,12 @@ body.app-with-tabs .bottom-sheet.closed {
 .log-detail-panel {
   width: 100%;
   max-width: 480px;
-  max-height: 85vh;
+  max-height: calc(100dvh - 12px);
   overflow-y: auto;
   background: #fff;
   border-radius: 20px 20px 0 0;
   padding: 24px;
-  padding-bottom: max(24px, env(safe-area-inset-bottom));
+  padding-bottom: calc(max(24px, env(safe-area-inset-bottom)) + 84px);
 }
 .log-detail-panel h2 {
   margin: 0 0 8px;
@@ -1939,8 +2200,116 @@ body.app-with-tabs .bottom-sheet.closed {
   cursor: pointer;
   text-decoration: underline;
 }
+.log-detail-panel .photo-feed-card {
+  margin-bottom: 0;
+}
 .log-detail-panel .btn-delete-log:hover {
   color: #c00;
+}
+
+/* Feed comments drawer (UI-only interactions) */
+.feed-comments-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3200;
+  background: rgba(0,0,0,0.35);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.feed-comments-overlay.hidden {
+  display: none;
+}
+.feed-comments-panel {
+  width: 100%;
+  max-width: 520px;
+  max-height: calc(100dvh - 12px);
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 20px 20px 0 0;
+  padding: 12px 16px 16px;
+  padding-bottom: calc(max(16px, env(safe-area-inset-bottom)) + 84px);
+}
+.feed-comments-drawer-handle {
+  width: 44px;
+  height: 4px;
+  border-radius: 999px;
+  background: #ddd;
+  margin: 0 auto 12px;
+}
+.feed-comments-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.feed-comments-drawer-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+.feed-comments-close-btn {
+  border: none;
+  background: transparent;
+  color: #1d8a00;
+  font-weight: 700;
+  cursor: pointer;
+}
+.feed-comments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.feed-comment-item {
+  border: 1px solid #eee;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fafafa;
+}
+.feed-comment-item__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.feed-comment-item__author {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.feed-comment-like-btn {
+  border: none;
+  background: transparent;
+  color: #777;
+  cursor: pointer;
+}
+.feed-comment-item__text {
+  margin: 6px 0 0;
+  font-size: 0.9rem;
+  color: #333;
+  line-height: 1.4;
+}
+.feed-comments-form {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+}
+.feed-comments-input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 0.95rem;
+}
+.feed-comments-submit {
+  border: none;
+  background: #1d8a00;
+  color: #fff;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 /* Cafe picker (plus button flow) */
@@ -2300,6 +2669,15 @@ body.app-with-tabs .bottom-sheet.closed {
   margin-top: 6px;
 }
 
+.log-form-brand-card .card-subtitle,
+.log-form-brand-card--modal .card-subtitle {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.78rem;
+  color: #666;
+  line-height: 1.3;
+}
+
 /* Leaflet custom marker for "my" cafes */
 .leaflet-marker-icon.my-cafe-marker {
   filter: hue-rotate(80deg) saturate(1.2);
@@ -2324,13 +2702,19 @@ body.app-with-tabs .bottom-sheet.closed {
   transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1), height 0.4s cubic-bezier(0.4, 0, 0.2, 1), padding 0.4s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.4s cubic-bezier(0.4, 0, 0.2, 1), min-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), border-radius 0.4s cubic-bezier(0.4, 0, 0.2, 1), background 0.4s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1), transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.matcha-hop-check {
+.matcha-hop-state-icon {
   color: #1d8a00;
-  font-size: 0.95em;
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.matcha-hop-name-tag.selected .matcha-hop-check {
+.matcha-hop-state-icon svg {
+  display: block;
+}
+
+.matcha-hop-name-tag.selected .matcha-hop-state-icon {
   color: #fff;
 }
 
@@ -2352,7 +2736,7 @@ body.app-with-tabs .bottom-sheet.closed {
   justify-content: center;
 }
 
-.matcha-hop-name-tag.matcha-hop-dot .matcha-hop-check {
+.matcha-hop-name-tag.matcha-hop-dot .matcha-hop-state-icon {
   font-size: 9px;
   line-height: 1;
 }

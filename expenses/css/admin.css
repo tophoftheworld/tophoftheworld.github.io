@@ -5,31 +5,50 @@
     box-sizing: border-box;
 }
 
-/* Receipt Upload Styles */
+/* Receipt Upload Styles (admin expense modal editor) */
+.admin-receipt-editor-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.admin-receipt-upload-stack {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
 .admin-receipt-upload {
-    border: 2px dashed #ddd;
-    border-radius: 8px;
-    padding: 20px;
+    border: 2px dashed #bbb;
+    /* Same corner radius as .admin-expense-modal-shell (16px) */
+    border-radius: 16px;
+    padding: 0.75rem;
     text-align: center;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: border-color 0.15s, background 0.15s;
     position: relative;
-    min-height: 120px;
+    flex: 1 1 auto;
+    min-height: 160px;
+    width: 100%;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
 }
 
-.admin-receipt-upload:hover {
+.admin-receipt-upload:hover,
+.admin-receipt-upload.admin-receipt-dragover {
     border-color: #2b9348;
-    background: rgba(43, 147, 72, 0.05);
+    background: rgba(43, 147, 72, 0.06);
 }
 
 .admin-receipt-upload.has-file {
     border-color: #2b9348;
-    background: rgba(43, 147, 72, 0.1);
-    padding: 10px;
+    background: rgba(43, 147, 72, 0.08);
+    justify-content: flex-start;
 }
 
 .admin-receipt-upload-content {
@@ -38,6 +57,8 @@
     align-items: center;
     gap: 8px;
     color: #666;
+    font-size: 0.9rem;
+    padding: 0.5rem;
 }
 
 .admin-receipt-upload.has-file .admin-receipt-upload-content {
@@ -45,32 +66,45 @@
 }
 
 .admin-receipt-preview {
+    flex: 1 1 auto;
+    min-height: 0;
     max-width: 100%;
-    max-height: 200px;
-    border-radius: 8px;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    border-radius: 12px;
     object-fit: contain;
 }
 
-#adminRemoveReceiptBtn {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    background: #dc3545;
-    color: white;
-    border: none;
-    border-radius: 50%;
-    width: 32px;
-    height: 32px;
-    cursor: pointer;
+.admin-receipt-actions {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    justify-content: center;
-    padding: 0;
-    z-index: 10;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    flex-shrink: 0;
+    margin: 0;
 }
 
-#adminRemoveReceiptBtn:hover {
-    background: #c82333;
+.admin-receipt-actions .action-btn {
+    margin: 0;
+}
+
+.admin-receipt-rotate-btn {
+    min-width: 2.5rem;
+    padding-left: 0.65rem;
+    padding-right: 0.65rem;
+    font-size: 1.15rem;
+    line-height: 1;
+}
+
+.admin-receipt-actions .action-btn:hover:not(:disabled) {
+    filter: brightness(0.95);
+}
+
+.admin-receipt-actions .action-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
 }
 
 body {
@@ -2153,6 +2187,60 @@ select.month-dropdown:focus {
     cursor: not-allowed;
 }
 
+.merge-supplier-modal-overlay.merge-in-progress .modal-close-btn {
+    pointer-events: none;
+    opacity: 0.4;
+}
+
+.merge-modal-progress {
+    display: none;
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.94);
+    border-radius: inherit;
+    padding: 1.25rem 1rem;
+    text-align: center;
+    box-sizing: border-box;
+}
+
+.merge-modal-progress.is-visible {
+    display: flex;
+}
+
+.merge-modal-progress-inner {
+    max-width: min(100%, 320px);
+}
+
+.merge-modal-progress-spinner {
+    width: 40px;
+    height: 40px;
+    margin: 0 auto 0.85rem;
+    border: 3px solid #e8ece9;
+    border-top-color: #2b9348;
+    border-radius: 50%;
+    animation: admin-app-busy-spin 0.75s linear infinite;
+}
+
+.merge-modal-progress-step {
+    margin: 0 0 0.35rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #333;
+    line-height: 1.35;
+}
+
+.merge-modal-progress-count {
+    margin: 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #2b9348;
+    letter-spacing: 0.02em;
+}
+
 .no-results-message {
     text-align: center;
     padding: 40px 24px;
@@ -2409,42 +2497,36 @@ select.month-dropdown:focus {
     border-bottom: none;
 }
 
-/* Admin Item Row Styling */
-.admin-item-row {
-    border: 1px solid #e9ecef;
-    border-radius: 8px;
-    padding: 16px;
-    margin-bottom: 12px;
-    position: relative;
-    background: white;
-    transition: all 0.2s;
-}
-
-.admin-item-row:hover {
-    border-color: #2b9348;
-    box-shadow: 0 2px 4px rgba(43, 147, 72, 0.1);
-}
-
-.admin-item-row button[onclick*="removeItem"] {
-    transition: all 0.2s;
-}
-
-.admin-item-row button[onclick*="removeItem"]:hover {
-    transform: scale(1.1);
-    color: #c82333;
-}
-
-.admin-item-total-display {
+/* Expense modal line items (card + grid; avoids clashing with other admin pages) */
+.admin-expense-modal-body .admin-item-total-display {
     user-select: none;
 }
 
-/* Remove background from item name input when autocomplete is active */
-.admin-item-row input[name^="itemName_"] {
-    background: white !important;
+.admin-expense-modal-body .admin-item-card {
+    border: 1px solid #e9ecef;
+    border-radius: 10px;
+    padding: 0;
+    margin-bottom: 0.5rem;
+    background: #fff;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    position: relative;
 }
 
-.admin-item-row input[name^="itemName_"]:focus {
-    background: white !important;
+.admin-expense-modal-body .admin-item-card:hover {
+    border-color: #dee2e6;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.admin-expense-modal-body .admin-item-card input[name^="itemName_"] {
+    background: #fff !important;
+}
+
+.admin-expense-modal-body .admin-item-card input[name^="itemName_"]:focus {
+    background: #fff !important;
+}
+
+.admin-expense-modal-body .admin-item-remove:hover {
+    transform: scale(1.06);
 }
 
 /* Supplier card in form - remove clickable cursor */
@@ -2482,18 +2564,22 @@ select.month-dropdown:focus {
 .admin-expense-modal-shell {
     display: flex;
     flex-direction: row;
+    align-items: stretch;
     background: #fff;
-    border-radius: 14px;
-    max-width: 1040px;
+    border-radius: 16px;
+    max-width: min(1144px, 96vw);
     width: 100%;
-    max-height: 92vh;
+    height: 75vh;
+    max-height: 75vh;
+    min-height: 0;
     overflow: hidden;
     box-shadow: 0 24px 48px rgba(0, 0, 0, 0.22);
 }
 
 .admin-expense-modal-main {
-    flex: 1;
+    flex: 1 1 0;
     min-width: 0;
+    min-height: 0;
     display: flex;
     flex-direction: column;
 }
@@ -2505,6 +2591,7 @@ select.month-dropdown:focus {
     padding: 1rem 1.25rem;
     background: #f8f9fa;
     border-bottom: 1px solid #e9ecef;
+    flex-shrink: 0;
 }
 
 .admin-expense-modal-title {
@@ -2548,37 +2635,53 @@ select.month-dropdown:focus {
 .admin-expense-modal-body {
     padding: 1rem 1.25rem 1.25rem;
     overflow-y: auto;
-    max-height: calc(92vh - 56px);
+    flex: 1 1 auto;
+    min-height: 0;
     position: relative;
 }
 
 .admin-expense-modal-receipt {
-    width: 38%;
-    max-width: 400px;
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 0;
     border-left: 1px solid #e9ecef;
     background: #fafbfc;
-    padding: 1rem;
+    padding: 1.5rem;
     display: flex;
     flex-direction: column;
-    min-height: 280px;
 }
 
 .admin-receipt-heading {
-    margin: 0 0 0.75rem;
+    margin: 0 0 1rem;
+    flex-shrink: 0;
     font-size: 0.95rem;
     font-weight: 600;
     color: #2b9348;
 }
 
 .admin-receipt-panel-inner {
-    flex: 1;
-    overflow-y: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    justify-content: center;
+}
+
+.admin-receipt-frame {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .admin-receipt-frame img.admin-receipt-preview-full {
     max-width: 100%;
-    border-radius: 8px;
+    max-height: 100%;
+    border-radius: 10px;
     display: block;
+    object-fit: contain;
 }
 
 .admin-form-section {
@@ -2592,6 +2695,21 @@ select.month-dropdown:focus {
     font-weight: 600;
     color: #2b9348;
     margin: 0 0 0.75rem;
+}
+
+.admin-hidden {
+    display: none !important;
+}
+
+.admin-field-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem 1rem;
+    margin-bottom: 0.65rem;
+}
+
+.admin-field-row .admin-field {
+    margin-bottom: 0;
 }
 
 .admin-field {
@@ -2617,6 +2735,269 @@ select.month-dropdown:focus {
     box-sizing: border-box;
 }
 
+/* Expense modal: simple fields — light borders, not harsh black boxes */
+.admin-expense-modal-body input:not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="checkbox"]):not([type="radio"]),
+.admin-expense-modal-body select,
+.admin-expense-modal-body textarea {
+    border-radius: 8px;
+    border: 1px solid #dee2e6;
+    background: #fff;
+}
+
+.admin-expense-modal-body .admin-item-card-body input {
+    border-radius: 8px;
+    border: 1px solid #dee2e6;
+    background: #fff;
+    padding: 0.65rem 0.8rem;
+    font-size: 0.95rem;
+    line-height: 1.4;
+    font-weight: 500;
+    font-family: inherit;
+}
+
+.admin-expense-modal-body input:focus,
+.admin-expense-modal-body select:focus,
+.admin-expense-modal-body textarea:focus {
+    outline: none;
+    border-color: #2b9348;
+    box-shadow: 0 0 0 2px rgba(43, 147, 72, 0.12);
+}
+
+.admin-supplier-verified-card {
+    padding: 0.85rem 1rem;
+    border: 1px solid #e9ecef;
+    border-radius: 12px;
+    background: #fff;
+    margin-bottom: 0.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.admin-supplier-verified-card--detail {
+    margin-bottom: 0.35rem;
+}
+
+.admin-supplier-verified-card--clickable {
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.12s ease;
+}
+
+.admin-supplier-verified-card--clickable:hover {
+    border-color: #b2dfbf;
+    box-shadow: 0 4px 14px rgba(43, 147, 72, 0.12);
+}
+
+.admin-supplier-verified-card--clickable:focus-visible {
+    outline: none;
+    border-color: #2b9348;
+    box-shadow: 0 0 0 3px rgba(43, 147, 72, 0.22);
+}
+
+.admin-exp-view-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem 1.5rem;
+}
+
+.admin-exp-view-field {
+    min-width: 0;
+}
+
+.admin-exp-view-label {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #868e96;
+    margin-bottom: 0.3rem;
+}
+
+.admin-exp-view-value {
+    display: block;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: #212529;
+    line-height: 1.45;
+}
+
+@media (max-width: 560px) {
+    .admin-exp-view-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.admin-item-view-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.admin-item-view-row {
+    border-radius: 14px;
+    padding: 1rem 1.15rem;
+    background: linear-gradient(145deg, #f8faf9 0%, #ffffff 55%);
+    border: 1px solid #e3ebe6;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.admin-item-view-name {
+    font-size: 1.02rem;
+    font-weight: 600;
+    color: #1a1a1a;
+    line-height: 1.35;
+    margin-bottom: 0.55rem;
+    letter-spacing: -0.01em;
+}
+
+.admin-item-view-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.65rem 1.35rem;
+    font-size: 0.88rem;
+    color: #495057;
+}
+
+.admin-item-view-k {
+    color: #adb5bd;
+    font-weight: 600;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-right: 0.35rem;
+}
+
+.admin-item-view-line-total {
+    margin-left: auto;
+    font-weight: 700;
+    font-size: 1rem;
+    color: #2b9348;
+    font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 520px) {
+    .admin-item-view-line-total {
+        margin-left: 0;
+        width: 100%;
+        padding-top: 0.25rem;
+        border-top: 1px solid #eef2f0;
+    }
+}
+
+.admin-notes-display {
+    padding: 1rem 1.15rem;
+    border-radius: 12px;
+    background: #f8faf9;
+    border: 1px solid #e3ebe6;
+    font-size: 0.92rem;
+    line-height: 1.55;
+    color: #343a40;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: inherit;
+}
+
+.admin-total-pill--view {
+    background: linear-gradient(90deg, #f1f7f3 0%, #eef5f0 100%);
+    border-color: #d8e8dd;
+}
+
+.admin-supplier-verified-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.35rem;
+}
+
+.admin-supplier-verified-name-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    min-width: 0;
+    flex: 1;
+}
+
+.admin-supplier-verified-name-row strong,
+.admin-supplier-verified-header > strong {
+    font-size: 0.98rem;
+    color: #1a1a1a;
+    line-height: 1.3;
+}
+
+.admin-supplier-business-line {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    font-size: 0.86rem;
+    color: #555;
+    margin-bottom: 0.45rem;
+}
+
+.admin-supplier-saved-check-svg {
+    flex-shrink: 0;
+    display: block;
+}
+
+.admin-supplier-details {
+    margin: 0;
+    padding: 0.35rem 0 0;
+    border-top: 1px solid #f1f3f5;
+}
+
+.admin-supplier-detail-row {
+    display: grid;
+    grid-template-columns: 4.75rem minmax(0, 1fr);
+    gap: 0.25rem 0.65rem;
+    font-size: 0.82rem;
+    margin: 0.4rem 0 0;
+    align-items: start;
+}
+
+.admin-supplier-detail-row:first-of-type {
+    margin-top: 0.5rem;
+}
+
+.admin-supplier-detail-row dt {
+    margin: 0;
+    color: #868e96;
+    font-weight: 600;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.admin-supplier-detail-row dd {
+    margin: 0;
+    color: #333;
+    line-height: 1.45;
+    white-space: pre-wrap;
+}
+
+.admin-supplier-clear-btn {
+    flex-shrink: 0;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    margin: 0;
+    border: 1px solid #dee2e6;
+    background: #fff;
+    color: #495057;
+    font-size: 1.15rem;
+    line-height: 1;
+    cursor: pointer;
+    border-radius: 8px;
+}
+
+.admin-supplier-clear-btn:hover {
+    background: #f8f9fa;
+    color: #c92a2a;
+    border-color: #ced4da;
+}
+
 .admin-mini-label {
     display: block;
     font-size: 0.72rem;
@@ -2625,29 +3006,176 @@ select.month-dropdown:focus {
     margin-bottom: 0.2rem;
 }
 
-.admin-item-row {
+/* Items + Notes (expense modal) — stacked: items, then full-width notes */
+.admin-items-notes-section {
+    border-bottom: 1px solid #eee;
+}
+
+.admin-items-notes-layout {
     display: flex;
-    gap: 0.5rem;
-    align-items: flex-end;
-    flex-wrap: wrap;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.admin-notes-textarea {
+    width: 100%;
+    min-height: 168px;
+    resize: vertical;
+    line-height: 1.45;
+}
+
+.admin-expense-modal-body .admin-notes-textarea,
+.admin-expense-modal-body .admin-field textarea.admin-notes-textarea {
+    padding: 0.75rem 1rem;
+    font-size: 0.95rem;
+    line-height: 1.4;
+    font-weight: 500;
+    font-family: inherit;
+}
+
+.admin-expense-modal-body .admin-notes-column .admin-field label,
+.admin-expense-modal-body .admin-notes-column .admin-form-section-title {
+    margin-bottom: 0.5rem;
+}
+
+.admin-field--checkbox {
     margin-bottom: 0.65rem;
 }
 
-.admin-item-remove {
+.admin-checkbox-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #495057;
+    cursor: pointer;
+}
+
+.admin-checkbox-label input {
+    width: auto;
+    margin: 0;
+}
+
+.admin-form-section-inner {
+    margin-bottom: 1.25rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #eee;
+}
+
+.admin-form-section-inner > .admin-form-section {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+.admin-petty-cash-badge {
+    display: inline-block;
+    padding: 0.65rem 1rem;
+    border-radius: 10px;
+    background: #e7f5ec;
+    color: #2b9348;
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+.admin-expense-modal-body .admin-item-card-body {
+    position: relative;
+    padding: 0.85rem 0.9rem;
+}
+
+.admin-item-name-row {
+    display: flex;
+    align-items: stretch;
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+.admin-expense-modal-body .admin-add-price-btn {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    min-height: 2.5rem;
+    padding: 0;
+    margin: 0;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    color: #495057;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.admin-expense-modal-body .admin-add-price-btn:hover {
+    background: #e9ecef;
+    border-color: #2b9348;
+    color: #2b9348;
+}
+
+.admin-item-metrics-breakdown.admin-hidden {
+    display: none !important;
+}
+
+.admin-expense-modal-body .admin-item-card-body:has(.admin-item-remove) {
+    padding-right: 2.75rem;
+}
+
+.admin-expense-modal-body .admin-item-field {
+    min-width: 0;
+}
+
+.admin-expense-modal-body .admin-item-field-item .admin-item-name-row input {
+    flex: 1;
+    min-width: 0;
+    width: auto;
+}
+
+.admin-expense-modal-body .admin-item-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.65rem 1rem;
+    margin-top: 0.75rem;
+}
+
+.admin-expense-modal-body .admin-item-metrics .admin-item-field input {
+    width: 100%;
+}
+
+@media (max-width: 520px) {
+    .admin-expense-modal-body .admin-item-metrics {
+        grid-template-columns: 1fr;
+    }
+}
+
+.admin-expense-modal-body .admin-item-remove {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.65rem;
     background: #dc3545;
     color: #fff;
     border: none;
-    border-radius: 6px;
+    border-radius: 8px;
     padding: 0.45rem 0.55rem;
     cursor: pointer;
-    height: fit-content;
+    min-width: 2.25rem;
+    font-size: 1rem;
+    line-height: 1;
+    z-index: 1;
+}
+
+.admin-add-item {
+    margin-top: 0.5rem;
+    border-radius: 8px;
 }
 
 .admin-total-pill {
     margin-top: 0.75rem;
     padding: 0.75rem 1rem;
     background: #f1f3f4;
-    border-radius: 8px;
+    border: 1px solid #dee2e6;
+    border-radius: 10px;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -2656,6 +3184,35 @@ select.month-dropdown:focus {
 .admin-total-pill strong {
     color: #2b9348;
     font-size: 1.05rem;
+}
+
+.admin-total-pill--editable .admin-total-amount-input {
+    flex: 0 1 12rem;
+    max-width: 100%;
+    text-align: right;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 0.35rem 0.5rem;
+    font-weight: 600;
+    font-size: 1.05rem;
+    color: #2b9348;
+    background: #fff;
+    box-sizing: border-box;
+}
+
+.admin-item-line-total-display {
+    min-height: 2.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 0.35rem 0.5rem;
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: #333;
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 6px;
+    box-sizing: border-box;
 }
 
 .admin-form-actions {
@@ -2701,7 +3258,7 @@ select.month-dropdown:focus {
 .admin-supplier-modal-shell {
     background: #fff;
     border-radius: 14px;
-    max-width: 720px;
+    max-width: 900px;
     width: 100%;
     max-height: 90vh;
     overflow: hidden;
@@ -2712,11 +3269,179 @@ select.month-dropdown:focus {
 
 .admin-supplier-modal-header {
     display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    background: linear-gradient(180deg, #f8faf9 0%, #f1f4f2 100%);
+    border-bottom: 1px solid #e9ecef;
+}
+
+.admin-supplier-modal-head-text h2 {
+    margin: 0 0 0.2rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #2b9348;
+}
+
+.admin-supplier-modal-head-name {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #333;
+}
+
+.admin-supplier-modal-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    flex-shrink: 0;
+}
+
+.admin-supplier-detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+}
+
+@media (max-width: 720px) {
+    .admin-supplier-detail-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.admin-supplier-detail-card {
+    background: #fafbfc;
+    border: 1px solid #e9ecef;
+    border-radius: 12px;
+    padding: 1rem 1.1rem;
+}
+
+.admin-supplier-detail-card-title {
+    margin: 0 0 0.75rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #868e96;
+}
+
+.admin-supplier-detail-dl {
+    margin: 0;
+}
+
+.admin-supplier-detail-row {
+    display: grid;
+    grid-template-columns: minmax(0, 38%) 1fr;
+    gap: 0.5rem 0.75rem;
+    padding: 0.45rem 0;
+    border-bottom: 1px solid #eef0f2;
+    font-size: 0.9rem;
+}
+
+.admin-supplier-detail-row:last-child {
+    border-bottom: none;
+}
+
+.admin-supplier-detail-row dt {
+    margin: 0;
+    font-weight: 500;
+    color: #868e96;
+}
+
+.admin-supplier-detail-row dd {
+    margin: 0;
+    color: #212529;
+    word-break: break-word;
+}
+
+.admin-supplier-detail-amount {
+    font-weight: 600;
+    color: #2b9348;
+}
+
+.admin-vat-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 6px;
+    background: #e7f5ee;
+    color: #1e4d2b;
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+
+/* Admin edit supplier overlay */
+.admin-supplier-edit-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.65);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 5600;
+    padding: 1rem;
+    box-sizing: border-box;
+}
+
+.admin-supplier-edit-dialog {
+    background: #fff;
+    border-radius: 14px;
+    width: 100%;
+    max-width: 440px;
+    max-height: 90vh;
+    overflow: auto;
+    box-shadow: 0 24px 48px rgba(0, 0, 0, 0.2);
+}
+
+.admin-supplier-edit-header {
+    display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 1rem 1.25rem;
-    background: #f8f9fa;
     border-bottom: 1px solid #e9ecef;
+    background: #f8f9fa;
+}
+
+.admin-supplier-edit-header h2 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #2b9348;
+}
+
+.admin-supplier-edit-form {
+    padding: 1.25rem;
+}
+
+.admin-supplier-edit-form .admin-field textarea {
+    width: 100%;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    box-sizing: border-box;
+    resize: vertical;
+    min-height: 3.5rem;
+}
+
+.admin-supplier-edit-vat {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0.75rem 0 1rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.admin-supplier-edit-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
 }
 
 .admin-supplier-modal-body {
@@ -2778,14 +3503,229 @@ select.month-dropdown:focus {
 @media (max-width: 880px) {
     .admin-expense-modal-shell {
         flex-direction: column;
+        height: auto;
         max-height: 95vh;
     }
 
+    .admin-field-row {
+        grid-template-columns: 1fr;
+    }
+
     .admin-expense-modal-receipt {
+        flex: 0 0 auto;
         width: 100%;
         max-width: none;
         border-left: none;
         border-top: 1px solid #e9ecef;
-        max-height: 200px;
+        min-height: 180px;
+        max-height: 220px;
     }
+
+    .admin-receipt-panel-inner {
+        min-height: 120px;
+    }
+}
+
+/* Busy state: no full-page blur — transparent scrim + centered spinner card only */
+.app-busy-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    background: transparent;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    pointer-events: all;
+}
+
+.app-busy-overlay.show {
+    display: flex;
+}
+
+.app-busy-modal {
+    text-align: center;
+    padding: 1.35rem 1.6rem;
+    min-width: 200px;
+    max-width: min(92vw, 300px);
+    background: #fff;
+    border-radius: 14px;
+    box-shadow:
+        0 12px 40px rgba(15, 23, 42, 0.12),
+        0 0 0 1px rgba(15, 23, 42, 0.06);
+}
+
+.app-busy-spinner {
+    width: 44px;
+    height: 44px;
+    margin: 0 auto 0.85rem;
+    border: 3px solid #e8ece9;
+    border-top-color: #2b9348;
+    border-radius: 50%;
+    animation: admin-app-busy-spin 0.75s linear infinite;
+}
+
+@keyframes admin-app-busy-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.app-busy-message {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #333;
+    line-height: 1.4;
+}
+
+/* View mode: VAT summary after items / total (not in Basic Information) */
+.admin-vat-view-summary {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e1e5ea;
+}
+
+/* Expense modal: VAT block (below items / total, separated from total pill) */
+.admin-vat-form-section {
+    margin-top: 1.35rem;
+    padding-top: 1.1rem;
+    border-top: 1px solid #e1e5ea;
+}
+
+.admin-vat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.admin-vat-title {
+    margin: 0;
+}
+
+/* Mobile-style switch (matches expenses app toggle) */
+.admin-vat-toggle-btn {
+    flex-shrink: 0;
+    padding: 0;
+    margin: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    line-height: 0;
+}
+
+.admin-vat-toggle-btn:focus-visible {
+    outline: 2px solid #2b9348;
+    outline-offset: 3px;
+    border-radius: 14px;
+}
+
+.admin-toggle-track {
+    width: 44px;
+    height: 24px;
+    background: #ddd;
+    border-radius: 12px;
+    position: relative;
+    transition: background 0.2s ease;
+}
+
+.admin-toggle-track.active {
+    background: #439407;
+}
+
+.admin-toggle-thumb {
+    width: 20px;
+    height: 20px;
+    background: white;
+    border-radius: 50%;
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.admin-toggle-track.active .admin-toggle-thumb {
+    left: 22px;
+}
+
+.admin-toggle-icon {
+    width: 10px;
+    height: 10px;
+    stroke: #439407;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.admin-toggle-track.active .admin-toggle-icon {
+    opacity: 1;
+    stroke: #439407;
+}
+
+.admin-vat-off-note {
+    margin: 0.65rem 0 0;
+    font-size: 0.86rem;
+    color: #6c757d;
+    line-height: 1.35;
+}
+
+.admin-vat-off-note:not(.admin-hidden) {
+    color: #495057;
+}
+
+.admin-vat-breakdown {
+    margin-top: 0.75rem;
+    padding: 0.65rem 0.75rem;
+    border-radius: 10px;
+    background: #f4f9f5;
+    border: 1px solid #d8ebe0;
+    font-size: 0.88rem;
+}
+
+.admin-vat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.3rem 0;
+    border-bottom: 1px solid #e0ebe3;
+}
+
+.admin-vat-row:last-child {
+    border-bottom: none;
+}
+
+.admin-vat-row--exempt {
+    flex-wrap: wrap;
+}
+
+.admin-vat-exempt-label {
+    flex: 1 1 auto;
+    min-width: 8rem;
+    margin: 0;
+    font-size: inherit;
+    color: inherit;
+    font-weight: 400;
+}
+
+.admin-vat-exempt-input {
+    width: 7.5rem;
+    max-width: 45%;
+    padding: 0.35rem 0.45rem;
+    border: 1px solid #c5d4c9;
+    border-radius: 6px;
+    font-size: 0.88rem;
+    text-align: right;
+    box-sizing: border-box;
+}
+
+.admin-vat-row--total {
+    margin-top: 0.15rem;
+    padding-top: 0.4rem;
+    font-weight: 600;
+    color: #1e4d2b;
 }

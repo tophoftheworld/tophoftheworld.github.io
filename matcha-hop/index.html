@@ -20,10 +20,20 @@
           </div>
           <span id="search-results-label" class="search-results-label hidden" aria-live="polite">Showing search results</span>
         </div>
+        <button type="button" id="map-recenter-btn" class="map-recenter-btn" aria-label="Recenter map to current location">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M12 3v3"></path>
+            <path d="M12 18v3"></path>
+            <path d="M3 12h3"></path>
+            <path d="M18 12h3"></path>
+          </svg>
+        </button>
         <div id="location-page" class="location-page hidden" aria-hidden="true">
           <button type="button" id="location-page-back" class="location-page-back" aria-label="Back to map">← Back</button>
           <div class="location-page-hero">
-            <img id="location-page-image" class="location-page-image" alt="" src="">
+            <img id="location-page-image" class="location-page-image hidden" alt="" src="">
+            <div id="location-page-hero-placeholder" class="location-page-hero-placeholder" aria-hidden="true"></div>
           </div>
           <div class="location-page-name-row">
             <h3 id="location-page-name" class="location-page-name"></h3>
@@ -178,6 +188,10 @@
 
   <div id="log-detail-overlay" class="log-detail-overlay hidden" aria-hidden="true">
     <div id="log-detail-panel" class="log-detail-panel"></div>
+  </div>
+
+  <div id="feed-comments-overlay" class="feed-comments-overlay hidden" aria-hidden="true">
+    <div id="feed-comments-panel" class="feed-comments-panel"></div>
   </div>
 
   <div id="cafe-picker-overlay" class="cafe-picker-overlay hidden" aria-hidden="true">

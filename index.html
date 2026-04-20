@@ -70,6 +70,15 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
         }
 
+        /* Iframe viewport: 100vh is taller than the visible area on mobile Safari; prefer svh/dvh so embedded apps aren’t clipped at the bottom */
+        .staff-portal-main-shell {
+            margin-top: 4.5rem;
+            height: calc(100vh - 4.5rem);
+            height: calc(100svh - 4.5rem);
+            height: calc(100dvh - 4.5rem);
+            min-height: 0;
+        }
+
         /* Mobile Navigation Bar */
         .mobile-nav {
             position: fixed;
@@ -375,7 +384,7 @@
         </div>
     </nav>
 
-    <div class="w-full flex bg-white" style="height: calc(100vh - 4.5rem); margin-top: 4.5rem;">
+    <div class="staff-portal-main-shell w-full flex bg-white">
         <!-- Main content area -->
         <main class="flex-1 h-full" style="padding: 0; overflow: hidden;">
             <!-- Loading State -->
@@ -435,7 +444,7 @@
                 title: 'Payroll'
             },
             'Schedule': {
-                url: 'schedule/index.html',
+                url: 'schedule/index.html?v=46',
                 title: 'Schedule'
             },
             'Inventory': {

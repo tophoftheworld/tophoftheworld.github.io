@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Menu Creator</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -91,10 +91,14 @@
                 <p class="form-hint">Captures the menu canvas as an image. For photo tiles with multiple images, the first photo is used.</p>
             </div>
             <div class="form-section">
-                <button type="button" id="saveMenuBtn" class="btn btn-primary">Save menu</button>
-                <button type="button" id="loadMenuBtn" class="btn btn-secondary">Load menu</button>
+                <button type="button" id="saveMenuBtn" class="btn btn-primary">Save menu (online)</button>
+                <button type="button" id="loadMenuBtn" class="btn btn-secondary">Load menu (online)</button>
+                <div class="menu-local-actions">
+                    <button type="button" id="exportMenuBtn" class="btn btn-secondary">Export JSON (local)</button>
+                    <button type="button" id="importMenuBtn" class="btn btn-secondary">Import JSON (local)</button>
+                </div>
                 <input type="file" id="loadMenuInput" accept=".json" hidden aria-hidden="true">
-                <p class="form-hint">Save the current layout and tiles to a JSON file. Load a previously saved menu (includes image links and drink data).</p>
+                <p class="form-hint">Draft changes autosave locally in this browser. Save/Load menu uses a shared online list. Use local JSON export/import as backup.</p>
             </div>
             <div class="form-section">
                 <button type="button" id="resetBtn" class="btn btn-secondary">Reset to default</button>
@@ -141,6 +145,47 @@
                 <div class="modal-actions">
                     <button type="button" id="saveDrinkBtn" class="btn btn-primary">Save drink</button>
                     <button type="button" id="cancelDrinkBtn" class="btn btn-secondary">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="menuSaveModalBackdrop" class="modal-backdrop" hidden aria-hidden="true">
+            <div class="modal-dialog menu-load-dialog" role="dialog" aria-labelledby="menuSaveModalTitle" aria-modal="true">
+                <h2 id="menuSaveModalTitle" class="modal-title">Save Menu Online</h2>
+                <div class="form-group">
+                    <label for="menuSaveName">Menu name</label>
+                    <input type="text" id="menuSaveName" placeholder="e.g. Summer Menu V2">
+                </div>
+                <div class="form-group">
+                    <label for="menuSaveSearchInput">Select existing menu to overwrite</label>
+                    <input type="text" id="menuSaveSearchInput" placeholder="Search menu to overwrite">
+                </div>
+                <div id="menuSaveList" class="menu-load-list" aria-live="polite"></div>
+                <label class="menu-save-new-toggle">
+                    <input type="checkbox" id="menuSaveAsNew" checked>
+                    <span>Save as new menu</span>
+                </label>
+                <p class="form-hint" id="menuSaveStatus"></p>
+                <div class="modal-actions">
+                    <button type="button" id="confirmSaveMenuBtn" class="btn btn-primary">Save online</button>
+                    <button type="button" id="cancelSaveMenuBtn" class="btn btn-secondary">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="menuLoadModalBackdrop" class="modal-backdrop" hidden aria-hidden="true">
+            <div class="modal-dialog menu-load-dialog" role="dialog" aria-labelledby="menuLoadModalTitle" aria-modal="true">
+                <h2 id="menuLoadModalTitle" class="modal-title">Load Menu Online</h2>
+                <div class="form-group">
+                    <label for="menuSearchInput">Search menus</label>
+                    <input type="text" id="menuSearchInput" placeholder="Type a menu name">
+                </div>
+                <div id="menuLoadList" class="menu-load-list" aria-live="polite"></div>
+                <p class="form-hint" id="menuLoadStatus"></p>
+                <div class="modal-actions">
+                    <button type="button" id="confirmLoadMenuBtn" class="btn btn-primary">Load selected</button>
+                    <button type="button" id="deleteMenuBtn" class="btn btn-secondary">Delete selected</button>
+                    <button type="button" id="cancelLoadMenuBtn" class="btn btn-secondary">Close</button>
                 </div>
             </div>
         </div>

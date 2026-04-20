@@ -4,7 +4,7 @@
 
 import { initMap, getMap, onMoveEnd, clearSearchPins, clearCuratedPins, addCuratedPins, setSelectedCafeId, flyTo, fitBounds } from './map.js';
 import { searchQuery, searchPlaceByText } from './search.js';
-import { initData, getMyCafes, getLogsByCafeId, getLogsByBrandId, getLogsByPopupId, getLogsForBrand, getLogs, getCafeById, getCafeByPlaceId, saveCafe, deleteLog, getCafesInBounds, getGalleryBrands, getPopUpsByBrandId, addPopUp, updatePopUp, deletePopUp, getBrandTotalLikeCount, getLocationLikeCount, hasUserLikedBrand, hasUserLikedLocation, setBrandLike, setLocationLike, METRO_MANILA_SW, METRO_MANILA_NE } from './data.js';
+import { initData, getMyCafes, getLogsByCafeId, getLogsByBrandId, getLogsByPopupId, getLogsForBrand, getLogs, getLogsForCurrentUser, getCafeById, getCafeByPlaceId, saveCafe, deleteLog, getCafesInBounds, getGalleryBrands, getPopUpsByBrandId, addPopUp, updatePopUp, deletePopUp, getBrandTotalLikeCount, getLocationLikeCount, hasUserLikedBrand, hasUserLikedLocation, setBrandLike, setLocationLike, METRO_MANILA_SW, METRO_MANILA_NE } from './data.js';
 import { openLogForm } from './log-form.js';
 import { fetchPlaceDetails } from './place-details.js';
 
@@ -12,6 +12,7 @@ let currentSearchResults = [];
 let selectedCafe = null;
 const TAB_IDS = ['tab-map', 'tab-brands', 'tab-feed', 'tab-mylogs'];
 const PANEL_IDS = ['panel-map', 'panel-brands', 'panel-feed', 'panel-mylogs'];
+const uiPostState = new Map();
 
 const HEART_COLOR = '#1d8a00';
 const HEART_PATH = 'M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z';
@@ -28,6 +29,28 @@ function getHeartIconSvg(filled) {
 function renderHeartIcon(element, filled) {
   if (!element) return;
   element.innerHTML = getHeartIconSvg(filled);
+}
+
+function recenterMapToCurrentLocation() {
+  const map = getMap();
+  if (!map) return;
+  if (!navigator.geolocation) {
+    const centerLat = (METRO_MANILA_SW.lat + METRO_MANILA_NE.lat) / 2;
+    const centerLng = (METRO_MANILA_SW.lng + METRO_MANILA_NE.lng) / 2;
+    flyTo(centerLat, centerLng, 14);
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      flyTo(pos.coords.latitude, pos.coords.longitude, 16);
+    },
+    () => {
+      const centerLat = (METRO_MANILA_SW.lat + METRO_MANILA_NE.lat) / 2;
+      const centerLng = (METRO_MANILA_SW.lng + METRO_MANILA_NE.lng) / 2;
+      flyTo(centerLat, centerLng, 14);
+    },
+    { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+  );
 }
 
 function showBottomSheet(cafe, isMyCafe = false) {
@@ -61,8 +84,12 @@ function showBottomSheet(cafe, isMyCafe = false) {
           <button type="button" class="log-item log-item-btn" data-log-id="${escapeAttr(log.id)}">
             ${(log.photo || (log.photos && log.photos[0])) ? `<img src="${escapeAttr(log.photo || log.photos[0])}" alt="">` : '<div style="width:48px;height:48px;background:#eee;border-radius:8px;"></div>'}
             <div class="log-info">
+              <div class="log-info-top">
+                <span class="username">${escapeHtml((log.userName || 'you').trim() || 'you')}</span>
+                <span class="meta">${escapeHtml(formatPostTime(log.createdAt) || formatDate(log.createdAt))}</span>
+              </div>
               <span class="drink">${escapeHtml(log.drinkName || 'Matcha')}</span>
-              <span class="meta">${formatDate(log.createdAt)}</span>
+              <span class="caption ${log.notes ? '' : 'caption--placeholder'}">${escapeHtml(compactCaption(log.notes || 'No caption yet'))}</span>
             </div>
           </button>
         `).join('')}
@@ -161,6 +188,7 @@ function showBottomSheet(cafe, isMyCafe = false) {
       const hasLiked = hasUserLikedLocation(cafe.id);
       setLocationLike(cafe.id, !hasLiked);
       updatePlaceLikeUI();
+      updateCuratedPins();
     });
   }
   updatePlaceLikeUI();
@@ -266,40 +294,23 @@ function openLogDetail(log) {
   const overlay = document.getElementById('log-detail-overlay');
   const panel = document.getElementById('log-detail-panel');
   if (!overlay || !panel) return;
-  const cafe = log.cafe || getCafeById(log.cafeId);
-  const cafeName = cafe?.name || log.brandName || 'Unknown';
-  const photos = log.photos && log.photos.length ? log.photos : (log.photo ? [log.photo] : []);
-  panel.innerHTML = `
-    <h2>${escapeHtml(log.drinkName || 'Matcha')}</h2>
-    <p class="log-detail-cafe">${escapeHtml(cafeName)}</p>
-    <p class="log-detail-meta">${formatDate(log.createdAt)}</p>
-    ${log.notes ? `<p class="log-detail-notes">${escapeHtml(log.notes)}</p>` : ''}
-    ${photos.length ? `<div class="log-detail-photos">${photos.map((src) => `<img src="${escapeAttr(src)}" alt="">`).join('')}</div>` : ''}
-    <button type="button" class="btn-delete-log">Delete post</button>
-  `;
-  const deleteLogBtn = panel.querySelector('.btn-delete-log');
-  deleteLogBtn.addEventListener('click', () => {
-    const wrap = document.createElement('div');
-    wrap.className = 'log-detail-delete-confirm';
-    wrap.innerHTML = '<p class="log-detail-delete-confirm-text">Delete this post?</p><div class="log-detail-delete-confirm-actions"><button type="button" class="btn-cancel-delete-log">Cancel</button><button type="button" class="btn-confirm-delete-log add-popup-btn add-popup-btn--danger">Delete</button></div>';
-    const cancelBtn = wrap.querySelector('.btn-cancel-delete-log');
-    const confirmBtn = wrap.querySelector('.btn-confirm-delete-log');
-    cancelBtn.addEventListener('click', () => {
-      wrap.replaceWith(deleteLogBtn);
-    });
-    confirmBtn.addEventListener('click', async () => {
-      await deleteLog(log.id);
-      closeLogDetail();
-      if (selectedCafe && selectedCafe.id === log.cafeId) {
-        showBottomSheet(selectedCafe, true);
-      }
-      refreshPhotoFeedsIfVisible();
-    });
-    deleteLogBtn.replaceWith(wrap);
-  });
+  panel.innerHTML = '';
+  const card = createPhotoFeedCard(log);
+  panel.appendChild(card);
   overlay.onclick = (e) => { if (e.target === overlay) closeLogDetail(); };
   overlay.classList.remove('hidden');
   overlay.setAttribute('aria-hidden', 'false');
+  // Ensure media sizing runs after the detail drawer is visible.
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const mediaEl = card.querySelector('[data-role="feed-media"]');
+      if (mediaEl && mediaEl instanceof HTMLImageElement && mediaEl.naturalWidth && mediaEl.naturalHeight) {
+        applyFeedMediaHeight(card, mediaEl, mediaEl.naturalWidth / mediaEl.naturalHeight);
+      } else {
+        applyFeedMediaHeight(card, mediaEl, 1);
+      }
+    });
+  });
 }
 
 function closeLogDetail() {
@@ -403,45 +414,277 @@ function formatDate(ts) {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-const PHOTO_FEED_EMPTY_HTML =
+function formatPostTime(ts) {
+  if (!ts) return '';
+  const delta = Date.now() - Number(ts);
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  if (delta < 7 * day) {
+    if (delta < hour) return `${Math.max(1, Math.floor(delta / minute))}m ago`;
+    if (delta < day) return `${Math.max(1, Math.floor(delta / hour))}h ago`;
+    return `${Math.max(1, Math.floor(delta / day))}d ago`;
+  }
+  return formatDate(ts);
+}
+
+function compactCaption(text, max = 88) {
+  const raw = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!raw) return '';
+  if (raw.length <= max) return raw;
+  return `${raw.slice(0, Math.max(1, max - 1)).trimEnd()}…`;
+}
+
+const PHOTO_FEED_EMPTY_HTML_FEED =
   '<p class="panel-placeholder" style="margin:0;padding:20px;">No posts yet. Tap + to share or open a cafe on the map and tap "Share your Matcha here".</p>';
 
-function renderPhotoFeedList(containerId) {
+const PHOTO_FEED_EMPTY_HTML_MY =
+  '<p class="panel-placeholder" style="margin:0;padding:20px;">No posts yet. Tap + to share. Only posts you add from this app (with your account) show here—older posts may be missing a saved author.</p>';
+
+function placeLabelFromLog(log) {
+  const name = log.cafe?.name || log.brandName;
+  const addr = log.cafe?.address;
+  if (name && addr) return `${name} · ${addr}`;
+  if (name) return name;
+  if (log.brandName) return log.brandName;
+  return 'Unknown place';
+}
+
+function placeLineForLocationPage(log, cafe) {
+  const line = placeLabelFromLog(log);
+  if (line !== 'Unknown place') return line;
+  const bits = [cafe.name, cafe.address].filter(Boolean);
+  return bits.join(' · ') || cafe.name || 'Unknown place';
+}
+
+function feedCardHeadingFromLog(log) {
+  const brand = (log.brandName || '').trim();
+  const cafeName = (log.cafe?.name || '').trim();
+  const address = (log.cafe?.address || '').trim();
+  const title = brand || cafeName || 'Place not set';
+  return { title, subtitle: address || null };
+}
+
+function feedCardHeadings(log, options) {
+  if (options.placeLabel != null) {
+    const raw = String(options.placeLabel).trim();
+    const idx = raw.indexOf(' · ');
+    if (idx >= 0) {
+      const sub = raw.slice(idx + 3).trim();
+      return { title: raw.slice(0, idx), subtitle: sub || null };
+    }
+    return { title: raw || 'Place', subtitle: null };
+  }
+  return feedCardHeadingFromLog(log);
+}
+
+function feedRatingsSnippet(log) {
+  const parts = [];
+  if (log.orderRating > 0) parts.push(`Drink ${log.orderRating}/5`);
+  if (log.cafeRating > 0) parts.push(`Spot ${log.cafeRating}/5`);
+  return parts.join(' · ');
+}
+
+function getPostUiState(log) {
+  const id = String(log.id);
+  const existing = uiPostState.get(id);
+  if (existing) return existing;
+  const comments = [];
+  if (log.notes && String(log.notes).trim()) {
+    comments.push({ id: `${id}-seed`, author: 'matcha_friend', text: String(log.notes).trim() });
+  }
+  comments.push({ id: `${id}-sample`, author: 'greenwhisk', text: `Looks good at ${log.brandName || log.cafe?.name || 'this spot'}!` });
+  const state = {
+    username: (log.userName || 'you').trim() || 'you',
+    liked: false,
+    likeCount: Math.max(0, Number(log.likeCount) || 0),
+    comments,
+  };
+  uiPostState.set(id, state);
+  return state;
+}
+
+function commentsPreviewText(state) {
+  if (!state.comments.length) return 'No comments yet.';
+  const latest = state.comments[state.comments.length - 1];
+  return `${latest.author}: ${latest.text}`;
+}
+
+function openCommentsDrawer(log) {
+  const overlay = document.getElementById('feed-comments-overlay');
+  const panel = document.getElementById('feed-comments-panel');
+  if (!overlay || !panel) return;
+  const state = getPostUiState(log);
+  const heading = feedCardHeadingFromLog(log);
+  panel.innerHTML = `
+    <div class="feed-comments-drawer-handle" aria-hidden="true"></div>
+    <div class="feed-comments-drawer-header">
+      <h3>${escapeHtml(heading.title)}</h3>
+      <button type="button" class="feed-comments-close-btn" aria-label="Close comments">Close</button>
+    </div>
+    <div class="feed-comments-list">
+      ${state.comments.map((c) => `
+        <article class="feed-comment-item">
+          <div class="feed-comment-item__head">
+            <span class="feed-comment-item__author">${escapeHtml(c.author)}</span>
+            <button type="button" class="feed-comment-like-btn" aria-label="Like comment">♡</button>
+          </div>
+          <p class="feed-comment-item__text">${escapeHtml(c.text)}</p>
+        </article>
+      `).join('')}
+    </div>
+    <form class="feed-comments-form">
+      <input type="text" class="feed-comments-input" placeholder="Add a comment..." autocomplete="off">
+      <button type="submit" class="feed-comments-submit">Post</button>
+    </form>
+  `;
+
+  const closeBtn = panel.querySelector('.feed-comments-close-btn');
+  const form = panel.querySelector('.feed-comments-form');
+  const input = panel.querySelector('.feed-comments-input');
+  if (closeBtn) closeBtn.addEventListener('click', closeCommentsDrawer);
+  if (form && input) {
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const val = input.value.trim();
+      if (!val) return;
+      state.comments.push({ id: `${log.id}-${Date.now()}`, author: 'you', text: val });
+      closeCommentsDrawer();
+      refreshPhotoFeedsIfVisible();
+      openCommentsDrawer(log);
+    });
+  }
+  overlay.onclick = (e) => { if (e.target === overlay) closeCommentsDrawer(); };
+  overlay.classList.remove('hidden');
+  overlay.setAttribute('aria-hidden', 'false');
+}
+
+function closeCommentsDrawer() {
+  const overlay = document.getElementById('feed-comments-overlay');
+  if (overlay) {
+    overlay.classList.add('hidden');
+    overlay.setAttribute('aria-hidden', 'true');
+  }
+}
+
+function calcFeedMediaHeight(width, ratio) {
+  if (!width || width <= 0) return 0;
+  return Math.round(width * (ratio < 0.8 ? 1.25 : 1));
+}
+
+function applyFeedMediaHeight(root, mediaEl, ratioHint = 1) {
+  const wrap = root?.querySelector('.photo-feed-card__media-wrap');
+  if (!wrap) return;
+  const width = wrap.clientWidth || root.clientWidth || 0;
+  if (!width) return;
+  const height = calcFeedMediaHeight(width, ratioHint);
+  if (height > 0) wrap.style.height = `${height}px`;
+}
+
+function resizeVisibleFeedMedia() {
+  document.querySelectorAll('.photo-feed-card').forEach((card) => {
+    const mediaEl = card.querySelector('[data-role="feed-media"]');
+    if (mediaEl && mediaEl instanceof HTMLImageElement && mediaEl.naturalWidth && mediaEl.naturalHeight) {
+      applyFeedMediaHeight(card, mediaEl, mediaEl.naturalWidth / mediaEl.naturalHeight);
+    } else {
+      applyFeedMediaHeight(card, mediaEl, 1);
+    }
+  });
+}
+
+/** Instagram-style card: inline social card, no full-post open on card tap. */
+function createPhotoFeedCard(log, options = {}) {
+  const { title, subtitle } = feedCardHeadings(log, options);
+  const drink = (log.drinkName || '').trim() || 'Matcha';
+  const photo = log.photo || (log.photos && log.photos[0]);
+  const media = photo
+    ? `<img class="photo-feed-card__media" src="${escapeAttr(photo)}" alt="" loading="lazy" data-role="feed-media">`
+    : '<div class="photo-feed-card__media photo-feed-card__media--empty" aria-hidden="true"></div>';
+  const state = getPostUiState(log);
+  const username = state.username || 'you';
+  const notesRaw = (log.notes || '').trim();
+  const captionText = notesRaw || 'No caption yet';
+  const timeText = formatPostTime(log.createdAt);
+  const iso = log.createdAt ? new Date(log.createdAt).toISOString() : '';
+  const timeHtml = timeText ? `<time class="feed-card__time" datetime="${escapeAttr(iso)}">${escapeHtml(timeText)}</time>` : '';
+  const likeIcon = state.liked ? '♥' : '♡';
+  const commentsCount = state.comments.length;
+
+  const root = document.createElement('article');
+  root.className = 'photo-feed-card';
+  root.setAttribute('aria-label', `${title}. ${username}. Ordered ${drink}.`);
+  root.innerHTML = `
+    <header class="feed-card__header">
+      <div class="feed-card__avatar" aria-hidden="true"></div>
+      <div class="feed-card__meta-top">
+        <span class="feed-card__username">${escapeHtml(username)}</span>
+      </div>
+      ${timeHtml}
+    </header>
+    <div class="feed-card__store-wrap">
+      <h3 class="feed-card__store">${escapeHtml(title || 'Unknown store')}</h3>
+      ${subtitle ? `<p class="feed-card__address">${escapeHtml(subtitle)}</p>` : ''}
+    </div>
+    <div class="photo-feed-card__media-wrap">${media}</div>
+    <div class="feed-card__body">
+      <div class="feed-card__actions">
+        <button type="button" class="feed-card__action-btn feed-card__like-btn" aria-label="Like post">${likeIcon} <span>${state.likeCount}</span></button>
+        <button type="button" class="feed-card__action-btn feed-card__comments-btn" aria-label="View comments">💬 <span>${commentsCount}</span></button>
+      </div>
+      <p class="feed-card__ordered"><span class="feed-card__label">Ordered</span> ${escapeHtml(drink)}</p>
+      <p class="feed-card__caption-line ${notesRaw ? '' : 'feed-card__caption-line--placeholder'}"><span class="feed-card__caption-user">${escapeHtml(username)}:</span> ${escapeHtml(captionText)}</p>
+    </div>
+  `;
+
+  const mediaEl = root.querySelector('[data-role="feed-media"]');
+  applyFeedMediaHeight(root, mediaEl, 1);
+  if (mediaEl && mediaEl instanceof HTMLImageElement) {
+    const applyMediaHeight = () => {
+      if (!mediaEl.naturalWidth || !mediaEl.naturalHeight) return;
+      const ratio = mediaEl.naturalWidth / mediaEl.naturalHeight;
+      applyFeedMediaHeight(root, mediaEl, ratio);
+    };
+    if (mediaEl.complete) applyMediaHeight();
+    else mediaEl.addEventListener('load', applyMediaHeight, { once: true });
+  }
+
+  const likeBtn = root.querySelector('.feed-card__like-btn');
+  const commentsBtn = root.querySelector('.feed-card__comments-btn');
+  if (likeBtn) {
+    likeBtn.addEventListener('click', () => {
+      state.liked = !state.liked;
+      state.likeCount = Math.max(0, state.likeCount + (state.liked ? 1 : -1));
+      refreshPhotoFeedsIfVisible();
+    });
+  }
+  if (commentsBtn) commentsBtn.addEventListener('click', () => openCommentsDrawer(log));
+
+  return root;
+}
+
+function renderPhotoFeedList(containerId, mode = 'feed') {
   const el = document.getElementById(containerId);
   if (!el) return;
-  const logs = getLogs().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const logs = mode === 'mylogs'
+    ? getLogsForCurrentUser()
+    : [...getLogs()].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   el.innerHTML = '';
   if (logs.length === 0) {
-    el.innerHTML = PHOTO_FEED_EMPTY_HTML;
+    el.innerHTML = mode === 'mylogs' ? PHOTO_FEED_EMPTY_HTML_MY : PHOTO_FEED_EMPTY_HTML_FEED;
     return;
   }
   logs.forEach((log) => {
-    const cafeName = log.cafe?.name || log.brandName || 'Unknown';
-    const photo = log.photo || (log.photos && log.photos[0]);
-    const media = photo
-      ? `<img class="photo-feed-card__media" src="${escapeAttr(photo)}" alt="" loading="lazy">`
-      : '<div class="photo-feed-card__media photo-feed-card__media--empty" aria-hidden="true"></div>';
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'photo-feed-card log-item-btn';
-    btn.innerHTML = `
-      <div class="photo-feed-card__media-wrap">${media}</div>
-      <div class="photo-feed-card__caption">
-        <span class="photo-feed-card__drink">${escapeHtml(log.drinkName || 'Matcha')}</span>
-        <span class="photo-feed-card__place">${escapeHtml(cafeName)}</span>
-        <span class="photo-feed-card__meta">${escapeHtml(formatDate(log.createdAt))}</span>
-      </div>`;
-    btn.addEventListener('click', () => openLogDetail(log));
-    el.appendChild(btn);
+    el.appendChild(createPhotoFeedCard(log));
   });
+  requestAnimationFrame(() => resizeVisibleFeedMedia());
 }
 
 function refreshPhotoFeedsIfVisible() {
   if (document.getElementById('panel-feed')?.classList.contains('is-active')) {
-    renderPhotoFeedList('feed-list');
+    renderPhotoFeedList('feed-list', 'feed');
   }
   if (document.getElementById('panel-mylogs')?.classList.contains('is-active')) {
-    renderPhotoFeedList('mylogs-list');
+    renderPhotoFeedList('mylogs-list', 'mylogs');
   }
 }
 
@@ -531,9 +774,11 @@ function closeLocationPage() {
   const mapPanel = document.getElementById('panel-map');
   const mapEl = document.getElementById('map');
   const searchBar = mapPanel?.querySelector('.search-bar');
+  const recenterBtn = document.getElementById('map-recenter-btn');
   const page = document.getElementById('location-page');
   if (mapEl) mapEl.classList.remove('hidden');
   if (searchBar) searchBar.classList.remove('hidden');
+  if (recenterBtn) recenterBtn.classList.remove('hidden');
   if (page) {
     page.classList.add('hidden');
     page.setAttribute('aria-hidden', 'true');
@@ -546,10 +791,12 @@ function openLocationPage(cafe) {
   const mapPanel = document.getElementById('panel-map');
   const mapEl = document.getElementById('map');
   const searchBar = mapPanel?.querySelector('.search-bar');
+  const recenterBtn = document.getElementById('map-recenter-btn');
   const page = document.getElementById('location-page');
   const backBtn = document.getElementById('location-page-back');
   const nameEl = document.getElementById('location-page-name');
   const imageEl = document.getElementById('location-page-image');
+  const heroPlaceholder = document.getElementById('location-page-hero-placeholder');
   const addressEl = document.getElementById('location-page-address');
   const feedEl = document.getElementById('location-page-feed');
   const postBtn = document.getElementById('location-page-post-matcha');
@@ -559,20 +806,35 @@ function openLocationPage(cafe) {
   locationPageCafe = cafe;
   if (mapEl) mapEl.classList.add('hidden');
   if (searchBar) searchBar.classList.add('hidden');
+  if (recenterBtn) recenterBtn.classList.add('hidden');
   page.classList.remove('hidden');
   page.setAttribute('aria-hidden', 'false');
   nameEl.textContent = cafe.name || 'Unnamed';
   if (addressEl) addressEl.textContent = cafe.address || '';
-  if (imageEl) {
+  if (imageEl && heroPlaceholder) {
     if (cafe.photoUrl) {
       imageEl.src = cafe.photoUrl;
       imageEl.alt = '';
       imageEl.classList.remove('hidden');
+      heroPlaceholder.classList.add('hidden');
     } else {
-      imageEl.src = '';
+      imageEl.removeAttribute('src');
       imageEl.alt = '';
       imageEl.classList.add('hidden');
+      heroPlaceholder.classList.remove('hidden');
     }
+  }
+  if (!cafe.photoUrl && cafe.placeId && imageEl && heroPlaceholder) {
+    const existing = getCafeByPlaceId(cafe.placeId);
+    const isMatchaCafe = existing && (existing.classification === 'matcha_cafe' || existing.classification === 'cafe_specialty_matcha');
+    const shouldPersist = !!existing && isMatchaCafe;
+    fetchPlaceDetails(cafe.placeId, false, shouldPersist).then((details) => {
+      if (locationPageCafe !== cafe || !details?.photoUrl || !imageEl || !heroPlaceholder) return;
+      imageEl.src = details.photoUrl;
+      imageEl.alt = '';
+      imageEl.classList.remove('hidden');
+      heroPlaceholder.classList.add('hidden');
+    }).catch(() => {});
   }
   const logs = getLogsByCafeId(cafe.id);
   feedEl.innerHTML = '';
@@ -580,20 +842,7 @@ function openLocationPage(cafe) {
     feedEl.innerHTML = '<p class="brand-page-empty-state">No posts yet.</p>';
   } else {
     logs.forEach((log) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'brand-page-feed-item log-item log-item-btn';
-      const photo = log.photo || (log.photos && log.photos[0]);
-      const thumb = photo ? `<img src="${escapeAttr(photo)}" alt="">` : '<div class="log-item-placeholder"></div>';
-      const drink = escapeHtml(log.drinkName || 'Matcha');
-      const meta = formatDate(log.createdAt);
-      btn.innerHTML = `${thumb}<div class="log-info"><span class="drink">${drink}</span><span class="meta">${meta}</span></div>`;
-      btn.dataset.logId = log.id;
-      btn.addEventListener('click', () => {
-        const l = getLogs().find((x) => String(x.id) === String(log.id));
-        if (l) openLogDetail(l);
-      });
-      feedEl.appendChild(btn);
+      feedEl.appendChild(createPhotoFeedCard(log, { placeLabel: placeLineForLocationPage(log, cafe) }));
     });
   }
   async function updateLocationPageLikeUI() {
@@ -610,6 +859,7 @@ function openLocationPage(cafe) {
       const hasLiked = hasUserLikedLocation(cafe.id);
       setLocationLike(cafe.id, !hasLiked);
       updateLocationPageLikeUI();
+      updateCuratedPins();
     };
     updateLocationPageLikeUI();
   }
@@ -1255,7 +1505,7 @@ function initAddPopUpModal() {
 }
 
 function renderMyLogsList() {
-  renderPhotoFeedList('mylogs-list');
+  renderPhotoFeedList('mylogs-list', 'mylogs');
 }
 
 /** When search is active, do not repopulate Firestore pins; only show them again after clear. */
@@ -1276,14 +1526,15 @@ function updateCuratedPins() {
   const merged = [];
   const seen = new Set();
   cafes.forEach((c) => {
-    merged.push({ ...c, logged: myCafeIds.has(c.id) });
+    const tried = myCafeIds.has(c.id);
+    merged.push({ ...c, tried, liked: hasUserLikedLocation(c.id), logged: tried });
     seen.add(c.id);
   });
   myCafes.forEach((c) => {
     if (c.lat == null || c.lng == null) return;
     const latLng = new google.maps.LatLng(c.lat, c.lng);
     if (!bounds.contains(latLng) || seen.has(c.id)) return;
-    merged.push({ ...c, logged: true });
+    merged.push({ ...c, tried: true, liked: hasUserLikedLocation(c.id), logged: true });
     seen.add(c.id);
   });
   clearCuratedPins();
@@ -1306,9 +1557,13 @@ function mergeSearchResultsWithFirestore(results) {
     seen.add(key);
     const existing = getCafeByPlaceId(r.placeId);
     if (existing) {
-      merged.push({ ...existing, logged: myCafeIds.has(existing.id) });
+      const tried = myCafeIds.has(existing.id);
+      merged.push({ ...existing, tried, liked: hasUserLikedLocation(existing.id), logged: tried });
     } else {
-      merged.push({ ...r, logged: myCafes.some((c) => c.placeId && c.placeId === r.placeId) });
+      const matchedCafe = myCafes.find((c) => c.placeId && c.placeId === r.placeId);
+      const tried = !!matchedCafe;
+      const liked = matchedCafe ? hasUserLikedLocation(matchedCafe.id) : hasUserLikedLocation(r.id);
+      merged.push({ ...r, tried, liked, logged: tried });
     }
   }
   return merged;
@@ -1386,6 +1641,11 @@ async function init() {
     });
   }
 
+  const recenterBtn = document.getElementById('map-recenter-btn');
+  if (recenterBtn) {
+    recenterBtn.addEventListener('click', () => recenterMapToCurrentLocation());
+  }
+
   document.querySelectorAll('.brands-filter-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       const filter = btn.getAttribute('data-filter') || 'all';
@@ -1457,6 +1717,7 @@ async function init() {
       }
     });
   }
+  window.addEventListener('resize', resizeVisibleFeedMedia);
 }
 
 export { init };

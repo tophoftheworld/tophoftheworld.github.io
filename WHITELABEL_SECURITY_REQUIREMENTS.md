@@ -584,7 +584,7 @@ const employeeDoc = await getDoc(doc(db, `companies/${companyId}/employees`, cur
 
 #### **Files to Update:**
 - `employee-attendance/js/script.js` - All collection references
-- `attendance/js/script.js` - All collection references
+- `attendance_legacy/js/script.js` - All collection references (legacy web app)
 
 ---
 

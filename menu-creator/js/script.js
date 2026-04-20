@@ -3,11 +3,16 @@ import {
     collection,
     addDoc,
     updateDoc,
+    setDoc,
+    getDoc,
     doc,
     getDocs,
     query,
     orderBy,
+    deleteDoc,
+    serverTimestamp,
     DRINKS_COLLECTION,
+    MENUS_COLLECTION,
     storage,
     storageRef,
     uploadBytes,
@@ -19,6 +24,7 @@ import {
 
     const CM_TO_PX = 37.7952755906; // 1 cm ≈ 37.8 px at 96 dpi
     const STORAGE_KEY = 'menu-creator-state';
+    const MENU_PAYLOAD_VERSION = 2;
 
     function getDefaultState() {
         return {
@@ -43,12 +49,22 @@ import {
     const photoUploading = {};
     let photoGalleryIntervals = [];
 
-    function getPhotoProps(props) {
+    function getGalleryProps(props) {
         const p = props || {};
         let urls = Array.isArray(p.imageUrls) ? p.imageUrls : [];
         if (urls.length === 0 && p.imageUrl) urls = [p.imageUrl];
+        const mediaItems = Array.isArray(p.mediaItems) && p.mediaItems.length > 0
+            ? p.mediaItems.map((item) => ({
+                type: item && item.type === 'video' ? 'video' : 'image',
+                url: item && item.url ? String(item.url) : ''
+            })).filter((item) => item.url)
+            : urls.filter(Boolean).map((url) => ({ type: 'image', url }));
         const interval = typeof p.galleryIntervalSeconds === 'number' ? p.galleryIntervalSeconds : 3;
-        return { imageUrls: urls.filter(Boolean), galleryIntervalSeconds: interval };
+        return {
+            mediaItems,
+            imageUrls: mediaItems.filter((item) => item.type === 'image').map((item) => item.url),
+            galleryIntervalSeconds: interval
+        };
     }
 
     const $ = (id) => document.getElementById(id);
@@ -83,11 +99,31 @@ import {
     const cancelDrinkBtnEl = $('cancelDrinkBtn');
     const exportPhotoBtnEl = $('exportPhotoBtn');
     const fullscreenPreviewBtnEl = $('fullscreenPreviewBtn');
+    const menuSaveModalBackdropEl = $('menuSaveModalBackdrop');
+    const menuSaveNameEl = $('menuSaveName');
+    const menuSaveSearchInputEl = $('menuSaveSearchInput');
+    const menuSaveListEl = $('menuSaveList');
+    const menuSaveAsNewEl = $('menuSaveAsNew');
+    const menuSaveStatusEl = $('menuSaveStatus');
+    const confirmSaveMenuBtnEl = $('confirmSaveMenuBtn');
+    const cancelSaveMenuBtnEl = $('cancelSaveMenuBtn');
+    const menuLoadModalBackdropEl = $('menuLoadModalBackdrop');
+    const menuSearchInputEl = $('menuSearchInput');
+    const menuLoadListEl = $('menuLoadList');
+    const menuLoadStatusEl = $('menuLoadStatus');
+    const confirmLoadMenuBtnEl = $('confirmLoadMenuBtn');
+    const deleteMenuBtnEl = $('deleteMenuBtn');
+    const cancelLoadMenuBtnEl = $('cancelLoadMenuBtn');
+    const exportMenuBtnEl = $('exportMenuBtn');
+    const importMenuBtnEl = $('importMenuBtn');
 
     let drinksCache = [];
     let loadedMenuDrinks = [];
     let fullscreenPreviewActive = false;
     let fullscreenPreviewEscHandler = null;
+    let savedMenusCache = [];
+    let selectedSavedMenuId = '';
+    let selectedSaveTargetMenuId = '';
 
     function saveState() {
         try {
@@ -198,6 +234,262 @@ import {
             }
         };
         reader.readAsText(file);
+    }
+
+    function buildMenuPayload(menuName) {
+        const stateClone = JSON.parse(JSON.stringify(state));
+        const drinkIds = getReferencedDrinkIds();
+        const drinksSnapshot = Array.from(drinkIds).map((id) => {
+            const d = drinksCache.find((x) => x.id === id);
+            return d ? { id: d.id, name: d.name, description: d.description, price: d.price, category: d.category } : null;
+        }).filter(Boolean);
+        const fallbackName = 'Menu ' + new Date().toISOString().slice(0, 16).replace('T', ' ');
+        return {
+            version: MENU_PAYLOAD_VERSION,
+            name: (menuName || '').trim() || fallbackName,
+            savedAt: new Date().toISOString(),
+            // Firestore does not support nested arrays (e.g. tileTemplate[][]),
+            // so persist menu state as JSON.
+            stateJson: JSON.stringify(stateClone),
+            drinksSnapshot
+        };
+    }
+
+    function applyLoadedMenuPayload(data) {
+        if (!data || typeof data !== 'object') throw new Error('Invalid menu data');
+        let loadedState = null;
+        if (typeof data.stateJson === 'string' && data.stateJson.trim()) {
+            loadedState = JSON.parse(data.stateJson);
+        } else if (data.state && typeof data.state === 'object') {
+            // Backward compatibility for legacy menu documents/files.
+            loadedState = data.state;
+        }
+        if (!loadedState || typeof loadedState !== 'object') throw new Error('Invalid menu state');
+        applyLoadedState(loadedState);
+        loadedMenuDrinks = Array.isArray(data.drinksSnapshot) ? data.drinksSnapshot : [];
+        saveState();
+        applyStateToForm();
+        renderColumnWidthInputs();
+        renderColumnRowsSection();
+        renderTiles();
+    }
+
+    function getMenuUpdatedAtValue(menu) {
+        if (!menu || !menu.updatedAt) return 0;
+        if (typeof menu.updatedAt.toMillis === 'function') return menu.updatedAt.toMillis();
+        if (typeof menu.updatedAt === 'string') return Date.parse(menu.updatedAt) || 0;
+        return 0;
+    }
+
+    async function loadSavedMenusFromFirebase() {
+        const menusRef = collection(db, MENUS_COLLECTION);
+        let snap;
+        try {
+            const q = query(menusRef, orderBy('updatedAt', 'desc'));
+            snap = await getDocs(q);
+        } catch (err) {
+            snap = await getDocs(menusRef);
+        }
+        savedMenusCache = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        savedMenusCache.sort((a, b) => getMenuUpdatedAtValue(b) - getMenuUpdatedAtValue(a));
+        return savedMenusCache;
+    }
+
+    function formatMenuDate(menu) {
+        const ts = getMenuUpdatedAtValue(menu) || Date.parse(menu && menu.savedAt ? menu.savedAt : '') || Date.now();
+        try {
+            return new Date(ts).toLocaleString();
+        } catch (_) {
+            return 'Unknown date';
+        }
+    }
+
+    function setMenuSaveStatus(text, isError) {
+        if (!menuSaveStatusEl) return;
+        menuSaveStatusEl.textContent = text || '';
+        menuSaveStatusEl.style.color = isError ? '#b42318' : '';
+    }
+
+    function setMenuLoadStatus(text, isError) {
+        if (!menuLoadStatusEl) return;
+        menuLoadStatusEl.textContent = text || '';
+        menuLoadStatusEl.style.color = isError ? '#b42318' : '';
+    }
+
+    function closeSaveMenuModal() {
+        if (!menuSaveModalBackdropEl) return;
+        menuSaveModalBackdropEl.hidden = true;
+        menuSaveModalBackdropEl.setAttribute('aria-hidden', 'true');
+        setMenuSaveStatus('');
+    }
+
+    function closeLoadMenuModal() {
+        if (!menuLoadModalBackdropEl) return;
+        menuLoadModalBackdropEl.hidden = true;
+        menuLoadModalBackdropEl.setAttribute('aria-hidden', 'true');
+        setMenuLoadStatus('');
+    }
+
+    function renderSaveMenuList(filterText) {
+        if (!menuSaveListEl) return;
+        const term = (filterText || '').trim().toLowerCase();
+        const filtered = term ? savedMenusCache.filter((menu) => (menu.name || '').toLowerCase().includes(term)) : savedMenusCache;
+        if (filtered.length === 0) {
+            menuSaveListEl.innerHTML = '<div class="menu-load-empty">No menus found.</div>';
+            selectedSaveTargetMenuId = '';
+            return;
+        }
+        menuSaveListEl.innerHTML = filtered.map((menu) => {
+            const isSelected = menu.id === selectedSaveTargetMenuId;
+            return `<button type="button" class="menu-load-item${isSelected ? ' is-selected' : ''}" data-id="${escapeHtml(menu.id)}">
+                <span class="menu-load-item-name">${escapeHtml(menu.name || '(unnamed menu)')}</span>
+                <span class="menu-load-item-meta">Updated ${escapeHtml(formatMenuDate(menu))}</span>
+            </button>`;
+        }).join('');
+        menuSaveListEl.querySelectorAll('.menu-load-item').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                selectedSaveTargetMenuId = btn.getAttribute('data-id') || '';
+                if (menuSaveAsNewEl) menuSaveAsNewEl.checked = false;
+                const selected = savedMenusCache.find((menu) => menu.id === selectedSaveTargetMenuId);
+                if (selected && menuSaveNameEl && !menuSaveNameEl.value.trim()) menuSaveNameEl.value = selected.name || '';
+                renderSaveMenuList(menuSaveSearchInputEl ? menuSaveSearchInputEl.value : '');
+            });
+        });
+    }
+
+    function renderMenuLoadList(filterText) {
+        if (!menuLoadListEl) return;
+        const term = (filterText || '').trim().toLowerCase();
+        const filtered = term ? savedMenusCache.filter((menu) => (menu.name || '').toLowerCase().includes(term)) : savedMenusCache;
+        if (filtered.length === 0) {
+            menuLoadListEl.innerHTML = '<div class="menu-load-empty">No menus found.</div>';
+            selectedSavedMenuId = '';
+            return;
+        }
+        menuLoadListEl.innerHTML = filtered.map((menu) => {
+            const isSelected = menu.id === selectedSavedMenuId;
+            return `<button type="button" class="menu-load-item${isSelected ? ' is-selected' : ''}" data-id="${escapeHtml(menu.id)}">
+                <span class="menu-load-item-name">${escapeHtml(menu.name || '(unnamed menu)')}</span>
+                <span class="menu-load-item-meta">Updated ${escapeHtml(formatMenuDate(menu))}</span>
+            </button>`;
+        }).join('');
+        menuLoadListEl.querySelectorAll('.menu-load-item').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                selectedSavedMenuId = btn.getAttribute('data-id') || '';
+                renderMenuLoadList(menuSearchInputEl ? menuSearchInputEl.value : '');
+            });
+        });
+    }
+
+    async function openSaveMenuModal() {
+        if (!menuSaveModalBackdropEl) return;
+        setMenuSaveStatus('Loading online menus…');
+        menuSaveModalBackdropEl.hidden = false;
+        menuSaveModalBackdropEl.setAttribute('aria-hidden', 'false');
+        try {
+            await loadSavedMenusFromFirebase();
+            selectedSaveTargetMenuId = savedMenusCache[0] ? savedMenusCache[0].id : '';
+            if (menuSaveSearchInputEl) menuSaveSearchInputEl.value = '';
+            if (menuSaveAsNewEl) menuSaveAsNewEl.checked = true;
+            renderSaveMenuList('');
+            if (menuSaveNameEl) menuSaveNameEl.value = '';
+            setMenuSaveStatus('');
+        } catch (err) {
+            console.error('Load menus for save modal:', err);
+            setMenuSaveStatus('Failed to load online menu list.', true);
+        }
+    }
+
+    async function openLoadMenuModal() {
+        if (!menuLoadModalBackdropEl) return;
+        setMenuLoadStatus('Loading online menus…');
+        menuLoadModalBackdropEl.hidden = false;
+        menuLoadModalBackdropEl.setAttribute('aria-hidden', 'false');
+        try {
+            await loadSavedMenusFromFirebase();
+            selectedSavedMenuId = savedMenusCache[0] ? savedMenusCache[0].id : '';
+            if (menuSearchInputEl) menuSearchInputEl.value = '';
+            renderMenuLoadList('');
+            setMenuLoadStatus(savedMenusCache.length ? '' : 'No menus saved online yet.');
+        } catch (err) {
+            console.error('Load menus for load modal:', err);
+            setMenuLoadStatus('Failed to load online menu list.', true);
+        }
+    }
+
+    async function saveMenuOnline() {
+        const menuName = (menuSaveNameEl && menuSaveNameEl.value ? menuSaveNameEl.value : '').trim();
+        const overwriteId = (menuSaveAsNewEl && menuSaveAsNewEl.checked) ? '' : (selectedSaveTargetMenuId || '');
+        if (!menuName) {
+            setMenuSaveStatus('Please enter a menu name.', true);
+            return;
+        }
+        if (!overwriteId && menuSaveAsNewEl && !menuSaveAsNewEl.checked) {
+            setMenuSaveStatus('Select a menu to overwrite, or enable "Save as new menu".', true);
+            return;
+        }
+        try {
+            setMenuSaveStatus('Saving online…');
+            const payload = buildMenuPayload(menuName);
+            if (overwriteId) {
+                const ref = doc(db, MENUS_COLLECTION, overwriteId);
+                await setDoc(ref, { ...payload, updatedAt: serverTimestamp() }, { merge: true });
+            } else {
+                const ref = doc(collection(db, MENUS_COLLECTION));
+                await setDoc(ref, { ...payload, updatedAt: serverTimestamp() });
+            }
+            await loadSavedMenusFromFirebase();
+            renderSaveMenuList(menuSaveSearchInputEl ? menuSaveSearchInputEl.value : '');
+            setMenuSaveStatus('Menu saved online.');
+            setTimeout(() => closeSaveMenuModal(), 250);
+        } catch (err) {
+            console.error('Save menu online:', err);
+            setMenuSaveStatus('Failed to save menu online.', true);
+        }
+    }
+
+    async function loadSelectedMenuOnline() {
+        if (!selectedSavedMenuId) {
+            setMenuLoadStatus('Please select a menu first.', true);
+            return;
+        }
+        try {
+            setMenuLoadStatus('Loading selected menu…');
+            const ref = doc(db, MENUS_COLLECTION, selectedSavedMenuId);
+            const snap = await getDoc(ref);
+            if (!snap.exists()) {
+                setMenuLoadStatus('Selected menu no longer exists.', true);
+                return;
+            }
+            const data = snap.data();
+            applyLoadedMenuPayload(data);
+            setMenuLoadStatus('Menu loaded.');
+            setTimeout(() => closeLoadMenuModal(), 250);
+        } catch (err) {
+            console.error('Load selected menu:', err);
+            setMenuLoadStatus('Failed to load selected menu.', true);
+        }
+    }
+
+    async function deleteSelectedMenuOnline() {
+        if (!selectedSavedMenuId) {
+            setMenuLoadStatus('Select a menu to delete.', true);
+            return;
+        }
+        const menuToDelete = savedMenusCache.find((m) => m.id === selectedSavedMenuId);
+        const ok = window.confirm('Delete menu "' + (menuToDelete && menuToDelete.name ? menuToDelete.name : selectedSavedMenuId) + '"?');
+        if (!ok) return;
+        try {
+            setMenuLoadStatus('Deleting menu…');
+            await deleteDoc(doc(db, MENUS_COLLECTION, selectedSavedMenuId));
+            await loadSavedMenusFromFirebase();
+            selectedSavedMenuId = savedMenusCache[0] ? savedMenusCache[0].id : '';
+            renderMenuLoadList(menuSearchInputEl ? menuSearchInputEl.value : '');
+            setMenuLoadStatus('Menu deleted.');
+        } catch (err) {
+            console.error('Delete menu:', err);
+            setMenuLoadStatus('Failed to delete menu.', true);
+        }
     }
 
     function ensureLockArrays() {
@@ -1067,8 +1359,8 @@ import {
                     }
                     if (templateSelect.value === 'photo') {
                         const p = state.tileTemplateProps[colIdx][rowIdx] || {};
-                        const { imageUrls, galleryIntervalSeconds } = getPhotoProps(p);
-                        state.tileTemplateProps[colIdx][rowIdx] = { ...p, imageUrls, galleryIntervalSeconds };
+                        const { mediaItems, imageUrls, galleryIntervalSeconds } = getGalleryProps(p);
+                        state.tileTemplateProps[colIdx][rowIdx] = { ...p, mediaItems, imageUrls, galleryIntervalSeconds };
                     }
                     saveState();
                     renderColumnRowsSection();
@@ -1365,9 +1657,9 @@ import {
                     propsPanel.className = 'tile-template-props';
                     const uploadKey = `${colIdx}-${rowIdx}`;
                     const photoProps = (state.tileTemplateProps[colIdx] && state.tileTemplateProps[colIdx][rowIdx]) || {};
-                    const { imageUrls, galleryIntervalSeconds } = getPhotoProps(photoProps);
-                    if (!Array.isArray(state.tileTemplateProps[colIdx][rowIdx].imageUrls) || typeof state.tileTemplateProps[colIdx][rowIdx].galleryIntervalSeconds !== 'number') {
-                        state.tileTemplateProps[colIdx][rowIdx] = { ...state.tileTemplateProps[colIdx][rowIdx], imageUrls: [...imageUrls], galleryIntervalSeconds };
+                    const { mediaItems, imageUrls, galleryIntervalSeconds } = getGalleryProps(photoProps);
+                    if (!Array.isArray(state.tileTemplateProps[colIdx][rowIdx].mediaItems) || typeof state.tileTemplateProps[colIdx][rowIdx].galleryIntervalSeconds !== 'number') {
+                        state.tileTemplateProps[colIdx][rowIdx] = { ...state.tileTemplateProps[colIdx][rowIdx], mediaItems: [...mediaItems], imageUrls: [...imageUrls], galleryIntervalSeconds };
                     }
 
                     const intervalLabel = document.createElement('label');
@@ -1380,7 +1672,7 @@ import {
                     intervalInput.className = 'tile-photo-interval';
                     intervalInput.value = String(galleryIntervalSeconds);
                     intervalInput.addEventListener('change', () => {
-                        if (!state.tileTemplateProps[colIdx][rowIdx]) state.tileTemplateProps[colIdx][rowIdx] = { imageUrls: [], galleryIntervalSeconds: 3 };
+                        if (!state.tileTemplateProps[colIdx][rowIdx]) state.tileTemplateProps[colIdx][rowIdx] = { mediaItems: [], imageUrls: [], galleryIntervalSeconds: 3 };
                         const v = Math.max(1, Math.min(60, Number(intervalInput.value) || 3));
                         state.tileTemplateProps[colIdx][rowIdx].galleryIntervalSeconds = v;
                         saveState();
@@ -1394,45 +1686,61 @@ import {
 
                     function ensurePhotoProps() {
                         const p = state.tileTemplateProps[colIdx][rowIdx] || {};
-                        if (!state.tileTemplateProps[colIdx][rowIdx]) state.tileTemplateProps[colIdx][rowIdx] = { imageUrls: [], galleryIntervalSeconds: 3 };
-                        let urls = state.tileTemplateProps[colIdx][rowIdx].imageUrls;
-                        if (!Array.isArray(urls)) {
-                            urls = p.imageUrl ? [p.imageUrl] : [];
-                            state.tileTemplateProps[colIdx][rowIdx].imageUrls = urls;
+                        if (!state.tileTemplateProps[colIdx][rowIdx]) state.tileTemplateProps[colIdx][rowIdx] = { mediaItems: [], imageUrls: [], galleryIntervalSeconds: 3 };
+                        let items = state.tileTemplateProps[colIdx][rowIdx].mediaItems;
+                        if (!Array.isArray(items)) {
+                            const legacyUrls = Array.isArray(p.imageUrls) ? p.imageUrls : (p.imageUrl ? [p.imageUrl] : []);
+                            items = legacyUrls.filter(Boolean).map((url) => ({ type: 'image', url }));
+                            state.tileTemplateProps[colIdx][rowIdx].mediaItems = items;
                         }
+                        state.tileTemplateProps[colIdx][rowIdx].imageUrls = items.filter((item) => item && item.type !== 'video' && item.url).map((item) => item.url);
                         if (typeof state.tileTemplateProps[colIdx][rowIdx].galleryIntervalSeconds !== 'number') state.tileTemplateProps[colIdx][rowIdx].galleryIntervalSeconds = 3;
                     }
 
                     function renderThumbs() {
                         thumbsWrap.innerHTML = '';
-                        const urls = state.tileTemplateProps[colIdx][rowIdx].imageUrls || [];
-                        urls.forEach((url, index) => {
+                        const items = state.tileTemplateProps[colIdx][rowIdx].mediaItems || [];
+                        items.forEach((item, index) => {
                             const cell = document.createElement('div');
                             cell.className = 'tile-photo-thumb-cell';
-                            const img = document.createElement('img');
-                            img.src = url;
-                            img.alt = '';
-                            img.className = 'tile-photo-thumb-img';
+                            if (item.type === 'video') {
+                                const video = document.createElement('video');
+                                video.src = item.url;
+                                video.muted = true;
+                                video.playsInline = true;
+                                video.preload = 'metadata';
+                                video.className = 'tile-photo-thumb-video';
+                                cell.appendChild(video);
+                                const badge = document.createElement('span');
+                                badge.className = 'tile-photo-thumb-badge';
+                                badge.textContent = 'Video';
+                                cell.appendChild(badge);
+                            } else {
+                                const img = document.createElement('img');
+                                img.src = item.url;
+                                img.alt = '';
+                                img.className = 'tile-photo-thumb-img';
+                                cell.appendChild(img);
+                            }
                             const removeBtn = document.createElement('button');
                             removeBtn.type = 'button';
                             removeBtn.className = 'tile-photo-thumb-remove';
-                            removeBtn.setAttribute('aria-label', 'Remove photo');
+                            removeBtn.setAttribute('aria-label', 'Remove media');
                             removeBtn.textContent = '×';
                             removeBtn.addEventListener('click', () => {
                                 ensurePhotoProps();
-                                state.tileTemplateProps[colIdx][rowIdx].imageUrls.splice(index, 1);
+                                state.tileTemplateProps[colIdx][rowIdx].mediaItems.splice(index, 1);
                                 saveState();
                                 renderTiles();
                                 renderThumbs();
                             });
-                            cell.appendChild(img);
                             cell.appendChild(removeBtn);
                             thumbsWrap.appendChild(cell);
                         });
                         const addCell = document.createElement('button');
                         addCell.type = 'button';
                         addCell.className = 'tile-photo-thumb-add';
-                        addCell.setAttribute('aria-label', 'Add photo(s)');
+                        addCell.setAttribute('aria-label', 'Add photo(s) or video(s)');
                         addCell.textContent = '+';
                         addCell.addEventListener('click', () => photoInput.click());
                         thumbsWrap.appendChild(addCell);
@@ -1440,7 +1748,7 @@ import {
 
                     const photoInput = document.createElement('input');
                     photoInput.type = 'file';
-                    photoInput.accept = 'image/*';
+                    photoInput.accept = 'image/*,video/*';
                     photoInput.multiple = true;
                     photoInput.className = 'tile-photo-upload';
                     photoInput.style.display = 'none';
@@ -1453,20 +1761,22 @@ import {
                         renderColumnRowsSection();
                         for (const file of files) {
                             try {
+                                const mediaType = file.type && file.type.startsWith('video/') ? 'video' : 'image';
                                 const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
                                 const path = `menu-creator-photos/tile-${colIdx}-${rowIdx}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
                                 const ref = storageRef(storage, path);
                                 await uploadBytes(ref, file);
                                 const url = await getDownloadURL(ref);
-                                state.tileTemplateProps[colIdx][rowIdx].imageUrls.push(url);
+                                state.tileTemplateProps[colIdx][rowIdx].mediaItems.push({ type: mediaType, url });
                             } catch (err) {
-                                console.error('Photo upload failed:', err);
+                                console.error('Media upload failed:', err);
                                 const url = await new Promise((res) => {
                                     const reader = new FileReader();
                                     reader.onload = () => res(reader.result);
                                     reader.readAsDataURL(file);
                                 });
-                                state.tileTemplateProps[colIdx][rowIdx].imageUrls.push(url);
+                                const mediaType = file.type && file.type.startsWith('video/') ? 'video' : 'image';
+                                state.tileTemplateProps[colIdx][rowIdx].mediaItems.push({ type: mediaType, url });
                             }
                         }
                         saveState();
@@ -1537,16 +1847,16 @@ import {
         if (!canvasScalerEl) return;
         const galleries = [];
         canvasScalerEl.querySelectorAll('.tile-photo-gallery').forEach(el => {
-            const imgs = el.querySelectorAll('.tile-photo-img');
+            const items = el.querySelectorAll('.tile-photo-item');
             let visibleIdx = 0;
-            imgs.forEach((img, i) => { if (img.classList.contains('tile-photo-visible')) visibleIdx = i; });
+            items.forEach((item, i) => { if (item.classList.contains('tile-photo-visible')) visibleIdx = i; });
             galleries.push({ el, visibleIdx });
-            imgs.forEach((img, i) => img.classList.toggle('tile-photo-visible', i === 0));
+            items.forEach((item, i) => item.classList.toggle('tile-photo-visible', i === 0));
         });
         const restore = () => {
             galleries.forEach(({ el, visibleIdx }) => {
-                const imgs = el.querySelectorAll('.tile-photo-img');
-                imgs.forEach((img, i) => img.classList.toggle('tile-photo-visible', i === visibleIdx));
+                const items = el.querySelectorAll('.tile-photo-item');
+                items.forEach((item, i) => item.classList.toggle('tile-photo-visible', i === visibleIdx));
             });
         };
         const btn = exportPhotoBtnEl;
@@ -1579,7 +1889,9 @@ import {
     }
 
     function renderTiles() {
-        photoGalleryIntervals.forEach(id => clearInterval(id));
+        photoGalleryIntervals.forEach((cleanup) => {
+            try { cleanup(); } catch (_) { /* ignore */ }
+        });
         photoGalleryIntervals = [];
         const { w, h } = getCanvasDimensions();
         const margin = state.unit === 'cm' ? state.margin * CM_TO_PX : state.margin;
@@ -1628,13 +1940,18 @@ import {
                     tile.innerHTML = getCustomizationTemplateHtml();
                 } else if (template === 'photo') {
                     const photoProps = (state.tileTemplateProps && state.tileTemplateProps[colIdx] && state.tileTemplateProps[colIdx][r]) || {};
-                    const { imageUrls, galleryIntervalSeconds } = getPhotoProps(photoProps);
-                    if (imageUrls.length === 0) {
-                        tile.innerHTML = '<div class="tile-photo-wrap tile-photo-empty"><span class="tile-placeholder">Upload a photo</span></div>';
+                    const { mediaItems, galleryIntervalSeconds } = getGalleryProps(photoProps);
+                    if (mediaItems.length === 0) {
+                        tile.innerHTML = '<div class="tile-photo-wrap tile-photo-empty"><span class="tile-placeholder">Upload a photo or video</span></div>';
                     } else {
                         const interval = Math.max(1, galleryIntervalSeconds);
-                        const imgsHtml = imageUrls.map((src, i) => '<img src="' + escapeHtml(src) + '" alt="" class="tile-photo-img' + (i === 0 ? ' tile-photo-visible' : '') + '" data-index="' + i + '">').join('');
-                        tile.innerHTML = '<div class="tile-photo-wrap tile-photo-gallery" data-interval="' + interval + '">' + imgsHtml + '</div>';
+                        const mediaHtml = mediaItems.map((item, i) => {
+                            if (item.type === 'video') {
+                                return '<video src="' + escapeHtml(item.url) + '" class="tile-photo-item tile-photo-video' + (i === 0 ? ' tile-photo-visible' : '') + '" data-index="' + i + '" muted playsinline preload="metadata" loop></video>';
+                            }
+                            return '<img src="' + escapeHtml(item.url) + '" alt="" class="tile-photo-item tile-photo-img' + (i === 0 ? ' tile-photo-visible' : '') + '" data-index="' + i + '">';
+                        }).join('');
+                        tile.innerHTML = '<div class="tile-photo-wrap tile-photo-gallery" data-interval="' + interval + '">' + mediaHtml + '</div>';
                     }
                 } else {
                     tile.innerHTML = `<span class="tile-placeholder">Tile ${colIdx + 1}-${r + 1}</span>`;
@@ -1646,14 +1963,63 @@ import {
 
         tileGridEl.querySelectorAll('.tile-photo-gallery').forEach(el => {
             const intervalSec = Number(el.dataset.interval) || 3;
-            const imgs = el.querySelectorAll('.tile-photo-img');
-            if (imgs.length <= 1) return;
+            const items = Array.from(el.querySelectorAll('.tile-photo-item'));
+            if (items.length === 0) return;
+
             let idx = 0;
-            const id = setInterval(() => {
-                idx = (idx + 1) % imgs.length;
-                imgs.forEach((img, i) => img.classList.toggle('tile-photo-visible', i === idx));
-            }, intervalSec * 1000);
-            photoGalleryIntervals.push(id);
+            let timeoutId = null;
+
+            const getItemDurationMs = (item) => {
+                if (item && item.tagName === 'VIDEO') {
+                    const d = Number(item.duration);
+                    if (Number.isFinite(d) && d > 0) return d * 1000;
+                }
+                return Math.max(1, intervalSec) * 1000;
+            };
+
+            const setVisible = (index) => {
+                idx = index;
+                items.forEach((item, i) => {
+                    const isVisible = i === index;
+                    item.classList.toggle('tile-photo-visible', isVisible);
+                    if (item.tagName === 'VIDEO') {
+                        if (isVisible) {
+                            item.currentTime = 0;
+                            item.play().catch(() => { /* ignore autoplay restrictions */ });
+                        } else {
+                            item.pause();
+                        }
+                    }
+                });
+            };
+
+            const scheduleNext = () => {
+                if (items.length <= 1) return;
+                if (timeoutId) clearTimeout(timeoutId);
+                const current = items[idx];
+                const delay = getItemDurationMs(current);
+                timeoutId = setTimeout(() => {
+                    setVisible((idx + 1) % items.length);
+                    scheduleNext();
+                }, delay);
+            };
+
+            items.forEach((item) => {
+                if (item.tagName === 'VIDEO') {
+                    item.addEventListener('loadedmetadata', () => {
+                        if (item.classList.contains('tile-photo-visible')) scheduleNext();
+                    });
+                }
+            });
+
+            setVisible(0);
+            scheduleNext();
+            photoGalleryIntervals.push(() => {
+                if (timeoutId) clearTimeout(timeoutId);
+                items.forEach((item) => {
+                    if (item.tagName === 'VIDEO') item.pause();
+                });
+            });
         });
 
         state.columnRows.forEach((_, colIdx) => { syncRowHeightInputs(colIdx); });
@@ -1666,7 +2032,10 @@ import {
         const wrapW = previewWrapEl.clientWidth;
         const wrapH = previewWrapEl.clientHeight;
         if (wrapW <= 0 || wrapH <= 0 || w <= 0 || h <= 0) return;
-        const scale = Math.min(wrapW / w, wrapH / h, 1);
+        // In fullscreen preview we allow upscaling so the menu maximizes
+        // available screen space (important for iPad PWA).
+        let scale = Math.min(wrapW / w, wrapH / h);
+        if (!fullscreenPreviewActive) scale = Math.min(scale, 1);
         canvasFitWrapperEl.style.width = w * scale + 'px';
         canvasFitWrapperEl.style.height = h * scale + 'px';
         canvasScalerEl.style.width = w + 'px';
@@ -1790,8 +2159,10 @@ import {
         const saveMenuBtnEl = $('saveMenuBtn');
         const loadMenuBtnEl = $('loadMenuBtn');
         const loadMenuInputEl = $('loadMenuInput');
-        if (saveMenuBtnEl) saveMenuBtnEl.addEventListener('click', saveMenuToFile);
-        if (loadMenuBtnEl) loadMenuBtnEl.addEventListener('click', () => loadMenuInputEl && loadMenuInputEl.click());
+        if (saveMenuBtnEl) saveMenuBtnEl.addEventListener('click', openSaveMenuModal);
+        if (loadMenuBtnEl) loadMenuBtnEl.addEventListener('click', openLoadMenuModal);
+        if (exportMenuBtnEl) exportMenuBtnEl.addEventListener('click', saveMenuToFile);
+        if (importMenuBtnEl) importMenuBtnEl.addEventListener('click', () => loadMenuInputEl && loadMenuInputEl.click());
         if (loadMenuInputEl) loadMenuInputEl.addEventListener('change', () => {
             const file = loadMenuInputEl.files && loadMenuInputEl.files[0];
             loadMenuFromFile(file);
@@ -1804,7 +2175,39 @@ import {
         }
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && drinkModalBackdropEl && !drinkModalBackdropEl.hidden) closeDrinkModal();
+            if (e.key === 'Escape' && menuSaveModalBackdropEl && !menuSaveModalBackdropEl.hidden) closeSaveMenuModal();
+            if (e.key === 'Escape' && menuLoadModalBackdropEl && !menuLoadModalBackdropEl.hidden) closeLoadMenuModal();
         });
+        if (confirmSaveMenuBtnEl) confirmSaveMenuBtnEl.addEventListener('click', saveMenuOnline);
+        if (cancelSaveMenuBtnEl) cancelSaveMenuBtnEl.addEventListener('click', closeSaveMenuModal);
+        if (menuSaveSearchInputEl) {
+            menuSaveSearchInputEl.addEventListener('input', () => {
+                renderSaveMenuList(menuSaveSearchInputEl.value || '');
+            });
+        }
+        if (menuSaveAsNewEl) {
+            menuSaveAsNewEl.addEventListener('change', () => {
+                renderSaveMenuList(menuSaveSearchInputEl ? menuSaveSearchInputEl.value : '');
+            });
+        }
+        if (menuSaveModalBackdropEl) {
+            menuSaveModalBackdropEl.addEventListener('click', (e) => {
+                if (e.target === menuSaveModalBackdropEl) closeSaveMenuModal();
+            });
+        }
+        if (menuSearchInputEl) {
+            menuSearchInputEl.addEventListener('input', () => {
+                renderMenuLoadList(menuSearchInputEl.value || '');
+            });
+        }
+        if (confirmLoadMenuBtnEl) confirmLoadMenuBtnEl.addEventListener('click', loadSelectedMenuOnline);
+        if (deleteMenuBtnEl) deleteMenuBtnEl.addEventListener('click', deleteSelectedMenuOnline);
+        if (cancelLoadMenuBtnEl) cancelLoadMenuBtnEl.addEventListener('click', closeLoadMenuModal);
+        if (menuLoadModalBackdropEl) {
+            menuLoadModalBackdropEl.addEventListener('click', (e) => {
+                if (e.target === menuLoadModalBackdropEl) closeLoadMenuModal();
+            });
+        }
 
         loadDrinksFromFirebase().then(() => seedDrinksIfEmpty()).then(() => {
             renderDrinksList();

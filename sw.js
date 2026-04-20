@@ -1,5 +1,5 @@
 // Matchanese Staff Portal - Service Worker
-const APP_VERSION = "1.0.0";
+const APP_VERSION = "1.0.1";
 const CACHE_NAME = `matchanese-staff-v${APP_VERSION}`;
 const DYNAMIC_CACHE = `matchanese-staff-dynamic-v${APP_VERSION}`;
 

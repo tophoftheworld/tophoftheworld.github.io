@@ -4,11 +4,14 @@ import {
     collection,
     addDoc,
     updateDoc,
+    setDoc,
+    getDoc,
     doc,
     getDocs,
     query,
     orderBy,
-    deleteDoc
+    deleteDoc,
+    serverTimestamp
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-storage.js";
 
@@ -27,18 +30,23 @@ const db = getFirestore(app);
 const storage = getStorage(app);
 
 const DRINKS_COLLECTION = "menuDrinks";
+const MENUS_COLLECTION = "savedMenus";
 
 export {
     db,
     collection,
     addDoc,
     updateDoc,
+    setDoc,
+    getDoc,
     doc,
     getDocs,
     query,
     orderBy,
     deleteDoc,
+    serverTimestamp,
     DRINKS_COLLECTION,
+    MENUS_COLLECTION,
     storage,
     storageRef,
     uploadBytes,

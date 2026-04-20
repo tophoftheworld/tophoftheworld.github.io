@@ -1,6 +1,6 @@
 // Import shared utilities with version for cache busting
 // Static import with versioned URL to avoid caching issues; keep in sync with index.html
-import * as shared from './shared.js?v=1.5.38';
+import * as shared from './shared.js?v=1.5.57';
 
 // Helper function to get today's date in local timezone (YYYY-MM-DD format)
 function getTodayLocal() {
@@ -16,9 +16,34 @@ let itemCounter = 0;
 let selectedDate = getTodayLocal(); // Default to today (local timezone)
 let selectedBranch = localStorage.getItem('expense-selected-branch') || 'SM North';
 
+function hideMergeModalProgressUI() {
+    const modalOverlay = document.getElementById('mergeSupplierModalOverlay');
+    const progress = document.getElementById('mergeModalProgress');
+    modalOverlay?.classList.remove('merge-in-progress');
+    progress?.classList.remove('is-visible');
+    progress?.setAttribute('aria-hidden', 'true');
+}
+
+function setMergeModalProgressVisible(visible) {
+    const modalOverlay = document.getElementById('mergeSupplierModalOverlay');
+    const progress = document.getElementById('mergeModalProgress');
+    modalOverlay?.classList.toggle('merge-in-progress', visible);
+    progress?.classList.toggle('is-visible', visible);
+    progress?.setAttribute('aria-hidden', visible ? 'false' : 'true');
+}
+
+function updateMergeModalProgressUI(step, total, message) {
+    const stepEl = document.getElementById('mergeModalProgressStep');
+    const countEl = document.getElementById('mergeModalProgressCount');
+    if (stepEl) stepEl.textContent = message || '';
+    if (countEl) countEl.textContent = total ? `Step ${step} of ${total}` : '';
+}
+
 // Define closeMergeSupplierModal early so it's available for inline onclick handlers (for cached HTML)
 function closeMergeSupplierModal() {
     const modal = document.getElementById('mergeSupplierModalOverlay');
+    if (modal?.classList.contains('merge-in-progress')) return;
+    hideMergeModalProgressUI();
     if (modal) {
         modal.classList.remove('show');
         document.body.style.overflow = '';
@@ -29,10 +54,63 @@ function closeMergeSupplierModal() {
 // Export to window immediately for inline handlers
 window.closeMergeSupplierModal = closeMergeSupplierModal;
 
+/** Full-screen dim + spinner while long async work runs (e.g. supplier merge). */
+let appBusyOverlayEl = null;
+
+function showAppBusyOverlay(message = 'Working…') {
+    if (!appBusyOverlayEl) {
+        appBusyOverlayEl = document.createElement('div');
+        appBusyOverlayEl.id = 'appBusyOverlay';
+        appBusyOverlayEl.className = 'app-busy-overlay';
+        appBusyOverlayEl.setAttribute('aria-busy', 'true');
+        appBusyOverlayEl.setAttribute('role', 'status');
+        appBusyOverlayEl.innerHTML = `<div class="app-busy-overlay-inner">
+        <div class="app-busy-spinner" aria-hidden="true"></div>
+        <p class="app-busy-message"></p>
+    </div>`;
+        document.body.appendChild(appBusyOverlayEl);
+    }
+    const msgEl = appBusyOverlayEl.querySelector('.app-busy-message');
+    if (msgEl) msgEl.textContent = message;
+    appBusyOverlayEl.classList.add('show');
+    document.body.style.overflow = 'hidden';
+}
+
+function updateAppBusyOverlayMessage(message) {
+    const el = appBusyOverlayEl?.querySelector('.app-busy-message');
+    if (el) el.textContent = message;
+}
+
+function hideAppBusyOverlay() {
+    if (appBusyOverlayEl) {
+        appBusyOverlayEl.classList.remove('show');
+    }
+    document.body.style.overflow = '';
+}
+
+function populateMobileExpenseCategorySelect(selectedCategory) {
+    const sel = document.getElementById('expenseCategory');
+    if (!sel) return;
+    const cat =
+        selectedCategory != null && String(selectedCategory).trim() !== ''
+            ? String(selectedCategory).trim()
+            : shared.DEFAULT_EXPENSE_CATEGORY;
+    const vals = shared.getExpenseCategorySelectOptionValues(cat);
+    sel.innerHTML = vals
+        .map((v) => {
+            const esc = String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+            return `<option value="${esc}">${esc}</option>`;
+        })
+        .join('');
+    sel.value = cat;
+}
+
 // Main initialization
 document.addEventListener('DOMContentLoaded', async function () {
     // IMMEDIATELY update date display (no waiting for Firebase)
     updateDateDisplay();
+
+    populateMobileExpenseCategorySelect();
     
     // Phase 1: Load from localStorage first (instant)
     const hasLocalData = shared.loadFromLocalStorage();
@@ -66,6 +144,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     const mergeModalOverlay = document.getElementById('mergeSupplierModalOverlay');
     if (mergeModalOverlay) {
         mergeModalOverlay.addEventListener('click', function(e) {
+            if (mergeModalOverlay.classList.contains('merge-in-progress')) return;
             // Close if clicking the overlay background or the close button
             if (e.target.id === 'mergeModalCloseBtn' || 
                 e.target.closest('#mergeModalCloseBtn') ||
@@ -270,7 +349,7 @@ function loadDashboard() {
                         <div class="summary-amount-value">₱0.00</div>
                     </div>
                     <div class="summary-amount-item">
-                        <div class="summary-amount-label">Company</div>
+                        <div class="summary-amount-label">Company Paid</div>
                         <div class="summary-amount-value">₱0.00</div>
                     </div>
                 </div>
@@ -293,7 +372,7 @@ function loadDashboard() {
                         <div class="summary-amount-value">₱0.00</div>
                     </div>
                     <div class="summary-amount-item">
-                        <div class="summary-amount-label">Company</div>
+                        <div class="summary-amount-label">Company Paid</div>
                         <div class="summary-amount-value">₱0.00</div>
                     </div>
                 </div>
@@ -319,7 +398,7 @@ function loadDashboard() {
                 <div class="summary-amount-value">₱${storeCashTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
             </div>
             <div class="summary-amount-item">
-                <div class="summary-amount-label">Company</div>
+                <div class="summary-amount-label">Company Paid</div>
                 <div class="summary-amount-value">₱${companyTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
             </div>
         </div>
@@ -339,7 +418,7 @@ function loadDashboard() {
                 <div class="expense-header">
                     <div class="expense-header-content" onclick="viewExpense('${expense.id}')">
                         <div class="expense-left">
-                            <div class="expense-supplier">${expense.supplierName}</div>
+                            <div class="expense-supplier">${expense.isPettyCash ? 'Petty cash voucher' : expense.supplierName}</div>
                             <div class="expense-items">${itemsText}</div>
                         </div>
                         <div class="expense-right">
@@ -741,89 +820,104 @@ function showExpenseDetailModal(expense) {
         <!-- Basic Information -->
         <div class="expense-detail-section">
             <h3>Basic Information</h3>
-            <div class="expense-detail-row">
-                <div class="expense-detail-label">Date</div>
-                <div class="expense-detail-value">${formattedDate}</div>
-            </div>
-            ${expense.allocation === 'Store' && expense.branch ? `
-            <div class="expense-detail-row">
-                <div class="expense-detail-label">Branch</div>
-                <div class="expense-detail-value">${expense.branch}</div>
-            </div>
-            ` : ''}
-            ${expense.allocation ? `
-            <div class="expense-detail-row">
-                <div class="expense-detail-label">Allocation</div>
-                <div class="expense-detail-value">${expense.allocation}</div>
-            </div>
-            ` : ''}
-            ${expense.allocation === 'Store' && expense.paidBy ? `
-            <div class="expense-detail-row">
-                <div class="expense-detail-label">Paid By</div>
-                <div class="expense-detail-value">${expense.paidBy}</div>
-            </div>
-            ` : ''}
-            ${expense.paymentMethod ? `
-            <div class="expense-detail-row">
-                <div class="expense-detail-label">Payment Method</div>
-                <div class="expense-detail-value">${expense.paymentMethod}</div>
-            </div>
-            ` : ''}
-            ${expense.invoiceNumber ? `
-            <div class="expense-detail-row">
-                <div class="expense-detail-label">Invoice Number</div>
-                <div class="expense-detail-value">${expense.invoiceNumber}</div>
-            </div>
-            ` : ''}
-            <div class="expense-detail-row">
-                <div class="expense-detail-label">Total Amount</div>
-                <div class="expense-detail-value amount">₱${expense.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            <div class="expense-detail-grid">
+                <div class="expense-detail-cell">
+                    <div class="expense-detail-cell-label">Date</div>
+                    <div class="expense-detail-cell-value">${formattedDate}</div>
+                </div>
+                ${expense.allocation === 'Store' && expense.branch ? `
+                <div class="expense-detail-cell">
+                    <div class="expense-detail-cell-label">Branch</div>
+                    <div class="expense-detail-cell-value">${expense.branch}</div>
+                </div>
+                ` : ''}
+                ${expense.allocation ? `
+                <div class="expense-detail-cell">
+                    <div class="expense-detail-cell-label">Allocation</div>
+                    <div class="expense-detail-cell-value">${expense.allocation}</div>
+                </div>
+                ` : ''}
+                ${expense.allocation === 'Store' && expense.paidBy ? `
+                <div class="expense-detail-cell">
+                    <div class="expense-detail-cell-label">Paid By</div>
+                    <div class="expense-detail-cell-value">${expense.paidBy}</div>
+                </div>
+                ` : ''}
+                ${expense.expenseCategory ? `
+                <div class="expense-detail-cell">
+                    <div class="expense-detail-cell-label">Expense Category</div>
+                    <div class="expense-detail-cell-value">${expense.expenseCategory}</div>
+                </div>
+                ` : ''}
+                ${expense.invoiceNumber ? `
+                <div class="expense-detail-cell">
+                    <div class="expense-detail-cell-label">Invoice Number</div>
+                    <div class="expense-detail-cell-value">${expense.invoiceNumber}</div>
+                </div>
+                ` : ''}
+                <div class="expense-detail-cell expense-detail-cell--amount">
+                    <div class="expense-detail-cell-label">Total Amount</div>
+                    <div class="expense-detail-cell-value amount">₱${expense.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                </div>
+                ${expense.isPettyCash ? `
+                <div class="expense-detail-cell">
+                    <div class="expense-detail-cell-label">Type</div>
+                    <div class="expense-detail-cell-value">Petty cash voucher</div>
+                </div>
+                ` : ''}
             </div>
         </div>
 
         <!-- Supplier Information -->
+        ${!expense.isPettyCash ? `
         <div class="expense-detail-section">
             <h3>Supplier Information</h3>
-            <div class="expense-detail-row supplier-clickable" onclick="viewSupplierFromExpense('${expense.supplierName}')">
-                <div class="expense-detail-label">Supplier Name</div>
-                <div class="expense-detail-value supplier-link">${expense.supplierName}</div>
+            <div class="expense-detail-supplier-card supplier-clickable" onclick="viewSupplierFromExpense('${expense.supplierName}')">
+                <div class="expense-detail-supplier-name supplier-link">${expense.supplierName}</div>
+                ${expense.businessName ? `<div class="expense-detail-supplier-meta">${expense.businessName}</div>` : ''}
+                ${expense.tin ? `<div class="expense-detail-supplier-meta">TIN: ${expense.tin}</div>` : ''}
+                ${expense.address ? `<div class="expense-detail-supplier-meta">${expense.address}</div>` : ''}
             </div>
-            ${expense.businessName ? `
-            <div class="expense-detail-row">
-                <div class="expense-detail-label">Business Name</div>
-                <div class="expense-detail-value">${expense.businessName}</div>
-            </div>
-            ` : ''}
-            ${expense.tin ? `
-            <div class="expense-detail-row">
-                <div class="expense-detail-label">TIN</div>
-                <div class="expense-detail-value">${expense.tin}</div>
-            </div>
-            ` : ''}
-            ${expense.address ? `
-            <div class="expense-detail-row">
-                <div class="expense-detail-label">Address</div>
-                <div class="expense-detail-value">${expense.address}</div>
-            </div>
-           ` : ''}
-        </div>
+        </div>` : ''}
 
         <!-- Items Purchased -->
         <div class="expense-detail-section">
-            <h3>Items Purchased (${expense.items.length} item${expense.items.length === 1 ? '' : 's'})</h3>
+            <h3>Items Purchased</h3>
             <div class="expense-detail-items">
-                ${expense.items.map(item => `
+                ${expense.items.map(item => {
+        const grand = Number(expense.totalAmount) > 0;
+        const p = Number(item.price) || 0;
+        const lineTot =
+            item.total != null && item.total !== '' ? Number(item.total) : (Number(item.quantity) || 0) * p;
+        const lineMissing = p === 0 && lineTot === 0;
+        const showDash = grand && lineMissing;
+        const priceSpan = showDash
+            ? '<span>—</span>'
+            : p > 0
+              ? `<span>₱${p.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} each</span>`
+              : '';
+        const totalDiv = showDash
+            ? '<div class="expense-detail-item-total">—</div>'
+            : lineTot > 0
+              ? `<div class="expense-detail-item-total">₱${Number(lineTot).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>`
+              : '';
+        return `
                     <div class="expense-detail-item">
                         <div class="expense-detail-item-name">${item.name}</div>
                         <div class="expense-detail-item-details">
                             <div class="expense-detail-item-qty-price">
                                 <span>Qty: ${item.quantity}</span>
-                                ${item.price > 0 ? `<span>₱${item.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} each</span>` : ''}
+                                ${priceSpan}
                             </div>
-                            ${item.total > 0 ? `<div class="expense-detail-item-total">₱${item.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>` : ''}
+                            ${totalDiv}
                         </div>
                     </div>
-                `).join('')}
+                `;
+    }).join('')}
+            </div>
+            <div class="expense-detail-row expense-detail-items-total-row">
+                <div class="expense-detail-label">Total Amount</div>
+                <div class="expense-detail-value amount">₱${expense.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
             </div>
         </div>
 
@@ -965,6 +1059,12 @@ async function loadReceiptImageFromFirebaseMobile(expenseId) {
         const receiptImage = await shared.fetchReceiptImageFromFirebase(expenseId);
         
         if (receiptImage) {
+            const nextExpenses = shared.getExpenses().map((expense) =>
+                expense.id === expenseId
+                    ? { ...expense, receiptImage, hasReceiptImage: true }
+                    : expense
+            );
+            shared.setExpenses(nextExpenses);
             // Replace loading indicator with image
             loadingDiv.innerHTML = '';
             loadingDiv.className = 'expense-detail-receipt';
@@ -991,7 +1091,7 @@ window.handleReceiptImageErrorMobile = function(expenseId) {
     
     // Try to fetch from Firebase if image failed to load
     const expense = shared.getExpenses().find(e => e.id === expenseId);
-    if (expense && expense.hasReceiptImage && !expense.receiptImage) {
+    if (expense && expense.hasReceiptImage) {
         loadReceiptImageFromFirebaseMobile(expenseId);
     } else {
         receiptContainer.innerHTML = '<div class="expense-detail-no-receipt" style="color: #dc3545;">Failed to load receipt</div>';
@@ -1011,10 +1111,22 @@ async function loadReceiptImageForEditMobile(expenseId) {
         const receiptImage = await shared.fetchReceiptImageFromFirebase(expenseId);
         
         if (receiptImage) {
+            const nextExpenses = shared.getExpenses().map((expense) =>
+                expense.id === expenseId
+                    ? { ...expense, receiptImage, hasReceiptImage: true }
+                    : expense
+            );
+            shared.setExpenses(nextExpenses);
             // Show receipt image
             preview.src = receiptImage;
             preview.style.display = 'block';
             preview.onerror = () => {
+                const expense = shared.getExpenses().find((e) => e.id === expenseId);
+                if (expense?.hasReceiptImage && preview.dataset.receiptRetry !== '1') {
+                    preview.dataset.receiptRetry = '1';
+                    loadReceiptImageForEditMobile(expenseId);
+                    return;
+                }
                 // If image fails to load, show error state
                 preview.style.display = 'none';
                 if (uploadText) {
@@ -1029,6 +1141,7 @@ async function loadReceiptImageForEditMobile(expenseId) {
             if (uploadText) {
                 uploadText.textContent = 'Receipt attached';
             }
+            delete preview.dataset.receiptRetry;
             if (uploadArea) {
                 uploadArea.classList.add('has-file');
             }
@@ -1098,6 +1211,12 @@ function resetForm() {
     
     // Update Paid By visibility
     handleAllocationChange();
+
+    const pettyCb = document.getElementById('isPettyCash');
+    if (pettyCb) {
+        pettyCb.checked = false;
+        handlePettyCashChange();
+    }
 
     // Clear containers
     const itemsContainer = document.getElementById('itemsContainer');
@@ -1788,7 +1907,27 @@ function handleFormSubmission(e) {
         showToast('Please upload a receipt photo');
         return;
     }
-    
+
+    const supplierNameVal = getElementValue('supplierName');
+    const supplierInputEl = document.getElementById('supplierName');
+    const dataSupplierId = supplierInputEl?.getAttribute('data-supplier-id')?.trim() || '';
+    const resolvedByName = supplierNameVal.trim()
+        ? shared.getSuppliers().find(
+              (s) => s.name.toLowerCase() === supplierNameVal.trim().toLowerCase()
+          )
+        : null;
+    let supplierIdForSave = dataSupplierId || resolvedByName?.id;
+    if (
+        !supplierIdForSave &&
+        existingExpense?.supplierId &&
+        supplierNameVal.trim()
+    ) {
+        const prev = shared.getSuppliers().find((s) => s.id === existingExpense.supplierId);
+        if (prev && prev.name.toLowerCase() === supplierNameVal.trim().toLowerCase()) {
+            supplierIdForSave = existingExpense.supplierId;
+        }
+    }
+
     const expenseData = {
         id: isEditing ? window.editingExpenseId : window.currentDraftExpenseId,
         items: items,
@@ -1796,12 +1935,18 @@ function handleFormSubmission(e) {
         date: date,
         branch: branch,
         allocation: allocation,
-        supplierName: getElementValue('supplierName'),
+        isPettyCash: Boolean(document.getElementById('isPettyCash')?.checked),
+        supplierName: supplierNameVal,
+        ...(isEditing
+            ? { supplierId: supplierIdForSave != null && supplierIdForSave !== '' ? supplierIdForSave : null }
+            : supplierIdForSave
+              ? { supplierId: supplierIdForSave }
+              : {}),
         businessName: getElementValue('businessName'),
         tin: getElementValue('tin'),
         address: getElementValue('address'),
         invoiceNumber: getElementValue('invoiceNumber'),
-        expenseCategory: getElementValue('expenseCategory', 'Supplies'),
+        expenseCategory: getElementValue('expenseCategory', shared.DEFAULT_EXPENSE_CATEGORY),
         vatExemptAmount: parseFloat(getElementValue('vatExemptAmount')) || 0,
         paymentMethod: getElementValue('paymentMethod', 'Cash'),
         paidBy: allocation === 'Store' ? getElementValue('paidBy', 'Company') : 'Company',
@@ -1828,12 +1973,12 @@ function handleFormSubmission(e) {
     const expense = result.expense;
 
     // Check if supplier is new (before saving) to show appropriate feedback
-    const supplierName = expense.supplierName.trim();
+    const supplierName = (expense.supplierName || '').trim();
     const allSuppliers = shared.getSuppliers();
     const existingSupplier = allSuppliers.find(s =>
         s.name.toLowerCase() === supplierName.toLowerCase()
     );
-    const isNewSupplier = !existingSupplier && supplierName;
+    const isNewSupplier = !expense.isPettyCash && !existingSupplier && supplierName;
 
     if (isEditing) {
         // Update existing expense using shared function
@@ -2563,11 +2708,12 @@ function parseAccountingFormatCSV(data, headers, values) {
         date: parsedDate.toISOString().split('T')[0],
         branch: branchName,
         supplierName: supplierName,
+        ...(existingSupplier ? { supplierId: existingSupplier.id } : {}),
         businessName: supplierName, // Use same name for business name from CSV
         tin: tin,
         address: address,
         invoiceNumber: '',
-        expenseCategory: 'Supplies', // Default category for CSV imports
+        expenseCategory: shared.DEFAULT_EXPENSE_CATEGORY, // Default category for CSV imports
         items: items,
         totalAmount: amount,
         vatExemptAmount: 0,
@@ -2665,13 +2811,19 @@ function parseMatchaneseFormatCSV(data, headers, values) {
         });
     }
 
+    const matchSupplierNm = (data.supplier || 'Unknown Supplier').trim() || 'Unknown Supplier';
+    const csvSupplierMatch = shared
+        .getSuppliers()
+        .find((s) => s.name.toLowerCase() === matchSupplierNm.toLowerCase());
+
     // Create expense object - always set branch to "Podium" as specified
     const expense = {
         id: shared.generateId(),
         date: parsedDate.toISOString().split('T')[0],
         branch: 'Podium', // Always Podium branch as specified
-        supplierName: data.supplier || 'Unknown Supplier',
-        businessName: data.supplier || '', // Use supplier name as business name
+        supplierName: matchSupplierNm,
+        ...(csvSupplierMatch ? { supplierId: csvSupplierMatch.id } : {}),
+        businessName: matchSupplierNm, // Use supplier name as business name
         tin: data.tin || '',
         address: data.address || '',
         invoiceNumber: data.invoiceno || '',
@@ -2761,13 +2913,18 @@ function parseStandardFormatCSV(data) {
         });
     }
 
+    const stdSupplierNm = (data.supplier || 'Unknown Supplier').trim() || 'Unknown Supplier';
+    const stdSupplierMatch = shared
+        .getSuppliers()
+        .find((s) => s.name.toLowerCase() === stdSupplierNm.toLowerCase());
+
     // Create expense object
     return {
         id: shared.generateId(),
         date: parsedDate.toISOString().split('T')[0],
         branch: data.branch || 'Uncategorized',
-        supplierName: data.supplier || 'Unknown Supplier',
-        supplierName: data.supplier || 'Unknown Supplier',
+        supplierName: stdSupplierNm,
+        ...(stdSupplierMatch ? { supplierId: stdSupplierMatch.id } : {}),
         businessName: '',
         tin: data.tin || '',
         address: data.address || '',
@@ -2875,8 +3032,8 @@ function loadSuppliers() {
 
     // Calculate supplier statistics
     const supplierStats = allSuppliers.map(supplier => {
-        const supplierExpenses = expenses.filter(expense =>
-            expense.supplierName.toLowerCase() === supplier.name.toLowerCase()
+        const supplierExpenses = expenses.filter((expense) =>
+            shared.expenseBelongsToSupplier(expense, supplier)
         );
 
         const totalExpenses = supplierExpenses.reduce((sum, expense) => sum + expense.totalAmount, 0);
@@ -2944,9 +3101,9 @@ function showSupplierDetailModal(supplier) {
 
     // Get all expenses for this supplier
     const allExpenses = shared.getExpenses();
-    const supplierExpenses = allExpenses.filter(expense =>
-        expense.supplierName.toLowerCase() === supplier.name.toLowerCase()
-    ).sort((a, b) => new Date(b.date) - new Date(a.date)); // Sort by date, newest first
+    const supplierExpenses = allExpenses
+        .filter((expense) => shared.expenseBelongsToSupplier(expense, supplier))
+        .sort((a, b) => new Date(b.date) - new Date(a.date)); // Sort by date, newest first
 
     // Calculate statistics
     const totalAmount = supplierExpenses.reduce((sum, expense) => sum + expense.totalAmount, 0);
@@ -3164,7 +3321,19 @@ function populateExpenseForm(expense) {
     if (expenseDate) expenseDate.value = expense.date;
     
     const supplierName = document.getElementById('supplierName');
-    if (supplierName) supplierName.value = expense.supplierName;
+    if (supplierName) {
+        supplierName.value = expense.supplierName;
+        const allSuppliersEarly = shared.getSuppliers();
+        if (expense.supplierId) {
+            supplierName.setAttribute('data-supplier-id', expense.supplierId);
+        } else {
+            const sup = allSuppliersEarly.find(
+                (s) => s.name.toLowerCase() === (expense.supplierName || '').toLowerCase()
+            );
+            if (sup) supplierName.setAttribute('data-supplier-id', sup.id);
+            else supplierName.removeAttribute('data-supplier-id');
+        }
+    }
     
     const paymentMethod = document.getElementById('paymentMethod');
     if (paymentMethod) paymentMethod.value = expense.paymentMethod || '';
@@ -3192,19 +3361,6 @@ function populateExpenseForm(expense) {
             totalInput.style.backgroundColor = '';
             totalInput.style.cursor = '';
             totalInput.style.opacity = '1';
-        }
-    }
-
-    // Handle VAT information if supplier is VAT registered
-    const allSuppliers = shared.getSuppliers();
-    const supplier = allSuppliers.find(s => s.name.toLowerCase() === expense.supplierName.toLowerCase());
-    if (supplier && supplier.isVatRegistered) {
-        const vatSection = document.getElementById('vatSection');
-        const vatExemptInput = document.getElementById('vatExemptAmount');
-        if (vatSection && vatExemptInput) {
-            vatSection.style.display = 'block';
-            vatExemptInput.value = (expense.vatExemptAmount || 0).toFixed(2);
-            updateVatCalculation();
         }
     }
 
@@ -3279,11 +3435,7 @@ function populateExpenseForm(expense) {
         window.currentReceiptData = null;
     }
 
-    // Set expense category if field exists
-    const expenseCategory = document.getElementById('expenseCategory');
-    if (expenseCategory && expense.expenseCategory) {
-        expenseCategory.value = expense.expenseCategory;
-    }
+    populateMobileExpenseCategorySelect(expense.expenseCategory);
 
     // Set allocation and branch if fields exist
     const allocationSelect = document.getElementById('allocationSelect');
@@ -3295,6 +3447,26 @@ function populateExpenseForm(expense) {
     const branchSelect = document.getElementById('branchSelect');
     if (branchSelect && expense.branch) {
         branchSelect.value = expense.branch;
+    }
+
+    const pettyCb = document.getElementById('isPettyCash');
+    if (pettyCb) pettyCb.checked = Boolean(expense.isPettyCash);
+    handlePettyCashChange();
+
+    if (!expense.isPettyCash) {
+        const allSuppliersVat = shared.getSuppliers();
+        const supplierForVat =
+            (expense.supplierId && allSuppliersVat.find((s) => s.id === expense.supplierId)) ||
+            allSuppliersVat.find(
+                (s) => s.name.toLowerCase() === (expense.supplierName || '').toLowerCase()
+            );
+        if (supplierForVat?.isVatRegistered) {
+            const vatExemptInput = document.getElementById('vatExemptAmount');
+            if (vatExemptInput) {
+                vatExemptInput.value = (expense.vatExemptAmount || 0).toFixed(2);
+                updateVatCalculation();
+            }
+        }
     }
 
     // Store the expense ID for updating instead of creating new
@@ -3318,18 +3490,25 @@ function deleteExpense(expenseId, event) {
     }
 
     // Show confirmation modal
+    const deleteLabel = expense.isPettyCash
+        ? 'this petty cash voucher'
+        : `"${expense.supplierName || 'this expense'}"`;
     showConfirmationModal(
         'Delete Expense',
-        `Are you sure you want to delete the expense for "${expense.supplierName}"? This action cannot be undone.`,
+        `Are you sure you want to delete the expense for ${deleteLabel}? This action cannot be undone.`,
         'Delete',
-        () => {
-            // Remove expense using shared function
-            const success = shared.deleteExpense(expenseId);
-            if (success) {
-                loadDashboard();
-                showToast('Expense deleted successfully');
-            } else {
-                showToast('Failed to delete expense');
+        async () => {
+            showAppBusyOverlay('Deleting expense…');
+            try {
+                const success = await shared.deleteExpense(expenseId);
+                if (success) {
+                    loadDashboard();
+                    showToast('Expense deleted successfully');
+                } else {
+                    showToast('Failed to delete expense');
+                }
+            } finally {
+                hideAppBusyOverlay();
             }
         }
     );
@@ -3358,11 +3537,16 @@ function closeConfirmationModal() {
     confirmationCallback = null;
 }
 
-function confirmAction() {
-    if (confirmationCallback) {
-        confirmationCallback();
-    }
+async function confirmAction() {
+    const cb = confirmationCallback;
     closeConfirmationModal();
+    if (typeof cb !== 'function') return;
+    try {
+        await cb();
+    } catch (err) {
+        console.error('confirmAction', err);
+        showToast('Something went wrong. Please try again.');
+    }
 }
 
 function editExpenseFromDetail(expenseId) {
@@ -3502,19 +3686,17 @@ function handleSupplierFormSubmission(e) {
 
     // Update all expenses from this supplier when editing
     if (isEditing && existingSupplier) {
-        // Update expenses first, then supplier
-        const updateResult = shared.updateExpensesForSupplier(existingSupplier, supplier);
-        
-        // Update the supplier
         const success = shared.updateSupplier(isEditing, supplier);
-        if (success) {
-            const expenseMsg = updateResult.updated > 0 ? 
-                ` and updated ${updateResult.updated} expense${updateResult.updated === 1 ? '' : 's'}` : '';
-            showToast(`Supplier updated successfully!${expenseMsg}`);
-        } else {
+        if (!success) {
             showToast('Failed to update supplier');
             return;
         }
+        const updateResult = shared.updateExpensesForSupplier(existingSupplier, supplier);
+        const expenseMsg =
+            updateResult.updated > 0
+                ? ` and updated ${updateResult.updated} expense${updateResult.updated === 1 ? '' : 's'}`
+                : '';
+        showToast(`Supplier updated successfully!${expenseMsg}`);
     } else {
         // Add new supplier
         shared.addSupplier(supplier);
@@ -3619,8 +3801,8 @@ function showMergeSupplierModal(targetSupplierId) {
     <div class="merge-supplier-list" id="mergeSupplierList">
         ${otherSuppliers.map(supplier => {
         const allExpenses = shared.getExpenses();
-        const supplierExpenseCount = allExpenses.filter(e =>
-            e.supplierName.toLowerCase() === supplier.name.toLowerCase()
+        const supplierExpenseCount = allExpenses.filter((e) =>
+            shared.expenseBelongsToSupplier(e, supplier)
         ).length;
 
         return `
@@ -3747,114 +3929,42 @@ function executeMerge(targetSupplierId) {
 window.executeMerge = executeMerge;
 
 async function performSupplierMerge(targetSupplier, suppliersToMerge) {
-    let totalTransferred = 0;
-    const allExpenses = shared.getExpenses();
-    const supplierNamesToMatch = suppliersToMerge.map(s => s.name.toLowerCase());
-    const supplierIdsToRemove = new Set(suppliersToMerge.map(s => s.id));
-    const updatedExpenses = [];
-    const now = new Date().toISOString();
-
-    // Update all expenses from merged suppliers to reference the target supplier
-    allExpenses.forEach(expense => {
-        const expenseSupplierLower = expense.supplierName.toLowerCase();
-        const needsUpdate = supplierNamesToMatch.includes(expenseSupplierLower);
-        
-        if (needsUpdate) {
-            // Create updated expense
-            const updatedExpense = {
-                ...expense,
-                supplierName: targetSupplier.name,
-                businessName: targetSupplier.businessName || expense.businessName,
-                tin: targetSupplier.tin || expense.tin,
-                address: targetSupplier.address || expense.address,
-                isVatRegistered: targetSupplier.isVatRegistered,
-                updatedAt: now
-            };
-            updatedExpenses.push(updatedExpense);
-            totalTransferred++;
-        } else {
-            updatedExpenses.push(expense);
+    setMergeModalProgressVisible(true);
+    updateMergeModalProgressUI(1, 1, 'Preparing merge…');
+    try {
+        const sourceIds = suppliersToMerge.map((s) => s.id);
+        const r = await shared.mergeSuppliersIntoTarget(
+            targetSupplier.id,
+            sourceIds,
+            (step, total, msg) => updateMergeModalProgressUI(step, total, msg)
+        );
+        if (!r.success) {
+            showToast(r.error || 'Merge failed.');
+            return;
         }
-    });
-
-    // Batch update all expenses at once using setExpenses (doesn't trigger save)
-    shared.setExpenses(updatedExpenses);
-    
-    // Now manually trigger a single save
-    shared.saveToLocalStorage();
-
-    // Get current suppliers list to verify they exist before deletion
-    const currentSuppliers = shared.getSuppliers();
-    
-    // Remove the merged suppliers using shared.js (await all deletions)
-    // Also find and remove any duplicate suppliers with the same names (different IDs)
-    const suppliersToDelete = [];
-    
-    // First, add the explicitly selected suppliers
-    supplierIdsToRemove.forEach(supplierId => {
-        const supplier = currentSuppliers.find(s => s.id === supplierId);
-        if (supplier) {
-            suppliersToDelete.push(supplier);
-        }
-    });
-    
-    // Then, find any other suppliers with the same names (duplicates that weren't selected)
-    // After transferring expenses, any supplier with the same name should have no expenses left
-    supplierNamesToMatch.forEach(nameToMatch => {
-        currentSuppliers.forEach(supplier => {
-            // Don't delete the target supplier or already queued suppliers
-            if (supplier.id !== targetSupplier.id && 
-                !supplierIdsToRemove.has(supplier.id) &&
-                supplier.name.toLowerCase() === nameToMatch) {
-                // After transfer, check if this supplier still has expenses with its name
-                // (it shouldn't, since we transferred all expenses with this name)
-                const hasExpenses = updatedExpenses.some(e => 
-                    e.supplierName.toLowerCase() === supplier.name.toLowerCase()
-                );
-                // Delete if it has no expenses (all were transferred) - this handles duplicates
-                if (!hasExpenses) {
-                    suppliersToDelete.push(supplier);
-                }
-            }
-        });
-    });
-    
-    // Remove duplicates from suppliersToDelete array
-    const uniqueSuppliersToDelete = suppliersToDelete.filter((supplier, index, self) =>
-        index === self.findIndex(s => s.id === supplier.id)
-    );
-    
-    // Delete all suppliers
-    const deletionResults = await Promise.all(
-        uniqueSuppliersToDelete.map(supplier => shared.deleteSupplier(supplier.id))
-    );
-    
-    // Check if all deletions succeeded
-    const allDeleted = deletionResults.every(result => result === true);
-    const deletedCount = deletionResults.filter(r => r === true).length;
-    
-    if (!allDeleted) {
-        console.warn(`Deleted ${deletedCount} of ${uniqueSuppliersToDelete.length} suppliers. Some may not have been found.`);
-    }
-
-    // Close modals first
-    closeMergeSupplierModal();
-    closeSupplierDetailModal();
-
-    const deletedMsg = deletedCount > suppliersToMerge.length ? 
-        ` (removed ${deletedCount} total including duplicates)` : '';
-    showToast(`Merged ${suppliersToMerge.length} supplier${suppliersToMerge.length === 1 ? '' : 's'}${deletedMsg} and transferred ${totalTransferred} expense${totalTransferred === 1 ? '' : 's'}`);
-
-    // Refresh suppliers page if currently viewing it - use setTimeout to ensure UI updates
-    setTimeout(() => {
-        if (document.getElementById('suppliersPage').style.display !== 'none') {
+        setMergeModalProgressVisible(false);
+        closeMergeSupplierModal();
+        closeSupplierDetailModal();
+        const deletedMsg =
+            r.deleted > suppliersToMerge.length
+                ? ` (removed ${r.deleted} total including duplicates)`
+                : '';
+        showToast(
+            `Merged ${suppliersToMerge.length} supplier${suppliersToMerge.length === 1 ? '' : 's'}${deletedMsg} and transferred ${r.transferred} expense${r.transferred === 1 ? '' : 's'}`
+        );
+        setTimeout(() => {
             loadSuppliers();
-        }
-        // Also refresh dashboard if on expenses page
-        if (document.getElementById('dashboardPage').style.display !== 'none') {
-            loadDashboard();
-        }
-    }, 100);
+            if (document.getElementById('dashboardPage').style.display !== 'none') {
+                loadDashboard();
+            }
+        }, 100);
+    } catch (err) {
+        console.error('performSupplierMerge', err);
+        showToast('Merge failed. Please try again.');
+    } finally {
+        setMergeModalProgressVisible(false);
+        hideMergeModalProgressUI();
+    }
 }
 
 function mergeSupplierFromDetail(supplierId) {
@@ -3903,19 +4013,20 @@ function deleteSupplierFromDetail(supplierId) {
         `Are you sure you want to delete "${supplier.name}"? This action cannot be undone.`,
         'Delete',
         async () => {
-            // Remove supplier from array and Firebase using shared function
-            const success = await shared.deleteSupplier(supplierId);
-            if (success) {
-                // Close detail modal and refresh
-                closeSupplierDetailModal();
-                showToast('Supplier deleted successfully');
-
-                // Refresh suppliers page if currently viewing it
-                if (document.getElementById('suppliersPage').style.display !== 'none') {
-                    loadSuppliers();
+            showAppBusyOverlay('Deleting supplier…');
+            try {
+                const success = await shared.deleteSupplier(supplierId);
+                if (success) {
+                    closeSupplierDetailModal();
+                    showToast('Supplier deleted successfully');
+                    if (document.getElementById('suppliersPage').style.display !== 'none') {
+                        loadSuppliers();
+                    }
+                } else {
+                    showToast('Failed to delete supplier');
                 }
-            } else {
-                showToast('Failed to delete supplier');
+            } finally {
+                hideAppBusyOverlay();
             }
         }
     );
@@ -3988,6 +4099,31 @@ function updateVatCalculation() {
 }
 // Expose to global scope for inline event handlers
 window.updateVatCalculation = updateVatCalculation;
+
+function handlePettyCashChange() {
+    const cb = document.getElementById('isPettyCash');
+    const petty = Boolean(cb?.checked);
+    const supplierSection = document.getElementById('supplierNameSection');
+    const supplierInput = document.getElementById('supplierName');
+    const vatSection = document.getElementById('vatSection');
+
+    if (supplierSection) supplierSection.style.display = '';
+    if (supplierInput) supplierInput.setAttribute('required', 'required');
+    if (vatSection) {
+        if (petty) {
+            vatSection.style.display = 'none';
+        } else {
+            const allSuppliers = shared.getSuppliers();
+            const name = (supplierInput?.value || '').trim();
+            const supplier = name
+                ? allSuppliers.find((s) => s.name.toLowerCase() === name.toLowerCase())
+                : null;
+            vatSection.style.display = supplier?.isVatRegistered ? 'block' : 'none';
+        }
+    }
+}
+
+window.handlePettyCashChange = handlePettyCashChange;
 
 // Handle allocation change - show/hide branch field and paidBy field
 function handleAllocationChange() {
@@ -4140,3 +4276,12 @@ window.closeMergeSupplierModal = closeMergeSupplierModal;
 // Note: executeMerge, mergeSupplierFromDetail, viewSupplierFromExpense,
 // updateVatCalculation, toggleVatRegistered, formatPesoInput, and updateFromItems are now
 // exposed immediately after their definitions above for better reliability
+// exposed immediately after their definitions above for better reliability
+
+
+
+
+
+
+
+

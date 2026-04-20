@@ -365,7 +365,8 @@ button:hover {
     transform: translateY(-1px);
 }
 
-.shift-item.opening {
+.shift-item.opening,
+.shift-item.adjustedOpening {
     background-color: #2b9348;
 }
 
@@ -845,7 +846,8 @@ button:hover {
     cursor: pointer;
 }
 
-.shift-block.opening {
+.shift-block.opening,
+.shift-block.adjustedOpening {
     background-color: #1e7a3a;
     color: white;
 }
@@ -1149,7 +1151,8 @@ button:hover {
 
 
 /* Remove the nth-child color rules and replace with consistent shift type colors */
-.shift-employee-block.opening {
+.shift-employee-block.opening,
+.shift-employee-block.adjustedOpening {
     background-color: #1e7a3a;
     color: white;
 }
@@ -1177,7 +1180,8 @@ button:hover {
     color: white;
 }
 
-.shift-employee-block.opening:hover {
+.shift-employee-block.opening:hover,
+.shift-employee-block.adjustedOpening:hover {
     background-color: #165a2b;
 }
 
@@ -1991,7 +1995,8 @@ button:hover {
     color: white;
 }
 
-.mobile-my-schedule-card.opening:not(.completed) {
+.mobile-my-schedule-card.opening:not(.completed),
+.mobile-my-schedule-card.adjustedOpening:not(.completed) {
     background-color: #1e7a3a;
 }
 
@@ -2097,20 +2102,36 @@ button:hover {
     padding: 1.25rem 0 0.5rem;
     margin-top: 1rem;
 }
+/* Reliever request step: body hidden — tighten title→form and remove dead space below */
+.shift-details-modal__content--reliever-only .shift-details-modal__title {
+    margin-bottom: 0.65rem;
+}
+.shift-details-modal__content--reliever-only .shift-details-modal__actions {
+    margin-top: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    flex: 0 0 auto;
+    gap: 0;
+}
 .shift-details-reliever-form {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    gap: 1.5rem;
+    align-items: stretch;
+    gap: 0;
     width: 100%;
     max-width: 280px;
     text-align: center;
 }
-.shift-details-reliever-form label {
-    display: block;
+.shift-details-reliever-form__stack {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
     width: 100%;
+}
+.shift-details-reliever-form__stack .shift-details-modal__label {
+    margin: 0;
     text-align: center;
-    margin-bottom: 0.25rem;
 }
 .shift-details-reliever-form select {
     width: 100%;
@@ -2118,13 +2139,15 @@ button:hover {
     border-radius: 8px;
     border: 1px solid #ddd;
     font-family: inherit;
-    margin-top: 0.25rem;
+    margin: 0;
+    box-sizing: border-box;
 }
 .shift-details-reliever-form .submit-btn {
     align-self: center;
     width: auto;
     min-width: 8rem;
     justify-content: center;
+    margin: 1.125rem 0 0;
 }
 .shift-details-pending-msg {
     color: #6b7280;

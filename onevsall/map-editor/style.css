@@ -1,0 +1,32 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #0f1318;
+  color: #e7eef8;
+  font-family: Inter, Segoe UI, Arial, sans-serif;
+}
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  border-bottom: 1px solid #2d3742;
+  background: #171d24;
+}
+
+button {
+  background: #243140;
+  color: #e7eef8;
+  border: 1px solid #3b4e63;
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+#editorCanvas {
+  display: block;
+  width: 100vw;
+  height: calc(100vh - 52px);
+}

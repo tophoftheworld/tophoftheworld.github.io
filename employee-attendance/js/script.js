@@ -95,6 +95,7 @@ const lateGraceLimitMinutes = 30;
 
 const SHIFT_SCHEDULES = {
     "Opening": { timeIn: "9:30 AM", timeOut: "6:30 PM" },
+    "Adjusted Opening": { timeIn: "10:30 AM", timeOut: "7:30 PM" },
     "Opening Half-Day": { timeIn: "9:30 AM", timeOut: "1:30 PM" },
     "Midshift": { timeIn: "11:00 AM", timeOut: "8:00 PM" },
     "Closing": { timeIn: "1:00 PM", timeOut: "10:00 PM" },
@@ -116,7 +117,7 @@ async function loadEmployees() {
     if (employeesLoaded) return employees;
 
     try {
-        const employeesRef = collection(db, "employees");
+        const employeesRef = collection(db, "employees_v2");
         const snapshot = await getDocs(employeesRef);
 
         employees = {};
@@ -145,6 +146,8 @@ if (timestamp) {
 //     if (formatDate(viewDate) !== formatDate(today)) return;
 //     await updateSummaryUI();
 // }, 10000);
+
+console.log("Matchanese employee-attendance v2 — Firestore: employees_v2, attendance_v2");
 
 // Auto-show interface if we have a user (from parent or localStorage)
 if (currentUser) {
@@ -175,7 +178,7 @@ function getAttendanceDates() {
 }
 
 async function getAttendanceDatesFromFirestore() {
-    const subCollectionSnap = await getDocs(collection(db, "attendance", currentUser, "dates"));
+    const subCollectionSnap = await getDocs(collection(db, "attendance_v2", currentUser, "dates"));
     return subCollectionSnap.docs.map(doc => doc.id);
 }
 
@@ -237,7 +240,7 @@ async function loginUser() {
 
     // Online login logic - attempt to fetch from Firestore
     try {
-        const docRef = doc(db, "employees", code); // Changed from "staff" to "employees"
+        const docRef = doc(db, "employees_v2", code); // Changed from "staff" to "employees"
         const docSnap = await getDoc(docRef);
 
         if (docSnap.exists()) {
@@ -311,7 +314,7 @@ async function cacheMostRecentAttendance(userCode) {
 
         // Fetch recent attendance data
         for (const dateKey of last7Days) {
-            const subDocRef = doc(db, "attendance", userCode, "dates", dateKey);
+            const subDocRef = doc(db, "attendance_v2", userCode, "dates", dateKey);
             const docSnap = await getDoc(subDocRef);
 
             if (docSnap.exists()) {
@@ -352,7 +355,7 @@ async function cacheOlderDataInBackground(userCode, startDay, endDay) {
             date.setDate(date.getDate() - i);
             const dateKey = formatDate(date);
 
-            const subDocRef = doc(db, "attendance", userCode, "dates", dateKey);
+            const subDocRef = doc(db, "attendance_v2", userCode, "dates", dateKey);
             const docSnap = await getDoc(subDocRef);
 
             if (docSnap.exists()) {
@@ -441,7 +444,7 @@ async function updateSummaryUI() {
     try {
         if (!navigator.onLine) return; // ⛔ Skip Firestore fetch when offline
 
-        const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
+        const subDocRef = doc(db, "attendance_v2", currentUser, "dates", dateKey);
         const docSnap = await getDoc(subDocRef);
         if (docSnap.exists()) {
             const remoteData = docSnap.data();
@@ -683,7 +686,7 @@ async function saveAttendance() {
                 const selfieUrl = await uploadSelfieToStorage(selfieData, currentUser, dateKey, 'clockIn');
                 existing.clockIn.selfie = selfieUrl;
 
-                const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
+                const subDocRef = doc(db, "attendance_v2", currentUser, "dates", dateKey);
 
                 // Get existing data first to avoid overwriting clockOut
                 const docSnap = await getDoc(subDocRef);
@@ -748,7 +751,7 @@ async function saveAttendance() {
             // If no clockIn exists locally, try to get it from Firestore
             if (navigator.onLine) {
                 try {
-                    const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
+                    const subDocRef = doc(db, "attendance_v2", currentUser, "dates", dateKey);
                     const docSnap = await getDoc(subDocRef);
 
                     if (docSnap.exists() && docSnap.data().clockIn) {
@@ -785,7 +788,7 @@ async function saveAttendance() {
                 const selfieUrl = await uploadSelfieToStorage(selfieData, currentUser, dateKey, 'clockOut');
                 existing.clockOut.selfie = selfieUrl;
 
-                const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
+                const subDocRef = doc(db, "attendance_v2", currentUser, "dates", dateKey);
 
                 // We're specifically only updating the clockOut field
                 // Remove synced flag from what we save to Firestore
@@ -866,7 +869,7 @@ async function updateGreetingUI() {
     // If still no name, fetch from Firebase
     if (!name && currentUser) {
         try {
-            const docSnap = await getDoc(doc(db, "employees", currentUser));
+            const docSnap = await getDoc(doc(db, "employees_v2", currentUser));
             if (docSnap.exists()) {
                 name = docSnap.data().nick || docSnap.data().name;
                 localStorage.setItem("userName", name);
@@ -952,7 +955,7 @@ document.getElementById("shiftSelect").addEventListener("change", async function
         localStorage.setItem(localStorageKey, JSON.stringify(data));
 
         // Update Firestore
-        const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
+        const subDocRef = doc(db, "attendance_v2", currentUser, "dates", dateKey);
         await setDoc(subDocRef, { clockIn: data.clockIn }, { merge: true });
     }
 
@@ -962,7 +965,7 @@ document.getElementById("shiftSelect").addEventListener("change", async function
 
 async function updateBranchInFirestore(dateKey, branch) {
     try {
-        const subDocRef = doc(db, "attendance", currentUser, "dates", dateKey);
+        const subDocRef = doc(db, "attendance_v2", currentUser, "dates", dateKey);
         const docSnap = await getDoc(subDocRef);
 
         if (docSnap.exists()) {
@@ -997,7 +1000,7 @@ async function handleClock(type) {
     // Try to get Firestore data only if online
     if (navigator.onLine) {
         try {
-            const docSnap = await getDoc(doc(db, "attendance", currentUser, "dates", dateKey));
+            const docSnap = await getDoc(doc(db, "attendance_v2", currentUser, "dates", dateKey));
             if (docSnap.exists()) {
                 const firestoreData = docSnap.data();
                 // Merge with local data giving priority to Firestore
@@ -1460,7 +1463,7 @@ async function loadHistoryLogs() {
 
 
     for (const dateKey of dates) {
-        const docSnap = await getDoc(doc(db, "attendance", currentUser, "dates", dateKey));
+        const docSnap = await getDoc(doc(db, "attendance_v2", currentUser, "dates", dateKey));
         const data = docSnap.exists() ? docSnap.data() : {};
 
         table += `
@@ -1547,6 +1550,7 @@ async function updateBranchAndShiftSelectors(data = {}) {
                 // Map schedule shift type to dropdown values
                 const shiftMapping = {
                     'opening': 'Opening',
+                    'adjustedOpening': 'Adjusted Opening',
                     'openingHalf': 'Opening Half-Day',
                     'midshift': 'Midshift',
                     'closing': 'Closing',
@@ -1615,7 +1619,7 @@ async function syncPendingData() {
         const [, user, date] = key.split('_');
         if (!user || !date) continue;
 
-        const ref = doc(db, "attendance", user, "dates", date);
+        const ref = doc(db, "attendance_v2", user, "dates", date);
 
         try {
             // First, get current server data to avoid overwriting
@@ -2162,7 +2166,7 @@ function calculateHolidayBonus(dayData, dailyRate) {
 
 async function fetchAttendancePhotos(userId, dateStr) {
     try {
-        const docRef = doc(db, "attendance", userId, "dates", dateStr);
+        const docRef = doc(db, "attendance_v2", userId, "dates", dateStr);
         const docSnap = await getDoc(docRef);
 
         if (docSnap.exists()) {
@@ -2572,7 +2576,7 @@ async function loadEmployeeNicknames() {
     try {
         let hasChanges = false;
         for (const employeeId of Object.keys(employees)) {
-            const employeeDoc = await getDoc(doc(db, "employees", employeeId));
+            const employeeDoc = await getDoc(doc(db, "employees_v2", employeeId));
             if (employeeDoc.exists() && employeeDoc.data().nickname) {
                 const newNickname = employeeDoc.data().nickname;
                 if (employeeNicknames[employeeId] !== newNickname) {
@@ -2606,7 +2610,7 @@ async function generateMockPayrollData(dates) {
 
             for (const dateStr of dates) {
                 try {
-                    const docRef = doc(db, "attendance", currentUser, "dates", dateStr);
+                    const docRef = doc(db, "attendance_v2", currentUser, "dates", dateStr);
                     const docSnap = await getDoc(docRef);
 
                     if (docSnap.exists()) {
@@ -2979,7 +2983,7 @@ async function fetchPayrollData(dates) {
         const payrollData = [];
 
         // Get all attendance data for the user
-        const attendanceRef = collection(db, "attendance", currentUser, "dates");
+        const attendanceRef = collection(db, "attendance_v2", currentUser, "dates");
         const snapshot = await getDocs(attendanceRef);
 
         const attendanceMap = {};
@@ -2990,7 +2994,7 @@ async function fetchPayrollData(dates) {
         // Get employee base rate
         let baseRate = 750; // default
         try {
-            const employeeDoc = await getDoc(doc(db, "employees", currentUser));
+            const employeeDoc = await getDoc(doc(db, "employees_v2", currentUser));
             if (employeeDoc.exists()) {
                 baseRate = employeeDoc.data().baseRate || 750;
             }
@@ -4134,6 +4138,7 @@ function createScheduleRow(date, allScheduleData, isToday) {
 function createShiftCompact(shift) {
     const shiftTypes = {
         'opening': { name: 'Opening' },
+        'adjustedOpening': { name: 'Adjusted Opening' },
         'openingHalf': { name: 'Opening Half-Day', time: '9:30 AM - 1:30 PM' },
         'midshift': { name: 'Midshift' },
         'closing': { name: 'Closing' },
@@ -4206,6 +4211,7 @@ function createScheduleCard(date, scheduleData, isToday) {
 
     const shiftTypes = {
         'opening': { name: 'Opening', time: '9:30 AM - 6:30 PM' },
+        'adjustedOpening': { name: 'Adjusted Opening', time: '10:30 AM - 7:30 PM' },
         'openingHalf': { name: 'Opening Half-Day', time: '9:30 AM - 1:30 PM' },
         'midshift': { name: 'Midshift', time: '11:00 AM - 8:00 PM' },
         'closing': { name: 'Closing', time: '1:00 PM - 10:00 PM' },
@@ -4292,6 +4298,18 @@ async function checkPaymentConfirmation(periodId) {
     if (!navigator.onLine || !currentUser) return null;
 
     try {
+        const v2Ref = doc(db, "payroll_periods_v2", periodId, "payments", currentUser);
+        const v2Snap = await getDoc(v2Ref);
+        if (v2Snap.exists()) {
+            const d = v2Snap.data();
+            if (d.screenshotUrl) return d.screenshotUrl;
+            const paid =
+                (Number(d.paymentAmount) || 0) > 0 ||
+                d.paymentType === "full" ||
+                d.paymentType === "partial";
+            if (paid) return "PAYMENT_RECORDED_V2";
+        }
+
         const paymentRef = doc(db, "payment_confirmations", `${currentUser}_${periodId}`);
         const paymentSnap = await getDoc(paymentRef);
 
@@ -4322,6 +4340,10 @@ function showPaymentConfirmationIndicator(screenshotUrl) {
 
     // Add click handler to show modal
     indicator.addEventListener('click', () => {
+        if (screenshotUrl === "PAYMENT_RECORDED_V2") {
+            alert("Your payment for this period has been recorded in payroll (no receipt image on file).");
+            return;
+        }
         openPaymentConfirmationModal(screenshotUrl);
     });
 

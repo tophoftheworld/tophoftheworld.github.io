@@ -4,6 +4,38 @@
 export let expenses = [];
 export let suppliers = [];
 
+/** Canonical expense categories (single source for mobile + admin). */
+export const EXPENSE_CATEGORY_OPTIONS = [
+    'Supplies',
+    'Staff',
+    'Rent & Utilities',
+    'Marketing',
+    'Equipment',
+    'Operations',
+];
+
+export const DEFAULT_EXPENSE_CATEGORY = 'Supplies';
+
+/** Option values for an expense form select: canonical list plus legacy value if not in list. */
+export function getExpenseCategorySelectOptionValues(currentValue) {
+    const v = (currentValue || '').trim();
+    const extras = v && !EXPENSE_CATEGORY_OPTIONS.includes(v) ? [v] : [];
+    return [...EXPENSE_CATEGORY_OPTIONS, ...extras];
+}
+
+/** Distinct category values for admin filter: canonical order, then any other values seen in data (sorted). */
+export function getExpenseCategoryFilterOptionValues(expensesArray) {
+    const fromData = new Set();
+    for (const e of expensesArray || []) {
+        const c = (e && e.expenseCategory != null ? String(e.expenseCategory) : '').trim();
+        if (c) fromData.add(c);
+    }
+    const legacy = [...fromData].filter((c) => !EXPENSE_CATEGORY_OPTIONS.includes(c)).sort((a, b) =>
+        a.localeCompare(b)
+    );
+    return [...EXPENSE_CATEGORY_OPTIONS, ...legacy];
+}
+
 // Firebase dependencies - will be imported at module level
 let db;
 let app = null;
@@ -23,9 +55,55 @@ const SYNC_DEBOUNCE_DELAY = 3000; // 3 seconds
 let deletionInProgress = false; // Prevent fetchFromFirebase during deletions
 let deletedSupplierIds = new Set(); // Track deleted supplier IDs to prevent restoration
 let deletedExpenseIds = new Set(); // Track deleted expense IDs to prevent restoration
-const DELETION_TRACKING_TTL = 5 * 60 * 1000; // 5 minutes - after this, allow restoration from other devices
+const DELETION_TRACKING_TTL = 5 * 60 * 1000; // 5 minutes - short-lived client hint; tombstones below are permanent
 let deletionTimestamps = new Map(); // Track when each supplier was deleted (supplierId -> timestamp)
 let expenseDeletionTimestamps = new Map(); // Track when each expense was deleted (expenseId -> timestamp)
+
+/** Supplier ids with a server tombstone (or local delete) — never re-merge from Firebase. Persisted. */
+const PERMANENT_SUPPLIER_TOMBSTONE_STORAGE_KEY = 'expenseTracker_permanentSupplierTombstones';
+let supplierTombstoneIds = new Set();
+
+function persistPermanentSupplierTombstones() {
+    try {
+        localStorage.setItem(
+            PERMANENT_SUPPLIER_TOMBSTONE_STORAGE_KEY,
+            JSON.stringify({ ids: Array.from(supplierTombstoneIds) })
+        );
+    } catch (error) {
+        console.warn('Failed to persist permanent supplier tombstones:', error);
+    }
+}
+
+function loadPermanentSupplierTombstonesFromStorage() {
+    try {
+        const raw = localStorage.getItem(PERMANENT_SUPPLIER_TOMBSTONE_STORAGE_KEY);
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        (data.ids || []).forEach((id) => {
+            if (id) supplierTombstoneIds.add(id);
+        });
+    } catch (error) {
+        console.warn('Failed to load permanent supplier tombstones:', error);
+    }
+}
+
+/** Record supplier ids as permanently removed (merge/delete). Survives TTL cleanup. */
+export function addPermanentSupplierTombstones(supplierIds) {
+    if (!supplierIds?.length) return;
+    let added = false;
+    for (const id of supplierIds) {
+        if (id && !supplierTombstoneIds.has(id)) {
+            supplierTombstoneIds.add(id);
+            added = true;
+        }
+    }
+    if (added) persistPermanentSupplierTombstones();
+}
+
+/** Single-id convenience wrapper. */
+export function addPermanentSupplierTombstone(supplierId) {
+    if (supplierId) addPermanentSupplierTombstones([supplierId]);
+}
 
 
 // Server-side deletion propagation (prevents resurrecting deleted records from stale devices)
@@ -121,8 +199,9 @@ export async function initializeFirebase() {
 
 // Data Management Functions
 export function setExpenses(newExpenses) {
+    const normalizedExpenses = normalizeExpensesReceiptState(newExpenses);
     expenses.length = 0;
-    expenses.push(...newExpenses);
+    expenses.push(...normalizedExpenses);
 }
 
 export function setSuppliers(newSuppliers) {
@@ -171,6 +250,69 @@ export async function compressImage(file, maxWidth = 1920, maxHeight = 1920, qua
     });
 }
 
+/**
+ * Load an image for canvas operations (data URL or http(s)).
+ * Remote URLs are fetched as blob to avoid tainted canvas when rotating.
+ */
+async function loadImageForCanvas(src) {
+    if (typeof src !== 'string' || !src) {
+        throw new Error('Invalid image source');
+    }
+    if (src.startsWith('data:')) {
+        return await new Promise((resolve, reject) => {
+            const im = new Image();
+            im.onload = () => resolve(im);
+            im.onerror = () => reject(new Error('Failed to load image'));
+            im.src = src;
+        });
+    }
+    const res = await fetch(src, { mode: 'cors', credentials: 'omit' });
+    if (!res.ok) {
+        throw new Error('Failed to fetch image');
+    }
+    const blob = await res.blob();
+    const objUrl = URL.createObjectURL(blob);
+    try {
+        return await new Promise((resolve, reject) => {
+            const im = new Image();
+            im.onload = () => resolve(im);
+            im.onerror = () => reject(new Error('Failed to decode image'));
+            im.src = objUrl;
+        });
+    } finally {
+        URL.revokeObjectURL(objUrl);
+    }
+}
+
+/**
+ * Rotate receipt image 90°. direction 1 = clockwise, -1 = counter-clockwise.
+ * Returns a new JPEG data URL.
+ */
+export async function rotateReceiptImage(src, direction, quality = 0.85) {
+    const img = await loadImageForCanvas(src);
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    if (!w || !h) {
+        throw new Error('Invalid image dimensions');
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = h;
+    canvas.height = w;
+    const ctx = canvas.getContext('2d');
+    if (direction === 1) {
+        ctx.translate(canvas.width, 0);
+        ctx.rotate(Math.PI / 2);
+        ctx.drawImage(img, 0, 0);
+    } else if (direction === -1) {
+        ctx.translate(0, canvas.height);
+        ctx.rotate(-Math.PI / 2);
+        ctx.drawImage(img, 0, 0);
+    } else {
+        throw new Error('direction must be 1 or -1');
+    }
+    return canvas.toDataURL('image/jpeg', quality);
+}
+
 // Fetch receipt image from Firebase for an expense
 export async function fetchReceiptImageFromFirebase(expenseId) {
     if (!db || !expenseId) {
@@ -190,7 +332,16 @@ export async function fetchReceiptImageFromFirebase(expenseId) {
         
         if (expenseSnap.exists()) {
             const expenseData = expenseSnap.data();
-            return expenseData.receiptImage || null;
+            const receiptImage = expenseData.receiptImage || null;
+            if (receiptImage) {
+                const updatedExpenses = expenses.map((expense) =>
+                    expense.id === expenseId
+                        ? normalizeExpenseReceiptState({ ...expense, receiptImage, hasReceiptImage: true })
+                        : expense
+                );
+                setExpenses(updatedExpenses);
+            }
+            return receiptImage;
         }
         
         return null;
@@ -239,15 +390,128 @@ export function getSuppliers() {
     return [...suppliers];
 }
 
-export function addExpense(expense) {
-    expenses.push(expense);
-    
-    // Automatically create supplier if it doesn't exist
-    // This ensures ALL suppliers are always in the list
-    if (expense.supplierName && expense.supplierName.trim()) {
-        saveSupplierIfNew(expense);
+/** Match an expense to a supplier row: supplierId only (no name fallback). */
+export function expenseBelongsToSupplier(expense, supplier) {
+    return !!(expense?.supplierId && supplier?.id && expense.supplierId === supplier.id);
+}
+
+export function normalizeSupplierNameKey(name) {
+    return (name || '').trim().toLowerCase();
+}
+
+/** Suppliers whose display name normalizes to the same key (for migration UI). */
+export function groupSuppliersByNormalizedName(supplierList) {
+    /** @type {Map<string, object[]>} */
+    const map = new Map();
+    for (const s of supplierList || []) {
+        const k = normalizeSupplierNameKey(s.name);
+        if (!k) continue;
+        if (!map.has(k)) map.set(k, []);
+        map.get(k).push(s);
     }
-    
+    return map;
+}
+
+/**
+ * Pure analysis for supplierId migration (Firestore or localStorage).
+ * @returns {{ withId: object[], assignable: { expense: object, supplierId: string, supplier: object }[], ambiguous: { key: string, suppliers: object[], expenses: object[] }[], orphans: object[] }}
+ */
+export function analyzeSupplierIdMigration(supplierList, expenseList) {
+    const withId = [];
+    const assignable = [];
+    /** @type {Map<string, { key: string, suppliers: object[], expenses: object[] }>} */
+    const ambiguousMap = new Map();
+    const orphans = [];
+
+    const byName = groupSuppliersByNormalizedName(supplierList);
+
+    for (const expense of expenseList || []) {
+        if (expense.supplierId) {
+            withId.push(expense);
+            continue;
+        }
+        const key = normalizeSupplierNameKey(expense.supplierName);
+        if (!key) {
+            orphans.push(expense);
+            continue;
+        }
+        const matches = byName.get(key) || [];
+        if (matches.length === 0) {
+            orphans.push(expense);
+        } else if (matches.length === 1) {
+            assignable.push({ expense, supplierId: matches[0].id, supplier: matches[0] });
+        } else {
+            if (!ambiguousMap.has(key)) {
+                ambiguousMap.set(key, { key, suppliers: matches, expenses: [] });
+            }
+            ambiguousMap.get(key).expenses.push(expense);
+        }
+    }
+
+    return {
+        withId,
+        assignable,
+        ambiguous: Array.from(ambiguousMap.values()),
+        orphans
+    };
+}
+
+/**
+ * Merge denormalized supplier fields onto an expense (migration + consistency).
+ */
+export function applySupplierSnapshotToExpense(expense, supplier) {
+    if (!supplier?.id) return { ...expense };
+    return {
+        ...expense,
+        supplierId: supplier.id,
+        supplierName: supplier.name,
+        businessName: supplier.businessName || expense.businessName || '',
+        tin: supplier.tin || expense.tin || '',
+        address: supplier.address || expense.address || '',
+        isVatRegistered: !!supplier.isVatRegistered,
+        updatedAt: new Date().toISOString()
+    };
+}
+
+/**
+ * Build updated expense list after migration choices.
+ * @param {object[]} expenseList
+ * @param {object[]} supplierList
+ * @param {Record<string, string>} nameKeyToSupplierId - normalized name -> chosen supplier id for ambiguous groups
+ */
+export function buildExpensesWithResolvedSupplierIds(expenseList, supplierList, nameKeyToSupplierId = {}) {
+    const byId = new Map((supplierList || []).map((s) => [s.id, s]));
+    const analysis = analyzeSupplierIdMigration(supplierList, expenseList);
+    const assignByExpenseId = new Map(analysis.assignable.map((a) => [a.expense.id, a]));
+
+    return expenseList.map((expense) => {
+        if (expense.supplierId) return expense;
+
+        const key = normalizeSupplierNameKey(expense.supplierName);
+        if (!key) return expense;
+
+        const single = assignByExpenseId.get(expense.id);
+        if (single) {
+            const sup = byId.get(single.supplierId);
+            return sup ? applySupplierSnapshotToExpense(expense, sup) : { ...expense, supplierId: single.supplierId };
+        }
+
+        const chosenId = nameKeyToSupplierId[key];
+        if (chosenId) {
+            const sup = byId.get(chosenId);
+            return sup ? applySupplierSnapshotToExpense(expense, sup) : { ...expense, supplierId: chosenId };
+        }
+
+        return expense;
+    });
+}
+
+export function addExpense(expense) {
+    if (!expense.isPettyCash && expense.supplierName && expense.supplierName.trim()) {
+        const sid = saveSupplierIfNew(expense);
+        if (sid) expense.supplierId = expense.supplierId || sid;
+    }
+    expenses.push(expense);
     saveToLocalStorage();
     invalidateItemMatchesCache();
 }
@@ -256,14 +520,23 @@ export function updateExpense(expenseId, updatedExpense) {
     const index = expenses.findIndex(e => e.id === expenseId);
     if (index > -1) {
         updatedExpense.updatedAt = new Date().toISOString();
-        expenses[index] = updatedExpense;
-        
-        // Automatically create supplier if it doesn't exist
-        // This ensures ALL suppliers are always in the list
-        if (updatedExpense.supplierName && updatedExpense.supplierName.trim()) {
-            saveSupplierIfNew(updatedExpense);
+        if (
+            !updatedExpense.isPettyCash &&
+            updatedExpense.supplierName &&
+            updatedExpense.supplierName.trim()
+        ) {
+            const knownId = updatedExpense.supplierId;
+            const supplierRowKnown =
+                knownId && suppliers.some((s) => s.id === knownId);
+            // Avoid saveSupplierIfNew when this expense already links to a real supplier row.
+            // Otherwise (e.g. admin edit updates expenses before updateSupplier), a renamed
+            // supplier name can fail name-match against the not-yet-updated row and create a duplicate.
+            if (!supplierRowKnown) {
+                const sid = saveSupplierIfNew(updatedExpense);
+                if (sid) updatedExpense.supplierId = updatedExpense.supplierId || sid;
+            }
         }
-        
+        expenses[index] = updatedExpense;
         saveToLocalStorage();
         invalidateItemMatchesCache();
         return true;
@@ -371,7 +644,12 @@ export function updateSupplier(supplierId, updatedSupplier) {
     return false;
 }
 
-export async function deleteSupplier(supplierId, deleteAssociatedExpenses = true) {
+/**
+ * @param {boolean} deleteAssociatedExpenses
+ * @param {{ skipPostDeleteSync?: boolean }} [options] - If skipPostDeleteSync, skip full sync after delete (caller must sync). Used by merge.
+ */
+export async function deleteSupplier(supplierId, deleteAssociatedExpenses = true, options = {}) {
+    const skipPostDeleteSync = Boolean(options && options.skipPostDeleteSync);
     const index = suppliers.findIndex(s => s.id === supplierId);
     if (index > -1) {
         const supplier = suppliers[index];
@@ -382,7 +660,8 @@ export async function deleteSupplier(supplierId, deleteAssociatedExpenses = true
         // Track deletion immediately
         deletedSupplierIds.add(supplierId);
         deletionTimestamps.set(supplierId, Date.now());
-        
+        addPermanentSupplierTombstone(supplierId);
+
         // Persist deletion tracking to localStorage
         try {
             const trackingData = {
@@ -392,58 +671,6 @@ export async function deleteSupplier(supplierId, deleteAssociatedExpenses = true
             localStorage.setItem('expenseTracker_deletedSuppliers', JSON.stringify(trackingData));
         } catch (error) {
             console.warn('Failed to save deletion tracking:', error);
-        }
-
-        // If deleting associated expenses, mark them deleted permanently for cross-device safety.
-        if (deleteAssociatedExpenses && expensesToDelete.length > 0) {
-            const now = Date.now();
-            expensesToDelete.forEach(expense => {
-                deletedExpenseIds.add(expense.id);
-                expenseDeletionTimestamps.set(expense.id, now);
-            });
-
-            try {
-                const trackingData = {
-                    ids: Array.from(deletedExpenseIds),
-                    timestamps: Object.fromEntries(expenseDeletionTimestamps)
-                };
-                localStorage.setItem('expenseTracker_deletedExpenses', JSON.stringify(trackingData));
-            } catch (error) {
-                console.warn('Failed to save expense deletion tracking for bulk delete:', error);
-            }
-        }
-
-        // Write deletion tombstones so other devices won't resurrect deleted records.
-        if (db) {
-            try {
-                const tombstoneOps = [];
-
-                // Supplier tombstones (for all requested supplier IDs).
-                supplierIds.forEach(supplierId => {
-                    tombstoneOps.push({
-                        kind: 'set',
-                        ref: doc(db, COL_SUPPLIER_DELETIONS, supplierId),
-                        data: tombstonePayload(),
-                        merge: true
-                    });
-                });
-
-                // Expense tombstones (only if requested).
-                if (deleteAssociatedExpenses && expensesToDelete.length > 0) {
-                    expensesToDelete.forEach(expense => {
-                        tombstoneOps.push({
-                            kind: 'set',
-                            ref: doc(db, COL_EXPENSE_DELETIONS, expense.id),
-                            data: tombstonePayload(),
-                            merge: true
-                        });
-                    });
-                }
-
-                await commitBatchOps(tombstoneOps);
-            } catch (error) {
-                console.warn('Failed to write deletion tombstones for bulk delete:', error);
-            }
         }
 
         // Write a supplier deletion tombstone so other devices don't resurrect it.
@@ -462,10 +689,7 @@ export async function deleteSupplier(supplierId, deleteAssociatedExpenses = true
         try {
             // Delete associated expenses if requested
             if (deleteAssociatedExpenses) {
-                const supplierName = supplier.name;
-                const expensesToDelete = expenses.filter(e => 
-                    e.supplierName.toLowerCase() === supplierName.toLowerCase()
-                );
+                const expensesToDelete = expenses.filter((e) => e.supplierId === supplierId);
 
                 // Mark associated expenses as deleted (permanent) for cross-device safety.
                 if (expensesToDelete.length > 0) {
@@ -525,7 +749,9 @@ export async function deleteSupplier(supplierId, deleteAssociatedExpenses = true
                 });
                 
                 if (expensesToDelete.length > 0) {
-                    console.log(`Deleted ${expensesToDelete.length} associated expense(s) for supplier "${supplierName}"`);
+                    console.log(
+                        `Deleted ${expensesToDelete.length} associated expense(s) for supplier "${supplier.name}"`
+                    );
                 }
             }
             
@@ -558,11 +784,10 @@ export async function deleteSupplier(supplierId, deleteAssociatedExpenses = true
                 console.error('Failed to save to localStorage:', error);
             }
             
-            // Trigger immediate sync to Firebase
-            if (db && !syncInProgress) {
+            // Trigger immediate sync to Firebase (merge passes skipPostDeleteSync and syncs once at end)
+            if (db && !skipPostDeleteSync && !syncInProgress) {
                 await syncToFirebase();
             } else {
-                // Mark for sync if sync is in progress
                 hasPendingChanges = true;
             }
             
@@ -580,8 +805,9 @@ export async function deleteSupplier(supplierId, deleteAssociatedExpenses = true
 /**
  * Merge source suppliers into a target. Rewrites expenses to the target supplier identity
  * and deletes merged supplier rows (same behavior as mobile performSupplierMerge).
+ * @param {((step: number, total: number, message: string) => void) | null} onProgress - optional UI progress (step 1..total)
  */
-export async function mergeSuppliersIntoTarget(targetSupplierId, sourceSupplierIds) {
+export async function mergeSuppliersIntoTarget(targetSupplierId, sourceSupplierIds, onProgress = null) {
     if (!targetSupplierId || !sourceSupplierIds?.length) {
         return { success: false, error: 'Invalid arguments', deleted: 0, transferred: 0 };
     }
@@ -597,17 +823,26 @@ export async function mergeSuppliersIntoTarget(targetSupplierId, sourceSupplierI
         return { success: false, error: 'No suppliers to merge', deleted: 0, transferred: 0 };
     }
 
-    const supplierNamesToMatch = sources.map((s) => s.name.toLowerCase());
-    const supplierIdsToRemove = new Set(sources.map((s) => s.id));
+    const report = (step, total, message) => {
+        if (typeof onProgress === 'function') {
+            try {
+                onProgress(step, total, message);
+            } catch (e) {
+                console.warn('merge onProgress:', e);
+            }
+        }
+    };
+
+    const sourceIdSet = new Set(sources.map((s) => s.id));
 
     let transferred = 0;
     const now = new Date().toISOString();
     const updatedExpenses = expenses.map((expense) => {
-        const expenseSupplierLower = (expense.supplierName || '').toLowerCase();
-        if (supplierNamesToMatch.includes(expenseSupplierLower)) {
+        if (sourceIdSet.has(expense.supplierId)) {
             transferred++;
             return {
                 ...expense,
+                supplierId: target.id,
                 supplierName: target.name,
                 businessName: target.businessName || expense.businessName,
                 tin: target.tin || expense.tin,
@@ -619,21 +854,17 @@ export async function mergeSuppliersIntoTarget(targetSupplierId, sourceSupplierI
         return expense;
     });
 
-    setExpenses(updatedExpenses);
-    saveToLocalStorage();
-    invalidateItemMatchesCache();
-
+    const supplierIdsToRemove = new Set(sources.map((s) => s.id));
     const suppliersToDelete = [...sources];
-    supplierNamesToMatch.forEach((nameToMatch) => {
+    const sourceNamesLower = new Set(sources.map((s) => s.name.toLowerCase()));
+    sourceNamesLower.forEach((nameToMatch) => {
         suppliers.forEach((supplier) => {
             if (
                 supplier.id !== target.id &&
                 !supplierIdsToRemove.has(supplier.id) &&
                 supplier.name.toLowerCase() === nameToMatch
             ) {
-                const hasExpenses = expenses.some(
-                    (e) => e.supplierName.toLowerCase() === supplier.name.toLowerCase()
-                );
+                const hasExpenses = updatedExpenses.some((e) => e.supplierId === supplier.id);
                 if (!hasExpenses) {
                     suppliersToDelete.push(supplier);
                     supplierIdsToRemove.add(supplier.id);
@@ -646,13 +877,33 @@ export async function mergeSuppliersIntoTarget(targetSupplierId, sourceSupplierI
         (supplier, index, self) => index === self.findIndex((s) => s.id === supplier.id)
     );
 
+    const totalSteps = 1 + uniqueSuppliersToDelete.length;
+    report(1, totalSteps, 'Saving merged expenses…');
+
+    setExpenses(updatedExpenses);
+    saveToLocalStorage();
+    invalidateItemMatchesCache();
+
     let deleted = 0;
-    await Promise.all(
-        uniqueSuppliersToDelete.map(async (supplier) => {
-            const ok = await deleteSupplier(supplier.id);
-            if (ok) deleted++;
-        })
-    );
+    for (let i = 0; i < uniqueSuppliersToDelete.length; i++) {
+        const supplier = uniqueSuppliersToDelete[i];
+        const step = 2 + i;
+        const nm = supplier.name || supplier.id;
+        report(step, totalSteps, `Removing "${nm}"…`);
+        const ok = await deleteSupplier(supplier.id, false, { skipPostDeleteSync: true });
+        if (ok) deleted++;
+    }
+
+    try {
+        if (db && !syncInProgress) {
+            await syncToFirebase();
+        } else if (db) {
+            hasPendingChanges = true;
+        }
+    } catch (err) {
+        console.error('mergeSuppliersIntoTarget: final sync failed', err);
+        if (db) hasPendingChanges = true;
+    }
 
     return { success: true, deleted, transferred };
 }
@@ -695,9 +946,7 @@ export async function deleteSuppliersBulk(supplierIds, progressCallback = null, 
                 
                 // Collect associated expenses if requested
                 if (deleteAssociatedExpenses) {
-                    const supplierExpenses = expenses.filter(e => 
-                        e.supplierName.toLowerCase() === supplier.name.toLowerCase()
-                    );
+                    const supplierExpenses = expenses.filter((e) => e.supplierId === supplierId);
                     expensesToDelete.push(...supplierExpenses);
                 }
             }
@@ -709,6 +958,7 @@ export async function deleteSuppliersBulk(supplierIds, progressCallback = null, 
             deletedSupplierIds.add(supplierId);
             deletionTimestamps.set(supplierId, now);
         });
+        addPermanentSupplierTombstones(supplierIds);
 
         // Persist deletion tracking to localStorage
         try {
@@ -734,6 +984,15 @@ export async function deleteSuppliersBulk(supplierIds, progressCallback = null, 
             try {
                 const ops = [];
                 const suppliersToRemove = [];
+
+                supplierIds.forEach((supplierId) => {
+                    ops.push({
+                        kind: 'set',
+                        ref: doc(db, COL_SUPPLIER_DELETIONS, supplierId),
+                        data: tombstonePayload(),
+                        merge: true
+                    });
+                });
                 
                 // Add expense deletions to batch if requested
                 if (deleteAssociatedExpenses && expensesToDelete.length > 0) {
@@ -928,6 +1187,21 @@ export function loadFromLocalStorage() {
         // Check if localStorage was completely cleared (no expenses AND no suppliers)
         const isLocalStorageEmpty = !savedExpenses && !savedSuppliers;
 
+        // Permanent supplier tombstones must load before suppliers so merged-away rows stay out of memory.
+        if (isLocalStorageEmpty) {
+            console.log('LocalStorage was cleared - resetting deletion tracking to allow Firebase restore');
+            deletedExpenseIds.clear();
+            expenseDeletionTimestamps.clear();
+            deletedSupplierIds.clear();
+            deletionTimestamps.clear();
+            supplierTombstoneIds.clear();
+            localStorage.removeItem('expenseTracker_deletedExpenses');
+            localStorage.removeItem('expenseTracker_deletedSuppliers');
+            localStorage.removeItem(PERMANENT_SUPPLIER_TOMBSTONE_STORAGE_KEY);
+        } else {
+            loadPermanentSupplierTombstonesFromStorage();
+        }
+
         if (savedExpenses) {
             const parsedExpenses = JSON.parse(savedExpenses);
             setExpenses(parsedExpenses);
@@ -936,24 +1210,29 @@ export function loadFromLocalStorage() {
 
         if (savedSuppliers) {
             const parsedSuppliers = JSON.parse(savedSuppliers);
-            setSuppliers(parsedSuppliers);
-            console.log('Loaded suppliers from localStorage:', suppliers.length, 'items');
+            const filteredSuppliers = parsedSuppliers.filter((s) => !supplierTombstoneIds.has(s.id));
+            if (filteredSuppliers.length !== parsedSuppliers.length) {
+                setSuppliers(filteredSuppliers);
+                try {
+                    localStorage.setItem('expenseTracker_suppliers', JSON.stringify(filteredSuppliers));
+                } catch (e) {
+                    console.warn('Failed to persist suppliers after tombstone filter:', e);
+                }
+                console.log(
+                    'Loaded suppliers from localStorage (dropped',
+                    parsedSuppliers.length - filteredSuppliers.length,
+                    'tombstoned row(s)):',
+                    filteredSuppliers.length,
+                    'items'
+                );
+            } else {
+                setSuppliers(parsedSuppliers);
+                console.log('Loaded suppliers from localStorage:', suppliers.length, 'items');
+            }
         }
 
         // Load deletion tracking BEFORE processing expenses to prevent deleted items from being restored
-        // BUT: If localStorage was completely cleared, clear deletion tracking to allow full restore from Firebase
         try {
-            // If localStorage was cleared, reset deletion tracking to allow restoration from Firebase
-            if (isLocalStorageEmpty) {
-                console.log('LocalStorage was cleared - resetting deletion tracking to allow Firebase restore');
-                deletedExpenseIds.clear();
-                expenseDeletionTimestamps.clear();
-                deletedSupplierIds.clear();
-                deletionTimestamps.clear();
-                // Clear deletion tracking from localStorage
-                localStorage.removeItem('expenseTracker_deletedExpenses');
-                localStorage.removeItem('expenseTracker_deletedSuppliers');
-            }
             // Load supplier deletion tracking
             const supplierTrackingData = localStorage.getItem('expenseTracker_deletedSuppliers');
             if (supplierTrackingData) {
@@ -1028,7 +1307,8 @@ export function loadFromLocalStorage() {
 
 // Helper function to strip receipt images from expenses before saving to localStorage
 function stripReceiptImagesForStorage(expensesArray) {
-    return expensesArray.map(expense => {
+    const normalizedExpenses = normalizeExpensesReceiptState(expensesArray);
+    return normalizedExpenses.map(expense => {
         const { receiptImage, ...expenseWithoutImage } = expense;
         // Add flag to indicate receipt exists in Firebase
         if (receiptImage) {
@@ -1044,8 +1324,9 @@ function cleanupOldDeletions() {
     const supplierToRemove = [];
     // NOTE: expenseToRemove is not used - expense deletions are kept permanently
     
-    // Clean up old supplier deletions
+    // Clean up old supplier deletions (never drop ids that still have a permanent tombstone)
     deletedSupplierIds.forEach(id => {
+        if (supplierTombstoneIds.has(id)) return;
         const deletedAt = deletionTimestamps.get(id) || 0;
         if (now - deletedAt >= DELETION_TRACKING_TTL) {
             supplierToRemove.push(id);
@@ -1082,6 +1363,7 @@ export function saveToLocalStorage() {
     try {
         // Strip receipt images from expenses before saving to localStorage to prevent quota exceeded errors
         // Receipt images are stored in Firebase, so we only need a flag in localStorage
+        setExpenses(expenses);
         const expensesForStorage = stripReceiptImagesForStorage(expenses);
         const expensesJson = JSON.stringify(expensesForStorage);
         const suppliersJson = JSON.stringify(suppliers);
@@ -1134,6 +1416,84 @@ export function saveToLocalStorage() {
     }
 }
 
+/**
+ * localStorage strips receiptImage; restore URL from Firestore before sync so in-memory state
+ * and any code paths still see the URL. Merge writes already prevent wiping the server field.
+ */
+async function rehydrateStrippedReceiptUrlsFromFirestore() {
+    if (!db) return;
+    let didMutate = false;
+    for (let i = 0; i < expenses.length; i++) {
+        const e = expenses[i];
+        if (!e?.id || deletedExpenseIds.has(e.id)) continue;
+        if (e.hasReceiptImage && !e.receiptImage) {
+            try {
+                const snap = await getDoc(doc(db, 'expenses', e.id));
+                if (snap.exists()) {
+                    const url = snap.data()?.receiptImage;
+                    if (url && typeof url === 'string') {
+                        expenses[i] = normalizeExpenseReceiptState({ ...e, receiptImage: url, hasReceiptImage: true });
+                        didMutate = true;
+                    }
+                }
+            } catch (err) {
+                console.warn('[Sync] Could not rehydrate receiptImage for expense', e.id, err);
+            }
+        }
+    }
+    if (didMutate) setExpenses(expenses);
+}
+
+function hasReceiptUrlValue(value) {
+    return typeof value === 'string' && value.trim().length > 0;
+}
+
+function normalizeExpenseReceiptState(expense) {
+    if (!expense || typeof expense !== 'object') return expense;
+    const normalized = { ...expense };
+    const hasUrl = hasReceiptUrlValue(normalized.receiptImage);
+    if (hasUrl) {
+        normalized.hasReceiptImage = true;
+    } else if (normalized.receiptImage === null) {
+        normalized.hasReceiptImage = false;
+    } else if (normalized.hasReceiptImage === true) {
+        normalized.hasReceiptImage = true;
+    } else if (normalized.hasReceiptImage === false) {
+        normalized.hasReceiptImage = false;
+    }
+    return normalized;
+}
+
+function normalizeExpensesReceiptState(expensesArray = []) {
+    return expensesArray.map((expense) => normalizeExpenseReceiptState(expense));
+}
+
+async function enrichExpenseWithServerReceiptUrl(expense) {
+    if (!db || !expense?.id) return normalizeExpenseReceiptState(expense);
+    const normalizedExpense = normalizeExpenseReceiptState(expense);
+    if (
+        normalizedExpense.hasReceiptImage !== true ||
+        hasReceiptUrlValue(normalizedExpense.receiptImage) ||
+        normalizedExpense.receiptImage === null
+    ) {
+        return normalizedExpense;
+    }
+    try {
+        const snap = await getDoc(doc(db, 'expenses', normalizedExpense.id));
+        const serverUrl = snap.exists() ? snap.data()?.receiptImage : null;
+        if (hasReceiptUrlValue(serverUrl)) {
+            return normalizeExpenseReceiptState({
+                ...normalizedExpense,
+                receiptImage: serverUrl,
+                hasReceiptImage: true
+            });
+        }
+    } catch (error) {
+        console.warn('[Sync] Failed server receipt fallback for expense:', normalizedExpense.id, error);
+    }
+    return normalizedExpense;
+}
+
 // Firebase Sync Functions
 export async function syncToFirebase() {
     if (!db || syncInProgress) {
@@ -1171,12 +1531,11 @@ export async function syncToFirebase() {
                 expenseDeletionTimestamps.set(tombstoneDoc.id, deletedAtMs);
             });
 
+            addPermanentSupplierTombstones(supplierDeletionsSnapshot.docs.map((d) => d.id));
             supplierDeletionsSnapshot.docs.forEach(tombstoneDoc => {
                 const deletedAtMs = toMillis(tombstoneDoc.data()?.deletedAt);
-                if (now - deletedAtMs < DELETION_TRACKING_TTL) {
-                    deletedSupplierIds.add(tombstoneDoc.id);
-                    deletionTimestamps.set(tombstoneDoc.id, deletedAtMs);
-                }
+                deletedSupplierIds.add(tombstoneDoc.id);
+                deletionTimestamps.set(tombstoneDoc.id, deletedAtMs);
             });
 
             // Persist updated deletion tracking so reloads remain consistent.
@@ -1224,21 +1583,26 @@ export async function syncToFirebase() {
         // Track local supplier IDs
         const localSupplierIds = new Set();
 
-        expenses.forEach(expense => {
+        setExpenses(expenses);
+        await rehydrateStrippedReceiptUrlsFromFirestore();
+
+        for (const rawExpense of expenses) {
+            const expense = await enrichExpenseWithServerReceiptUrl(rawExpense);
             localExpenseIds.add(expense.id);
             if (deletedExpenseIds.has(expense.id)) {
-                return; // deleted remotely; never recreate on this device
+                continue; // deleted remotely; never recreate on this device
             }
             ops.push({
                 kind: 'set',
                 ref: doc(db, 'expenses', expense.id),
+                merge: true,
                 data: {
                     ...expense,
                     syncedAt: serverTimestamp(),
                     deviceId: getDeviceId()
                 }
             });
-        });
+        }
         
         // Get Firebase expense IDs for deletion check
         let firebaseExpenseIds = new Set();
@@ -1274,12 +1638,13 @@ export async function syncToFirebase() {
         // Sync suppliers that exist locally (tombstoned suppliers are skipped)
         suppliers.forEach(supplier => {
             localSupplierIds.add(supplier.id);
-            if (deletedSupplierIds.has(supplier.id)) {
+            if (deletedSupplierIds.has(supplier.id) || supplierTombstoneIds.has(supplier.id)) {
                 return; // deleted remotely; never recreate on this device
             }
             ops.push({
                 kind: 'set',
                 ref: doc(db, 'suppliers', supplier.id),
+                merge: true,
                 data: {
                     ...supplier,
                     syncedAt: serverTimestamp(),
@@ -1294,7 +1659,8 @@ export async function syncToFirebase() {
         let deletionCount = 0;
         firebaseSupplierIds.forEach(supplierId => {
             const isNotInLocal = !localSupplierIds.has(supplierId);
-            const isInDeletionTracking = deletedSupplierIds.has(supplierId);
+            const isInDeletionTracking =
+                deletedSupplierIds.has(supplierId) || supplierTombstoneIds.has(supplierId);
 
             // Delete if supplier was removed from local OR explicitly marked for deletion
             if (isNotInLocal || isInDeletionTracking) {
@@ -1388,7 +1754,6 @@ export async function fetchFromFirebase() {
         ]);
 
         // Apply server-side tombstones to prevent cross-device resurrection.
-        // Expense deletions are treated as permanent; supplier deletions follow DELETION_TRACKING_TTL.
         const now = Date.now();
         const toMillis = (ts) => {
             if (!ts) return now;
@@ -1403,12 +1768,11 @@ export async function fetchFromFirebase() {
             expenseDeletionTimestamps.set(tombstoneDoc.id, deletedAtMs);
         });
 
+        addPermanentSupplierTombstones(supplierDeletionsSnapshot.docs.map((d) => d.id));
         supplierDeletionsSnapshot.docs.forEach(tombstoneDoc => {
             const deletedAtMs = toMillis(tombstoneDoc.data()?.deletedAt);
-            if (now - deletedAtMs < DELETION_TRACKING_TTL) {
-                deletedSupplierIds.add(tombstoneDoc.id);
-                deletionTimestamps.set(tombstoneDoc.id, deletedAtMs);
-            }
+            deletedSupplierIds.add(tombstoneDoc.id);
+            deletionTimestamps.set(tombstoneDoc.id, deletedAtMs);
         });
 
         // Persist updated deletion tracking so reloads remain consistent.
@@ -1436,6 +1800,7 @@ export async function fetchFromFirebase() {
             id: doc.id,
             ...doc.data()
         }));
+        const normalizedFirebaseExpenses = normalizeExpensesReceiptState(firebaseExpenses);
 
         const firebaseSuppliers = suppliersSnapshot.docs.map(doc => ({
             id: doc.id,
@@ -1445,12 +1810,14 @@ export async function fetchFromFirebase() {
         // Merge with local data (smart conflict resolution)
         const mergeResult = mergeData(
             { expenses, suppliers },
-            { expenses: firebaseExpenses, suppliers: firebaseSuppliers }
+            { expenses: normalizedFirebaseExpenses, suppliers: firebaseSuppliers }
         );
 
         if (mergeResult.hasChanges) {
-            setExpenses(mergeResult.expenses);
+            const normalizedMergedExpenses = normalizeExpensesReceiptState(mergeResult.expenses);
+            setExpenses(normalizedMergedExpenses);
             setSuppliers(mergeResult.suppliers);
+            await rehydrateStrippedReceiptUrlsFromFirestore();
             saveToLocalStorage();
 
             console.log('Data updated from Firebase');
@@ -1511,9 +1878,32 @@ function mergeData(localData, firebaseData) {
             const localItem = mergedExpenses[localIndex];
             const firebaseUpdated = new Date(firebaseItem.updatedAt || firebaseItem.createdAt);
             const localUpdated = new Date(localItem.updatedAt || localItem.createdAt);
+            const firebaseHasUrl = hasReceiptUrlValue(firebaseItem?.receiptImage);
+            const localHasUrl = hasReceiptUrlValue(localItem?.receiptImage);
 
             if (firebaseUpdated > localUpdated) {
-                mergedExpenses[localIndex] = firebaseItem;
+                const mergedFirebaseWinner = { ...firebaseItem };
+                if (
+                    !firebaseHasUrl &&
+                    firebaseItem?.receiptImage !== null &&
+                    localHasUrl
+                ) {
+                    mergedFirebaseWinner.receiptImage = localItem.receiptImage;
+                    mergedFirebaseWinner.hasReceiptImage = true;
+                }
+                mergedExpenses[localIndex] = normalizeExpenseReceiptState(mergedFirebaseWinner);
+                hasChanges = true;
+            } else if (
+                !localHasUrl &&
+                localItem?.receiptImage !== null &&
+                firebaseHasUrl
+            ) {
+                const mergedLocalWinner = normalizeExpenseReceiptState({
+                    ...localItem,
+                    receiptImage: firebaseItem.receiptImage,
+                    hasReceiptImage: true
+                });
+                mergedExpenses[localIndex] = mergedLocalWinner;
                 hasChanges = true;
             }
         }
@@ -1535,6 +1925,17 @@ function mergeData(localData, firebaseData) {
 
     // Merge suppliers with smart logic
     firebaseData.suppliers.forEach(firebaseItem => {
+        const tombstoned = !isLocalDataEmpty && supplierTombstoneIds.has(firebaseItem.id);
+        if (tombstoned) {
+            const localIndex = mergedSuppliers.findIndex(item => item.id === firebaseItem.id);
+            if (localIndex !== -1) {
+                mergedSuppliers.splice(localIndex, 1);
+                hasChanges = true;
+                console.log('Removed tombstoned supplier from merged data:', firebaseItem.id, firebaseItem.name);
+            }
+            return;
+        }
+
         const localIndex = mergedSuppliers.findIndex(item => item.id === firebaseItem.id);
 
         if (localIndex === -1) {
@@ -2127,6 +2528,7 @@ export function mergeExpenseData(existingExpense, newExpense) {
     );
 
     let mergedExpense = { ...existingExpense };
+    mergedExpense.supplierId = existingExpense.supplierId || newExpense.supplierId;
 
     // Use supplier details from the more complete source (usually accounting CSV)
     if (existingHasFullSupplier && !newHasFullSupplier) {
@@ -2184,36 +2586,45 @@ export function mergeExpenseData(existingExpense, newExpense) {
 
     mergedExpense.updatedAt = new Date().toISOString();
 
+    if (!mergedExpense.supplierId && mergedExpense.supplierName?.trim()) {
+        const sid = saveSupplierIfNew(mergedExpense);
+        if (sid) mergedExpense.supplierId = sid;
+    }
+
     return mergedExpense;
 }
 
 // Supplier Helper Functions
+/** Ensure a supplier row exists for this expense; returns supplier id or null. */
 export function saveSupplierIfNew(expense) {
-    const supplierName = expense.supplierName.trim();
-    const businessName = expense.businessName.trim();
+    const supplierName = (expense.supplierName || '').trim();
+    const businessName = (expense.businessName || '').trim();
 
-    if (!supplierName) return;
+    if (!supplierName) return null;
 
-    // Check if supplier already exists
-    const existingSupplier = suppliers.find(s =>
-        s.name.toLowerCase() === supplierName.toLowerCase() ||
-        (businessName && s.businessName.toLowerCase() === businessName.toLowerCase())
+    const existingSupplier = suppliers.find(
+        (s) =>
+            s.name.toLowerCase() === supplierName.toLowerCase() ||
+            (businessName && s.businessName.toLowerCase() === businessName.toLowerCase())
     );
 
-    if (!existingSupplier) {
-        const newSupplier = {
-            id: generateId(),
-            name: supplierName,
-            businessName: businessName || '',
-            tin: expense.tin || '',
-            address: expense.address || '',
-            isVatRegistered: expense.isVatRegistered || false,
-            createdAt: new Date().toISOString()
-        };
-
-        suppliers.push(newSupplier);
-        saveToLocalStorage();
+    if (existingSupplier) {
+        return existingSupplier.id;
     }
+
+    const newSupplier = {
+        id: generateId(),
+        name: supplierName,
+        businessName: businessName || '',
+        tin: expense.tin || '',
+        address: expense.address || '',
+        isVatRegistered: expense.isVatRegistered || false,
+        createdAt: new Date().toISOString()
+    };
+
+    suppliers.push(newSupplier);
+    saveToLocalStorage();
+    return newSupplier.id;
 }
 
 // Autocomplete Helper Functions
@@ -2412,6 +2823,18 @@ export function createExpenseObject(data, options = {}) {
         return data[key] !== undefined ? data[key] : defaultValue;
     };
 
+    const isPettyCash = (() => {
+        if (data instanceof FormData) {
+            return data.get('isPettyCash') === 'on' || data.get('isPettyCash') === 'true';
+        }
+        if (data && typeof data === 'object' && !Array.isArray(data)) {
+            const v = data.isPettyCash;
+            if (v === true || v === 'true') return true;
+            if (v === false || v === 'false') return false;
+        }
+        return Boolean(existingExpense?.isPettyCash);
+    })();
+
     const explicitId = getValue('id', null);
 
     // Process items - ensure they have correct totals
@@ -2436,15 +2859,28 @@ export function createExpenseObject(data, options = {}) {
     }
 
     // Get VAT exempt amount
-    const vatExemptAmount = parseFloat(getValue('vatExemptAmount')) || 
+    let vatExemptAmount = parseFloat(getValue('vatExemptAmount')) || 
                            (existingExpense?.vatExemptAmount || 0);
 
     // Get supplier information for VAT calculation
-    const supplierName = getValue('supplierName', existingExpense?.supplierName || '').trim();
+    let supplierName = getValue('supplierName', existingExpense?.supplierName || '').trim();
     const allSuppliers = getSuppliers();
-    const supplier = supplierName ? allSuppliers.find(s => 
-        s.name.toLowerCase() === supplierName.toLowerCase()
-    ) : null;
+    let supplierId = '';
+    if (data instanceof FormData) {
+        supplierId = ((data.get('supplierId') || '') + '').trim();
+    } else if (data && typeof data === 'object' && Object.prototype.hasOwnProperty.call(data, 'supplierId')) {
+        const v = data.supplierId;
+        supplierId = v == null || v === '' ? '' : String(v).trim();
+    } else {
+        supplierId = (existingExpense?.supplierId && String(existingExpense.supplierId).trim()) || '';
+    }
+    let supplier = supplierId
+        ? allSuppliers.find((s) => s.id === supplierId)
+        : null;
+    if (!supplier && supplierName) {
+        supplier = allSuppliers.find((s) => s.name.toLowerCase() === supplierName.toLowerCase());
+        if (supplier) supplierId = supplier.id;
+    }
 
     // Calculate VAT if auto-calculate is enabled
     let vatBreakdown = {
@@ -2453,7 +2889,7 @@ export function createExpenseObject(data, options = {}) {
         isVatRegistered: existingExpense?.isVatRegistered || false
     };
 
-    if (autoCalculateVAT) {
+    if (autoCalculateVAT && !isPettyCash) {
         // Check if VAT computation is explicitly disabled
         const vatComputationExplicitlyDisabled = getValue('vatComputationEnabled') === 'false' || 
                                                  getValue('vatComputationEnabled') === false;
@@ -2488,18 +2924,34 @@ export function createExpenseObject(data, options = {}) {
         // If expense had VAT and supplier still registered, preserve (handled by existingExpense default above)
     }
 
+    if (isPettyCash) {
+        vatBreakdown = { vatableSale: 0, vatAmount: 0, isVatRegistered: false };
+        vatExemptAmount = 0;
+    }
+
+    const allocationVal = getValue('allocation', existingExpense?.allocation || 'Store');
+    const branchVal =
+        allocationVal !== 'Store'
+            ? null
+            : (() => {
+                  const b = getValue('branch', existingExpense?.branch ?? '');
+                  return b === '' || b == null ? null : b;
+              })();
+
     // Build expense object
     const expense = {
         id: isEditing && existingExpense ? existingExpense.id : (explicitId || existingExpense?.id || generateId()),
         date: getValue('date', existingExpense?.date || getTodayLocal()),
-        branch: getValue('branch', existingExpense?.branch || null),
-        allocation: getValue('allocation', existingExpense?.allocation || 'Store'),
+        branch: branchVal,
+        allocation: allocationVal,
+        isPettyCash,
         supplierName: supplierName,
+        ...(isPettyCash || !supplierId ? {} : { supplierId }),
         businessName: getValue('businessName', existingExpense?.businessName || ''),
         tin: getValue('tin', existingExpense?.tin || ''),
         address: getValue('address', existingExpense?.address || ''),
         invoiceNumber: getValue('invoiceNumber', existingExpense?.invoiceNumber || ''),
-        expenseCategory: getValue('expenseCategory', existingExpense?.expenseCategory || 'Supplies'),
+        expenseCategory: getValue('expenseCategory', existingExpense?.expenseCategory || DEFAULT_EXPENSE_CATEGORY),
         items: items,
         totalAmount: totalAmount,
         vatExemptAmount: vatExemptAmount,
@@ -2507,25 +2959,36 @@ export function createExpenseObject(data, options = {}) {
         vatAmount: vatBreakdown.vatAmount,
         isVatRegistered: vatBreakdown.isVatRegistered,
         paidBy: (() => {
-            const allocation = getValue('allocation', existingExpense?.allocation || 'Store');
             const paidBy = getValue('paidBy', existingExpense?.paidBy || 'Company');
-            // If allocation is non-store, always Company
-            return allocation === 'Store' ? paidBy : 'Company';
+            return allocationVal === 'Store' ? paidBy : 'Company';
         })(),
         notes: getValue('notes', existingExpense?.notes || ''),
         receiptImage: getValue('receiptImage', existingExpense?.receiptImage || null),
-        vatComputationEnabled: getValue('vatComputationEnabled') !== undefined ? 
-                               (getValue('vatComputationEnabled') === 'true' || getValue('vatComputationEnabled') === true) :
-                               (existingExpense?.vatComputationEnabled !== undefined ? existingExpense.vatComputationEnabled : undefined),
+        vatComputationEnabled: isPettyCash
+            ? false
+            : getValue('vatComputationEnabled') !== undefined
+              ? getValue('vatComputationEnabled') === 'true' || getValue('vatComputationEnabled') === true
+              : existingExpense?.vatComputationEnabled !== undefined
+                ? existingExpense.vatComputationEnabled
+                : undefined,
         createdAt: isEditing && existingExpense ? 
                    (existingExpense.createdAt || new Date().toISOString()) : 
                    new Date().toISOString(),
         updatedAt: new Date().toISOString() // Always set updatedAt, even for new expenses
     };
 
+    const normalizedExpense = normalizeExpenseReceiptState(expense);
+
+    if (isPettyCash) {
+        normalizedExpense.supplierId = null;
+        normalizedExpense.businessName = '';
+        normalizedExpense.tin = '';
+        normalizedExpense.address = '';
+    }
+
     // Validate if requested
     if (validate) {
-        const errors = validateExpense(expense);
+        const errors = validateExpense(normalizedExpense);
         if (errors.length > 0) {
             return {
                 success: false,
@@ -2538,7 +3001,7 @@ export function createExpenseObject(data, options = {}) {
     return {
         success: true,
         errors: [],
-        expense: expense
+        expense: normalizedExpense
     };
 }
 
@@ -2547,7 +3010,7 @@ export function validateExpense(expense) {
     const errors = [];
 
     if (!expense.supplierName || expense.supplierName.trim() === '') {
-        errors.push('Supplier name is required');
+        errors.push('Supplier / payee name is required');
     }
 
     if (!expense.items || expense.items.length === 0) {
@@ -2651,9 +3114,8 @@ export function updateExpensesForSupplier(oldSupplier, newSupplier) {
     let updatedCount = 0;
 
     allExpenses.forEach(expense => {
-        // Match expenses by old supplier name
-        if (expense.supplierName.toLowerCase() === oldSupplier.name.toLowerCase()) {
-            // Update supplier fields in expense
+        if (expense.supplierId === oldSupplier.id) {
+            expense.supplierId = newSupplier.id;
             expense.supplierName = newSupplier.name;
             expense.businessName = newSupplier.businessName || expense.businessName;
             expense.tin = newSupplier.tin || expense.tin;
@@ -2696,9 +3158,7 @@ export function canDeleteSupplier(supplierId) {
     }
 
     const allExpenses = getExpenses();
-    const expenseCount = allExpenses.filter(expense =>
-        expense.supplierName.toLowerCase() === supplier.name.toLowerCase()
-    ).length;
+    const expenseCount = allExpenses.filter((expense) => expense.supplierId === supplierId).length;
 
     if (expenseCount > 0) {
         return {
@@ -2757,6 +3217,123 @@ export function calculateVatBreakdown(totalAmount, vatExemptAmount = 0, isVatReg
 export function calculateVATFromSupplier(totalAmount, vatExemptAmount, supplier) {
     const isVatRegistered = supplier?.isVatRegistered || false;
     return calculateVatBreakdown(totalAmount, vatExemptAmount, isVatRegistered);
+}
+
+/** Resolve supplier row for an expense (by id, then name). */
+export function resolveExpenseSupplier(expense) {
+    if (!expense || expense.isPettyCash) return null;
+    const list = getSuppliers();
+    if (expense.supplierId) {
+        return list.find((s) => s.id === expense.supplierId) || null;
+    }
+    const name = (expense.supplierName || '').trim();
+    if (!name) return null;
+    return list.find((s) => s.name.toLowerCase() === name.toLowerCase()) || null;
+}
+
+/**
+ * Admin table VAT column: expense-level values only.
+ * "—" here can mean computation was excluded for this line (not vatExemptAmount).
+ */
+export function formatExpenseVatColumnLabel(expense) {
+    const amt = Number(expense?.vatAmount) || 0;
+    if (amt > 0) {
+        return { text: `₱${amt.toFixed(2)}`, title: '' };
+    }
+    if (expense?.isPettyCash) {
+        return { text: 'No VAT', title: 'Petty cash voucher' };
+    }
+    if (expense?.vatComputationEnabled === false) {
+        return {
+            text: '—',
+            title: 'VAT computation excluded for this expense (distinct from VAT-exempt purchase amount).'
+        };
+    }
+    const sup = resolveExpenseSupplier(expense);
+    if (
+        sup?.isVatRegistered &&
+        (expense.vatComputationEnabled === true || expense.vatComputationEnabled === undefined)
+    ) {
+        return {
+            text: '—',
+            title: 'No VAT amount stored while supplier is VAT-registered and computation is on — open the expense and save to recalculate, or verify supplier link.'
+        };
+    }
+    return { text: 'No VAT', title: '' };
+}
+
+const LEGACY_VAT_BACKFILL_KEY = 'expenseTracker_vatBackfill_v1_done';
+
+/**
+ * One-time: recompute VAT for legacy expenses linked to a VAT-registered supplier
+ * with computation left on (or unset) but vatAmount still zero.
+ */
+export function runLegacyExpenseVatBackfillOnce() {
+    if (typeof localStorage === 'undefined') return 0;
+    if (localStorage.getItem(LEGACY_VAT_BACKFILL_KEY) === '1') return 0;
+    let updated = 0;
+    const snapshot = [...expenses];
+    for (const exp of snapshot) {
+        if (exp.isPettyCash) continue;
+        if ((Number(exp.vatAmount) || 0) > 0) continue;
+        if (exp.vatComputationEnabled === false) continue;
+        const sup = resolveExpenseSupplier(exp);
+        if (!sup?.isVatRegistered) continue;
+        const result = createExpenseObject(
+            {
+                id: exp.id,
+                date: exp.date,
+                branch: exp.branch,
+                allocation: exp.allocation,
+                isPettyCash: false,
+                supplierName: exp.supplierName,
+                supplierId: exp.supplierId,
+                businessName: exp.businessName,
+                tin: exp.tin,
+                address: exp.address,
+                invoiceNumber: exp.invoiceNumber,
+                expenseCategory: exp.expenseCategory,
+                items: exp.items,
+                totalAmount: exp.totalAmount,
+                vatExemptAmount: exp.vatExemptAmount || 0,
+                vatComputationEnabled: true,
+                paidBy: exp.paidBy,
+                notes: exp.notes,
+                receiptImage: exp.receiptImage
+            },
+            {
+                existingExpense: exp,
+                isEditing: true,
+                calculateTotalFromItems: false,
+                autoCalculateVAT: true,
+                validate: false
+            }
+        );
+        if (!result.success || !result.expense) continue;
+        if ((Number(result.expense.vatAmount) || 0) <= 0) continue;
+        const idx = expenses.findIndex((e) => e.id === exp.id);
+        if (idx === -1) continue;
+        const merged = {
+            ...result.expense,
+            paymentMethod: exp.paymentMethod,
+            createdAt: exp.createdAt
+        };
+        expenses[idx] = merged;
+        updated++;
+    }
+    if (updated > 0) {
+        try {
+            saveToLocalStorage();
+        } catch (e) {
+            console.warn('VAT backfill save failed', e);
+        }
+    }
+    try {
+        localStorage.setItem(LEGACY_VAT_BACKFILL_KEY, '1');
+    } catch (e) {
+        /* ignore */
+    }
+    return updated;
 }
 
 // UI Helper Functions

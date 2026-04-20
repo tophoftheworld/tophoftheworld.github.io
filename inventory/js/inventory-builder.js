@@ -1,9 +1,9 @@
 import { db } from './firebase-inventory.js';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where, setDoc, getDoc } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
 
-console.log('=== INVENTORY BUILDER LOADED - VERSION 24 ===');
+console.log('=== INVENTORY BUILDER LOADED - VERSION 31 (Order View control row grid) ===');
 
-// Global state - CACHE BUST: v24 (MOA branch, admin branch list fix)
+// Global state - CACHE BUST: v31 (Order View 3-col control grid desktop)
 let masterItems = [];
 let availableBranches = ['sm-north', 'podium', 'moa'];
 // Removed branchAssignments and branchOverrides - using new structure in master-items
@@ -29,6 +29,10 @@ let pullOutQuantities = {};
 let wastageQuantities = {};
 let dashboardCollapsedCategories = JSON.parse(localStorage.getItem('dashboard-collapsed-categories') || '[]');
 let branchCollapsedCategories = JSON.parse(localStorage.getItem('branch-collapsed-categories') || '[]');
+let orderViewCollapsedCategories = JSON.parse(localStorage.getItem('order-view-collapsed-categories') || '[]');
+let orderViewNeedsOrderOnly = localStorage.getItem('order-view-needs-order-only') === '1';
+/** Last successful Order View payload so toggles can re-render without refetching */
+let lastOrderViewSnapshot = null;
 let isFilteringLowStocks = false;
 
 // Weekly View state
@@ -53,6 +57,118 @@ let dashboardLoading = false; // Track if dashboard is currently loading data
 let isMovingItems = false; // Track if we're currently moving items to prevent background sync override
 let isTogglingBranch = false; // Track if we're currently toggling branch enabled status to prevent background sync override
 let forceDashboardRefresh = false; // Force dashboard to load fresh data
+
+// Order View — planning anchored to current calendar week / today (not Weekly View picker)
+const ORDER_VIEW_BUFFER_MULTIPLIER = 1.2;
+const ORDER_VIEW_STORAGE_BRANCH_SELECTION = 'order-view-branch-selection';
+const ORDER_VIEW_STORAGE_SCOPE_LEGACY = 'order-view-stock-scope';
+const ORDER_VIEW_STORAGE_BASELINE = 'order-view-usage-baseline';
+const ORDER_VIEW_STORAGE_HORIZON = 'order-view-horizon';
+const ORDER_VIEW_STORAGE_NEEDS_ORDER_ONLY = 'order-view-needs-order-only';
+const ORDER_VIEW_HUGE_VALUE_THRESHOLD = 1_000_000;
+const validOrderBaselines = new Set(['prev-week', 'two-weeks-ago']);
+const validOrderHorizons = new Set(['week', 'today', 'buffered']);
+
+/** Branch keys selected in Order View (multi-select); persisted as JSON */
+let orderViewBranchSelection = [];
+let orderUsageBaseline = localStorage.getItem(ORDER_VIEW_STORAGE_BASELINE) || 'prev-week';
+let orderHorizon = localStorage.getItem(ORDER_VIEW_STORAGE_HORIZON) || 'week';
+if (!validOrderBaselines.has(orderUsageBaseline)) orderUsageBaseline = 'prev-week';
+if (!validOrderHorizons.has(orderHorizon)) orderHorizon = 'week';
+
+/** Same category + display order as Dashboard (`loadDashboardData` sort). */
+const INVENTORY_CATEGORY_SORT_RANK = {
+  'Base Ingredients': 0,
+  'Packaging & Consumables': 1,
+  'Liquid Ingredients': 2,
+  'Dry Ingredients': 3,
+  'Desserts': 4
+};
+
+function compareMasterItemsDashboardOrder(a, b) {
+  const rankA = INVENTORY_CATEGORY_SORT_RANK[a.category] ?? 999;
+  const rankB = INVENTORY_CATEGORY_SORT_RANK[b.category] ?? 999;
+  if (rankA !== rankB) return rankA - rankB;
+  const oa = a.displayOrder ?? a.order ?? 0;
+  const ob = b.displayOrder ?? b.order ?? 0;
+  return oa - ob;
+}
+
+/** Order View: same as dashboard, plus `categoryOrder` when category name is not in the fixed map. */
+function compareOrderViewMasterItems(a, b) {
+  const rankA = INVENTORY_CATEGORY_SORT_RANK[a.category] ?? a.categoryOrder ?? 999;
+  const rankB = INVENTORY_CATEGORY_SORT_RANK[b.category] ?? b.categoryOrder ?? 999;
+  if (rankA !== rankB) return rankA - rankB;
+  const oa = a.displayOrder ?? a.order ?? 0;
+  const ob = b.displayOrder ?? b.order ?? 0;
+  return oa - ob;
+}
+
+function compareCategoryNamesDashboardOrder(nameA, nameB) {
+  const rankA = INVENTORY_CATEGORY_SORT_RANK[nameA] ?? 999;
+  const rankB = INVENTORY_CATEGORY_SORT_RANK[nameB] ?? 999;
+  if (rankA !== rankB) return rankA - rankB;
+  return String(nameA).localeCompare(String(nameB));
+}
+
+function syncOrderViewBranchSelectionFromStorage() {
+  let fromJson = false;
+  const raw = localStorage.getItem(ORDER_VIEW_STORAGE_BRANCH_SELECTION);
+  if (raw) {
+    try {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) {
+        orderViewBranchSelection = [...new Set(arr.filter(b => typeof b === 'string' && availableBranches.includes(b)))];
+        fromJson = true;
+      }
+    } catch (_) {}
+  }
+  if (!fromJson || orderViewBranchSelection.length === 0) {
+    const legacy = localStorage.getItem(ORDER_VIEW_STORAGE_SCOPE_LEGACY);
+    if (legacy && legacy !== 'all' && availableBranches.includes(legacy)) {
+      orderViewBranchSelection = [legacy];
+    } else {
+      orderViewBranchSelection = [...availableBranches];
+    }
+    localStorage.setItem(ORDER_VIEW_STORAGE_BRANCH_SELECTION, JSON.stringify(orderViewBranchSelection));
+  }
+}
+
+function saveOrderViewBranchSelection() {
+  orderViewBranchSelection = [...new Set(orderViewBranchSelection.filter(b => availableBranches.includes(b)))];
+  localStorage.setItem(ORDER_VIEW_STORAGE_BRANCH_SELECTION, JSON.stringify(orderViewBranchSelection));
+}
+
+function updateOrderViewLocationsSummary() {
+  const sum = document.getElementById('orderViewLocationsSummary');
+  if (!sum) return;
+  syncOrderViewBranchSelectionFromStorage();
+  const n = orderViewBranchSelection.length;
+  const total = availableBranches.length;
+  if (n === 0) {
+    sum.textContent = 'Choose locations…';
+  } else if (n === total) {
+    sum.textContent = 'All locations';
+  } else if (n <= 2) {
+    sum.textContent = orderViewBranchSelection.map(b => getBranchDisplayName(b)).join(' + ');
+  } else {
+    sum.textContent = `${n} locations selected`;
+  }
+}
+
+function renderOrderViewBranchCheckboxes() {
+  const wrap = document.getElementById('orderViewBranchFilters');
+  if (!wrap) return;
+  syncOrderViewBranchSelectionFromStorage();
+  const boxes = availableBranches.map(b => {
+    const checked = orderViewBranchSelection.includes(b) ? 'checked' : '';
+    const safeName = String(getBranchDisplayName(b)).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    return `<label class="order-view-branch-label"><input type="checkbox" class="order-view-branch-cb" value="${b}" ${checked}/> ${safeName}</label>`;
+  }).join('');
+  const actions = '<div class="order-view-branch-actions"><button type="button" class="btn btn-light btn-small" id="orderViewBranchesAll">All</button><button type="button" class="btn btn-light btn-small" id="orderViewBranchesClear">None</button></div>';
+  wrap.innerHTML = boxes + actions;
+  updateOrderViewLocationsSummary();
+}
 
 console.log('Dashboard state initialized:', {
   dashboardBranch,
@@ -101,6 +217,42 @@ function startOfWeekMonday(date) {
   const offsetToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
   normalized.setDate(normalized.getDate() + offsetToMonday);
   return normalized;
+}
+
+/**
+ * Same usage math as Weekly View / dashboard (opening + added − closing when closing checked).
+ */
+function computeDayUsageFromItemQuantities(itemQuantities) {
+  if (!itemQuantities || typeof itemQuantities !== 'object') {
+    return { used: 0, closing: 0, hasClosingData: false, added: 0, removed: 0 };
+  }
+  const opening = itemQuantities.opening?.value || 0;
+  const closing = itemQuantities.closing?.value || 0;
+  const added = itemQuantities.added?.value || 0;
+  let removed = 0;
+  if (Array.isArray(itemQuantities.adjustments)) {
+    itemQuantities.adjustments.forEach(adj => {
+      const value = Number(adj?.value) || 0;
+      if (adj?.reason === 'pulled-out' || adj?.reason === 'wastage') {
+        removed += value;
+      }
+    });
+  }
+  const hasClosingData = itemQuantities.closing && itemQuantities.closing.checked;
+  const used = hasClosingData ? opening + added - closing : 0;
+  return { used, closing, hasClosingData, added, removed };
+}
+
+async function fetchDailyQuantitiesForBranchDate(branch, dateStr) {
+  const docRef = doc(db, 'inventory-quantities', branch, 'daily-quantities', dateStr);
+  const docSnap = await getDoc(docRef);
+  if (!docSnap.exists()) return {};
+  return docSnap.data().quantities || {};
+}
+
+function getIndexFromMondayForDate(d) {
+  const dow = d.getDay();
+  return dow === 0 ? 6 : dow - 1;
 }
 
 document.addEventListener('DOMContentLoaded', async function () {
@@ -184,6 +336,16 @@ async function loadBranches() {
   if (branchListSel) {
     branchListSel.innerHTML = availableBranches.map(b => `<option value="${b}">${getBranchDisplayName(b)}</option>`).join('');
     branchListSel.value = selectedBranch;
+  }
+
+  renderOrderViewBranchCheckboxes();
+  const orderBaselineEl = document.getElementById('orderUsageBaseline');
+  if (orderBaselineEl && validOrderBaselines.has(orderUsageBaseline)) {
+    orderBaselineEl.value = orderUsageBaseline;
+  }
+  const orderHorizonEl = document.getElementById('orderHorizon');
+  if (orderHorizonEl && validOrderHorizons.has(orderHorizon)) {
+    orderHorizonEl.value = orderHorizon;
   }
 }
 
@@ -500,7 +662,66 @@ function setupEventListeners() {
       await loadWeeklyViewData();
     });
   });
-  
+
+  const orderViewTask = document.getElementById('order-view-task');
+  if (orderViewTask) {
+    orderViewTask.addEventListener('change', e => {
+      if (!e.target.classList.contains('order-view-branch-cb')) return;
+      const wrap = document.getElementById('orderViewBranchFilters');
+      if (!wrap) return;
+      orderViewBranchSelection = Array.from(wrap.querySelectorAll('.order-view-branch-cb:checked')).map(cb => cb.value);
+      saveOrderViewBranchSelection();
+      updateOrderViewLocationsSummary();
+      if (currentTask === 'order-view') loadOrderViewData();
+    });
+    orderViewTask.addEventListener('click', e => {
+      if (e.target.id === 'orderViewBranchesAll') {
+        orderViewBranchSelection = [...availableBranches];
+        saveOrderViewBranchSelection();
+        renderOrderViewBranchCheckboxes();
+        if (currentTask === 'order-view') loadOrderViewData();
+      }
+      if (e.target.id === 'orderViewBranchesClear') {
+        orderViewBranchSelection = [];
+        saveOrderViewBranchSelection();
+        renderOrderViewBranchCheckboxes();
+        if (currentTask === 'order-view') loadOrderViewData();
+      }
+    });
+  }
+  const orderUsageBaselineEl = document.getElementById('orderUsageBaseline');
+  if (orderUsageBaselineEl) {
+    orderUsageBaselineEl.addEventListener('change', (e) => {
+      const v = e.target.value;
+      if (!validOrderBaselines.has(v)) return;
+      orderUsageBaseline = v;
+      localStorage.setItem(ORDER_VIEW_STORAGE_BASELINE, orderUsageBaseline);
+      if (currentTask === 'order-view') loadOrderViewData();
+    });
+  }
+  const orderHorizonEl = document.getElementById('orderHorizon');
+  if (orderHorizonEl) {
+    orderHorizonEl.addEventListener('change', (e) => {
+      const v = e.target.value;
+      if (!validOrderHorizons.has(v)) return;
+      orderHorizon = v;
+      localStorage.setItem(ORDER_VIEW_STORAGE_HORIZON, orderHorizon);
+      if (currentTask === 'order-view') loadOrderViewData();
+    });
+  }
+  const orderViewNeedsOrderOnlyEl = document.getElementById('orderViewNeedsOrderOnly');
+  if (orderViewNeedsOrderOnlyEl) {
+    orderViewNeedsOrderOnlyEl.checked = orderViewNeedsOrderOnly;
+    orderViewNeedsOrderOnlyEl.addEventListener('change', () => {
+      orderViewNeedsOrderOnly = orderViewNeedsOrderOnlyEl.checked;
+      localStorage.setItem(ORDER_VIEW_STORAGE_NEEDS_ORDER_ONLY, orderViewNeedsOrderOnly ? '1' : '0');
+      if (lastOrderViewSnapshot) {
+        renderOrderView(lastOrderViewSnapshot);
+      } else if (currentTask === 'order-view') {
+        loadOrderViewData();
+      }
+    });
+  }
   const dateModalClose = document.getElementById('dateModalClose');
   if (dateModalClose) dateModalClose.addEventListener('click', closeDateModal);
 
@@ -577,6 +798,9 @@ function switchToTask(task) {
   if (task === 'weekly-view') {
     updateWeeklyDateDisplay(); // Ensure date display is up to date
     loadWeeklyViewData();
+  }
+  if (task === 'order-view') {
+    loadOrderViewData();
   }
   if (task === 'master-items') renderMasterItems();
   if (task === 'branch-list') renderBranchList();
@@ -2163,29 +2387,8 @@ async function loadDashboardData() {
       return;
     }
     
-    // Sort by category order (from categories collection), then display order
-    // For now, use a simple category order mapping until we load categories
-    const categoryOrderMap = {
-      'Base Ingredients': 0,
-      'Packaging & Consumables': 1,
-      'Liquid Ingredients': 2,
-      'Dry Ingredients': 3,
-      'Desserts': 4
-    };
-    
-    dashboardItems.sort((a, b) => {
-      const categoryOrderA = categoryOrderMap[a.category] || 999;
-      const categoryOrderB = categoryOrderMap[b.category] || 999;
-      
-      if (categoryOrderA !== categoryOrderB) {
-        return categoryOrderA - categoryOrderB;
-      }
-      
-      // Use displayOrder if available, otherwise fall back to order
-      const orderA = a.displayOrder || a.order || 0;
-      const orderB = b.displayOrder || b.order || 0;
-      return orderA - orderB;
-    });
+    // Sort by category order, then display order (shared with Order View)
+    dashboardItems.sort(compareMasterItemsDashboardOrder);
     
     
     // Load quantities for both opening and closing
@@ -2357,24 +2560,9 @@ async function loadWeeklyViewData() {
           if (!itemQuantities || typeof itemQuantities !== 'object') {
             return;
           }
-          const opening = itemQuantities.opening?.value || 0;
-          const closing = itemQuantities.closing?.value || 0;
-          const added = itemQuantities.added?.value || 0;
-          let removed = 0;
-          if (Array.isArray(itemQuantities.adjustments)) {
-            itemQuantities.adjustments.forEach(adj => {
-              const value = Number(adj?.value) || 0;
-              if (adj?.reason === 'pulled-out' || adj?.reason === 'wastage') {
-                removed += value;
-              }
-            });
-          }
+          const { used, closing, hasClosingData, added, removed } = computeDayUsageFromItemQuantities(itemQuantities);
           
-          // Only calculate usage if closing data has been entered
-          const hasClosingData = itemQuantities.closing && itemQuantities.closing.checked;
-          const used = hasClosingData ? opening + added - closing : 0;
-          
-          console.log(`Item ${itemId} on ${dateStr}: opening=${opening}, added=${added}, removed=${removed}, closing=${closing}, hasClosingData=${hasClosingData}, used=${used}`);
+          console.log(`Item ${itemId} on ${dateStr}: opening=${itemQuantities.opening?.value || 0}, added=${added}, removed=${removed}, closing=${closing}, hasClosingData=${hasClosingData}, used=${used}`);
           
           if (!weeklyData[itemId]) {
             weeklyData[itemId] = {};
@@ -2403,6 +2591,519 @@ async function loadWeeklyViewData() {
     console.error('Error loading weekly view data:', error);
     container.innerHTML = '<div style="text-align: center; padding: 20px; color: #d32f2f;">Error loading weekly data</div>';
   }
+}
+
+/** Same rules as Dashboard item filter (enabledBranches array). */
+function isMasterItemEnabledForBranch(item, branchKey) {
+  if (!item) return false;
+  if (item.enabledBranches === undefined) return true;
+  if (item.enabledBranches.length === 0) return false;
+  return item.enabledBranches.includes(branchKey);
+}
+
+function filterOrderViewItems(items, selectedBranches) {
+  if (!selectedBranches || selectedBranches.length === 0) return [];
+  return items.filter(item => selectedBranches.some(b => isMasterItemEnabledForBranch(item, b)));
+}
+
+function orderViewFormatQty(n, item) {
+  const u = item.unit ? ` ${item.unit}` : '';
+  return formatNumberWithCommas(n) + u;
+}
+
+/**
+ * Project when stock hits zero: start from tomorrow (local), subtract each calendar day's
+ * usage from pattern[Mon=0..Sun=6] cycling weekly. Stock is previous calendar day's closing
+ * (yesterday) aggregated like the Stock column — today's actual use is not applied in the loop.
+ * Independent of Plan for.
+ * @returns {{ date: Date, daysUntil: number } | { outNow: true, noBaselineUsage?: true } | { beyondHorizon: true } | null}
+ */
+function computeOrderViewRunOutDate(stock, pattern, today) {
+  if (!Array.isArray(pattern) || pattern.length !== 7) return null;
+
+  let remaining = Number(stock);
+  if (!Number.isFinite(remaining)) remaining = 0;
+
+  const sumUse = pattern.reduce((a, x) => a + (Number(x) || 0), 0);
+
+  if (sumUse <= 0) {
+    // Cannot project a calendar run-out without a usage pattern. If stock is already out, zero
+    // baseline usage often means the item was unavailable (out) all week — not "no need to order."
+    if (remaining <= 0) return { outNow: true, noBaselineUsage: true };
+    return null;
+  }
+
+  if (remaining <= 0) return { outNow: true };
+
+  const cursor = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  cursor.setDate(cursor.getDate() + 1);
+
+  for (let i = 0; i < 730; i++) {
+    const idx = getIndexFromMondayForDate(cursor);
+    remaining -= Number(pattern[idx]) || 0;
+    if (remaining <= 0) {
+      const runMid = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate());
+      const todayMid = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const daysUntil = Math.round((runMid - todayMid) / 86400000);
+      return { date: new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate()), daysUntil };
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return { beyondHorizon: true };
+}
+
+function formatOrderViewRunOutCell(runResult) {
+  const baseTitle =
+    'Assumes closing from the previous calendar day (yesterday); daily use follows the selected baseline week (Mon–Sun), repeating every week.';
+  if (runResult === null) {
+    return {
+      runOutPrimary: '—',
+      runOutSecondary: '',
+      title: `${baseTitle} No usage in baseline week and stock on hand — cannot project run-out (inactive item or no movement). Use Projected need / Suggested order if applicable.`
+    };
+  }
+  if (runResult.beyondHorizon) {
+    return {
+      runOutPrimary: '—',
+      runOutSecondary: '',
+      title: `${baseTitle} Not depleted within 730-day projection (very low daily usage vs stock).`
+    };
+  }
+  if (runResult.outNow) {
+    const title = runResult.noBaselineUsage
+      ? `${baseTitle} Stock at or below zero on yesterday’s closing. No usage in baseline week — often because the item was already out. Run-out date not projected; rely on Projected need and Suggested order.`
+      : `${baseTitle} Stock at or below zero on yesterday’s closing snapshot.`;
+    return {
+      runOutPrimary: '—',
+      runOutSecondary: '',
+      title
+    };
+  }
+  const { date, daysUntil } = runResult;
+  const short = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const long = date.toLocaleDateString(undefined, { dateStyle: 'long' });
+  const dayLabel = daysUntil === 1 ? 'day' : 'days';
+  return {
+    runOutPrimary: short,
+    runOutSecondary: `(${daysUntil} ${dayLabel})`,
+    title: `Projected run-out ${long} (${daysUntil} ${dayLabel} from today). ${baseTitle}`
+  };
+}
+
+async function loadOrderViewData() {
+  const container = document.getElementById('orderTable');
+  if (!container) return;
+
+  container.innerHTML = '<div style="text-align: center; padding: 20px; color: #666; font-style: italic;">Loading order suggestions…</div>';
+
+  try {
+    if (masterItems.length === 0) {
+      await loadMasterItems(false, true);
+    }
+
+    const today = new Date();
+    const todayKey = getDateKey(today);
+    const thisWeekStart = startOfWeekMonday(today);
+    // Stock = sum of checked closings on the previous calendar day (local “yesterday”).
+    const stockAsOfDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    stockAsOfDate.setDate(stockAsOfDate.getDate() - 1);
+    const stockDateKey = getDateKey(stockAsOfDate);
+
+    const baselineWeekStart = new Date(thisWeekStart);
+    if (orderUsageBaseline === 'two-weeks-ago') {
+      baselineWeekStart.setDate(baselineWeekStart.getDate() - 14);
+    } else {
+      baselineWeekStart.setDate(baselineWeekStart.getDate() - 7);
+    }
+
+    const baselineDates = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(baselineWeekStart);
+      d.setDate(baselineWeekStart.getDate() + i);
+      baselineDates.push(d);
+    }
+
+    syncOrderViewBranchSelectionFromStorage();
+    const branchesInScope = orderViewBranchSelection.filter(b => availableBranches.includes(b));
+
+    if (branchesInScope.length === 0) {
+      lastOrderViewSnapshot = null;
+      container.innerHTML = '<div style="text-align:center;padding:24px;color:#666;">Choose at least one location.</div>';
+      return;
+    }
+
+    const orderItems = filterOrderViewItems(masterItems, branchesInScope);
+    orderItems.sort(compareOrderViewMasterItems);
+    const itemIds = new Set(orderItems.map(i => i.id));
+
+    if (orderItems.length === 0) {
+      lastOrderViewSnapshot = {
+        rows: [],
+        meta: {
+          baselineMatchKey: '',
+          todayKey,
+          stockDateKey,
+          baselineWeekStart,
+          baselineLabelStart: '',
+          baselineLabelEnd: '',
+          orderHorizon
+        }
+      };
+      renderOrderView(lastOrderViewSnapshot);
+      return;
+    }
+
+    const baselineFetches = [];
+    for (const date of baselineDates) {
+      const dateStr = getDateKey(date);
+      for (const branch of branchesInScope) {
+        baselineFetches.push(
+          fetchDailyQuantitiesForBranchDate(branch, dateStr).then(q => ({ dateStr, branch, quantities: q }))
+        );
+      }
+    }
+    const baselineResults = await Promise.all(baselineFetches);
+
+    const usageByItemId = {};
+    orderItems.forEach(it => {
+      usageByItemId[it.id] = {};
+    });
+
+    for (const { dateStr, branch, quantities } of baselineResults) {
+      for (const itemId of itemIds) {
+        const master = masterItems.find(m => m.id === itemId);
+        if (!master || !isMasterItemEnabledForBranch(master, branch)) {
+          continue;
+        }
+        const iq = quantities[itemId];
+        const { used, hasClosingData } = computeDayUsageFromItemQuantities(iq);
+        if (!usageByItemId[itemId][dateStr]) {
+          usageByItemId[itemId][dateStr] = { used: 0, hasClosingData: false };
+        }
+        usageByItemId[itemId][dateStr].used += used;
+        usageByItemId[itemId][dateStr].hasClosingData = usageByItemId[itemId][dateStr].hasClosingData || hasClosingData;
+      }
+    }
+
+    const baselineTotalByItemId = {};
+    for (const itemId of itemIds) {
+      let total = 0;
+      for (const date of baselineDates) {
+        const ds = getDateKey(date);
+        const day = usageByItemId[itemId][ds];
+        total += day ? day.used : 0;
+      }
+      baselineTotalByItemId[itemId] = total;
+    }
+
+    const idxMon = getIndexFromMondayForDate(today);
+    const baselineDayForTodayWeekday = baselineDates[idxMon];
+    const baselineMatchKey = getDateKey(baselineDayForTodayWeekday);
+
+    const baselineRemainderByItemId = {};
+    for (const itemId of itemIds) {
+      let remainder = 0;
+      for (let i = idxMon; i < 7; i++) {
+        const ds = getDateKey(baselineDates[i]);
+        const day = usageByItemId[itemId][ds];
+        remainder += day ? day.used : 0;
+      }
+      baselineRemainderByItemId[itemId] = remainder;
+    }
+
+    const stockFetches = branchesInScope.map(branch =>
+      fetchDailyQuantitiesForBranchDate(branch, stockDateKey).then(q => ({ branch, quantities: q }))
+    );
+    const stockResults = await Promise.all(stockFetches);
+    const stockByItemId = {};
+    for (const itemId of itemIds) {
+      let s = 0;
+      const master = masterItems.find(m => m.id === itemId);
+      for (const { branch, quantities } of stockResults) {
+        if (!master || !isMasterItemEnabledForBranch(master, branch)) {
+          continue;
+        }
+        const iq = quantities[itemId];
+        if (iq && iq.closing && iq.closing.checked) {
+          s += Number(iq.closing.value) || 0;
+        }
+      }
+      stockByItemId[itemId] = s;
+    }
+
+    const orderRows = [];
+    for (const item of orderItems) {
+      const bid = item.id;
+      const baselineTotal = baselineTotalByItemId[bid] ?? 0;
+      const baselineRemainder = baselineRemainderByItemId[bid] ?? 0;
+      const daySlice = usageByItemId[bid][baselineMatchKey];
+      const todayDayUsed = daySlice ? daySlice.used : 0;
+      const todayHasData = daySlice ? daySlice.hasClosingData : false;
+
+      let projected = null;
+      let projectedDisplay = '';
+      let missingBaseline = false;
+
+      if (orderHorizon === 'week') {
+        projected = baselineRemainder;
+        projectedDisplay = orderViewFormatQty(projected, item);
+      } else if (orderHorizon === 'buffered') {
+        projected = baselineRemainder * ORDER_VIEW_BUFFER_MULTIPLIER;
+        projectedDisplay = orderViewFormatQty(projected, item);
+      } else {
+        if (!todayHasData) {
+          projected = null;
+          projectedDisplay = '—';
+          missingBaseline = true;
+        } else {
+          projected = todayDayUsed;
+          projectedDisplay = orderViewFormatQty(projected, item);
+        }
+      }
+
+      let suggested = 0;
+      let suggestedDisplay = '';
+      if (projected === null) {
+        suggestedDisplay = '—';
+      } else {
+        const stock = stockByItemId[bid] ?? 0;
+        suggested = Math.max(0, Math.ceil(projected - stock));
+        suggestedDisplay = orderViewFormatQty(suggested, item);
+      }
+
+      const stockVal = stockByItemId[bid] ?? 0;
+      const baselineForHuge =
+        orderHorizon === 'today' ? (todayHasData ? todayDayUsed : 0) : baselineRemainder;
+      const hugeValue = [baselineForHuge, stockVal, projected, suggested].some(
+        x => typeof x === 'number' && Number.isFinite(x) && Math.abs(x) >= ORDER_VIEW_HUGE_VALUE_THRESHOLD
+      );
+
+      const pattern = baselineDates.map(d => {
+        const ds = getDateKey(d);
+        const day = usageByItemId[bid][ds];
+        return day ? day.used : 0;
+      });
+      const runRaw = computeOrderViewRunOutDate(stockVal, pattern, today);
+      const { runOutPrimary, runOutSecondary, title: runOutTitle } = formatOrderViewRunOutCell(runRaw);
+      const runOutUrgent =
+        !!runRaw &&
+        (runRaw.outNow === true ||
+          (runRaw.date &&
+            typeof runRaw.daysUntil === 'number' &&
+            runRaw.daysUntil <= 3));
+
+      const rowTitleParts = [];
+      if (missingBaseline) {
+        rowTitleParts.push('No closing for matching weekday in baseline week (Plan for: Today).');
+      }
+      if (hugeValue) {
+        rowTitleParts.push('Unusually large values — check usage/stock data for this item.');
+      }
+      const rowTitle = rowTitleParts.join(' ');
+
+      let baselineTotalDisplay = orderViewFormatQty(baselineTotal, item);
+      if (orderHorizon === 'today') {
+        baselineTotalDisplay = todayHasData ? orderViewFormatQty(todayDayUsed, item) : '—';
+      }
+
+      orderRows.push({
+        item,
+        baselineTotal,
+        baselineTotalDisplay,
+        stock: stockVal,
+        stockDisplay: orderViewFormatQty(stockVal, item),
+        projected,
+        projectedDisplay,
+        suggested,
+        suggestedDisplay,
+        missingBaseline,
+        hugeValue,
+        baselineMatchKey,
+        runOutPrimary,
+        runOutSecondary,
+        runOutTitle,
+        runOutUrgent,
+        rowTitle
+      });
+    }
+
+    lastOrderViewSnapshot = {
+      rows: orderRows,
+      meta: {
+        baselineMatchKey,
+        todayKey,
+        stockDateKey,
+        baselineWeekStart,
+        baselineLabelStart: getDateKey(baselineDates[0]),
+        baselineLabelEnd: getDateKey(baselineDates[6]),
+        orderHorizon
+      }
+    };
+    renderOrderView(lastOrderViewSnapshot);
+  } catch (err) {
+    console.error('loadOrderViewData', err);
+    lastOrderViewSnapshot = null;
+    container.innerHTML = '<div style="text-align: center; padding: 20px; color: #d32f2f;">Error loading order view</div>';
+  }
+}
+
+function renderOrderView({ rows, meta }) {
+  const container = document.getElementById('orderTable');
+  if (!container) return;
+
+  if (!rows.length) {
+    container.innerHTML = '<div style="text-align:center;padding:24px;color:#666;">No items match the selected locations (enable items for those branches).</div>';
+    return;
+  }
+
+  const categoryMap = new Map();
+  rows.forEach(row => {
+    const category = row.item.category || 'Other';
+    if (!categoryMap.has(category)) {
+      categoryMap.set(category, []);
+    }
+    categoryMap.get(category).push(row);
+  });
+
+  const sortedCategories = Array.from(categoryMap.entries()).sort((a, b) =>
+    compareCategoryNamesDashboardOrder(a[0], b[0])
+  );
+
+  const categoriesToRender = orderViewNeedsOrderOnly
+    ? sortedCategories
+        .map(([category, catRows]) => [
+          category,
+          catRows.filter(r => typeof r.suggested === 'number' && r.suggested > 0)
+        ])
+        .filter(([, catRows]) => catRows.length > 0)
+    : sortedCategories;
+
+  if (orderViewNeedsOrderOnly && categoriesToRender.length === 0) {
+    container.innerHTML =
+      '<div style="text-align:center;padding:24px;color:#666;">No items need ordering.</div>';
+    return;
+  }
+
+  const planIsToday = (meta.orderHorizon || 'week') === 'today';
+
+  let html = '<table class="inv-table">';
+  html += '<thead><tr>';
+  html += '<th class="order-view-th-photo">Photo</th>';
+  html += '<th class="order-view-th-item">Item</th>';
+  html += '<th class="order-view-th-desc">Description</th>';
+  html += '<th class="order-view-th-num">Stock</th>';
+  html += '<th class="order-view-th-num">Projected<br>need</th>';
+  if (planIsToday) {
+    html += '<th class="order-view-th-num">Usage</th>';
+  } else {
+    html += '<th class="order-view-th-num">Weekly<br>usage</th>';
+  }
+  html += '<th class="order-view-th-num">Suggested<br>order</th>';
+  html += '<th class="order-view-th-num order-view-th-runout">Run out</th>';
+  html += '</tr></thead><tbody>';
+
+  categoriesToRender.forEach(([category, catRows]) => {
+    const isCollapsed = orderViewCollapsedCategories.includes(category);
+    html += `<tr class="category-header" data-category="${escapeHtml(category)}"><td colspan="8" style="padding: 8px 12px;">
+      <div class="category-header-container">
+        <div class="category-header-left">
+          <button type="button" class="category-collapse-btn ${isCollapsed ? 'collapsed' : ''}" data-category="${escapeHtml(category)}" aria-expanded="${isCollapsed ? 'false' : 'true'}" aria-label="${isCollapsed ? 'Expand' : 'Collapse'} ${escapeHtml(category)}">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+              <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <span class="category-name">${escapeHtml(category)}</span>
+        </div>
+      </div>
+    </td></tr>`;
+    catRows.forEach(row => {
+      const photo = row.item.photo
+        ? `<img src="${escapeHtml(row.item.photo)}" alt="" style="width:40px;height:40px;border-radius:8px;object-fit:cover;border:1px solid #eee;">`
+        : '<div class="photo-placeholder"></div>';
+      const trTitle = row.rowTitle ? ` title="${escapeHtml(row.rowTitle)}"` : '';
+      const rowHidden = isCollapsed ? ' style="display:none;"' : '';
+      const needsOrder = typeof row.suggested === 'number' && row.suggested > 0;
+      const needsOrderClass = needsOrder ? ' order-view-row-needs-order' : '';
+      html += `<tr class="inventory-row category-item-row${needsOrderClass}" data-category="${escapeHtml(category)}"${rowHidden}${trTitle}>`;
+      html += `<td style="text-align:center;padding:4px;">${photo}</td>`;
+      html += `<td>${escapeHtml(row.item.name)}</td>`;
+      html += `<td>${escapeHtml(row.item.description || '')}</td>`;
+      html += `<td class="quantity-cell" style="text-align:right;">${row.stockDisplay}</td>`;
+      html += `<td class="quantity-cell" style="text-align:right;">${row.projectedDisplay}</td>`;
+      html += `<td class="quantity-cell" style="text-align:right;">${row.baselineTotalDisplay}</td>`;
+      html += `<td class="quantity-cell order-view-suggested-cell" style="text-align:right;">${row.suggestedDisplay}</td>`;
+      const runOutDays = row.runOutSecondary
+        ? `<div class="order-view-runout-days">${escapeHtml(row.runOutSecondary)}</div>`
+        : '';
+      const runOutUrgentClass = row.runOutUrgent ? ' order-view-runout-urgent' : '';
+      html += `<td class="quantity-cell order-view-runout-cell${runOutUrgentClass}" style="text-align:right;" title="${escapeHtml(row.runOutTitle)}"><div class="order-view-runout-date">${escapeHtml(row.runOutPrimary)}</div>${runOutDays}</td>`;
+      html += '</tr>';
+    });
+  });
+
+  html += '</tbody></table>';
+  container.innerHTML = html;
+  setupOrderViewCategoryCollapse();
+}
+
+
+function setupOrderViewCategoryCollapse() {
+  const table = document.querySelector('#orderTable .inv-table');
+  if (!table) return;
+
+  table.querySelectorAll('.category-header').forEach(header => {
+    header.addEventListener('click', e => {
+      if (e.target.closest('.category-collapse-btn')) return;
+      const cat = header.dataset.category;
+      if (cat) toggleOrderViewCategoryCollapse(cat);
+    });
+  });
+
+  table.querySelectorAll('.category-collapse-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const cat = btn.dataset.category;
+      if (cat) toggleOrderViewCategoryCollapse(cat);
+    });
+  });
+}
+
+function toggleOrderViewCategoryCollapse(category) {
+  const idx = orderViewCollapsedCategories.indexOf(category);
+  if (idx >= 0) {
+    orderViewCollapsedCategories.splice(idx, 1);
+  } else {
+    orderViewCollapsedCategories.push(category);
+  }
+  localStorage.setItem('order-view-collapsed-categories', JSON.stringify(orderViewCollapsedCategories));
+
+  const collapsed = orderViewCollapsedCategories.includes(category);
+  document.querySelectorAll('#orderTable tr.category-item-row').forEach(tr => {
+    if (tr.dataset.category === category) {
+      tr.style.display = collapsed ? 'none' : '';
+    }
+  });
+
+  document.querySelectorAll('#orderTable tr.category-header').forEach(h => {
+    if (h.dataset.category !== category) return;
+    const btn = h.querySelector('.category-collapse-btn');
+    if (btn) {
+      btn.classList.toggle('collapsed', collapsed);
+      btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      const label = collapsed ? 'Expand' : 'Collapse';
+      btn.setAttribute('aria-label', `${label} ${category}`);
+    }
+  });
+}
+
+
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 function renderWeeklyView() {
@@ -3027,10 +3728,12 @@ function showDashboardErrorState(message) {
     </div>`;
 }
 
-// Format number with commas
+// Format number with grouping (safe for decimals; avoids commas inside fractional junk from floats)
 function formatNumberWithCommas(num) {
   if (num === null || num === undefined) return '0';
-  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const n = Number(num);
+  if (!Number.isFinite(n)) return '0';
+  return n.toLocaleString('en-US', { maximumFractionDigits: 4, minimumFractionDigits: 0 });
 }
 
 // Sync indicator function

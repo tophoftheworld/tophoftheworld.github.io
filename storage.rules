@@ -16,6 +16,16 @@ service firebase.storage {
       allow read, write: if true;
     }
 
+    // Admin payroll v2 payment screenshots (canonical admin-payroll)
+    match /payroll_periods_v2_screenshots/{allPaths=**} {
+      allow read, write: if true;
+    }
+
+    // Matcha Hop log photos
+    match /logs/{allPaths=**} {
+      allow read, write: if true;
+    }
+
     // Default rule for other paths
     match /{allPaths=**} {
       allow read, write: if false;

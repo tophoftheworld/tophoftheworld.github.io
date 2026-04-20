@@ -68,6 +68,11 @@ let pendingSubstitutionRequests = [];
 let employeePhotoUrls = {};
 // Employee IDs that are archived - excluded from schedule dropdown only (names still shown on existing shifts)
 let archivedEmployeeIds = new Set();
+// Inactive employees (active === false in Firestore) — same dropdown exclusion as archived
+let inactiveEmployeeIds = new Set();
+function employeeShownInShiftDropdown(employeeId) {
+    return !archivedEmployeeIds.has(employeeId) && !inactiveEmployeeIds.has(employeeId);
+}
 function getEmployeeProfilePhotoUrl(employeeId) {
     if (!employeeId || employeeId === 'unassigned') return null;
     return employeePhotoUrls[employeeId] || null;
@@ -75,6 +80,7 @@ function getEmployeeProfilePhotoUrl(employeeId) {
 // Shift types configuration
 const SHIFT_TYPES = {
     opening: { name: "Opening", start: "09:30", end: "18:30", display: "9:30 AM - 6:30 PM" },
+    adjustedOpening: { name: "Adjusted Opening", start: "10:30", end: "19:30", display: "10:30 AM - 7:30 PM" },
     midshift: { name: "Midshift", start: "11:00", end: "20:00", display: "11:00 AM - 8:00 PM" },
     closing: { name: "Closing", start: "13:00", end: "22:00", display: "1:00 PM - 10:00 PM" },
     closingHalf: { name: "Closing Half-Day", start: "18:00", end: "22:00", display: "6:00 PM - 10:00 PM" },
@@ -471,7 +477,7 @@ let loadingDates = new Set(); // Track which dates are currently being loaded
 // Separate attendance data loading functions
 async function loadAttendanceDataFromFirebase(employeeId, dateStr) {
     try {
-        const docRef = doc(db, 'attendance', `${employeeId}_${dateStr}`);
+        const docRef = doc(db, "attendance_v2", employeeId, "dates", dateStr);
         const docSnap = await getDoc(docRef);
         
         if (docSnap.exists()) {
@@ -559,7 +565,7 @@ async function preloadActualAttendanceForWeek() {
         const attendancePromises = employeeIds.map(async (employeeId) => {
 
             try {
-                const attendanceRef = collection(db, "attendance", employeeId, "dates");
+                const attendanceRef = collection(db, "attendance_v2", employeeId, "dates");
                 const snapshot = await getDocs(query(
                     attendanceRef,
                     where("__name__", ">=", pastDates[0]),
@@ -868,7 +874,7 @@ async function loadActualAttendanceForDate(dateStr) {
         // Get all employee IDs
         const employeeIds = Object.keys(employees);
         const docPromises = employeeIds.map(employeeId => {
-            const docRef = doc(db, "attendance", employeeId, "dates", dateStr);
+            const docRef = doc(db, "attendance_v2", employeeId, "dates", dateStr);
             return getDoc(docRef).then(docSnap => ({ employeeId, docSnap }));
         });
         
@@ -1674,10 +1680,10 @@ function renderCurrentView() {
     updateCopyPreviousWeekButton();
 }
 
-// Employee dropdown population (excludes archived employees)
+// Employee dropdown population (excludes archived and inactive employees)
 function populateEmployeeDropdowns() {
     const employeeOptions = Object.entries(employees)
-        .filter(([id]) => !archivedEmployeeIds.has(id))
+        .filter(([id]) => employeeShownInShiftDropdown(id))
         .map(([id, name]) => {
             const displayName = employeeNicknames[id] || name?.split(' ')[0] || name;
             return `<option value="${id}">${displayName}</option>`;
@@ -1689,7 +1695,7 @@ function populateEmployeeDropdowns() {
 
 // Employee dropdown with date-aware grouping: "Available" vs "Already scheduled" for the given date
 function populateEmployeeDropdownForDate(dateStr) {
-    const activeEntries = Object.entries(employees).filter(([id]) => !archivedEmployeeIds.has(id));
+    const activeEntries = Object.entries(employees).filter(([id]) => employeeShownInShiftDropdown(id));
     if (activeEntries.length === 0) {
         shiftEmployee.innerHTML = '<option value="">Select employee</option>';
         return;
@@ -1819,17 +1825,19 @@ function updateBranchFilterOptions() {
 
 async function loadAllEmployees() {
     try {
-        const employeesRef = collection(db, "employees");
+        const employeesRef = collection(db, "employees_v2");
         const snapshot = await getDocs(employeesRef);
 
         employees = {};
         employeePhotoUrls = {};
         archivedEmployeeIds = new Set();
+        inactiveEmployeeIds = new Set();
         snapshot.forEach(docSnap => {
             const data = docSnap.data();
             employees[docSnap.id] = data.name;
             if (data.photoUrl) employeePhotoUrls[docSnap.id] = data.photoUrl;
             if (data.archived) archivedEmployeeIds.add(docSnap.id);
+            if (data.active === false) inactiveEmployeeIds.add(docSnap.id);
         });
 
         // Re-populate dropdowns after loading employees
@@ -2687,7 +2695,7 @@ async function loadEmployeeNicknames() {
     try {
         let hasChanges = false;
         for (const employeeId of Object.keys(employees)) {
-            const employeeDoc = await getDoc(doc(db, "employees", employeeId));
+            const employeeDoc = await getDoc(doc(db, "employees_v2", employeeId));
             if (employeeDoc.exists() && employeeDoc.data().nickname) {
                 const newNickname = employeeDoc.data().nickname;
                 if (employeeNicknames[employeeId] !== newNickname) {
@@ -3166,6 +3174,8 @@ function categorizeShiftByTime(shift, timeIn = null) {
     switch (shift.toLowerCase()) {
         case 'opening':
         case 'opening half-day':
+        case 'adjustedopening':
+        case 'adjusted opening':
             return 'opening';
         case 'midshift':
             return 'midshift';
@@ -4858,7 +4868,7 @@ function initMobileView() {
         first.value = '';
         first.textContent = currentMobileEmployeeId ? '(Me)' : 'Select employee';
         mobileEmployeeSelect.appendChild(first);
-        const ids = Object.keys(employees).filter(id => !archivedEmployeeIds.has(id)).sort();
+        const ids = Object.keys(employees).filter(id => employeeShownInShiftDropdown(id)).sort();
         ids.forEach(empId => {
             const opt = document.createElement('option');
             opt.value = empId;
@@ -5295,8 +5305,15 @@ function buildMobileMyScheduleCard(shift, dateStr) {
     return card;
 }
 
+function setShiftDetailsRelieverOnlyLayout(enabled) {
+    const content = shiftDetailsModal?.querySelector('.shift-details-modal__content');
+    if (!content) return;
+    content.classList.toggle('shift-details-modal__content--reliever-only', !!enabled);
+}
+
 async function openShiftDetailsModal(shift, dateStr) {
     if (!shiftDetailsModal) return;
+    setShiftDetailsRelieverOnlyLayout(false);
     const dateEl = document.getElementById('shiftDetailsDate');
     const branchEl = document.getElementById('shiftDetailsBranch');
     const typeEl = document.getElementById('shiftDetailsShiftType');
@@ -5372,7 +5389,7 @@ function populateShiftDetailsRelieverDropdown() {
     const submitRequestBtn = document.getElementById('shiftDetailsSubmitRequestBtn');
     if (!relieverSelect) return;
     relieverSelect.innerHTML = '<option value="">Select reliever</option>';
-    const ids = Object.keys(employees).filter(id => !archivedEmployeeIds.has(id) && id !== currentMobileEmployeeId).sort();
+    const ids = Object.keys(employees).filter(id => employeeShownInShiftDropdown(id) && id !== currentMobileEmployeeId).sort();
     ids.forEach(id => {
         const name = employeeNicknames[id] || employees[id] || id;
         const opt = document.createElement('option');
@@ -5392,11 +5409,13 @@ function onRequestRelieverClick() {
     if (reqRelieverBtn) reqRelieverBtn.style.display = 'none';
     if (bodyEl) bodyEl.style.display = 'none';
     if (titleEl) titleEl.textContent = 'Request reliever';
+    setShiftDetailsRelieverOnlyLayout(true);
     populateShiftDetailsRelieverDropdown();
     if (relieverForm) relieverForm.style.display = 'block';
 }
 
 function closeShiftDetailsModal() {
+    setShiftDetailsRelieverOnlyLayout(false);
     if (shiftDetailsModal) shiftDetailsModal.style.display = 'none';
     currentShiftDetailsForRequest = null;
 }

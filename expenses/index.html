@@ -34,8 +34,8 @@
             }
         })();
     </script>
-    <link rel="stylesheet" href="css/style.css?v=1.5.30">
-    <script type="module" src="js/script.js?v=1.5.39"></script>
+    <link rel="stylesheet" href="css/style.css?v=1.5.50">
+    <script type="module" src="js/script.js?v=1.5.58"></script>
 </head>
 
 <body>
@@ -133,7 +133,7 @@
             <div class="modal-content">
                 <form id="expenseForm">
                     <!-- Basic Info -->
-                    <div class="form-section minimal">
+                    <div class="form-section minimal mobile-card-section" id="supplierNameSection">
                         <div class="form-group">
                             <label for="supplierName">Supplier Name</label>
                             <input type="text" id="supplierName" required placeholder="Enter supplier name">
@@ -141,8 +141,9 @@
                         </div>
                     </div>
 
-                    <!-- Date and Allocation Section -->
-                    <div class="form-section minimal">
+                    <!-- Basic Information Section -->
+                    <div class="form-section minimal mobile-card-section" id="basicInfoSection">
+                        <h3 class="section-title">Basic Information</h3>
                         <div class="form-group">
                             <label for="expenseDate">Date</label>
                             <input type="date" id="expenseDate" required>
@@ -165,6 +166,28 @@
                                 <option value="Podium">Podium</option>
                                 <option value="Mall of Asia">Mall of Asia</option>
                             </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="expenseCategory">Expense Category</label>
+                            <select id="expenseCategory" required></select>
+                        </div>
+                        <!-- Paid By Section (only for Store allocation) -->
+                        <div class="form-group" id="paidBySection" style="display: none;">
+                            <label for="paidBy">Paid By</label>
+                            <select id="paidBy" required>
+                                <option value="Store Cash">Store Cash</option>
+                                <option value="Company">Company</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="invoiceNumber">Invoice Number <span class="optional">(optional)</span></label>
+                            <input type="text" id="invoiceNumber" placeholder="Enter invoice/reference number">
+                        </div>
+                        <div class="form-group petty-cash-row">
+                            <label class="petty-cash-label" for="isPettyCash">
+                                <input type="checkbox" id="isPettyCash" onchange="handlePettyCashChange()">
+                                <span>Petty cash</span>
+                            </label>
                         </div>
                     </div>
 
@@ -214,10 +237,6 @@
                             </div>
                         </div>
 
-                        <div class="form-group">
-                            <label for="invoiceNumber">Invoice Number <span class="optional">(optional)</span></label>
-                            <input type="text" id="invoiceNumber" placeholder="Enter invoice/reference number">
-                        </div>
                     </div>
 
                     <!-- VAT Information Section (initially hidden) -->
@@ -264,32 +283,6 @@
                                     <span id="vatAmountDisplay">₱0.00</span>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-
-                    <!-- Expense Category Section -->
-                    <div class="form-section minimal">
-                        <div class="form-group">
-                            <label for="expenseCategory">Expense Category</label>
-                            <select id="expenseCategory" required>
-                                <option value="Supplies" selected>Supplies</option>
-                                <option value="Staff">Staff</option>
-                                <option value="Rent & Utilities">Rent & Utilities</option>
-                                <option value="Marketing">Marketing</option>
-                                <option value="Equipment">Equipment</option>
-                                <option value="Operations">Operations</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <!-- Paid By Section (only for Store allocation) -->
-                    <div class="form-section minimal" id="paidBySection" style="display: none;">
-                        <div class="form-group">
-                            <label for="paidBy">Paid By</label>
-                            <select id="paidBy" required>
-                                <option value="Store Cash">Store Cash</option>
-                                <option value="Company">Company</option>
-                            </select>
                         </div>
                     </div>
 
@@ -443,6 +436,13 @@
     
             <div class="modal-content" id="mergeSupplierContent">
                 <!-- Content will be populated by JavaScript -->
+            </div>
+            <div class="merge-modal-progress" id="mergeModalProgress" aria-hidden="true">
+                <div class="merge-modal-progress-inner">
+                    <div class="merge-modal-progress-spinner" aria-hidden="true"></div>
+                    <p class="merge-modal-progress-step" id="mergeModalProgressStep"></p>
+                    <p class="merge-modal-progress-count" id="mergeModalProgressCount"></p>
+                </div>
             </div>
         </div>
     </div>

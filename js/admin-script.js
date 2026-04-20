@@ -222,6 +222,7 @@ function convertTo12Hour(timeStr) {
 // Shift schedules
 const SHIFT_SCHEDULES = {
     Opening: { timeIn: "9:30 AM", timeOut: "6:30 PM" },
+    "Adjusted Opening": { timeIn: "10:30 AM", timeOut: "7:30 PM" },
     Midshift: { timeIn: "11:00 AM", timeOut: "8:00 PM" },
     Closing: { timeIn: "1:00 PM", timeOut: "10:00 PM" },
     Custom: { timeIn: null, timeOut: null }
