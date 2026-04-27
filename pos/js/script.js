@@ -1,5 +1,5 @@
 import { menuData } from './menu-data.js';
-import { syncOrderToFirebase, syncAllPendingOrders, initializeMenuItems, loadEventsFromFirebase, saveEventToFirebase, subscribeToOrders } from './firebase-sync.js';
+import { syncOrderToFirebase, syncAllPendingOrders, initializeMenuItems, loadEventsFromFirebase, saveEventToFirebase, subscribeToOrders, publishLiveSession, clearLiveSession } from './firebase-sync.js';
 import { db, collection, doc, getDocs, deleteDoc, setDoc, getDoc, serverTimestamp } from './firebase-setup.js';
 
 
@@ -59,6 +59,12 @@ function getCustomizationOptions() {
 const HIDE_SIZE_CUSTOMIZATION = true;
 
 let customerName = '';
+let liveSessionState = {
+  paymentMethod: null,
+  showQr: false,
+  status: 'idle'
+};
+let liveSessionPublishTimer = null;
 
 let selectedDate = new Date();
 let currentDate = new Date();
@@ -448,6 +454,57 @@ function createGridMenuItemElement(item) {
 let currentOrder = [];
 let orderHistory = JSON.parse(localStorage.getItem('orderHistory') || '[]');
 
+function sanitizeOrderItemName(name) {
+  return (name || '').replace(/<[^>]*>/g, '');
+}
+
+function buildLiveSessionPayload() {
+  const items = currentOrder.map(item => {
+    const quantity = Number(item.quantity) || 0;
+    const price = Number(item.price) || 0;
+    return {
+      name: sanitizeOrderItemName(item.name),
+      quantity,
+      unitPrice: price,
+      lineTotal: quantity * price,
+      customizations: item.customizations || null
+    };
+  });
+
+  const total = items.reduce((sum, item) => sum + item.lineTotal, 0);
+  const hasItems = currentOrder.length > 0;
+  const computedStatus = hasItems
+    ? (liveSessionState.status === 'idle' ? 'editing' : liveSessionState.status)
+    : 'idle';
+
+  return {
+    customerName,
+    items,
+    total,
+    paymentMethod: liveSessionState.paymentMethod,
+    showQr: liveSessionState.showQr,
+    status: computedStatus
+  };
+}
+
+function scheduleLiveSessionPublish(forceImmediate = false) {
+  if (liveSessionPublishTimer) {
+    clearTimeout(liveSessionPublishTimer);
+    liveSessionPublishTimer = null;
+  }
+
+  const publish = () => {
+    publishLiveSession(currentEvent, buildLiveSessionPayload());
+  };
+
+  if (forceImmediate) {
+    publish();
+    return;
+  }
+
+  liveSessionPublishTimer = setTimeout(publish, 150);
+}
+
 function generateOrderId() {
   return crypto.randomUUID().replace(/-/g, '').slice(0, 5).toUpperCase();
 }
@@ -671,6 +728,8 @@ function updateOrderDisplay() {
       ? `VIEW ORDER (${itemsCount} ${itemsCount === 1 ? 'item' : 'items'})`
       : 'VIEW ORDER';
   }
+
+  scheduleLiveSessionPublish();
 }
 
 // Toggle between menu and orders view
@@ -2347,6 +2406,8 @@ function initializePaymentHandlers() {
       alert('Please add items to your order first.');
       return;
     }
+    liveSessionState = { paymentMethod: 'cash', showQr: false, status: 'awaiting_payment' };
+    scheduleLiveSessionPublish(true);
     showCashPaymentModal();
   });
 
@@ -2356,6 +2417,8 @@ function initializePaymentHandlers() {
       alert('Please add items to your order first.');
       return;
     }
+    liveSessionState = { paymentMethod: 'gcash', showQr: true, status: 'awaiting_payment' };
+    scheduleLiveSessionPublish(true);
     showGCashPaymentModal();
   });
 
@@ -2365,6 +2428,8 @@ function initializePaymentHandlers() {
       alert('Please add items to your order first.');
       return;
     }
+    liveSessionState = { paymentMethod: 'card', showQr: true, status: 'awaiting_payment' };
+    scheduleLiveSessionPublish(true);
     showCardPaymentModal();
   });
 }
@@ -2376,8 +2441,14 @@ function calculateOrderTotal() {
 function clearOrder() {
   currentOrder = [];
   customerName = '';  // Add this line
+  liveSessionState = {
+    paymentMethod: null,
+    showQr: false,
+    status: 'idle'
+  };
   updateOrderDisplay();
   updateOrderHeader();  // Add this line
+  scheduleLiveSessionPublish(true);
 }
 
 document.addEventListener('DOMContentLoaded', function () {
@@ -2960,6 +3031,7 @@ function showCashPaymentModal() {
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) {
       overlay.remove();
+      handlePaymentModalDismiss();
     }
   });
 
@@ -3115,6 +3187,13 @@ function formatWithCommas(number) {
   return number.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
+function handlePaymentModalDismiss() {
+  liveSessionState = currentOrder.length > 0
+    ? { paymentMethod: null, showQr: false, status: 'editing' }
+    : { paymentMethod: null, showQr: false, status: 'idle' };
+  scheduleLiveSessionPublish(true);
+}
+
 
 function showGCashPaymentModal() {
   const existingModal = document.querySelector('.payment-modal-overlay');
@@ -3128,6 +3207,7 @@ function showGCashPaymentModal() {
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) {
       overlay.remove();
+      handlePaymentModalDismiss();
     }
   });
 
@@ -3178,6 +3258,7 @@ function showCardPaymentModal() {
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) {
       overlay.remove();
+      handlePaymentModalDismiss();
     }
   });
 
@@ -3246,6 +3327,9 @@ function completeCashPayment() {
     lastModified: now.toISOString()
   };
 
+  liveSessionState = { paymentMethod: 'cash', showQr: false, status: 'paid' };
+  scheduleLiveSessionPublish(true);
+
   // Add Firebase ID if we're editing
   if (isEditing && window.editingOrderData.firebaseId) {
     order.firebaseId = window.editingOrderData.firebaseId;
@@ -3296,6 +3380,14 @@ function completeDigitalPayment(method) {
     needsSync: true,
     lastModified: now.toISOString()
   };
+  
+  const normalizedMethod = (method || '').toLowerCase();
+  liveSessionState = {
+    paymentMethod: normalizedMethod || null,
+    showQr: normalizedMethod === 'gcash' || normalizedMethod === 'card',
+    status: 'paid'
+  };
+  scheduleLiveSessionPublish(true);
   
   // Add Firebase ID if we're editing
   if (isEditing && window.editingOrderData.firebaseId) {
@@ -3532,9 +3624,14 @@ async function initializeEventSelector() {
 
   // Event selector change handler
   eventSelector.addEventListener('change', async (e) => {
+    const previousEvent = currentEvent;
     currentEvent = e.target.value;
     window.currentEvent = currentEvent;
     localStorage.setItem('currentEvent', currentEvent);
+
+    if (previousEvent && previousEvent !== currentEvent) {
+      clearLiveSession(previousEvent);
+    }
 
     // Load custom menu for the new event
     await loadEventMenu(currentEvent);
@@ -3549,6 +3646,7 @@ async function initializeEventSelector() {
     syncOrdersWithFirebase();
     subscribeToOrders(currentEvent, selectedDate, mergeFirebaseOrder);
     displayOrderHistory();
+    scheduleLiveSessionPublish(true);
   });
 }
 
@@ -3710,6 +3808,7 @@ function updateCustomerName(name, overlay) {
   customerName = name.trim();
   updateOrderHeader();
   overlay.remove();
+  scheduleLiveSessionPublish(true);
 }
 
 // Replace the existing updateOrderHeader function:

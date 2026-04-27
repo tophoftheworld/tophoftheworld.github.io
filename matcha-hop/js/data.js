@@ -3,7 +3,7 @@
  * In-memory cache for sync reads; initData() must be awaited before use.
  */
 
-import { getDb, initFirebase, initAuth, getCurrentUserId, CAFES_COLLECTION, LOGS_COLLECTION, SETTINGS_COLLECTION, BRANDS_CONFIG_DOC, BRAND_POPUPS_COLLECTION, BRAND_LIKES_COLLECTION, LOCATION_LIKES_COLLECTION } from './firebase.js';
+import { getDb, initFirebase, initAuth, getCurrentUserId, getCurrentProfile, CAFES_COLLECTION, LOGS_COLLECTION, SETTINGS_COLLECTION, BRANDS_CONFIG_DOC, BRAND_POPUPS_COLLECTION, BRAND_LIKES_COLLECTION, LOCATION_LIKES_COLLECTION } from './firebase.js';
 
 const DB_NAME = 'matchaHop';
 const DB_VERSION = 1;
@@ -420,25 +420,64 @@ async function syncLogToFirestore(entry) {
 export function saveLog(log) {
   const id = docId(log.id || uid());
   const existing = _logs.find((l) => docId(l.id) === id);
-  const userId = log.userId ?? existing?.userId ?? getCurrentUserId() ?? null;
+  const profile = getCurrentProfile();
+  const userId = profile.ownerId;
   const photos = Array.isArray(log.photos) && log.photos.length > 0
     ? log.photos
     : (log.photo ? [log.photo] : []);
+  const drinks = Array.isArray(log.drinks)
+    ? log.drinks
+      .map((d) => ({
+        name: String(d?.name || '').trim(),
+        notes: String(d?.notes || '').trim(),
+        details: d?.details ? {
+          sweetness: Number(d.details.sweetness) || 0,
+          bitterness: Number(d.details.bitterness) || 0,
+          umami: Number(d.details.umami) || 0,
+          flavorTags: Array.isArray(d.details.flavorTags) ? d.details.flavorTags.map((t) => String(t || '').trim()).filter(Boolean) : [],
+          price: d.details.price ?? '',
+          recommend: typeof d.details.recommend === 'boolean' ? d.details.recommend : null,
+        } : undefined,
+      }))
+      .filter((d) => d.name)
+    : [];
+  const fallbackDrink = String(log.drinkName || existing?.drinkName || '').trim();
+  if (drinks.length === 0 && fallbackDrink) {
+    drinks.push({ name: fallbackDrink, notes: '', details: undefined });
+  }
+  const visit = log.visit || existing?.visit || {
+    brandId: log.brandId ?? existing?.brandId ?? null,
+    brandName: log.brandName ?? existing?.brandName ?? null,
+    location: {
+      cafeId: log.cafeId ?? existing?.cafeId ?? null,
+      cafeName: log.cafe?.name ?? existing?.cafe?.name ?? null,
+      address: log.cafe?.address ?? existing?.cafe?.address ?? null,
+      popupId: log.popupId ?? existing?.popupId ?? null,
+    },
+  };
+  const primaryDrinkName = drinks[0]?.name || '';
+  const postNotes = log.postNotes ?? existing?.postNotes ?? log.notes ?? existing?.notes ?? '';
+
   const entry = {
     id,
     userId,
-    userName: log.userName || existing?.userName || null,
+    userName: log.userName || existing?.userName || profile.username,
+    userDisplayName: log.userDisplayName || existing?.userDisplayName || profile.name,
     cafeId: log.cafeId ?? null,
     cafe: log.cafe ?? null,
     brandId: log.brandId ?? null,
     brandName: log.brandName || null,
     popupId: log.popupId ?? null,
-    drinkName: log.drinkName || '',
     orderRating: log.orderRating ?? 0,
     cafeRating: log.cafeRating ?? 0,
-    notes: log.notes || '',
+    notes: postNotes || '',
     photo: photos[0] || null,
     photos,
+    visit,
+    drinks,
+    postNotes,
+    // Legacy compatibility fields kept for old render paths.
+    drinkName: primaryDrinkName,
     createdAt: log.createdAt ?? Date.now(),
   };
   const idx = _logs.findIndex((l) => l.id === id);

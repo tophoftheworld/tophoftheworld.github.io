@@ -1,4 +1,4 @@
-import { db, collection, addDoc, updateDoc, doc, getDocs, query, orderBy, limit, setDoc, getDoc, onSnapshot } from './firebase-setup.js';
+import { db, collection, addDoc, updateDoc, doc, getDocs, query, orderBy, limit, setDoc, getDoc, onSnapshot, deleteDoc, serverTimestamp } from './firebase-setup.js';
 import { menuData } from './menu-data.js';
 
 let syncQueue = [];
@@ -277,6 +277,7 @@ export async function saveEventToFirebase(eventData) {
 }
 
 let unsubscribeOrderListener = null;
+let unsubscribeLiveSessionListener = null;
 
 export function subscribeToOrders(event, date, onUpdate) {
     // Detach any existing listener before attaching a new one
@@ -299,4 +300,57 @@ export function subscribeToOrders(event, date, onUpdate) {
     }, (error) => {
         console.error('Order listener error:', error);
     });
+}
+
+function getLiveSessionDocRef(event) {
+    const eventKey = event || 'pop-up';
+    return doc(db, 'pos-live', eventKey, 'session', 'current');
+}
+
+export async function publishLiveSession(event, payload) {
+    try {
+        const liveDocRef = getLiveSessionDocRef(event);
+        await setDoc(liveDocRef, {
+            event: event || 'pop-up',
+            updatedAt: serverTimestamp(),
+            ...payload
+        }, { merge: true });
+        return true;
+    } catch (error) {
+        console.error('Failed to publish live session:', error);
+        return false;
+    }
+}
+
+export async function clearLiveSession(event) {
+    try {
+        const liveDocRef = getLiveSessionDocRef(event);
+        await deleteDoc(liveDocRef);
+        return true;
+    } catch (error) {
+        console.error('Failed to clear live session:', error);
+        return false;
+    }
+}
+
+export function subscribeToLiveSession(event, onUpdate) {
+    if (unsubscribeLiveSessionListener) {
+        unsubscribeLiveSessionListener();
+        unsubscribeLiveSessionListener = null;
+    }
+
+    const liveDocRef = getLiveSessionDocRef(event);
+
+    unsubscribeLiveSessionListener = onSnapshot(liveDocRef, (snapshot) => {
+        onUpdate(snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null);
+    }, (error) => {
+        console.error('Live session listener error:', error);
+    });
+
+    return () => {
+        if (unsubscribeLiveSessionListener) {
+            unsubscribeLiveSessionListener();
+            unsubscribeLiveSessionListener = null;
+        }
+    };
 }

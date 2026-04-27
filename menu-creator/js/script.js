@@ -48,6 +48,7 @@ import {
     const state = getDefaultState();
     const photoUploading = {};
     let photoGalleryIntervals = [];
+    let liveSessionPollers = [];
 
     function getGalleryProps(props) {
         const p = props || {};
@@ -65,6 +66,13 @@ import {
             imageUrls: mediaItems.filter((item) => item.type === 'image').map((item) => item.url),
             galleryIntervalSeconds: interval
         };
+    }
+
+    function hasActiveLiveOrder(liveData) {
+        if (!liveData || typeof liveData !== 'object') return false;
+        const items = Array.isArray(liveData.items) ? liveData.items : [];
+        const status = (liveData.status || '').toString().toLowerCase();
+        return items.length > 0 && status !== 'idle';
     }
 
     const $ = (id) => document.getElementById(id);
@@ -1344,7 +1352,7 @@ import {
                 });
                 const templateSelect = document.createElement('select');
                 templateSelect.className = 'tile-template-select';
-                templateSelect.innerHTML = '<option value="white">White (blank)</option><option value="green">Green (blank)</option><option value="branch-name">Branch name</option><option value="logo">Logo</option><option value="menu">Menu</option><option value="customization">Customization</option><option value="photo">Photo</option>';
+                templateSelect.innerHTML = '<option value="white">White (blank)</option><option value="green">Green (blank)</option><option value="branch-name">Branch name</option><option value="logo">Logo</option><option value="menu">Menu</option><option value="customization">Customization</option><option value="photo">Photo</option><option value="customer-display">Customer display (embed)</option>';
                 const templateVal = (state.tileTemplate && state.tileTemplate[colIdx] && state.tileTemplate[colIdx][rowIdx]) || 'white';
                 templateSelect.value = templateVal;
                 templateSelect.addEventListener('change', () => {
@@ -1361,6 +1369,14 @@ import {
                         const p = state.tileTemplateProps[colIdx][rowIdx] || {};
                         const { mediaItems, imageUrls, galleryIntervalSeconds } = getGalleryProps(p);
                         state.tileTemplateProps[colIdx][rowIdx] = { ...p, mediaItems, imageUrls, galleryIntervalSeconds };
+                    }
+                    if (templateSelect.value === 'customer-display') {
+                        const p = state.tileTemplateProps[colIdx][rowIdx] || {};
+                        state.tileTemplateProps[colIdx][rowIdx] = {
+                            ...p,
+                            eventKey: typeof p.eventKey === 'string' ? p.eventKey : '',
+                            showSettingsButton: Boolean(p.showSettingsButton)
+                        };
                     }
                     saveState();
                     renderColumnRowsSection();
@@ -1796,6 +1812,89 @@ import {
                     }
                     propsPanel.appendChild(thumbsWrap);
                     propsPanel.appendChild(photoInput);
+
+                    const takeoverWrap = document.createElement('label');
+                    takeoverWrap.className = 'menu-save-new-toggle';
+                    const takeoverInput = document.createElement('input');
+                    takeoverInput.type = 'checkbox';
+                    takeoverInput.checked = Boolean(photoProps.useAsCustomerDisplay);
+                    const takeoverText = document.createElement('span');
+                    takeoverText.textContent = 'Use customer display when active order exists';
+                    takeoverInput.addEventListener('change', () => {
+                        if (!state.tileTemplateProps[colIdx][rowIdx]) state.tileTemplateProps[colIdx][rowIdx] = {};
+                        state.tileTemplateProps[colIdx][rowIdx].useAsCustomerDisplay = takeoverInput.checked;
+                        saveState();
+                        renderColumnRowsSection();
+                        renderTiles();
+                    });
+                    takeoverWrap.appendChild(takeoverInput);
+                    takeoverWrap.appendChild(takeoverText);
+                    propsPanel.appendChild(takeoverWrap);
+
+                    if (takeoverInput.checked) {
+                        const eventLabel = document.createElement('label');
+                        eventLabel.textContent = 'Customer display event key';
+                        const eventInput = document.createElement('input');
+                        eventInput.type = 'text';
+                        eventInput.placeholder = 'e.g. bgc-night-market';
+                        eventInput.value = photoProps.customerDisplayEventKey || '';
+                        eventInput.addEventListener('input', () => {
+                            if (!state.tileTemplateProps[colIdx][rowIdx]) state.tileTemplateProps[colIdx][rowIdx] = {};
+                            state.tileTemplateProps[colIdx][rowIdx].customerDisplayEventKey = eventInput.value.trim();
+                            saveState();
+                            renderTiles();
+                        });
+                        const eventHint = document.createElement('span');
+                        eventHint.className = 'form-hint';
+                        eventHint.textContent = 'Idle shows gallery; active order shows customer display.';
+                        propsPanel.appendChild(eventLabel);
+                        propsPanel.appendChild(eventInput);
+                        propsPanel.appendChild(eventHint);
+                    }
+                    block.appendChild(propsPanel);
+                }
+                if (templateVal === 'customer-display') {
+                    const propsPanel = document.createElement('div');
+                    propsPanel.className = 'tile-template-props';
+                    const displayProps = (state.tileTemplateProps[colIdx] && state.tileTemplateProps[colIdx][rowIdx]) || {};
+
+                    const eventLabel = document.createElement('label');
+                    eventLabel.textContent = 'Event key (optional)';
+                    const eventInput = document.createElement('input');
+                    eventInput.type = 'text';
+                    eventInput.placeholder = 'e.g. bgc-night-market';
+                    eventInput.value = displayProps.eventKey || '';
+                    eventInput.addEventListener('input', () => {
+                        if (!state.tileTemplateProps[colIdx][rowIdx]) state.tileTemplateProps[colIdx][rowIdx] = {};
+                        state.tileTemplateProps[colIdx][rowIdx].eventKey = eventInput.value.trim();
+                        saveState();
+                        renderTiles();
+                    });
+
+                    const showSettingsWrap = document.createElement('label');
+                    showSettingsWrap.className = 'menu-save-new-toggle';
+                    const showSettingsInput = document.createElement('input');
+                    showSettingsInput.type = 'checkbox';
+                    showSettingsInput.checked = Boolean(displayProps.showSettingsButton);
+                    showSettingsInput.addEventListener('change', () => {
+                        if (!state.tileTemplateProps[colIdx][rowIdx]) state.tileTemplateProps[colIdx][rowIdx] = {};
+                        state.tileTemplateProps[colIdx][rowIdx].showSettingsButton = showSettingsInput.checked;
+                        saveState();
+                        renderTiles();
+                    });
+                    const showSettingsText = document.createElement('span');
+                    showSettingsText.textContent = 'Show settings button in embed';
+                    showSettingsWrap.appendChild(showSettingsInput);
+                    showSettingsWrap.appendChild(showSettingsText);
+
+                    const hint = document.createElement('span');
+                    hint.className = 'form-hint';
+                    hint.textContent = 'This embeds ../pos/customer-display.html so updates happen in one source only.';
+
+                    propsPanel.appendChild(eventLabel);
+                    propsPanel.appendChild(eventInput);
+                    propsPanel.appendChild(showSettingsWrap);
+                    propsPanel.appendChild(hint);
                     block.appendChild(propsPanel);
                 }
             });
@@ -1893,6 +1992,10 @@ import {
             try { cleanup(); } catch (_) { /* ignore */ }
         });
         photoGalleryIntervals = [];
+        liveSessionPollers.forEach((cleanup) => {
+            try { cleanup(); } catch (_) { /* ignore */ }
+        });
+        liveSessionPollers = [];
         const { w, h } = getCanvasDimensions();
         const margin = state.unit === 'cm' ? state.margin * CM_TO_PX : state.margin;
         const innerW = Math.max(0, w - margin * 2);
@@ -1941,7 +2044,9 @@ import {
                 } else if (template === 'photo') {
                     const photoProps = (state.tileTemplateProps && state.tileTemplateProps[colIdx] && state.tileTemplateProps[colIdx][r]) || {};
                     const { mediaItems, galleryIntervalSeconds } = getGalleryProps(photoProps);
-                    if (mediaItems.length === 0) {
+                    const useAsCustomerDisplay = Boolean(photoProps.useAsCustomerDisplay);
+                    const eventKey = (photoProps.customerDisplayEventKey || '').trim();
+                    if (mediaItems.length === 0 && !useAsCustomerDisplay) {
                         tile.innerHTML = '<div class="tile-photo-wrap tile-photo-empty"><span class="tile-placeholder">Upload a photo or video</span></div>';
                     } else {
                         const interval = Math.max(1, galleryIntervalSeconds);
@@ -1951,8 +2056,55 @@ import {
                             }
                             return '<img src="' + escapeHtml(item.url) + '" alt="" class="tile-photo-item tile-photo-img' + (i === 0 ? ' tile-photo-visible' : '') + '" data-index="' + i + '">';
                         }).join('');
-                        tile.innerHTML = '<div class="tile-photo-wrap tile-photo-gallery" data-interval="' + interval + '">' + mediaHtml + '</div>';
+                        const galleryHtml = mediaItems.length > 0
+                            ? '<div class="tile-photo-wrap tile-photo-gallery" data-interval="' + interval + '">' + mediaHtml + '</div>'
+                            : '<div class="tile-photo-wrap tile-photo-empty"><span class="tile-placeholder">No gallery media</span></div>';
+                        if (!useAsCustomerDisplay) {
+                            tile.innerHTML = galleryHtml;
+                        } else {
+                            const resolvedEventKey = eventKey || localStorage.getItem('currentEvent') || 'pop-up';
+                            const params = new URLSearchParams();
+                            params.set('event', resolvedEventKey);
+                            params.set('embedded', '1');
+                            params.set('hideSettings', '1');
+                            const src = '../pos/customer-display.html?' + params.toString();
+                            tile.innerHTML = '<div class="tile-photo-display-switch"><div class="tile-photo-layer tile-photo-layer-gallery">' + galleryHtml + '</div><div class="tile-photo-layer tile-photo-layer-display" hidden><iframe class="tile-customer-display-iframe" src="' + escapeHtml(src) + '" loading="lazy" referrerpolicy="no-referrer"></iframe></div></div>';
+                            const switchRoot = tile.querySelector('.tile-photo-display-switch');
+                            const galleryLayer = switchRoot ? switchRoot.querySelector('.tile-photo-layer-gallery') : null;
+                            const displayLayer = switchRoot ? switchRoot.querySelector('.tile-photo-layer-display') : null;
+                            const eventForPolling = resolvedEventKey;
+                            if (galleryLayer && displayLayer) {
+                                let lastState = null;
+                                const setActive = (showDisplay) => {
+                                    if (lastState === showDisplay) return;
+                                    lastState = showDisplay;
+                                    galleryLayer.hidden = showDisplay;
+                                    displayLayer.hidden = !showDisplay;
+                                };
+                                const poll = async () => {
+                                    try {
+                                        const snap = await getDoc(doc(db, 'pos-live', eventForPolling, 'session', 'current'));
+                                        const active = snap.exists() ? hasActiveLiveOrder(snap.data()) : false;
+                                        setActive(active);
+                                    } catch (err) {
+                                        console.error('Live session poll failed:', err);
+                                    }
+                                };
+                                poll();
+                                const pollId = setInterval(poll, 1500);
+                                liveSessionPollers.push(() => clearInterval(pollId));
+                            }
+                        }
                     }
+                } else if (template === 'customer-display') {
+                    const displayProps = (state.tileTemplateProps && state.tileTemplateProps[colIdx] && state.tileTemplateProps[colIdx][r]) || {};
+                    const params = new URLSearchParams();
+                    if (displayProps.eventKey) params.set('event', displayProps.eventKey);
+                    params.set('embedded', '1');
+                    if (!displayProps.showSettingsButton) params.set('hideSettings', '1');
+                    const query = params.toString();
+                    const src = '../pos/customer-display.html' + (query ? '?' + query : '');
+                    tile.innerHTML = '<div class="tile-customer-display-wrap"><iframe class="tile-customer-display-iframe" src="' + escapeHtml(src) + '" loading="lazy" referrerpolicy="no-referrer"></iframe></div>';
                 } else {
                     tile.innerHTML = `<span class="tile-placeholder">Tile ${colIdx + 1}-${r + 1}</span>`;
                 }

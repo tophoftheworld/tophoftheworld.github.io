@@ -1,9 +1,23 @@
 /**
- * Post matcha form: share your matcha — photo-first, optional tag brand/location, caption. No ratings.
+ * Post form: visit-first, multi-drink logging with optional per-drink deep dive.
  */
 
-import { saveLog, saveCafe, getGalleryBrands, getCafeByPlaceId, getPopUpsByBrandId, CLASSIFICATIONS } from './data.js';
+import {
+  saveLog,
+  saveCafe,
+  getGalleryBrands,
+  getCafeByPlaceId,
+  getPopUpsByBrandId,
+  CLASSIFICATIONS,
+  hasUserLikedBrand,
+  hasUserLikedLocation,
+  setBrandLike,
+  setLocationLike,
+} from './data.js';
+import { getCurrentProfile } from './firebase.js';
 import { getStorage, initAuth } from './firebase.js';
+
+const FLAVOR_TAGS = ['grassy', 'umami', 'nutty', 'vegetal', 'creamy', 'citrus', 'fruity', 'sweet', 'toasted', 'earthy', 'buttery', 'caramel', 'floral', 'bitter'];
 
 function escapeAttr(s) {
   if (s == null) return '';
@@ -12,7 +26,12 @@ function escapeAttr(s) {
   return div.innerHTML.replace(/"/g, '&quot;');
 }
 
-/** Format YYYY-MM-DD for display: "Today (March 9, 2026)" when today, else "March 9, 2026". */
+function escapeHtml(s) {
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
 function formatDateDisplay(dateStr) {
   if (!dateStr) return '';
   const today = new Date().toISOString().slice(0, 10);
@@ -131,6 +150,7 @@ async function uploadLogPhotos(logId, photosBase64) {
 }
 
 export function openLogForm(cafe, onClose, options = {}) {
+  const currentProfile = getCurrentProfile();
   const overlay = document.getElementById('log-form-overlay');
   const panel = document.getElementById('log-form-panel');
   if (!overlay || !panel) return;
@@ -144,7 +164,6 @@ export function openLogForm(cafe, onClose, options = {}) {
   const contextBrandId = options.brandId ?? contextBrand?.id ?? null;
   const contextBrandName = options.brandName ?? contextBrand?.name ?? null;
   const contextPopupId = options.popupId ?? contextPopUp?.id ?? null;
-  const isBrandLocked = !!(contextBrandId || contextBrandName);
 
   const classificationOptions = Object.entries(CLASSIFICATIONS)
     .map(([value, label]) => `<option value="${escapeAttr(value)}">${escapeHtml(label)}</option>`)
@@ -160,36 +179,40 @@ export function openLogForm(cafe, onClose, options = {}) {
     </div>
   ` : '';
 
-  const formTitle = hasInitialCafe ? `Share your Matcha at ${escapeHtml(cafeName)}` : (contextBrandName ? `Share your Matcha at ${escapeHtml(contextBrandName)}` : 'Share your Matcha');
-  const brandLocationSection = hasInitialCafe ? '' : `
-    <div class="form-section" id="log-form-brand-section">
-      <label for="log-form-location-trigger">Location</label>
-      <button type="button" id="log-form-location-trigger" class="log-form-location-trigger" aria-haspopup="dialog" aria-expanded="false">
-        <span id="log-form-location-label" class="log-form-location-label ${isBrandLocked && contextBrandName ? '' : 'log-form-location-placeholder'}">${isBrandLocked && contextBrandName ? `<span class="log-form-location-primary">${escapeHtml(contextBrandName)}</span>` : 'Choose cafe or brand'}</span>
-        <span id="log-form-location-change" class="log-form-location-change ${isBrandLocked ? '' : 'hidden'}">Change</span>
-      </button>
-    </div>
-  `;
-
   const todayStr = new Date().toISOString().slice(0, 10);
   panel.innerHTML = `
-    <h2>${formTitle}</h2>
+    <h2>${hasInitialCafe ? `Add post at ${escapeHtml(cafeName)}` : 'Add post'}</h2>
     <form id="log-matcha-form">
       <label>Photos</label>
       <div class="photo-upload">
         <input type="file" id="log-photo-input" accept="image/*" multiple hidden>
         <div class="log-photo-strip" id="log-photo-strip" aria-label="Photo strip"></div>
+        <p id="log-upload-status" class="log-upload-status hidden" aria-live="polite"></p>
       </div>
       <label for="log-date-display">Date</label>
       <div class="log-form-date-row">
         <button type="button" id="log-date-display" class="log-form-date-display" aria-label="Choose date">${formatDateDisplay(todayStr)}</button>
         <input type="date" id="log-date" value="${todayStr}" tabindex="-1" aria-hidden="true">
       </div>
-      <label for="log-drink-name">Drink name</label>
-      <input type="text" id="log-drink-name" placeholder="e.g. Matcha Latte">
-      ${brandLocationSection}
-      <label for="log-notes">Caption</label>
-      <textarea id="log-notes" placeholder="Write a caption..."></textarea>
+      ${hasInitialCafe ? '' : `
+        <div class="form-section">
+          <label for="log-form-brand-input">Brand</label>
+          <input type="text" id="log-form-brand-input" class="log-form-select-input" list="log-form-brand-suggestions" placeholder="Type to search brands">
+          <datalist id="log-form-brand-suggestions"></datalist>
+          <label for="log-form-location-select">Location (optional)</label>
+          <select id="log-form-location-select" class="log-form-select-input">
+            <option value="">No location</option>
+          </select>
+          <div id="log-form-hearts" class="log-form-hearts"></div>
+        </div>
+      `}
+      <div class="form-section">
+        <label>Drinks</label>
+        <div id="log-drink-list"></div>
+        <button type="button" id="log-add-drink-btn" class="log-add-drink-btn">+ Add another drink</button>
+      </div>
+      <label for="log-notes">Notes</label>
+      <textarea id="log-notes" placeholder="Write your notes or description..."></textarea>
       ${classificationSection}
       <div class="form-actions">
         <button type="button" class="btn-cancel">Cancel</button>
@@ -205,217 +228,157 @@ export function openLogForm(cafe, onClose, options = {}) {
   let selectedCafe = cafe || null;
   let selectedPopUp = contextPopUp || null;
   let brands = [];
+  const drinkRows = [];
 
   const form = document.getElementById('log-matcha-form');
   const photoInput = document.getElementById('log-photo-input');
   const photoStrip = document.getElementById('log-photo-strip');
+  const drinkList = document.getElementById('log-drink-list');
+  const addDrinkBtn = document.getElementById('log-add-drink-btn');
+  const uploadStatusEl = document.getElementById('log-upload-status');
+  const saveBtn = form?.querySelector('.btn-save');
   const MAX_PHOTOS = 10;
+  let isSaving = false;
+  let fileReadQueue = Promise.resolve();
+
+  function renderLikeButtons() {
+    const hearts = document.getElementById('log-form-hearts');
+    if (!hearts) return;
+    hearts.innerHTML = `
+      ${selectedBrand ? `<button type="button" id="log-heart-brand" class="log-form-heart-btn">${hasUserLikedBrand(selectedBrand.id) ? '♥' : '♡'} ${escapeHtml(selectedBrand.name || 'Brand')}</button>` : ''}
+      ${selectedCafe ? `<button type="button" id="log-heart-cafe" class="log-form-heart-btn">${hasUserLikedLocation(selectedCafe.id) ? '♥' : '♡'} ${escapeHtml(selectedCafe.name || 'Location')}</button>` : ''}
+    `;
+    const hb = document.getElementById('log-heart-brand');
+    const hc = document.getElementById('log-heart-cafe');
+    if (hb && selectedBrand) hb.addEventListener('click', () => { setBrandLike(selectedBrand.id, !hasUserLikedBrand(selectedBrand.id)); renderLikeButtons(); });
+    if (hc && selectedCafe) hc.addEventListener('click', () => { setLocationLike(selectedCafe.id, !hasUserLikedLocation(selectedCafe.id)); renderLikeButtons(); });
+  }
+
+  function renderDrinkRows() {
+    if (!drinkList) return;
+    drinkList.innerHTML = '';
+    drinkRows.forEach((row, idx) => {
+      const el = document.createElement('div');
+      el.className = 'log-drink-row';
+      el.innerHTML = `
+        <div class="log-drink-row-top">
+          <button type="button" class="log-drink-recommend-heart ${row.details.recommended ? 'is-active' : ''}" data-idx="${idx}" aria-label="Recommend this drink">${row.details.recommended ? '♥' : '♡'}</button>
+          <input type="text" class="log-drink-name-input" data-idx="${idx}" value="${escapeAttr(row.name)}" placeholder="Drink name (required)">
+          <button type="button" class="log-drink-expand-btn" data-idx="${idx}">${row.expanded ? 'Hide details' : 'Add details'}</button>
+          ${drinkRows.length > 1 ? `<button type="button" class="log-drink-remove-btn" data-idx="${idx}">×</button>` : ''}
+        </div>
+        ${row.expanded ? `
+        <div class="log-drink-details">
+          <textarea class="log-drink-notes-input" data-idx="${idx}" placeholder="Drink notes...">${escapeHtml(row.notes)}</textarea>
+          <label>Sweetness (${row.details.sweetness})</label><input class="log-slider" data-idx="${idx}" data-kind="sweetness" type="range" min="1" max="5" value="${row.details.sweetness}">
+          <label>Bitterness (${row.details.bitterness})</label><input class="log-slider" data-idx="${idx}" data-kind="bitterness" type="range" min="1" max="5" value="${row.details.bitterness}">
+          <label>Umami (${row.details.umami})</label><input class="log-slider" data-idx="${idx}" data-kind="umami" type="range" min="1" max="5" value="${row.details.umami}">
+          <div class="log-flavor-tags">${FLAVOR_TAGS.map((t) => `<button type="button" class="log-flavor-tag ${row.details.flavorTags.includes(t) ? 'is-active' : ''}" data-idx="${idx}" data-tag="${escapeAttr(t)}">${escapeHtml(t)}</button>`).join('')}</div>
+          <input type="text" class="log-price-input" data-idx="${idx}" value="${escapeAttr(String(row.details.price || ''))}" placeholder="Price (optional)">
+        </div>` : ''}
+      `;
+      drinkList.appendChild(el);
+    });
+    drinkList.querySelectorAll('.log-drink-recommend-heart').forEach((node) => node.addEventListener('click', () => {
+      const row = drinkRows[Number(node.dataset.idx)];
+      row.details.recommended = !row.details.recommended;
+      renderDrinkRows();
+    }));
+    drinkList.querySelectorAll('.log-drink-name-input').forEach((node) => node.addEventListener('input', () => { drinkRows[Number(node.dataset.idx)].name = node.value; }));
+    drinkList.querySelectorAll('.log-drink-expand-btn').forEach((node) => node.addEventListener('click', () => { const row = drinkRows[Number(node.dataset.idx)]; row.expanded = !row.expanded; renderDrinkRows(); }));
+    drinkList.querySelectorAll('.log-drink-remove-btn').forEach((node) => node.addEventListener('click', () => { drinkRows.splice(Number(node.dataset.idx), 1); if (!drinkRows.length) addDrink(); renderDrinkRows(); }));
+    drinkList.querySelectorAll('.log-drink-notes-input').forEach((node) => node.addEventListener('input', () => { drinkRows[Number(node.dataset.idx)].notes = node.value; }));
+    drinkList.querySelectorAll('.log-slider').forEach((node) => node.addEventListener('input', () => { const row = drinkRows[Number(node.dataset.idx)]; row.details[node.dataset.kind] = Number(node.value); renderDrinkRows(); }));
+    drinkList.querySelectorAll('.log-price-input').forEach((node) => node.addEventListener('input', () => { drinkRows[Number(node.dataset.idx)].details.price = node.value; }));
+    drinkList.querySelectorAll('.log-flavor-tag').forEach((node) => node.addEventListener('click', () => {
+      const row = drinkRows[Number(node.dataset.idx)];
+      const t = node.dataset.tag;
+      row.details.flavorTags = row.details.flavorTags.includes(t) ? row.details.flavorTags.filter((x) => x !== t) : [...row.details.flavorTags, t];
+      renderDrinkRows();
+    }));
+  }
+
+  function addDrink() {
+    drinkRows.push({
+      name: '',
+      notes: '',
+      expanded: false,
+      details: { sweetness: 3, bitterness: 3, umami: 3, flavorTags: [], price: '', recommended: false },
+    });
+  }
 
   async function initBrandLocation() {
     if (hasInitialCafe) return;
-    const locationTrigger = document.getElementById('log-form-location-trigger');
-    const locationLabel = document.getElementById('log-form-location-label');
-    const locationChange = document.getElementById('log-form-location-change');
-    const brandPickerModal = document.getElementById('log-form-brand-picker-modal');
-    const brandPickerSearch = document.getElementById('log-form-brand-picker-search');
-    const brandPickerGallery = document.getElementById('log-form-brand-picker-gallery');
-    const brandPickerClose = document.getElementById('log-form-brand-picker-close');
-    const brandPickerBackdrop = document.getElementById('log-form-brand-picker-backdrop');
-    const brandFilterAll = document.getElementById('log-form-brand-filter-all');
-    const brandFilterCafe = document.getElementById('log-form-brand-filter-cafe');
-    const brandFilterPopup = document.getElementById('log-form-brand-filter-popup');
-    const modalStep1 = document.getElementById('log-form-modal-step1');
-    const modalStep2 = document.getElementById('log-form-modal-step2');
-    const modalStep2Back = document.getElementById('log-form-modal-step2-back');
-    const modalStep2Title = document.getElementById('log-form-modal-step2-title');
-    const locationPickerGallery = document.getElementById('log-form-location-picker-gallery');
-    if (!locationTrigger || !brandPickerModal || !brandPickerGallery) return;
-
+    const brandInput = document.getElementById('log-form-brand-input');
+    const brandSuggestions = document.getElementById('log-form-brand-suggestions');
+    const locationSelect = document.getElementById('log-form-location-select');
+    if (!brandInput || !brandSuggestions || !locationSelect) return;
     brands = await getGalleryBrands();
-    if (isBrandLocked && !selectedBrand && contextBrandId) {
-      selectedBrand = brands.find((b) => b.id === contextBrandId) || null;
+    if (!selectedBrand && contextBrandId) selectedBrand = brands.find((b) => b.id === contextBrandId) || null;
+    if (selectedBrand && contextPopupId) {
+      const pops = await getPopUpsByBrandId(selectedBrand.id);
+      selectedPopUp = pops.find((p) => p.id === contextPopupId) || null;
     }
-    if (isBrandLocked && selectedBrand && contextPopupId) {
+    const populateBrandSuggestions = () => {
+      brandSuggestions.innerHTML = '';
+      brands.forEach((b) => {
+        const opt = document.createElement('option');
+        opt.value = b.name || '';
+        brandSuggestions.appendChild(opt);
+      });
+    };
+    const populateLocationOptions = async () => {
+      locationSelect.innerHTML = '<option value="">No location</option>';
+      if (!selectedBrand) return;
       const popUps = await getPopUpsByBrandId(selectedBrand.id);
-      selectedPopUp = popUps.find((p) => p.id === contextPopupId) || null;
+      (selectedBrand.cafes || []).forEach((cafeOpt) => {
+        const opt = document.createElement('option');
+        opt.value = `cafe:${cafeOpt.id}`;
+        opt.textContent = cafeOpt.address || cafeOpt.name || 'Location';
+        locationSelect.appendChild(opt);
+      });
+      popUps.forEach((pop) => {
+        const opt = document.createElement('option');
+        opt.value = `popup:${pop.id}`;
+        opt.textContent = `Pop-up: ${pop.address || pop.name || 'Location'}`;
+        locationSelect.appendChild(opt);
+      });
+      if (selectedCafe) locationSelect.value = `cafe:${selectedCafe.id}`;
+      else if (selectedPopUp) locationSelect.value = `popup:${selectedPopUp.id}`;
+      else locationSelect.value = '';
+    };
+    const syncFromBrandInput = async () => {
+      const typed = (brandInput.value || '').trim().toLowerCase();
+      selectedBrand = brands.find((b) => (b.name || '').trim().toLowerCase() === typed) || null;
       selectedCafe = null;
-    }
-
-    let modalStep = 1;
-    let step2Brand = null;
-
-    function updateFormLocationLabel() {
-      if (!locationLabel) return;
-      if (!selectedBrand) {
-        locationLabel.textContent = 'Choose cafe or brand';
-        locationLabel.classList.add('log-form-location-placeholder');
-        if (locationChange) locationChange.classList.add('hidden');
+      selectedPopUp = null;
+      await populateLocationOptions();
+      renderLikeButtons();
+    };
+    populateBrandSuggestions();
+    if (selectedBrand?.name) brandInput.value = selectedBrand.name;
+    await populateLocationOptions();
+    renderLikeButtons();
+    brandInput.addEventListener('change', syncFromBrandInput);
+    brandInput.addEventListener('blur', syncFromBrandInput);
+    locationSelect.addEventListener('change', async () => {
+      const value = locationSelect.value || '';
+      selectedCafe = null;
+      selectedPopUp = null;
+      if (!selectedBrand || !value) {
+        renderLikeButtons();
         return;
       }
-      locationLabel.classList.remove('log-form-location-placeholder');
-      if (locationChange) locationChange.classList.remove('hidden');
-      const brandText = escapeHtml(selectedBrand.name || 'Unnamed');
-      let subtitle = '';
-      if (selectedCafe) {
-        subtitle = escapeHtml(selectedCafe.address || selectedCafe.name || 'Location');
-      } else if (selectedPopUp) {
-        subtitle = escapeHtml(selectedPopUp.address || selectedPopUp.name || 'Pop-up');
-      } else {
-        subtitle = '';
+      if (value.startsWith('cafe:')) {
+        const id = value.slice(5);
+        selectedCafe = (selectedBrand.cafes || []).find((c) => String(c.id) === String(id)) || null;
+      } else if (value.startsWith('popup:')) {
+        const id = value.slice(6);
+        const popUps = await getPopUpsByBrandId(selectedBrand.id);
+        selectedPopUp = popUps.find((p) => String(p.id) === String(id)) || null;
       }
-      locationLabel.innerHTML = subtitle
-        ? `<span class="log-form-location-primary">${brandText}</span><span class="log-form-location-secondary">${subtitle}</span>`
-        : `<span class="log-form-location-primary">${brandText}</span>`;
-    }
-
-    function showStep1() {
-      modalStep = 1;
-      step2Brand = null;
-      if (modalStep1) modalStep1.classList.remove('hidden');
-      if (modalStep2) modalStep2.classList.add('hidden');
-    }
-
-    function showStep2(brand) {
-      modalStep = 2;
-      step2Brand = brand;
-      if (modalStep1) modalStep1.classList.add('hidden');
-      if (modalStep2) modalStep2.classList.remove('hidden');
-      if (modalStep2Title) modalStep2Title.textContent = `${brand.name || 'Unnamed'} – Choose location`;
-      if (!locationPickerGallery) return;
-      const cafes = brand.cafes || [];
-      const popUpsPromise = getPopUpsByBrandId(brand.id);
-      popUpsPromise.then((popUps) => {
-        locationPickerGallery.innerHTML = '';
-        cafes.forEach((c) => {
-          const name = c.name || c.address || c.id || 'Unnamed';
-          const subtitle = c.address || '';
-          const card = document.createElement('button');
-          card.type = 'button';
-          card.className = 'log-form-brand-card log-form-brand-card--modal log-form-location-card';
-          const img = c.photoUrl ? `<img src="${escapeAttr(c.photoUrl)}" alt="" class="card-image">` : '<div class="card-image card-image-placeholder"></div>';
-          card.innerHTML = `${img}<span class="card-name">${escapeHtml(name)}</span>${subtitle ? `<span class="card-subtitle">${escapeHtml(subtitle)}</span>` : ''}`;
-          card.addEventListener('click', () => {
-            selectedBrand = brand;
-            selectedCafe = c;
-            selectedPopUp = null;
-            updateFormLocationLabel();
-            closeBrandPickerModal();
-          });
-          locationPickerGallery.appendChild(card);
-        });
-        popUps.forEach((p) => {
-          const label = p.name || p.address || 'Pop-up';
-          const card = document.createElement('button');
-          card.type = 'button';
-          card.className = 'log-form-brand-card log-form-brand-card--modal log-form-location-card';
-          card.innerHTML = `<span class="card-name">${escapeHtml(label)}</span>${p.address ? `<span class="card-subtitle">${escapeHtml(p.address)}</span>` : ''}`;
-          card.addEventListener('click', () => {
-            selectedBrand = brand;
-            selectedCafe = null;
-            selectedPopUp = p;
-            updateFormLocationLabel();
-            closeBrandPickerModal();
-          });
-          locationPickerGallery.appendChild(card);
-        });
-      });
-    }
-
-    let brandPickerFilter = 'all';
-
-    function getFilteredBrands() {
-      let list = brands;
-      if (brandPickerFilter === 'cafe') list = list.filter((b) => (b.cafes || []).length > 0);
-      else if (brandPickerFilter === 'popup') list = list.filter((b) => (b.cafes || []).length === 0);
-      return list;
-    }
-
-    function renderBrandGalleryModal(filterQuery = '') {
-      const q = (filterQuery || '').trim().toLowerCase();
-      let list = getFilteredBrands();
-      list = q ? list.filter((b) => (b.name || '').toLowerCase().includes(q)) : list;
-      brandPickerGallery.innerHTML = '';
-      list.forEach((b) => {
-        const card = document.createElement('button');
-        card.type = 'button';
-        card.className = 'log-form-brand-card log-form-brand-card--modal';
-        card.dataset.brandId = b.id;
-        const firstCafe = b.cafes && b.cafes[0];
-        const img = firstCafe?.photoUrl ? `<img src="${escapeAttr(firstCafe.photoUrl)}" alt="" class="card-image">` : '<div class="card-image card-image-placeholder"></div>';
-        card.innerHTML = `${img}<span class="card-name">${escapeHtml(b.name || 'Unnamed')}</span>`;
-        card.addEventListener('click', () => {
-          const cafes = b.cafes || [];
-          getPopUpsByBrandId(b.id).then((popUps) => {
-            if (cafes.length > 0 || popUps.length > 0) {
-              showStep2(b);
-            } else {
-              selectedBrand = b;
-              selectedCafe = null;
-              selectedPopUp = null;
-              updateFormLocationLabel();
-              closeBrandPickerModal();
-            }
-          });
-        });
-        brandPickerGallery.appendChild(card);
-      });
-    }
-
-    function setBrandFilterActive(activeFilter) {
-      brandPickerFilter = activeFilter;
-      [brandFilterAll, brandFilterCafe, brandFilterPopup].forEach((btn) => {
-        if (!btn) return;
-        const isActive = (btn.dataset.filter || '') === activeFilter;
-        btn.classList.toggle('is-active', isActive);
-        btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
-      });
-      renderBrandGalleryModal(brandPickerSearch ? brandPickerSearch.value.trim() : '');
-    }
-
-    function onBrandPickerEscape(e) {
-      if (e.key !== 'Escape' || !brandPickerModal || brandPickerModal.classList.contains('hidden')) return;
-      if (modalStep === 2) {
-        showStep1();
-        renderBrandGalleryModal(brandPickerSearch ? brandPickerSearch.value.trim() : '');
-      } else {
-        closeBrandPickerModal();
-      }
-    }
-
-    function openBrandPickerModal() {
-      brandPickerModal.classList.remove('hidden');
-      if (isBrandLocked && selectedBrand) {
-        showStep2(selectedBrand);
-      } else {
-        showStep1();
-        if (brandPickerSearch) brandPickerSearch.value = '';
-        brandPickerFilter = 'all';
-        setBrandFilterActive('all');
-        renderBrandGalleryModal('');
-        if (brandPickerSearch) brandPickerSearch.focus();
-      }
-      locationTrigger.setAttribute('aria-expanded', 'true');
-      document.addEventListener('keydown', onBrandPickerEscape);
-    }
-
-    function closeBrandPickerModal() {
-      brandPickerModal.classList.add('hidden');
-      showStep1();
-      locationTrigger.setAttribute('aria-expanded', 'false');
-      document.removeEventListener('keydown', onBrandPickerEscape);
-    }
-
-    locationTrigger.addEventListener('click', () => openBrandPickerModal());
-
-    if (brandPickerSearch) brandPickerSearch.addEventListener('input', () => renderBrandGalleryModal(brandPickerSearch.value.trim()));
-    if (brandFilterAll) brandFilterAll.addEventListener('click', () => setBrandFilterActive('all'));
-    if (brandFilterCafe) brandFilterCafe.addEventListener('click', () => setBrandFilterActive('cafe'));
-    if (brandFilterPopup) brandFilterPopup.addEventListener('click', () => setBrandFilterActive('popup'));
-    if (modalStep2Back) modalStep2Back.addEventListener('click', () => { showStep1(); renderBrandGalleryModal(brandPickerSearch ? brandPickerSearch.value.trim() : ''); });
-    if (brandPickerClose) brandPickerClose.addEventListener('click', closeBrandPickerModal);
-    if (brandPickerBackdrop) brandPickerBackdrop.addEventListener('click', closeBrandPickerModal);
-
-    updateFormLocationLabel();
+      renderLikeButtons();
+    });
   }
 
   async function resolveBrandForCafe() {
@@ -425,20 +388,13 @@ export function openLogForm(cafe, onClose, options = {}) {
     if (brand) {
       selectedBrand = brand;
       selectedCafe = cafe;
+      renderLikeButtons();
     }
   }
-
-  initBrandLocation();
-  resolveBrandForCafe();
 
   function addPhoto(dataUrl) {
     if (photosBase64.length >= MAX_PHOTOS) return;
     photosBase64.push(dataUrl);
-    renderPreviewList();
-  }
-
-  function removePhoto(index) {
-    photosBase64.splice(index, 1);
     renderPreviewList();
   }
 
@@ -449,86 +405,115 @@ export function openLogForm(cafe, onClose, options = {}) {
       const item = document.createElement('div');
       item.className = 'log-photo-tile log-photo-tile--preview';
       item.innerHTML = `<img src="${escapeAttr(src)}" alt=""><button type="button" class="photo-remove" aria-label="Remove photo">×</button>`;
-      item.querySelector('.photo-remove').addEventListener('click', () => removePhoto(i));
+      item.querySelector('.photo-remove')?.addEventListener('click', () => { photosBase64.splice(i, 1); renderPreviewList(); });
       photoStrip.appendChild(item);
     });
     if (photosBase64.length < MAX_PHOTOS) {
       const addBtn = document.createElement('button');
       addBtn.type = 'button';
       addBtn.className = 'log-photo-tile log-photo-tile--add';
-      addBtn.setAttribute('aria-label', 'Add photo');
       addBtn.innerHTML = '<span class="log-photo-tile-plus">+</span><span class="log-photo-tile-text">Add</span>';
       addBtn.addEventListener('click', () => photoInput?.click());
       photoStrip.appendChild(addBtn);
     }
   }
 
-  function handleFiles(files) {
-    if (!files?.length) return;
-    const remaining = Math.max(0, MAX_PHOTOS - photosBase64.length);
-    if (remaining <= 0) {
-      if (photoInput) photoInput.value = '';
-      return;
+  function updateUploadStatus(message = '', visible = false) {
+    if (!uploadStatusEl) return;
+    uploadStatusEl.textContent = message;
+    uploadStatusEl.classList.toggle('hidden', !visible);
+  }
+
+  function setSavingState(saving, message = '') {
+    isSaving = saving;
+    if (saveBtn) {
+      saveBtn.disabled = saving;
+      saveBtn.textContent = saving ? 'Saving...' : 'Save';
     }
-    const picked = Array.from(files).slice(0, remaining);
-    let pending = picked.length;
-    picked.forEach((file) => {
+    updateUploadStatus(message, saving || !!message);
+  }
+
+  async function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = () => {
-        addPhoto(reader.result);
-        if (--pending === 0 && photoInput) photoInput.value = '';
-      };
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error || new Error(`Failed to read ${file.name}`));
       reader.readAsDataURL(file);
     });
   }
 
-  if (photoStrip && photoInput) {
-    photoInput.addEventListener('change', (e) => handleFiles(e.target.files));
+  async function enqueueSelectedFiles(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    const remaining = Math.max(0, MAX_PHOTOS - photosBase64.length);
+    const picked = files.slice(0, remaining);
+    if (!picked.length) return;
+    for (const file of picked) {
+      try {
+        const dataUrl = await readFileAsDataUrl(file);
+        if (typeof dataUrl === 'string') addPhoto(dataUrl);
+      } catch (err) {
+        console.warn('[Matcha Hop] Skipped unreadable file:', file?.name, err);
+      }
+    }
   }
-  renderPreviewList();
 
-  const dateDisplay = document.getElementById('log-date-display');
-  const dateInput = document.getElementById('log-date');
-  if (dateDisplay && dateInput) {
-    dateDisplay.addEventListener('click', () => dateInput.showPicker?.() || dateInput.click());
-    dateInput.addEventListener('change', () => {
-      dateDisplay.textContent = formatDateDisplay(dateInput.value || '');
+  if (photoInput) {
+    photoInput.addEventListener('change', (e) => {
+      const files = e.target.files;
+      if (!files || !files.length) return;
+      fileReadQueue = fileReadQueue.then(() => enqueueSelectedFiles(files)).finally(() => {
+        if (photoInput) photoInput.value = '';
+      });
     });
   }
 
-  form.querySelector('.btn-cancel').addEventListener('click', () => {
-    document.getElementById('log-form-brand-picker-modal')?.classList.add('hidden');
+  const dateDisplay = document.getElementById('log-date-display');
+  const dateInput = document.getElementById('log-date');
+  dateDisplay?.addEventListener('click', () => dateInput?.showPicker?.() || dateInput?.click());
+  dateInput?.addEventListener('change', () => { if (dateDisplay) dateDisplay.textContent = formatDateDisplay(dateInput.value || ''); });
+  form.querySelector('.btn-cancel')?.addEventListener('click', () => {
     overlay.classList.add('hidden');
     onClose?.();
   });
 
+  addDrink();
+  renderDrinkRows();
+  addDrinkBtn?.addEventListener('click', () => { addDrink(); renderDrinkRows(); });
+  renderPreviewList();
+  initBrandLocation();
+  resolveBrandForCafe();
+  renderLikeButtons();
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const notes = document.getElementById('log-notes').value.trim();
-    const drinkName = (document.getElementById('log-drink-name')?.value || '').trim();
-    const dateEl = document.getElementById('log-date');
-    const dateValue = dateEl?.value;
-    const createdAt = dateValue ? new Date(dateValue + 'T12:00:00').getTime() : Date.now();
-
-    const hasPhoto = photosBase64.length > 0;
-    const hasCaption = notes.length > 0;
-    if (!hasPhoto && !hasCaption) {
-      alert('Add at least one: a photo or a caption.');
+    if (isSaving) return;
+    const notes = (document.getElementById('log-notes')?.value || '').trim();
+    const drinks = drinkRows.map((row) => ({
+      name: String(row.name || '').trim(),
+      notes: String(row.notes || '').trim(),
+      details: {
+        sweetness: Number(row.details.sweetness) || 0,
+        bitterness: Number(row.details.bitterness) || 0,
+        umami: Number(row.details.umami) || 0,
+        flavorTags: row.details.flavorTags || [],
+        price: row.details.price || '',
+        recommended: !!row.details.recommended,
+        recommend: !!row.details.recommended,
+      },
+    })).filter((d) => d.name);
+    if (!drinks.length) {
+      alert('Please add at least one drink.');
       return;
     }
-
-    if (hasInitialCafe && !selectedBrand && cafeId) {
-      const allBrands = await getGalleryBrands();
-      selectedBrand = allBrands.find((b) => (b.cafes || []).some((c) => String(c.id) === String(cafeId))) || null;
-    }
-
+    const createdAt = dateInput?.value ? new Date(`${dateInput.value}T12:00:00`).getTime() : Date.now();
     let savedCafeId = cafeId;
     let cafeForLog = cafe ? { id: cafeId, name: cafeName, address: cafe.address, lat: cafe.lat, lng: cafe.lng } : null;
     let savedCafeForCallback = null;
     let classification = null;
     if (isNewFromSearch) {
       const classificationEl = document.getElementById('log-classification');
-      if (classificationEl && classificationEl.value) classification = classificationEl.value;
+      if (classificationEl?.value) classification = classificationEl.value;
     }
     if (selectedCafe) {
       const saved = saveCafe({ ...selectedCafe, name: selectedCafe.name, address: selectedCafe.address, lat: selectedCafe.lat, lng: selectedCafe.lng });
@@ -536,59 +521,59 @@ export function openLogForm(cafe, onClose, options = {}) {
       cafeForLog = { id: saved.id, name: saved.name, address: saved.address, lat: saved.lat, lng: saved.lng };
       savedCafeForCallback = saved;
     } else if (cafe && (!cafeId || !cafe.id)) {
-      const saved = saveCafe({
-        ...cafe,
-        name: cafe.name || cafeName,
-        address: cafe.address,
-        lat: cafe.lat,
-        lng: cafe.lng,
-        classification: classification ?? undefined,
-      });
+      const saved = saveCafe({ ...cafe, name: cafe.name || cafeName, address: cafe.address, lat: cafe.lat, lng: cafe.lng, classification: classification ?? undefined });
       savedCafeId = saved.id;
       cafeForLog = { id: saved.id, name: saved.name, address: saved.address, lat: saved.lat, lng: saved.lng };
       savedCafeForCallback = saved;
     }
-
     const logId = makeLogId();
     let uploadedPhotoUrls = [];
-    if (photosBase64.length > 0) {
+    setSavingState(true, photosBase64.length ? 'Uploading photos...' : 'Saving post...');
+    if (photosBase64.length) {
       try {
         uploadedPhotoUrls = await uploadLogPhotos(logId, photosBase64);
       } catch (uploadErr) {
         console.error(uploadErr);
+        setSavingState(false);
         alert(uploadErrorMessage(uploadErr));
         return;
       }
     }
-
     try {
       await saveLog({
         id: logId,
+        userId: currentProfile.ownerId,
         cafeId: savedCafeId || undefined,
         cafe: cafeForLog,
         brandId: selectedBrand ? selectedBrand.id : undefined,
         brandName: selectedBrand ? selectedBrand.name : undefined,
         popupId: selectedPopUp ? selectedPopUp.id : undefined,
-        userName: 'test-user',
-        drinkName,
-        notes,
+        visit: {
+          brandId: selectedBrand?.id || null,
+          brandName: selectedBrand?.name || null,
+          location: {
+            cafeId: savedCafeId || null,
+            cafeName: cafeForLog?.name || null,
+            address: cafeForLog?.address || null,
+            popupId: selectedPopUp?.id || null,
+          },
+        },
+        drinks,
+        postNotes: notes,
+        userName: currentProfile.username,
+        userDisplayName: currentProfile.name,
         photos: uploadedPhotoUrls.length ? uploadedPhotoUrls : undefined,
         photo: uploadedPhotoUrls[0] || null,
         createdAt,
       });
     } catch (err) {
       console.error(err);
+      setSavingState(false);
       alert('Failed to save. Try again.');
       return;
     }
-
+    setSavingState(false);
     overlay.classList.add('hidden');
     onClose?.(savedCafeForCallback);
   });
-}
-
-function escapeHtml(s) {
-  const div = document.createElement('div');
-  div.textContent = s;
-  return div.innerHTML;
 }

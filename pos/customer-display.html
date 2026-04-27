@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Matchanese Customer Display</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/normalize.css?v=4">
+  <link rel="stylesheet" href="css/style.css?v=4">
+</head>
+<body class="body customer-display-body">
+  <div class="customer-display-app">
+    <header class="customer-display-header">
+      <div>
+        <h1 class="customer-display-title" id="displayPrimaryTitle">YOUR <span class="light">ORDER</span></h1>
+        <p class="customer-display-event" id="displayEventName">Loading event...</p>
+      </div>
+      <div class="customer-display-meta">
+        <div class="customer-display-meta-top">
+          <span class="display-live-badge" id="displayLiveBadge">LIVE</span>
+          <button class="display-settings-btn" id="displaySettingsBtn" aria-label="Display settings">☰</button>
+        </div>
+        <span class="display-last-updated" id="displayLastUpdated">Waiting for updates...</span>
+      </div>
+    </header>
+
+    <section class="customer-display-card">
+      <div class="customer-order-list" id="displayOrderList"></div>
+      <div class="customer-empty-state" id="displayEmptyState">Waiting for order...</div>
+      <div class="customer-total-row">
+        <span>Total</span>
+        <span id="displayOrderTotal">₱ 0.00</span>
+      </div>
+    </section>
+  </div>
+
+  <div class="display-settings-overlay" id="displaySettingsOverlay" hidden>
+    <div class="display-settings-panel">
+      <div class="display-settings-header">
+        <h3>Display Settings</h3>
+        <button id="displaySettingsCloseBtn" aria-label="Close settings">✕</button>
+      </div>
+      <label for="displayEventSelector">Event</label>
+      <select id="displayEventSelector" class="event-selector"></select>
+      <p class="display-settings-note">This screen will mirror the latest order for the selected event.</p>
+    </div>
+  </div>
+
+  <div class="display-qr-overlay" id="displayQrOverlay" hidden>
+    <div class="display-qr-modal">
+      <h3 id="displayPaymentMethod">GCASH PAYMENT</h3>
+      <div class="display-qr-amount" id="displayQrAmount">Amount Due: ₱ 0.00</div>
+      <img src="images/qr.png" alt="Payment QR Code" class="customer-qr-image">
+    </div>
+  </div>
+
+  <script type="module" src="js/firebase-setup.js?v=4"></script>
+  <script type="module" src="js/firebase-sync.js?v=4"></script>
+  <script type="module" src="js/customer-display.js?v=1"></script>
+</body>
+</html>

@@ -10,8 +10,8 @@ let myCafeMarkers = [];
 let curatedOverlays = [];
 let selectedCafeId = null;
 
-const defaultCenter = { lat: 14.5995, lng: 120.9842 };
-const defaultZoom = 13;
+export const DEFAULT_CENTER = { lat: 14.5995, lng: 120.9842 };
+export const DEFAULT_ZOOM = 13;
 
 const BASE_STYLES = [
   { featureType: 'transit', stylers: [{ visibility: 'off' }] },
@@ -61,12 +61,13 @@ export function initMap(containerId, options = {}) {
   const el = document.getElementById(containerId);
   if (!el || typeof google === 'undefined' || !google.maps) return null;
 
-  const initialZoom = defaultZoom;
+  const initialZoom = DEFAULT_ZOOM;
   const forAdmin = options.forAdmin === true;
   map = new google.maps.Map(el, {
-    center: defaultCenter,
+    center: DEFAULT_CENTER,
     zoom: initialZoom,
     styles: getMapStylesForZoom(initialZoom),
+    disableDefaultUI: !forAdmin,
     mapTypeControl: false,
     zoomControl: forAdmin,
     fullscreenControl: forAdmin,

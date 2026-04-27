@@ -7,6 +7,12 @@
 let firestore = null;
 let storage = null;
 
+export const HARDCODED_PROFILE = {
+  ownerId: 'matchaontoph',
+  name: 'Cristopher David',
+  username: '@matchaontoph',
+};
+
 export function initFirebase() {
   if (firestore !== null) return firestore;
   const firebase = typeof window !== 'undefined' ? window.firebase : null;
@@ -81,7 +87,9 @@ export function initAuth() {
 
 /** Current user id for likes (anonymous auth). Returns null if auth not available. */
 export function getCurrentUserId() {
-  const firebase = typeof window !== 'undefined' ? window.firebase : null;
-  if (firebase?.auth?.currentUser) return firebase.auth().currentUser.uid;
-  return _currentUserId;
+  return HARDCODED_PROFILE.ownerId;
+}
+
+export function getCurrentProfile() {
+  return { ...HARDCODED_PROFILE };
 }
