@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gesture Match — Finger Lab</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body class="exp-page">
+  <header class="exp-topbar">
+    <a class="back" href="./index.html">← Finger Lab</a>
+    <h1>Gesture Match</h1>
+    <div class="exp-hud">
+      <span>Score: <strong id="score">0</strong></span>
+      <span>Streak: <strong id="streak">0</strong></span>
+      <span>Timer: <strong id="timer">4.0</strong>s</span>
+    </div>
+  </header>
+
+  <div class="stage-wrap">
+    <div class="stage" id="stage">
+      <div class="loading-overlay" id="loading">
+        <div class="spinner"></div>
+        <span>Starting camera &amp; hand model…</span>
+      </div>
+      <video id="webcam" playsinline muted></video>
+      <canvas id="overlay" class="overlay"></canvas>
+    </div>
+  </div>
+
+  <p class="hint-bar">Match the prompt with one hand · Fist, peace ✌️, open palm, or hold up 1–4 fingers</p>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <script src="./js/hands-runtime.js"></script>
+  <script src="./js/exp-template.js"></script>
+  <script src="./js/gesture-match.js"></script>
+</body>
+</html>

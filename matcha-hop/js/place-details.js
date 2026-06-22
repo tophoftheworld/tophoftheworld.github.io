@@ -8,7 +8,9 @@ import { getPlacesService } from './map.js';
 import { incrementApiCall } from './debug-api.js';
 import { getCachedPlaceDetails, setCachedPlaceDetails, uploadPlacePhoto } from './place-details-cache.js';
 
-const DETAIL_FIELDS = ['photos', 'rating', 'userRatingCount', 'regularOpeningHours', 'currentOpeningHours'];
+const DETAIL_FIELDS = ['photos', 'rating', 'userRatingCount', 'regularOpeningHours', 'currentOpeningHours', 'types'];
+const memoryDetailsCache = new Map();
+const inflightDetailsRequests = new Map();
 
 async function getPlaceLibrary() {
   if (typeof google === 'undefined' || !google.maps?.importLibrary) return null;
@@ -64,6 +66,8 @@ async function persistPlaceDetails(placeId, details) {
     rating: details.rating ?? null,
     userRatingCount: details.userRatingCount ?? null,
     openStatus: details.openStatus ?? null,
+    weekdayText: Array.isArray(details.weekdayText) ? details.weekdayText : null,
+    placeTypes: Array.isArray(details.placeTypes) ? details.placeTypes : null,
   };
   await setCachedPlaceDetails(placeId, toCache);
   return { ...details, photoUrl };
@@ -99,80 +103,107 @@ function formatOpenStatus(place) {
  */
 export async function fetchPlaceDetails(placeId, forceRefresh = false, persist = true) {
   if (!placeId || typeof google === 'undefined') return null;
+  const cacheKey = String(placeId);
 
-  if (!forceRefresh && persist) {
+  if (!forceRefresh) {
+    const memoryCached = memoryDetailsCache.get(cacheKey);
+    if (memoryCached) return memoryCached;
     const cached = await getCachedPlaceDetails(placeId);
     if (cached && (cached.photoUrl != null || cached.rating != null || cached.openStatus != null)) {
+      memoryDetailsCache.set(cacheKey, cached);
       return cached;
     }
   }
 
-  try {
-    const lib = await getPlaceLibrary();
-    const Place = lib?.Place;
-    if (Place) {
-      const place = new Place({ id: placeId });
-      await place.fetchFields({ fields: DETAIL_FIELDS });
-      incrementApiCall('placeDetails');
-      const photo = place.photos?.[0];
-      const getUri = photo?.getUri || photo?.getURI;
-      let photoUrl = null;
-      if (typeof getUri === 'function') {
-        const uri = getUri.call(photo, { maxWidth: 400 });
-        photoUrl = (uri && typeof uri.then === 'function') ? await uri : uri;
-      }
-      const details = {
-        photoUrl: photoUrl || null,
-        rating: place.rating ?? null,
-        userRatingCount: place.userRatingCount ?? null,
-        openStatus: formatOpenStatus(place),
-      };
-      if (persist) return await persistPlaceDetails(placeId, details);
-      return details;
-    }
-  } catch (_) {}
-  try {
-    const service = getPlacesService();
-    if (!service) return null;
-    const details = await new Promise((resolve) => {
-      incrementApiCall('placeDetails');
-      service.getDetails({ placeId }, (place, status) => {
-        if (status !== google.maps.places.PlacesServiceStatus.OK || !place) {
-          resolve(null);
-          return;
-        }
+  if (!forceRefresh && inflightDetailsRequests.has(cacheKey)) {
+    return inflightDetailsRequests.get(cacheKey);
+  }
+
+  const requestPromise = (async () => {
+    try {
+      const lib = await getPlaceLibrary();
+      const Place = lib?.Place;
+      if (Place) {
+        const place = new Place({ id: placeId });
+        await place.fetchFields({ fields: DETAIL_FIELDS });
+        incrementApiCall('placeDetails');
         const photo = place.photos?.[0];
-        const photoUrl = photo?.getUrl?.({ maxWidth: 400 }) ?? null;
-        const hours = place.opening_hours;
-        let openStatus = null;
-        if (hours) {
-          if (typeof hours.isOpen === 'function') {
-            const openNow = hours.isOpen(new Date());
-            openStatus = openNow ? 'Open' : 'Closed';
+        const getUri = photo?.getUri || photo?.getURI;
+        let photoUrl = null;
+        if (typeof getUri === 'function') {
+          const uri = getUri.call(photo, { maxWidth: 400 });
+          photoUrl = (uri && typeof uri.then === 'function') ? await uri : uri;
+        }
+        const details = {
+          photoUrl: photoUrl || null,
+          rating: place.rating ?? null,
+          userRatingCount: place.userRatingCount ?? null,
+          openStatus: formatOpenStatus(place),
+          weekdayText: Array.isArray(place.regularOpeningHours?.weekdayDescriptions)
+            ? place.regularOpeningHours.weekdayDescriptions
+            : (Array.isArray(place.currentOpeningHours?.weekdayDescriptions)
+              ? place.currentOpeningHours.weekdayDescriptions
+              : null),
+          placeTypes: Array.isArray(place.types) ? place.types : null,
+        };
+        const resolved = persist ? await persistPlaceDetails(placeId, details) : details;
+        if (resolved) memoryDetailsCache.set(cacheKey, resolved);
+        return resolved;
+      }
+    } catch (_) {}
+    try {
+      const service = getPlacesService();
+      if (!service) return null;
+      const details = await new Promise((resolve) => {
+        incrementApiCall('placeDetails');
+        service.getDetails({ placeId }, (place, status) => {
+          if (status !== google.maps.places.PlacesServiceStatus.OK || !place) {
+            resolve(null);
+            return;
           }
-          if (hours.weekday_text && hours.weekday_text.length) {
-            const day = new Date().getDay();
-            const todayText = hours.weekday_text[day];
-            if (todayText) {
-              const closesMatch = todayText.match(/(\d{1,2}:\d{2}\s*(?:AM|PM)?)\s*[–-]\s*(\d{1,2}:\d{2}\s*(?:AM|PM)?)/i);
-              const closes = closesMatch ? closesMatch[2] : null;
-              if (openStatus && closes) openStatus += ' · Closes ' + closes.trim();
-              else if (!openStatus) openStatus = todayText;
+          const photo = place.photos?.[0];
+          const photoUrl = photo?.getUrl?.({ maxWidth: 400 }) ?? null;
+          const hours = place.opening_hours;
+          let openStatus = null;
+          if (hours) {
+            if (typeof hours.isOpen === 'function') {
+              const openNow = hours.isOpen(new Date());
+              openStatus = openNow ? 'Open' : 'Closed';
+            }
+            if (hours.weekday_text && hours.weekday_text.length) {
+              const day = new Date().getDay();
+              const todayText = hours.weekday_text[day];
+              if (todayText) {
+                const closesMatch = todayText.match(/(\d{1,2}:\d{2}\s*(?:AM|PM)?)\s*[–-]\s*(\d{1,2}:\d{2}\s*(?:AM|PM)?)/i);
+                const closes = closesMatch ? closesMatch[2] : null;
+                if (openStatus && closes) openStatus += ' · Closes ' + closes.trim();
+                else if (!openStatus) openStatus = todayText;
+              }
             }
           }
-        }
-        resolve({
-          photoUrl,
-          rating: place.rating ?? null,
-          userRatingCount: place.user_ratings_total ?? null,
-          openStatus,
+          resolve({
+            photoUrl,
+            rating: place.rating ?? null,
+            userRatingCount: place.user_ratings_total ?? null,
+            openStatus,
+            weekdayText: Array.isArray(hours?.weekday_text) ? hours.weekday_text : null,
+            placeTypes: Array.isArray(place.types) ? place.types : null,
+          });
         });
       });
-    });
-    if (!details) return null;
-    if (persist) return await persistPlaceDetails(placeId, details);
-    return details;
-  } catch (e) {
-    return null;
+      if (!details) return null;
+      const resolved = persist ? await persistPlaceDetails(placeId, details) : details;
+      if (resolved) memoryDetailsCache.set(cacheKey, resolved);
+      return resolved;
+    } catch (e) {
+      return null;
+    }
+  })();
+
+  inflightDetailsRequests.set(cacheKey, requestPromise);
+  try {
+    return await requestPromise;
+  } finally {
+    inflightDetailsRequests.delete(cacheKey);
   }
 }

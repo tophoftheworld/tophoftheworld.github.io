@@ -1,4 +1,4 @@
-const APP_VERSION = "2.0.17"; // bump with index.html ?v= when shipping; v2 Firestore paths
+const APP_VERSION = "2.0.23"; // bump with index.html ?v= when shipping; v2 Firestore paths
 console.log('✅ Admin Payroll script loaded - Version:', APP_VERSION);
 
 // Import Firebase modules
@@ -47,7 +47,13 @@ let loadDataRunId = 0;
 /** True while loadData main try runs — suppress nested hideLoading in findOldestRecordAcrossEmployees */
 let payrollBulkLoadInProgress = false;
 let summaryReconcileInProgress = false;
+/** True while stale-while-revalidate microtask is running after full-cache fast path */
+let fullCacheReconcileInProgress = false;
 let summaryModeActive = false;
+
+let backgroundRefreshSetupDone = false;
+let visibilityRefreshDebounceTimer = null;
+const VISIBILITY_REFRESH_DEBOUNCE_MS = 3000;
 
 function readMigrationEarliestDateFromCache() {
     try {
@@ -250,10 +256,19 @@ function mergeEmpRates(employee, periodId) {
 }
 
 function calcTotalPaySimple(dates, employee, periodId) {
+    if (!payCalculator) {
+        const t = employee?.totalPayWithBonus;
+        return Number.isFinite(t) ? Number(t) : 0;
+    }
     return payCalculator.calculateTotalPay(dates || [], mergeEmpRates(employee, periodId), 'simple');
 }
 
 function calcTotalPayDetailed(dates, employee, periodId) {
+    if (!payCalculator) {
+        const t = employee?.totalPayWithBonus;
+        const base = Number.isFinite(t) ? Number(t) : 0;
+        return { total: base, entries: [], breakdown: {} };
+    }
     return payCalculator.calculateTotalPay(dates || [], mergeEmpRates(employee, periodId), 'detailed');
 }
 
@@ -749,10 +764,75 @@ function hydrateFromSummaryCache(summaryCache) {
 }
 
 function getEmployeeTotalPayForTable(employee, periodId) {
-    if (employee && employee._summaryOnly && Number.isFinite(employee.totalPayWithBonus)) {
-        return Number(employee.totalPayWithBonus || 0);
+    if (employee?.dates?.length > 0) {
+        return calcTotalPaySimple(employee.dates, employee, periodId);
+    }
+    if (employee?._summaryOnly && Number.isFinite(employee.totalPayWithBonus)) {
+        return Number(employee.totalPayWithBonus);
+    }
+    if (employee != null && Number.isFinite(employee.totalPayWithBonus)) {
+        return Number(employee.totalPayWithBonus);
     }
     return calcTotalPaySimple(employee?.dates || [], employee || {}, periodId);
+}
+
+function getSelectedBranchFilter() {
+    return isMobileLayout() ? 'all' : branchSelect.value;
+}
+
+function updatePayrollSummaryLabels(branchId) {
+    const branchName = branchId === 'all'
+        ? null
+        : (branchSelect?.options?.[branchSelect.selectedIndex]?.text || getBranchName(branchId));
+    const title = branchId === 'all' ? 'Total Payroll' : `${branchName} Payroll`;
+    const subtitle = branchId === 'all' ? 'All branches · this period' : `${branchName} · this period`;
+
+    const titleEl = document.getElementById('totalPayrollTitle');
+    const subtitleEl = document.getElementById('totalPayrollSubtitle');
+    if (titleEl) titleEl.textContent = title;
+    if (subtitleEl) subtitleEl.textContent = subtitle;
+
+    const mobileLabel = document.getElementById('mobileSummaryPayrollLabel');
+    if (mobileLabel) mobileLabel.textContent = title;
+}
+
+function applyBranchFilterChange() {
+    const periodId = periodSelect.value;
+    const branchId = branchSelect.value;
+
+    const summaryCache = getSummaryFromCache(periodId, branchId);
+    if (summaryCache && hydrateFromSummaryCache(summaryCache)) {
+        summaryModeActive = true;
+        filterData({ skipPaymentFetch: true });
+        return;
+    }
+
+    const cacheKey = getCacheKey(periodId, branchId);
+    const cachedData = getFromCache(periodId, branchId);
+    if (cachedData && validateCacheData(cacheKey, cachedData)) {
+        attendanceData = JSON.parse(JSON.stringify(cachedData));
+        summaryModeActive = false;
+        Object.values(attendanceData).forEach((rec) => {
+            if (rec && rec._summaryOnly) delete rec._summaryOnly;
+        });
+        filterData({ skipPaymentFetch: true });
+        return;
+    }
+
+    summaryModeActive = false;
+    filterData();
+}
+
+/** True if employee should count toward active headcount / unpaid (includes summary-only rows with no date rows). */
+function employeeHasRosterPayActivity(employee) {
+    if (!employee) return false;
+    if (employee.dates && employee.dates.some((d) => d && d.timeIn)) return true;
+    if (employee._summaryOnly) {
+        if (Number(employee.daysWorked) > 0) return true;
+        const t = employee.totalPayWithBonus;
+        return Number.isFinite(t) && Number(t) > 0;
+    }
+    return false;
 }
 
 function saveToCache(cacheKey, data) {
@@ -1077,11 +1157,18 @@ async function findOldestRecordAcrossEmployees() {
 
 async function loadAllEmployees() {
     try {
-        const employeesRef = collection(db, "employees_v2");
-        const snapshot = await getDocs(employeesRef);
+        const [v2Snapshot, legacySnapshot] = await Promise.all([
+            getDocs(collection(db, "employees_v2")),
+            getDocs(collection(db, "employees"))
+        ]);
 
         employees = {};
-        snapshot.forEach(doc => {
+        // Start with legacy employees, then let v2 override any duplicates.
+        legacySnapshot.forEach(doc => {
+            const data = doc.data();
+            employees[doc.id] = data.name;
+        });
+        v2Snapshot.forEach(doc => {
             const data = doc.data();
             employees[doc.id] = data.name;
         });
@@ -1438,15 +1525,42 @@ async function loadData(selectedPeriodId = null, options = {}) {
 
     // Always show instant data from cache first if available
     const cachedData = getFromCache(periodId, branchId);
-    if (cachedData && validateCacheData(cacheKey, cachedData)) {
+        if (cachedData && validateCacheData(cacheKey, cachedData)) {
         console.log('Using valid cached data initially');
         attendanceData = cachedData;
         filterData();
         hideLoading();
 
-        // If not a forced refresh and not initial load, we can return early
+        // Cache-only: no network (session already initialized).
         if (!forceNetworkRefresh && !isInitialLoad && refreshBtn.dataset.forceRefresh !== 'true') {
             console.log('Using cached data only (no background refresh)');
+            if (myRun === loadDataRunId) hideLoading();
+            return;
+        }
+
+        // First open: show full cache immediately, reconcile in background (mirror summary bootstrap).
+        if (
+            !forceNetworkRefresh &&
+            isInitialLoad &&
+            refreshBtn.dataset.forceRefresh !== 'true'
+        ) {
+            if (!fullCacheReconcileInProgress) {
+                fullCacheReconcileInProgress = true;
+                const reconcilePeriod = periodId;
+                queueMicrotask(async () => {
+                    try {
+                        await loadData(reconcilePeriod, {
+                            skipSummaryBootstrap: true,
+                            forceNetworkRefresh: true,
+                            silent: true
+                        });
+                    } catch (reconcileErr) {
+                        console.warn('Full-cache reconcile failed:', reconcileErr);
+                    } finally {
+                        fullCacheReconcileInProgress = false;
+                    }
+                });
+            }
             if (myRun === loadDataRunId) hideLoading();
             return;
         }
@@ -1505,7 +1619,11 @@ async function loadData(selectedPeriodId = null, options = {}) {
         const empLoadTotal = employeeIds.length;
         let hasChanges = false;
         const cacheWasValidForUi = !!(cachedData && validateCacheData(cacheKey, cachedData));
-        const useProgressiveRowReveal = !cacheWasValidForUi;
+        const allRowsSummaryOnly =
+            Object.keys(attendanceData).length > 0 &&
+            Object.values(attendanceData).every((e) => e && e._summaryOnly);
+        const useProgressiveRowReveal =
+            !cacheWasValidForUi && !(silent && forceNetworkRefresh && allRowsSummaryOnly);
 
         if (useProgressiveRowReveal) {
             attendanceData = {};
@@ -1543,10 +1661,14 @@ async function loadData(selectedPeriodId = null, options = {}) {
                 }
 
                 // Get employee base rate
-                const employeeDocRef = doc(db, "employees_v2", employeeId);
-                const employeeDoc = await getDoc(employeeDocRef);
-                if (employeeDoc.exists()) {
-                    const employeeData = employeeDoc.data();
+                const [employeeDocV2, employeeDocLegacy] = await Promise.all([
+                    getDoc(doc(db, "employees_v2", employeeId)),
+                    getDoc(doc(db, "employees", employeeId))
+                ]);
+                const employeeData = employeeDocV2.exists()
+                    ? employeeDocV2.data()
+                    : (employeeDocLegacy.exists() ? employeeDocLegacy.data() : null);
+                if (employeeData) {
                     const currentLiveRate = employeeData.baseRate || 0;
                     const oldNickname = attendanceData[employeeId].nickname || '';
                     const newNickname = employeeData.nickname || '';
@@ -1936,17 +2058,6 @@ function filterData(options = {}) {
         filteredData = singleEmployeeData;
     }
 
-    if (summaryModeActive) {
-        if (options.skipPaymentFetch) {
-            renderEmployeeTable();
-            updateSummaryCards();
-        } else {
-            renderEmployeeTable();
-            updateSummaryCards();
-        }
-        return;
-    }
-
     // Apply period filters by recalculating key metrics
     Object.keys(filteredData).forEach(employeeId => {
         let lastClockInDate = null;
@@ -1978,7 +2089,7 @@ function filterData(options = {}) {
                 daysWorkedCount++;
             }
 
-            if (date.scheduledIn && date.timeIn) {
+            if (payCalculator && date.scheduledIn && date.timeIn) {
                 const lateMinutes = payCalculator.compareTimes(date.timeIn, date.scheduledIn);
                 if (lateMinutes > 0) totalLateHours += lateMinutes / 60;
             }
@@ -1997,6 +2108,13 @@ function filterData(options = {}) {
         if (!lastClockInDate) {
             filteredData[employeeId].lastClockIn = null;
             filteredData[employeeId].lastClockInPhoto = null;
+        }
+
+        if (!filteredData[employeeId]._summaryOnly) {
+            filteredData[employeeId].totalPayWithBonus =
+                filteredData[employeeId].dates?.length > 0
+                    ? calcTotalPaySimple(filteredData[employeeId].dates, filteredData[employeeId], period)
+                    : 0;
         }
     });
 
@@ -2053,14 +2171,14 @@ function updateSummaryCards() {
     // Count holidays in the period
     const holidays = countHolidaysInPeriod(startDate, endDate);
 
-    Object.values(filteredData).forEach(employee => {
-        const hasAttendance = employee.dates.some(date => date.timeIn);
-        if (hasAttendance) {
-            activeEmployees++;
-            const branchSpecificPay = getEmployeeTotalPayForTable(employee, period);
-            totalPayrollAmount += branchSpecificPay;
-        }
+    Object.values(filteredData).forEach((employee) => {
+        if (!employeeHasRosterPayActivity(employee)) return;
+        totalPayrollAmount += getEmployeeTotalPayForTable(employee, period);
+        activeEmployees++;
     });
+
+    const branchId = getSelectedBranchFilter();
+    updatePayrollSummaryLabels(branchId);
 
     // Update cards
     document.getElementById('totalEmployees').textContent = totalEmployees;
@@ -2088,18 +2206,14 @@ function updateSummaryCards() {
         // Get payment statuses (we'll need to make this synchronous for the calculation)
         loadAllPaymentConfirmations(periodId).then(paymentStatuses => {
             Object.entries(filteredData).forEach(([employeeId, employee]) => {
-                const hasAttendance = employee.dates.some(date => date.timeIn);
-                if (hasAttendance) {
-                    const branchSpecificPay = getEmployeeTotalPayForTable(employee, periodId);
-                    const paymentData = paymentStatuses[employeeId];
-                    
-                    if (!paymentData) {
-                        // No payment made at all - add full amount
-                        unpaidAmount += branchSpecificPay;
-                    } else {
-                        // Payment made - add remaining amount (could be 0 for fully paid)
-                        unpaidAmount += paymentData.remainingAmount || 0;
-                    }
+                if (!employeeHasRosterPayActivity(employee)) return;
+                const branchSpecificPay = getEmployeeTotalPayForTable(employee, periodId);
+                const paymentData = paymentStatuses[employeeId];
+
+                if (!paymentData) {
+                    unpaidAmount += branchSpecificPay;
+                } else {
+                    unpaidAmount += paymentData.remainingAmount || 0;
                 }
             });
 
@@ -2267,20 +2381,22 @@ function getEmployeeSalesBonusFromPayCalculator(employee) {
 }
 
 function validateCacheData(cacheKey, data) {
-    // Check if cache includes sales bonus calculations
-    const sampleEmployee = Object.values(data)[0];
-    if (!sampleEmployee) return false;
+    const values = Object.values(data).filter(Boolean);
+    if (!values.length) return false;
 
-    // Check if sales bonus data is properly included
-    if (sampleEmployee.salesBonusEligible !== undefined) {
-        // Check if sales bonuses are calculated for dates
-        const hasValidSalesData = sampleEmployee.dates.some(date =>
-            date.salesBonus !== undefined || !sampleEmployee.salesBonusEligible
-        );
-        return hasValidSalesData;
-    }
+    // Prefer an employee with at least one date so we don't reject valid caches
+    // when Object.values order picks an eligible staff member with zero rows.
+    const sampleEmployee =
+        values.find((e) => Array.isArray(e.dates) && e.dates.length > 0) || values[0];
 
-    return false;
+    if (sampleEmployee.salesBonusEligible === undefined) return false;
+
+    if (!sampleEmployee.salesBonusEligible) return true;
+
+    const dates = Array.isArray(sampleEmployee.dates) ? sampleEmployee.dates : [];
+    if (!dates.length) return true;
+
+    return dates.some((date) => date && date.salesBonus !== undefined);
 }
 
 function isMobileLayout() {
@@ -2653,12 +2769,17 @@ function renderEmployeeTable() {
         const daysWorked = employee.daysWorked;
         const lateHours = employee.lateHours;
 
-        // Format the last clock-in date
+        // Format the last clock-in date (JSON clone / localStorage cache use ISO strings, not Date)
         let lastClockIn = 'N/A';
         if (employee.lastClockIn) {
-            const dateObj = employee.lastClockIn;
+            const dateObj =
+                employee.lastClockIn instanceof Date
+                    ? employee.lastClockIn
+                    : new Date(employee.lastClockIn);
             const options = { year: 'numeric', month: 'long', day: 'numeric' };
-            lastClockIn = dateObj.toLocaleDateString('en-US', options);
+            if (!Number.isNaN(dateObj.getTime())) {
+                lastClockIn = dateObj.toLocaleDateString('en-US', options);
+            }
         }
 
         // Check if we're after payroll period end
@@ -5696,6 +5817,11 @@ async function backgroundRefresh() {
         return;
     }
 
+    if (payrollBulkLoadInProgress || summaryReconcileInProgress || fullCacheReconcileInProgress) {
+        console.log("Background refresh skipped: payroll load or reconcile in progress");
+        return;
+    }
+
     backgroundRefreshInProgress = true;
     showBackgroundRefresh();
 
@@ -5741,8 +5867,14 @@ async function backgroundRefresh() {
     }
 }
 
-// Set up periodic background refresh
+// Set up periodic background refresh (call once — guarded)
 function setupBackgroundRefresh() {
+    if (backgroundRefreshSetupDone) {
+        console.warn("setupBackgroundRefresh: already registered, skipping duplicate");
+        return;
+    }
+    backgroundRefreshSetupDone = true;
+
     // Check for updates every 5 minutes
     const refreshInterval = 5 * 60 * 1000; // 5 minutes
 
@@ -5754,12 +5886,15 @@ function setupBackgroundRefresh() {
         setInterval(backgroundRefresh, refreshInterval);
     }, 30 * 1000);
 
-    // Also refresh when tab becomes visible again
     document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') {
-            // Wait a second after becoming visible
-            setTimeout(backgroundRefresh, 1000);
+        if (document.visibilityState !== 'visible') return;
+        if (visibilityRefreshDebounceTimer) {
+            clearTimeout(visibilityRefreshDebounceTimer);
         }
+        visibilityRefreshDebounceTimer = setTimeout(() => {
+            visibilityRefreshDebounceTimer = null;
+            backgroundRefresh();
+        }, VISIBILITY_REFRESH_DEBOUNCE_MS);
     });
 }
 
@@ -6243,17 +6378,6 @@ async function saveBatchChanges(e) {
     }
 }
 
-// Add this to your DOMContentLoaded event listener
-document.addEventListener('DOMContentLoaded', async function () {
-    // Existing setup code...
-
-    // Set up background refresh after initial load
-    setupBackgroundRefresh();
-    
-    // Restore employee view from URL hash if present
-    restoreEmployeeView();
-});
-
 document.addEventListener('DOMContentLoaded', async function () {
     // Add this event listener in your DOMContentLoaded function
     // document.getElementById('cleanupPhotosBtn').addEventListener('click', cleanupOrphanedPhotos);
@@ -6366,7 +6490,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     branchSelect.addEventListener('change', function () {
         localStorage.removeItem('last_selected_branch');
         localStorage.setItem('last_selected_branch', this.value);
-        filterData();
+        applyBranchFilterChange();
     });
 
     refreshBtn.addEventListener('click', function () {
@@ -6441,6 +6565,8 @@ document.addEventListener('DOMContentLoaded', async function () {
     // Load initial data (this will use cache if available)
     await loadData();
 
+    restoreEmployeeView();
+
     // Re-render when crossing mobile breakpoint (table vs cards)
     let lastMobile = isMobileLayout();
     window.matchMedia('(max-width: 992px)').addEventListener('change', function () {
@@ -6450,15 +6576,12 @@ document.addEventListener('DOMContentLoaded', async function () {
             if (!now && employeeDetailMobileModal && employeeDetailMobileModal.style.display === 'flex') {
                 closeMobileEmployeeDetail();
             }
-            renderEmployeeTable();
+            filterData({ skipPaymentFetch: true });
         }
     });
 
-    // Set up background refresh after initial load
+    // Single background refresh + debounced tab-visible reconcile
     setupBackgroundRefresh();
-    
-    // After initial load, restore employee view from URL hash if present
-    // This is now handled in loadData() after data is fully loaded
 
     // After initial load, hide the loading overlay and mark as initialized
     isInitialLoad = false;

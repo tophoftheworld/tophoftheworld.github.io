@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Chakaiki — post admin</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; background: #fafafa; color: #111; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  button { cursor: pointer; font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid #ccc; background: #fff; }
+  button.danger { border-color: #c62828; color: #c62828; }
+  button.primary { background: #239c02; color: #fff; border: none; }
+  table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e8e8e8; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #eee; vertical-align: top; }
+  th { background: #f5f5f5; font-size: 12px; }
+  .muted { color: #737373; font-size: 12px; }
+  .err { color: #b00020; margin: 8px 0; }
+  .row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  code { font-size: 11px; word-break: break-all; }
+  #confirm-overlay {
+    display: none; position: fixed; inset: 0; z-index: 9999;
+    background: rgba(0,0,0,0.45); align-items: center; justify-content: center; padding: 16px;
+  }
+  #confirm-overlay.open { display: flex; }
+  #confirm-box {
+    background: #fff; border: 1px solid #e8e8e8; border-radius: 12px; padding: 18px;
+    max-width: 360px; width: 100%; box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  }
+  #confirm-box p { margin: 0 0 14px; font-size: 14px; line-height: 1.45; }
+  #confirm-actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<h1>Post admin (test data)</h1>
+<p class="muted">Deletes log documents in Firestore <code>logs</code>. Open only on a trusted device. Same config as the main app.</p>
+<div class="row-actions" style="margin-bottom: 12px;">
+  <button type="button" class="primary" id="btn-reload">Reload list</button>
+  <button type="button" class="danger" id="btn-del-v2">Delete all v2_* ids in this list</button>
+</div>
+<div id="status"></div>
+<table>
+  <thead>
+    <tr>
+      <th>Id</th>
+      <th>Created</th>
+      <th>Brand / caption</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody id="rows"></tbody>
+</table>
+
+<div id="confirm-overlay" aria-hidden="true">
+  <div id="confirm-box" role="dialog" aria-modal="true">
+    <p id="confirm-message"></p>
+    <div id="confirm-actions">
+      <button type="button" id="confirm-cancel">Cancel</button>
+      <button type="button" class="danger" id="confirm-ok">Delete</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script>
+(function () {
+  const statusEl = document.getElementById('status');
+  const rowsEl = document.getElementById('rows');
+  const confirmOverlay = document.getElementById('confirm-overlay');
+  const confirmMessage = document.getElementById('confirm-message');
+  const confirmCancel = document.getElementById('confirm-cancel');
+  const confirmOk = document.getElementById('confirm-ok');
+
+  let confirmResolve = null;
+  function confirmDialog(message) {
+    return new Promise(function (resolve) {
+      confirmResolve = resolve;
+      confirmMessage.textContent = message;
+      confirmOverlay.classList.add('open');
+      confirmOverlay.setAttribute('aria-hidden', 'false');
+    });
+  }
+  function closeConfirm(result) {
+    confirmOverlay.classList.remove('open');
+    confirmOverlay.setAttribute('aria-hidden', 'true');
+    var fn = confirmResolve;
+    confirmResolve = null;
+    if (typeof fn === 'function') fn(!!result);
+  }
+  confirmCancel.onclick = function () { closeConfirm(false); };
+  confirmOk.onclick = function () { closeConfirm(true); };
+  confirmOverlay.onclick = function (e) {
+    if (e.target === confirmOverlay) closeConfirm(false);
+  };
+  const cfg = window.FIREBASE_CONFIG;
+  if (!cfg || !cfg.apiKey || cfg.apiKey === 'YOUR_API_KEY') {
+    statusEl.innerHTML = '<p class="err">Set FIREBASE_CONFIG in matcha-hop/js/config.js</p>';
+    return;
+  }
+  if (!window.firebase) {
+    statusEl.innerHTML = '<p class="err">Firebase did not load.</p>';
+    return;
+  }
+  if (!window.firebase.apps || !window.firebase.apps.length) {
+    window.firebase.initializeApp(cfg);
+  }
+  const db = window.firebase.firestore();
+
+  function setStatus(msg, isErr) {
+    statusEl.innerHTML = msg ? '<p class="' + (isErr ? 'err' : 'muted') + '">' + msg + '</p>' : '';
+  }
+
+  async function loadRows() {
+    setStatus('Loading…');
+    rowsEl.innerHTML = '';
+    try {
+      const snap = await db.collection('logs').get();
+      const rows = snap.docs.map(function (d) {
+        return { id: d.id, data: d.data() || {} };
+      });
+      rows.sort(function (a, b) {
+        return (Number(b.data.createdAt) || 0) - (Number(a.data.createdAt) || 0);
+      });
+      rows.slice(0, 200).forEach(function (row) {
+        const tr = document.createElement('tr');
+        const cap = String(row.data.post && row.data.post.caption || '').slice(0, 80);
+        const brand = String(row.data.visit && row.data.visit.brandName || '');
+        const t = row.data.createdAt ? new Date(Number(row.data.createdAt)).toISOString() : '';
+        tr.innerHTML =
+          '<td><code>' + row.id + '</code></td>' +
+          '<td>' + t + '</td>' +
+          '<td>' + (brand || cap || '—') + '</td>' +
+          '<td><button type="button" class="danger del-one">Delete</button></td>';
+        tr.querySelector('.del-one').onclick = function () {
+          confirmDialog('Delete log ' + row.id + '?').then(function (ok) {
+            if (!ok) return;
+            db.collection('logs').doc(row.id).delete().then(loadRows).catch(function (e) {
+              setStatus(String(e && e.message || e), true);
+            });
+          });
+        };
+        rowsEl.appendChild(tr);
+      });
+      setStatus(rows.length + ' documents (showing up to 200).');
+    } catch (e) {
+      setStatus(String(e && e.message || e), true);
+    }
+  }
+
+  document.getElementById('btn-reload').onclick = loadRows;
+  document.getElementById('btn-del-v2').onclick = async function () {
+    var ok = await confirmDialog('Delete ALL logs whose id starts with v2_ in the loaded snapshot? This uses client-side batch deletes.');
+    if (!ok) return;
+    setStatus('Deleting v2_*…');
+    try {
+      const snap = await db.collection('logs').get();
+      const batch = db.batch();
+      let n = 0;
+      snap.docs.forEach(function (d) {
+        if (String(d.id).indexOf('v2_') === 0) {
+          batch.delete(d.ref);
+          n += 1;
+        }
+      });
+      if (n === 0) {
+        setStatus('No v2_* ids found.');
+        return;
+      }
+      await batch.commit();
+      setStatus('Deleted ' + n + ' documents.');
+      await loadRows();
+    } catch (e) {
+      setStatus(String(e && e.message || e), true);
+    }
+  };
+
+  loadRows();
+})();
+</script>
+</body>
+</html>

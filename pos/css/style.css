@@ -3068,6 +3068,8 @@ body.package-mode .z-reading-btn {
 .customer-display-body {
   margin: 0;
   min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .customer-display-body [hidden] {
@@ -3078,6 +3080,12 @@ body.package-mode .z-reading-btn {
   padding: 20px 16px 28px;
   max-width: 560px;
   margin: 0 auto;
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
 }
 
 .customer-display-header {
@@ -3164,12 +3172,22 @@ body.package-mode .z-reading-btn {
   border-radius: 12px;
   border: 1px solid #ececec;
   padding: 14px 14px 10px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .customer-order-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
 }
 
 .customer-order-row {
@@ -3212,6 +3230,8 @@ body.package-mode .z-reading-btn {
   color: #777;
   font-size: 14px;
   padding: 8px 0;
+  flex: 1;
+  overflow-y: auto;
 }
 
 .customer-total-row {
@@ -3222,6 +3242,7 @@ body.package-mode .z-reading-btn {
   border-top: 2px solid #e8f5e6;
   font-size: 30px;
   font-weight: 700;
+  flex-shrink: 0;
 }
 
 .customer-qr-image {

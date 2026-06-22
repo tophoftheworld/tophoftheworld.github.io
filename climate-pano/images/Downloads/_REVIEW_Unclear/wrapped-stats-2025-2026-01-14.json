@@ -1,0 +1,57 @@
+{
+  "companyWide": {
+    "lateKing": {
+      "employeeId": "130629",
+      "count": 143,
+      "name": "Raniel Buenaventura"
+    },
+    "otChampion": {
+      "employeeId": "131129",
+      "hours": 74.98333333333333,
+      "name": "Liezel Acebedo"
+    },
+    "mostWorkaholic": {
+      "employeeId": "131629",
+      "days": 237,
+      "name": "Rhobbie Ryza Saligumba"
+    },
+    "punctualOne": {
+      "employeeId": "131929",
+      "onTimeRate": 100,
+      "lateCount": 0,
+      "name": "Reign Loyola"
+    },
+    "eventSpecialist": {
+      "employeeId": "132029",
+      "count": 26,
+      "name": "Jerbie Agno"
+    },
+    "earningsChampion": {
+      "employeeId": "130629",
+      "earnings": 204802.96875,
+      "name": "Raniel Buenaventura"
+    }
+  },
+  "branchComparison": {
+    "punctuality": {
+      "podium": "37.8",
+      "smNorth": "14.6",
+      "winner": "SM North"
+    },
+    "otBattle": {
+      "podium": "2.8",
+      "smNorth": "8.3",
+      "winner": "SM North"
+    },
+    "workaholicBattle": {
+      "podium": "76.3",
+      "smNorth": "53.2",
+      "winner": "Podium"
+    },
+    "earningsBattle": {
+      "podium": "60728.34",
+      "smNorth": "45448.82",
+      "winner": "Podium"
+    }
+  }
+}

@@ -26,6 +26,12 @@
         button.btn-secondary { border-color: #484f58; color: #8b949e; }
         button.btn-ok { border-color: #238636; color: #3fb950; }
         button.btn-row { padding: 0.25rem 0.5rem; font-size: 0.75rem; }
+        .employee-panel { border: 1px solid #30363d; border-radius: 8px; background: #0d1117; padding: 0.5rem; margin-top: 0.5rem; }
+        .employee-table { width: 100%; border-collapse: collapse; font-size: 0.74rem; }
+        .employee-table th, .employee-table td { border-bottom: 1px solid #21262d; padding: 0.35rem 0.4rem; text-align: left; }
+        .employee-table th { color: #8b949e; background: #11161c; }
+        .employee-table tr:last-child td { border-bottom: none; }
+        .row-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
         .panels { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.5rem; margin: 0.5rem 0; }
         .panel { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 0.65rem; font-size: 0.8rem; }
         .panel .tag { font-size: 0.65rem; color: #8b949e; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 0.25rem; }
@@ -112,11 +118,11 @@
         <div id="globalCollectionActions">
             <div class="global-collection">
                 <div>
-                    <strong>A) Employees</strong> — <code>employees</code> → <code>employees_v2</code>.
+                    <strong>A) Employees</strong> — <code>employees</code> → <code>employees_v2</code> + parity verification.
                     <div class="desc">Status: <span class="global-batch-status" id="globalStatusEmployees">—</span></div>
                 </div>
                 <div>
-                    <button type="button" id="btnGlobalEmployees" class="btn-ok">Migrate employees (once)</button>
+                    <button type="button" id="btnGlobalEmployees" class="btn-ok">Migrate + verify employees (once)</button>
                 </div>
             </div>
             <div class="global-collection">
@@ -142,7 +148,7 @@
     </fieldset>
 
     <h2>Per-period attendance</h2>
-    <p class="note"><strong>Attendance</strong> column is the only per-row migration. Test a single period with its row button.</p>
+    <p class="note"><strong>Attendance</strong> column supports full-period migration, and <strong>This period</strong> can open a separate employee table for that period.</p>
     <div class="table-wrap">
         <table>
             <thead>
@@ -150,7 +156,7 @@
                     <th>Period</th>
                     <th>Period ID</th>
                     <th>Attendance</th>
-                    <th>This period</th>
+                    <th>This period (single employee)</th>
                 </tr>
             </thead>
             <tbody id="periodTableBody">
@@ -167,6 +173,6 @@
     <h2>Log</h2>
     <div id="log"></div>
 
-    <script type="module" src="./migration.js?v=9"></script>
+    <script type="module" src="./migration.js?v=15"></script>
 </body>
 </html>

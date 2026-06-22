@@ -1,0 +1,93 @@
+{
+  "oatUpgradePrice": 0,
+  "categories": [
+    { "id": "matcha-lattes", "name": "Matcha Lattes (Iced)" },
+    { "id": "hojicha-lattes", "name": "Hōjicha Lattes (Iced)" },
+    { "id": "summer-matcha-specials", "name": "Summer Matcha Specials" },
+    { "id": "summer-matcha-flight", "name": "Summer Matcha Flight" }
+  ],
+  "items": [
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Signature Matchanese Latte",
+      "description": "Matcha Cold Whisked with Oat Milk",
+      "price": 230,
+      "type": "Iced",
+      "shorthand": "SML",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Matchanese Seasalt Latte",
+      "description": "Our Signature Matcha Latte topped with Seasalt Cream",
+      "price": 260,
+      "tags": ["Best Seller"],
+      "type": "Iced",
+      "shorthand": "MSL",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "hojicha-lattes",
+      "name": "Hōjicha Latte",
+      "description": "Hojicha Cold Whisked with Oat Milk",
+      "price": 190,
+      "type": "Iced",
+      "shorthand": "HL",
+      "customizations": { "sweetness": true, "milk": true, "discount": true }
+    },
+    {
+      "categoryId": "hojicha-lattes",
+      "name": "Hōjicha Seasalt Latte",
+      "description": "Hōjicha Latte with Seasalt Cream",
+      "price": 220,
+      "type": "Iced",
+      "shorthand": "HSL",
+      "customizations": { "sweetness": true, "milk": true, "discount": true }
+    },
+    {
+      "categoryId": "summer-matcha-specials",
+      "name": "Mango Coconut Matcha",
+      "description": "Hot Whisked Matcha, Mango Puree, Vita Coco",
+      "price": 240,
+      "type": "Iced",
+      "shorthand": "MCM",
+      "customizations": { "sweetness": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "summer-matcha-specials",
+      "name": "Earl Grey Coco Oat Matcha",
+      "description": "Cold Whisked Matcha, Oat Milk, Earl Grey, Vita Coco",
+      "price": 250,
+      "type": "Iced",
+      "shorthand": "EGCOM",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "summer-matcha-specials",
+      "name": "Coco Pandan Matcha Cloud",
+      "description": "Matcha Cream, Pandan Infusion, Vita Coco",
+      "price": 270,
+      "type": "Iced",
+      "shorthand": "CPMC",
+      "customizations": { "sweetness": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "summer-matcha-specials",
+      "name": "Latik Foam Coconut Matcha",
+      "description": "Coconut Cold-Brewed Matcha, Latik Caramel, Vita Coco",
+      "price": 290,
+      "type": "Iced",
+      "shorthand": "LFCM",
+      "customizations": { "sweetness": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "summer-matcha-flight",
+      "name": "Tasting Flight Pass",
+      "description": "4 Half-Size Servings of each Summer Matcha Special",
+      "price": 550,
+      "type": "Iced",
+      "shorthand": "TFP",
+      "customizations": { "discount": true }
+    }
+  ]
+}

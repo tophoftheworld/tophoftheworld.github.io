@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
@@ -6,77 +6,143 @@
     <title>Shopify Orders</title>
     <link rel="icon" href="data:," />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="css/orders-dashboard.css" />
+    <link rel="stylesheet" href="/hub/hub-shell.css" />
+    <link rel="stylesheet" href="css/orders-dashboard.css?v=58" />
+    <link rel="stylesheet" href="/hub/hub.css" />
 </head>
 <body>
     <div class="container">
-        <header class="admin-header">
+        <header class="admin-header app-chrome">
             <div class="logo-section">
-                <img src="../expenses/img/matchanese-logo.png" class="logo" alt="Logo" />
+                <div data-hub-nav-logo>
+                    <img src="img/matchanese-logo.png" class="logo" alt="Matchanese" />
+                </div>
                 <h1 class="app-title">Shopify Orders</h1>
             </div>
-            <div class="view-selector" id="sourceToggle" aria-label="Data source">
-                <button type="button" class="view-btn active" id="sourceLive">Live</button>
-                <button type="button" class="view-btn" id="sourceCsv">Import CSV</button>
+            <div class="header-actions">
+                <a href="/workshops" class="workshop-nav-back">Workshops</a>
+            </div>
+            <div class="type-selector" id="typeSelector" aria-label="Order type">
+                <button type="button" class="type-btn active" data-type="">All</button>
+                <button type="button" class="type-btn" data-type="workshop">Workshops</button>
+                <button type="button" class="type-btn" data-type="product">Products</button>
             </div>
         </header>
 
-        <div class="banner-file hidden" id="fileBanner"></div>
-
-        <div class="summary-cards" id="summaryCards"></div>
-
-        <div class="main-controls">
-            <div class="control-group">
+        <div class="main-controls app-chrome shopify-filters-bar">
+            <div class="control-group control-group--search">
                 <label for="searchInput">Search</label>
                 <input type="search" id="searchInput" placeholder="Order, customer, email…" />
             </div>
-            <div class="control-group">
+            <div class="control-group control-group--compact">
                 <label for="filterFinancial">Payment</label>
                 <select id="filterFinancial">
-                    <option value="">All payment statuses</option>
+                    <option value="">All</option>
                 </select>
             </div>
-            <div class="control-group">
+            <div class="control-group control-group--compact">
                 <label for="filterFulfillment">Fulfillment</label>
                 <select id="filterFulfillment">
-                    <option value="">All fulfillment</option>
+                    <option value="">All</option>
                 </select>
             </div>
-            <div class="control-group" style="margin-left: auto;">
-                <label>&nbsp;</label>
-                <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-                    <button type="button" class="action-btn primary" id="btnRefresh">Refresh</button>
-                    <button type="button" class="action-btn secondary" id="btnImportCsv">Choose CSV</button>
-                </div>
+            <div class="control-group control-group--compact">
+                <label for="filterProduct">Product</label>
+                <select id="filterProduct">
+                    <option value="">All</option>
+                </select>
             </div>
-            <input type="file" id="csvFile" accept=".csv,text/csv" class="hidden" />
+            <div class="control-group control-group--compact">
+                <label for="filterProductType">Type</label>
+                <select id="filterProductType">
+                    <option value="">All</option>
+                </select>
+            </div>
+            <div class="control-group control-group--compact">
+                <label for="filterTag">Tag</label>
+                <select id="filterTag">
+                    <option value="">All</option>
+                </select>
+            </div>
+            <div class="control-group control-group-actions">
+                <label class="sr-only" for="btnRefresh">Refresh</label>
+                <button type="button" class="action-btn primary" id="btnRefresh">Refresh</button>
+            </div>
         </div>
 
-        <p class="status-bar" id="statusBar" aria-live="polite"></p>
+        <p class="status-bar app-chrome" id="statusBar" aria-live="polite" role="status"></p>
 
-        <div class="data-table-container">
-            <table id="ordersTable">
-                <thead>
-                    <tr>
-                        <th data-sort="name">Order</th>
-                        <th data-sort="created_at">Created</th>
-                        <th data-sort="customer">Customer</th>
-                        <th data-sort="total">Total</th>
-                        <th data-sort="financial_status">Payment</th>
-                        <th data-sort="fulfillment_status">Fulfillment</th>
-                        <th>Admin</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
-        </div>
+        <div class="workspace" id="workspace">
+            <div class="list-pane" id="listPane">
+                <div class="list-pane-scroll">
+                    <div class="entity-card-list" id="ordersCardList" aria-label="Orders"></div>
+                    <div class="data-table-container list-table-wrap">
+                        <table id="ordersTable">
+                            <thead>
+                                <tr>
+                                    <th data-sort="name" class="col-order">Order</th>
+                                    <th data-sort="type" class="col-type">Type</th>
+                                    <th data-sort="created_at" class="col-date">Date</th>
+                                    <th data-sort="customer" class="col-customer">Customer</th>
+                                    <th data-sort="item_count" class="col-items">Items</th>
+                                    <th data-sort="total" class="col-total">Total</th>
+                                    <th data-sort="financial_status" class="col-paid">Paid</th>
+                                    <th data-sort="payment_method" class="col-payment">Payment</th>
+                                    <th data-sort="displayFulfillment" class="col-fulfillment">Fulfillment</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+                <nav class="pagination-bar list-pane-pagination" aria-label="Orders pagination">
+                    <button type="button" class="action-btn secondary" id="btnPrev" disabled>Previous</button>
+                    <span class="page-status-line">
+                        <span class="page-indicator" id="pageIndicator">Page 1</span>
+                        <span class="orders-sync-indicator" id="ordersSyncIndicator" hidden aria-hidden="true" title="Syncing orders"></span>
+                    </span>
+                    <button type="button" class="action-btn secondary" id="btnNext" disabled>Next</button>
+                </nav>
+            </div>
 
-        <div class="load-more-wrap">
-            <button type="button" class="action-btn secondary" id="btnLoadMore" disabled>Load more</button>
+            <div
+                class="detail-modal-backdrop hidden"
+                id="detailModalBackdrop"
+                aria-hidden="true"
+            ></div>
+            <aside class="detail-pane hidden" id="detailPane" aria-label="Order details">
+                <div class="detail-pane-inner">
+                    <div class="detail-loading-overlay hidden" id="detailLoadingOverlay" aria-hidden="true">
+                        <div class="detail-spinner" aria-hidden="true"></div>
+                        <p class="detail-loading-text">Loading order details…</p>
+                    </div>
+                    <header class="detail-pane-header hidden" id="detailPaneHeader"></header>
+                    <div class="detail-pane-body" id="detailPaneBody">
+                        <p class="detail-placeholder">Select an order to view details.</p>
+                    </div>
+                </div>
+            </aside>
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-    <script type="module" src="js/orders-dashboard.js"></script>
+    <div id="confirmDialog" class="confirm-dialog" hidden aria-hidden="true" role="dialog" aria-labelledby="confirmDialogTitle" aria-modal="true">
+        <div class="confirm-dialog__backdrop"></div>
+        <div class="confirm-dialog__panel">
+            <h2 id="confirmDialogTitle" class="confirm-dialog__title">Confirm</h2>
+            <p id="confirmDialogMessage" class="confirm-dialog__message"></p>
+            <label id="confirmDialogOptionWrap" class="confirm-dialog__option" hidden>
+                <input type="checkbox" id="confirmDialogCheckbox" />
+                <span id="confirmDialogOptionLabel"></span>
+            </label>
+            <div class="confirm-dialog__actions">
+                <button type="button" id="confirmDialogCancel" class="action-btn secondary">Keep</button>
+                <button type="button" id="confirmDialogOk" class="action-btn confirm-dialog__ok--danger">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/leads/js/config.js"></script>
+    <script src="/hub/hub.js" defer></script>
+    <script type="module" src="js/orders-dashboard.js?v=54"></script>
 </body>
 </html>

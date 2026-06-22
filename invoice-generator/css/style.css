@@ -65,6 +65,14 @@ body {
     margin-bottom: 1rem;
 }
 
+.is-hidden {
+    display: none;
+}
+
+.form-group.is-hidden {
+    display: none;
+}
+
 .form-group label {
     display: block;
     font-size: 0.875rem;
@@ -97,9 +105,56 @@ body {
     min-height: 60px;
 }
 
-/* Invoice Items */
+/* Package builder & invoice items */
+.package-form {
+    background: #f9f9f9;
+    border: 1px solid #e8e8e8;
+    border-radius: 6px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+}
+
+.package-form-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.package-form-header h3 {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: #333;
+    margin: 0;
+}
+
+.package-form-remove {
+    background: #fde8ea;
+    color: #e63946;
+    border: none;
+    padding: 0.3rem 0.6rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.75rem;
+}
+
+.package-form-remove:hover {
+    background: #f8c4c9;
+}
+
+.add-package-btn {
+    width: 100%;
+    margin-top: 0.25rem;
+}
+
+.invoice-items-empty {
+    color: #666;
+    font-size: 0.875rem;
+    margin-bottom: 0.75rem;
+}
+
 #invoiceItems {
-    display: none; /* Hide detailed item inputs - using package/pax dropdowns only */
+    display: block;
 }
 
 .invoice-item {
@@ -474,8 +529,15 @@ body {
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
     display: block;
     flex-shrink: 0;
-    overflow: hidden; /* Clip footer to invoice boundaries */
+    overflow: visible;
     max-width: 210mm; /* Ensure it doesn't exceed A4 width */
+}
+
+.invoice.pdf-capture {
+    overflow: visible !important;
+    min-height: auto !important;
+    height: auto !important;
+    box-shadow: none;
 }
 
 .payment-terms-page {
@@ -613,6 +675,7 @@ body {
 
 .items-table {
     width: 100%;
+    table-layout: fixed;
     border-collapse: collapse;
     border: 0.5px solid #000;
 }
@@ -640,13 +703,47 @@ body {
 }
 
 .col-description {
-    width: 75%;
+    width: 56%;
     text-align: left;
 }
 
-.col-subtotal {
-    width: 25%;
+.col-unit-cost,
+.col-qty,
+.col-line-subtotal {
     text-align: right;
+    white-space: nowrap;
+}
+
+.col-unit-cost {
+    width: 16%;
+}
+
+.col-qty {
+    width: 8%;
+    min-width: 2.75rem;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+}
+
+.items-table th.col-qty,
+.items-table td.col-qty {
+    text-align: center;
+}
+
+.col-line-subtotal {
+    width: 20%;
+    min-width: 6.5rem;
+}
+
+.package-section-participants .package-section-label {
+    margin-bottom: 0.25rem;
+}
+
+.package-participant-count {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #000;
+    line-height: 1.3;
 }
 
 .text-right {
@@ -676,7 +773,13 @@ body {
 
 .total-amount {
     font-weight: 700;
-    font-size: 1rem;
+    font-size: 0.9375rem;
+    white-space: nowrap;
+    word-break: keep-all;
+}
+
+.total-amount strong {
+    white-space: nowrap;
 }
 
 /* Package Description Styling */
@@ -717,8 +820,16 @@ body {
 .package-section-inline {
     flex-direction: row;
     flex-wrap: wrap;
-    gap: 1.5rem;
+    gap: 0.5rem;
     align-items: baseline;
+}
+
+.package-section-inline .package-section-label {
+    margin-bottom: 0;
+}
+
+.package-section-inline .package-section-value {
+    font-weight: 600;
 }
 
 .package-section-label {
@@ -881,6 +992,7 @@ body {
     text-transform: uppercase;
     background: transparent;
     color: #000;
+    text-align: center;
 }
 
 .payment-table td {

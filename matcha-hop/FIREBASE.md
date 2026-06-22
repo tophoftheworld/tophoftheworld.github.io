@@ -1,6 +1,6 @@
 # Firebase setup for Matcha Hop
 
-Cafes (admin classifications, starred) and logs (user matcha logs) are stored in **Firestore** and stay in sync across the admin and user app.
+Cafes and logs are stored in **Firestore** and stay in sync across the app.
 
 ## 1. Create a Firebase project
 
@@ -31,12 +31,17 @@ Deploy rules so the app can read/write. Example (open for development; restrict 
 
 - Copy `firestore.rules` into your Firebase project, or in the Console go to Firestore → Rules and paste:
 
-```
+```txt
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /cafes/{cafeId} { allow read, write: if true; }
     match /logs/{logId} { allow read, write: if true; }
+    match /settings/{docId} { allow read, write: if true; }
+    match /brandPopUps/{popUpId} { allow read, write: if true; }
+    match /brandLikes/{brandId} { allow read, write: if true; }
+    match /locationLikes/{locationId} { allow read, write: if true; }
+    match /placeDetails/{placeId} { allow read, write: if true; }
   }
 }
 ```
@@ -44,5 +49,18 @@ service cloud.firestore {
 ## 4. First run and migration
 
 - On first load with Firebase configured, the app loads data from Firestore.
-- If Firestore is empty and you had data in IndexedDB (or legacy localStorage), that data is **migrated** to Firestore once, then the app uses Firestore as the source of truth.
-- All writes (save cafe, set classification, star, save log) go to both Firestore and the local cache so the admin and user app stay in sync.
+- If Firestore is empty and you had data in IndexedDB (or legacy localStorage), classified cafes and related logs are migrated once.
+- The app runs a strict log-schema migration pass and rewrites logs to the canonical schema (`schemaVersion: 3`).
+- Migration checkpoint is stored in `settings/migrations` (`strictLogsSchemaVersion`).
+- Writes are mirrored to local cache and Firestore for resilience.
+
+## 5. Canonical strict log schema (v3)
+
+`logs/{id}` is normalized to:
+
+- identity: `id`, `schemaVersion`, `userId`, `userName`, `userDisplayName`, `createdAt`, `updatedAt`
+- visit: `visit.brandId`, `visit.brandName`, `visit.location.{cafeId,cafeName,address,popupId}`
+- content: `post.{rating,caption,photos[],photo,drinks[]}`
+- drink item: `name`, `rating`, optional `notes`, `price`, `flavorNotes[]`, `profile.{sweet,bitter,umami}`, `recommended`
+
+Legacy fields are migrated into `post.*` and no longer used for rendering after strict cutover.

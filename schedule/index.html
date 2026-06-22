@@ -13,7 +13,7 @@
     <meta property="og:description" content="Matchanese Employee Scheduling System">
 
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css?v=49">
+    <link rel="stylesheet" href="css/style.css?v=50">
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 </head>
 
@@ -217,24 +217,23 @@
         <div id="shiftViewContainer" class="view-container">
             <!-- Week Navigation integrated with calendar -->
             <div class="week-navigation">
-                <button class="nav-btn icon-only" id="prevWeekBtn">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M16 6 Q16 4 14 4 L8 10 Q6 12 8 14 L14 20 Q16 20 16 18 L16 6 Z" fill="currentColor"/>
-                    </svg>
-                </button>
-                <h2 class="week-title" id="weekTitle">Loading...</h2>
-                <button class="nav-btn icon-only" id="nextWeekBtn">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M8 6 Q8 4 10 4 L16 10 Q18 12 16 14 L10 20 Q8 20 8 18 L8 6 Z" fill="currentColor"/>
-                    </svg>
-                </button>
-                <button class="nav-btn copy-week-btn" id="copyPreviousWeekBtn" style="display: flex;">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                    </svg>
-                    Copy Previous Week
-                </button>
+                <div></div>
+                <div class="week-nav-center">
+                    <button class="nav-btn icon-only" id="prevWeekBtn">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M16 6 Q16 4 14 4 L8 10 Q6 12 8 14 L14 20 Q16 20 16 18 L16 6 Z" fill="currentColor"/>
+                        </svg>
+                    </button>
+                    <h2 class="week-title" id="weekTitle">Loading...</h2>
+                    <button class="nav-btn icon-only" id="nextWeekBtn">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M8 6 Q8 4 10 4 L16 10 Q18 12 16 14 L10 20 Q8 20 8 18 L8 6 Z" fill="currentColor"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="week-navigation__actions">
+                    <button type="button" class="copy-week-btn" id="copyPrevWeekBtn">Copy from Previous Week</button>
+                </div>
             </div>
             <div class="shift-schedule-container">
                 <div class="shift-schedule-grid" id="shiftScheduleGrid">
@@ -290,7 +289,7 @@
     </div>
 
     <div id="scheduleToast" class="schedule-toast" aria-live="polite"></div>
-    <script type="module" src="js/script.js?v=46"></script>
+    <script type="module" src="js/script.js?v=48"></script>
 </body>
 
 </html>

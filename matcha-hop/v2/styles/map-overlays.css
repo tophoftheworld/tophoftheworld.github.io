@@ -1,0 +1,156 @@
+.matcha-hop-name-tag {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  font-size: 13px;
+  font-weight: 500;
+  color: #1a1a1a;
+  white-space: nowrap;
+  pointer-events: auto;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1), height 0.4s cubic-bezier(0.4, 0, 0.2, 1), padding 0.4s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.4s cubic-bezier(0.4, 0, 0.2, 1), min-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), border-radius 0.4s cubic-bezier(0.4, 0, 0.2, 1), background 0.4s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1), transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.matcha-hop-name-tag:not(.matcha-hop-dot) {
+  display: inline-grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  column-gap: 6px;
+}
+
+.matcha-hop-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: rgba(0, 0, 0, 0.06);
+  grid-column: 1;
+}
+
+.matcha-hop-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  grid-column: 2;
+  min-width: 0;
+}
+
+.matcha-hop-name-tag:not(.matcha-hop-dot) .matcha-hop-state-icon {
+  grid-column: 3;
+  margin-left: 2px;
+}
+
+.matcha-hop-state-icon {
+  color: #1d8a00;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.matcha-hop-state-icon svg {
+  display: block;
+}
+
+.matcha-hop-name-tag.selected .matcha-hop-state-icon {
+  color: #fff;
+}
+
+.matcha-hop-name-tag:hover {
+  background: #f8faf8;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+}
+
+.matcha-hop-name-tag.matcha-hop-dot {
+  padding: 0;
+  width: 15px;
+  height: 15px;
+  min-width: 15px;
+  min-height: 15px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  justify-content: center;
+}
+
+.matcha-hop-name-tag.matcha-hop-dot .matcha-hop-state-icon {
+  font-size: 9px;
+  line-height: 1;
+}
+
+.matcha-hop-name-tag.matcha-hop-dot:hover {
+  background: #f5f5f5;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.matcha-hop-name-tag.selected {
+  background: #1d8a00;
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.matcha-hop-name-tag.selected:hover {
+  background: #1a7d00;
+  color: #fff;
+}
+
+.matcha-hop-name-tag.matcha-hop-dot.selected {
+  background: #1d8a00;
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.matcha-hop-name-tag.matcha-hop-dot.selected:hover {
+  background: #1a7d00;
+}
+
+.matcha-hop-event-tag {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a1a1a;
+  white-space: nowrap;
+  pointer-events: auto;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  max-width: min(280px, 72vw);
+}
+
+.matcha-hop-event-date {
+  font-size: 11px;
+  font-weight: 700;
+  color: #666;
+  letter-spacing: 0.02em;
+  padding-right: 8px;
+  border-right: 1px solid rgba(0, 0, 0, 0.1);
+  flex-shrink: 0;
+}
+
+.matcha-hop-event-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.matcha-hop-event-tag:hover {
+  background: #f8faf8;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+}
+
+.matcha-hop-event-tag.selected {
+  border-color: #1d8a00;
+  box-shadow: 0 2px 12px rgba(29, 138, 0, 0.25);
+}

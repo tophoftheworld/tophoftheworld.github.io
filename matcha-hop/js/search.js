@@ -7,6 +7,9 @@ import { getMap, getPlacesService } from './map.js';
 import { incrementApiCall } from './debug-api.js';
 
 const PLACE_FIELDS = ['id', 'displayName', 'formattedAddress', 'location'];
+const SEARCH_CACHE_TTL_MS = 5 * 60 * 1000;
+const searchCache = new Map();
+const inflightSearches = new Map();
 
 /** Blocklist: exclude places whose name/address contain these (case-insensitive). */
 const NON_MATCHA_BLOCKLIST = [
@@ -96,12 +99,46 @@ function searchByTextLegacy(query, bounds, filterMatcha = true) {
 
 const MAX_PAGE_RESULTS = 100;
 
+function toSearchCacheKey(request, filterMatcha) {
+  return JSON.stringify({
+    textQuery: String(request?.textQuery || '').trim().toLowerCase(),
+    maxResultCount: Number(request?.maxResultCount) || 20,
+    maxTotalResults: Number(request?.maxTotalResults) || 20,
+    filterMatcha: filterMatcha !== false,
+    hasBounds: Boolean(request?.locationRestriction),
+  });
+}
+
+function getCachedSearchResult(key) {
+  const hit = searchCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.at > SEARCH_CACHE_TTL_MS) {
+    searchCache.delete(key);
+    return null;
+  }
+  return hit.value;
+}
+
+function setCachedSearchResult(key, value) {
+  searchCache.set(key, { at: Date.now(), value });
+}
+
 async function searchByTextNew(request, options = {}) {
   const filterMatcha = options.filterMatcha !== false;
+  const cacheKey = toSearchCacheKey(request, filterMatcha);
+  const cached = getCachedSearchResult(cacheKey);
+  if (cached) return cached;
+  if (inflightSearches.has(cacheKey)) return inflightSearches.get(cacheKey);
+
+  const searchPromise = (async () => {
   try {
     const placesLib = await getPlaceLibrary();
     const Place = placesLib?.Place;
-    if (!Place?.searchByText) return searchByTextLegacy(request.textQuery, request.locationRestriction || null, filterMatcha);
+      if (!Place?.searchByText) {
+        const legacy = await searchByTextLegacy(request.textQuery, request.locationRestriction || null, filterMatcha);
+        setCachedSearchResult(cacheKey, legacy);
+        return legacy;
+      }
     const maxTotal = request.maxTotalResults ?? 20;
     const { maxTotalResults: _drop, ...apiRequest } = request;
     const allPlaces = [];
@@ -119,10 +156,21 @@ async function searchByTextNew(request, options = {}) {
       .slice(0, maxTotal)
       .map((place, i) => placeResultFromPlace(place, i))
       .filter(Boolean);
-    return filterMatcha ? filterMatchaOnly(results) : results;
+      const normalized = filterMatcha ? filterMatchaOnly(results) : results;
+      setCachedSearchResult(cacheKey, normalized);
+      return normalized;
   } catch (e) {
     if (typeof console !== 'undefined' && console.warn) console.warn('[Matcha Hop] Place search failed (using legacy fallback):', e.message || e);
-    return searchByTextLegacy(request.textQuery, request.locationRestriction || null, filterMatcha);
+      const legacy = await searchByTextLegacy(request.textQuery, request.locationRestriction || null, filterMatcha);
+      setCachedSearchResult(cacheKey, legacy);
+      return legacy;
+  }
+  })();
+  inflightSearches.set(cacheKey, searchPromise);
+  try {
+    return await searchPromise;
+  } finally {
+    inflightSearches.delete(cacheKey);
   }
 }
 
@@ -138,6 +186,124 @@ export async function searchPlaceByText(text) {
   const q = (text || '').trim();
   if (!q) return [];
   return searchByTextNew({ textQuery: q, maxResultCount: 20 }, { filterMatcha: false });
+}
+
+const placeLabelCache = new Map();
+const inflightPlaceLabels = new Map();
+
+/** Resolve a place's display name + formatted address by placeId (cached). */
+export async function resolvePlaceLabel(placeId) {
+  const key = String(placeId || '').trim();
+  if (!key || typeof google === 'undefined') return null;
+  if (placeLabelCache.has(key)) return placeLabelCache.get(key);
+  if (inflightPlaceLabels.has(key)) return inflightPlaceLabels.get(key);
+
+  const request = (async () => {
+    try {
+      const lib = await getPlaceLibrary();
+      const Place = lib?.Place;
+      if (Place) {
+        const place = new Place({ id: key });
+        await place.fetchFields({ fields: ['displayName', 'formattedAddress'] });
+        incrementApiCall('placeLabel');
+        const displayName = place.displayName;
+        const result = {
+          name: typeof displayName === 'string' ? displayName : (displayName?.text ?? ''),
+          address: place.formattedAddress ?? '',
+        };
+        if (result.name) placeLabelCache.set(key, result);
+        return result.name ? result : null;
+      }
+    } catch (_) { /* fall through */ }
+    try {
+      const service = getPlacesService();
+      if (!service) return null;
+      return await new Promise((resolve) => {
+        incrementApiCall('placeLabel');
+        service.getDetails({ placeId: key, fields: ['name', 'formatted_address'] }, (place, status) => {
+          if (status !== google.maps.places.PlacesServiceStatus.OK || !place) {
+            resolve(null);
+            return;
+          }
+          const result = { name: place.name || '', address: place.formatted_address || '' };
+          if (result.name) placeLabelCache.set(key, result);
+          resolve(result.name ? result : null);
+        });
+      });
+    } catch (_) {
+      return null;
+    }
+  })();
+
+  inflightPlaceLabels.set(key, request);
+  try {
+    return await request;
+  } finally {
+    inflightPlaceLabels.delete(key);
+  }
+}
+
+const placeCoordsCache = new Map();
+const inflightPlaceCoords = new Map();
+
+/** Resolve lat/lng for a placeId (cached). */
+export async function resolvePlaceCoords(placeId) {
+  const key = String(placeId || '').trim();
+  if (!key || typeof google === 'undefined') return null;
+  if (placeCoordsCache.has(key)) return placeCoordsCache.get(key);
+  if (inflightPlaceCoords.has(key)) return inflightPlaceCoords.get(key);
+
+  const request = (async () => {
+    try {
+      const lib = await getPlaceLibrary();
+      const Place = lib?.Place;
+      if (Place) {
+        const place = new Place({ id: key });
+        await place.fetchFields({ fields: ['location'] });
+        incrementApiCall('placeCoords');
+        const loc = place.location;
+        const lat = loc ? (typeof loc.lat === 'function' ? loc.lat() : loc.lat) : null;
+        const lng = loc ? (typeof loc.lng === 'function' ? loc.lng() : loc.lng) : null;
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          const result = { lat, lng };
+          placeCoordsCache.set(key, result);
+          return result;
+        }
+      }
+    } catch (_) { /* fall through */ }
+    try {
+      const service = getPlacesService();
+      if (!service) return null;
+      return await new Promise((resolve) => {
+        incrementApiCall('placeCoords');
+        service.getDetails({ placeId: key, fields: ['geometry'] }, (place, status) => {
+          if (status !== google.maps.places.PlacesServiceStatus.OK || !place?.geometry?.location) {
+            resolve(null);
+            return;
+          }
+          const loc = place.geometry.location;
+          const lat = typeof loc.lat === 'function' ? loc.lat() : loc.lat;
+          const lng = typeof loc.lng === 'function' ? loc.lng() : loc.lng;
+          if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+            resolve(null);
+            return;
+          }
+          const result = { lat, lng };
+          placeCoordsCache.set(key, result);
+          resolve(result);
+        });
+      });
+    } catch (_) {
+      return null;
+    }
+  })();
+
+  inflightPlaceCoords.set(key, request);
+  try {
+    return await request;
+  } finally {
+    inflightPlaceCoords.delete(key);
+  }
 }
 
 /** Search within map bounds (viewport). Pins update as map moves. Fetches up to MAX_PAGE_RESULTS via pagination. */

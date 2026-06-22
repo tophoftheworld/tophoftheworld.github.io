@@ -134,15 +134,25 @@ async function loadComparison() {
 
     const t0 = performance.now();
     try {
-        const empSnap = await getDocs(collection(db, 'employees_v2'));
+        const [empSnapV2, empSnapLegacy] = await Promise.all([
+            getDocs(collection(db, 'employees_v2')),
+            getDocs(collection(db, 'employees'))
+        ]);
         /** @type {Map<string, string>} */
         const nameById = new Map();
-        empSnap.docs.forEach((d) => {
+        empSnapLegacy.docs.forEach((d) => {
             const n = d.data()?.name;
             nameById.set(d.id, typeof n === 'string' && n.trim() ? n.trim() : d.id);
         });
-        const employeeIds = empSnap.docs.map((d) => d.id);
-        log(`employees_v2: ${employeeIds.length} id(s). Range ${startYmd} … ${endYmd}`);
+        empSnapV2.docs.forEach((d) => {
+            const n = d.data()?.name;
+            nameById.set(d.id, typeof n === 'string' && n.trim() ? n.trim() : d.id);
+        });
+        const employeeIds = Array.from(new Set([
+            ...empSnapLegacy.docs.map((d) => d.id),
+            ...empSnapV2.docs.map((d) => d.id)
+        ]));
+        log(`employees (legacy + v2 union): ${employeeIds.length} id(s). Range ${startYmd} … ${endYmd}`);
 
         const chunkSize = 8;
         /** @type {{ employeeId: string, dateStr: string, legacy: object|null, v2: object|null, status: string }[]} */

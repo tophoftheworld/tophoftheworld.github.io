@@ -26,6 +26,31 @@ service firebase.storage {
       allow read, write: if true;
     }
 
+    // Matcha Hop / Chakaiki event cover photos
+    match /events/{allPaths=**} {
+      allow read, write: if true;
+    }
+
+    // Matcha Hop / Chakaiki brand logos (Add Brand thumbnail)
+    match /brandLogos/{allPaths=**} {
+      allow read, write: if true;
+    }
+
+    // Matcha Hop Google place photos (cached from Places API)
+    match /placePhotos/{allPaths=**} {
+      allow read, write: if true;
+    }
+
+    // Matcha Hop user profile avatars
+    match /profiles/{allPaths=**} {
+      allow read, write: if true;
+    }
+
+    // Matcha Hop list entry photos
+    match /lists/{allPaths=**} {
+      allow read, write: if true;
+    }
+
     // Default rule for other paths
     match /{allPaths=**} {
       allow read, write: if false;

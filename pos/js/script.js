@@ -3222,7 +3222,7 @@ function showGCashPaymentModal() {
   // QR Code image (changed from div to img)
   const qrCode = document.createElement('img');
   qrCode.className = 'qr-code';
-  qrCode.src = 'images/qr.png';
+  qrCode.src = 'images/qr-toph.jpg';
   qrCode.alt = 'GCash QR Code';
   modal.appendChild(qrCode);
 

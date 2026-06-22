@@ -1,9 +1,12 @@
 {
-  "name": "chatbase-leads-dashboard",
-  "version": "1.0.0",
+  "name": "chatbase-conversations-dashboard",
+  "version": "2.0.0",
   "private": true,
   "scripts": {
-    "start": "firebase emulators:start --only functions,firestore,hosting",
-    "deploy": "firebase deploy --only functions,hosting,firestore:rules,firestore:indexes"
+    "start": "firebase emulators:start --only hosting,functions",
+    "dev": "node scripts/dev.mjs",
+    "dev:hosting": "firebase emulators:start --only hosting",
+    "dev:functions": "firebase emulators:start --only functions",
+    "deploy": "node scripts/prepare-deploy.mjs && firebase deploy --only functions:api,hosting"
   }
 }

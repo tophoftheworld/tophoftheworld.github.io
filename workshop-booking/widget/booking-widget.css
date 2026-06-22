@@ -1,0 +1,175 @@
+.workshop-booking-widget {
+    --wb-accent: #2d5a27;
+    --wb-accent-hover: #234a1f;
+    --wb-border: #dde5dd;
+    --wb-muted: #5c6b5c;
+    --wb-surface: #fafcfa;
+    font-family: inherit;
+    font-size: 0.92rem;
+    color: #1a2e1a;
+    border: 1px solid var(--wb-border);
+    border-radius: 10px;
+    padding: 1rem;
+    margin: 1rem 0;
+    background: #fff;
+}
+
+.wb-loading,
+.wb-empty,
+.wb-error {
+    margin: 0;
+    color: var(--wb-muted);
+    font-size: 0.9rem;
+}
+
+.wb-error {
+    color: #b42318;
+}
+
+.wb-title {
+    margin: 0 0 0.85rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+.wb-field {
+    margin-bottom: 0.85rem;
+}
+
+.wb-field label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--wb-muted);
+    margin-bottom: 0.35rem;
+}
+
+.wb-field input,
+.wb-field select {
+    width: 100%;
+    border: 1px solid var(--wb-border);
+    border-radius: 6px;
+    padding: 0.5rem 0.6rem;
+    font: inherit;
+    background: #fff;
+}
+
+.wb-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.wb-chip {
+    border: 1px solid var(--wb-border);
+    border-radius: 999px;
+    background: #fff;
+    padding: 0.35rem 0.7rem;
+    font-size: 0.82rem;
+    cursor: pointer;
+    color: #1a2e1a;
+}
+
+.wb-chip:hover {
+    border-color: #b8ccb4;
+    background: var(--wb-surface);
+}
+
+.wb-chip.is-selected {
+    border-color: var(--wb-accent);
+    background: #eef5ec;
+    color: var(--wb-accent);
+    font-weight: 600;
+}
+
+.wb-chip:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.wb-slot-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+
+.wb-slot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    width: 100%;
+    text-align: left;
+    border: 1px solid var(--wb-border);
+    border-radius: 8px;
+    background: var(--wb-surface);
+    padding: 0.65rem 0.75rem;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+}
+
+.wb-slot:hover {
+    border-color: #b8ccb4;
+}
+
+.wb-slot.is-selected {
+    border-color: var(--wb-accent);
+    background: #eef5ec;
+}
+
+.wb-slot-time {
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.wb-slot-seats {
+    font-size: 0.8rem;
+    color: var(--wb-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.wb-actions {
+    margin-top: 1rem;
+}
+
+.wb-submit {
+    width: 100%;
+    border: none;
+    border-radius: 8px;
+    padding: 0.7rem 1rem;
+    font: inherit;
+    font-weight: 600;
+    background: var(--wb-accent);
+    color: #fff;
+    cursor: pointer;
+}
+
+.wb-submit:hover:not(:disabled) {
+    background: var(--wb-accent-hover);
+}
+
+.wb-submit:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.wb-hint {
+    margin: 0.5rem 0 0;
+    font-size: 0.78rem;
+    color: var(--wb-muted);
+}
+
+.wb-status {
+    margin: 0.65rem 0 0;
+    font-size: 0.84rem;
+}
+
+.wb-status.is-error {
+    color: #b42318;
+}
+
+.wb-status.is-success {
+    color: var(--wb-accent);
+}

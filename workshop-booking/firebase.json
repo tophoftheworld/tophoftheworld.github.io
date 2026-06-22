@@ -1,0 +1,32 @@
+{
+  "hosting": {
+    "public": ".",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**",
+      "functions/**",
+      "README.md",
+      "firestore.rules",
+      "firestore.indexes.json"
+    ],
+    "headers": [
+      {
+        "source": "**/*.@(js|css|html)",
+        "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+      },
+      {
+        "source": "/widget/**",
+        "headers": [{ "key": "Access-Control-Allow-Origin", "value": "*" }]
+      },
+      {
+        "source": "/js/**",
+        "headers": [{ "key": "Access-Control-Allow-Origin", "value": "*" }]
+      }
+    ]
+  },
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  }
+}

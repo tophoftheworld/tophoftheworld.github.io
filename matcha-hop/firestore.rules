@@ -1,14 +1,76 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Cafes and logs: allow read/write for all (no auth). Tighten to "if request.auth != null" when you add Firebase Auth.
+    function isStrictLogV3(data) {
+      return data.schemaVersion == 3
+        && data.userId is string
+        && data.userName is string
+        && data.createdAt is number
+        && data.updatedAt is number
+        && data.visit is map
+        && data.visit.brandId is string
+        && data.visit.brandName is string
+        && data.visit.location is map
+        && ((data.visit.location.cafeId is string) || (data.visit.location.popupId is string))
+        && data.post is map
+        && data.post.caption is string
+        && data.post.rating is number
+        && data.post.drinks is list
+        && data.post.drinks.size() > 0;
+    }
+
+    function isLogComment(data) {
+      return data.logId is string
+        && data.authorId is string
+        && data.authorName is string
+        && data.text is string
+        && data.createdAt is number
+        && data.updatedAt is number;
+    }
+
+    function hasValidCafeMeta(data) {
+      return (!('locationTags' in data) || data.locationTags is list)
+        && (!('hoursOverride' in data) || data.hoursOverride is string || data.hoursOverride == null);
+    }
+
     match /cafes/{cafeId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if hasValidCafeMeta(request.resource.data);
     }
     match /logs/{logId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create, update: if isStrictLogV3(request.resource.data);
+      allow delete: if true;
+    }
+    match /logComments/{commentId} {
+      allow read: if true;
+      allow create, update: if isLogComment(request.resource.data);
     }
     match /settings/{docId} {
+      allow read, write: if true;
+    }
+    match /brandPopUps/{popUpId} {
+      allow read, write: if true;
+    }
+    match /brandLikes/{brandId} {
+      allow read, write: if true;
+    }
+    match /locationLikes/{locationId} {
+      allow read, write: if true;
+    }
+    match /logPostLikes/{logId} {
+      allow read, write: if true;
+    }
+    match /placeDetails/{placeId} {
+      allow read, write: if true;
+    }
+    match /events/{eventId} {
+      allow read, write: if true;
+    }
+    match /lists/{listId} {
+      allow read, write: if true;
+    }
+    match /userProfiles/{profileId} {
       allow read, write: if true;
     }
   }

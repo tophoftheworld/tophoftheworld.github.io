@@ -619,6 +619,10 @@ body {
     background: linear-gradient(135deg, #c44d6a 0%, #a83a55 50%, #8b2d47 100%);
 }
 
+.menu-props-tag-color-btn--purple {
+    background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 50%, #5b21b6 100%);
+}
+
 .menu-props-tag-btn {
     flex-shrink: 0;
     width: 1.5rem;
@@ -817,8 +821,26 @@ body {
     margin-bottom: 1rem;
 }
 
+.drinks-header-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
 .drinks-header h2 {
     margin-bottom: 0;
+}
+
+#categoryList .category-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.45rem 0.55rem;
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius-sm);
+    background: #fff;
 }
 
 .drinks-list {
@@ -826,6 +848,19 @@ body {
     min-height: 0;
     overflow-y: auto;
     margin-bottom: 0.5rem;
+}
+
+.drink-category-group {
+    margin-bottom: 0.6rem;
+}
+
+.drink-category-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin: 0.4rem 0;
 }
 
 .drink-item {
@@ -995,6 +1030,37 @@ body {
     overflow: hidden;
 }
 
+body.viewer-mode .controls-panel {
+    display: none !important;
+}
+
+body.viewer-mode .app-container {
+    height: 100vh;
+}
+
+body.viewer-mode .menu-preview {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    padding: 0;
+    z-index: 10;
+}
+
+body.viewer-mode .menu-canvas {
+    border-radius: 0;
+}
+
+/* Viewer: full-bleed preview only — drag to pan (no chrome). */
+body.viewer-mode .preview-wrap {
+    cursor: grab;
+    touch-action: none;
+}
+
+body.viewer-mode .preview-wrap.is-panning {
+    cursor: grabbing;
+}
+
 /* Full screen preview: menu only, centered, ratio preserved; Esc to exit */
 body.fullscreen-preview .controls-panel {
     display: none !important;
@@ -1028,6 +1094,14 @@ body.fullscreen-preview .menu-preview {
     height: 100%;
     min-width: 0;
     min-height: 0;
+}
+
+body:not(.viewer-mode):not(.fullscreen-preview) .preview-wrap {
+    cursor: grab;
+}
+
+body:not(.viewer-mode):not(.fullscreen-preview) .preview-wrap.is-panning {
+    cursor: grabbing;
 }
 
 .canvas-fit-wrapper {
@@ -1306,6 +1380,10 @@ body.fullscreen-preview .menu-preview {
     align-items: start;
 }
 
+.tile-template-menu .menu-items--no-prices .menu-item {
+    grid-template-columns: 1fr;
+}
+
 .tile-template-menu .menu-item-head {
     grid-column: 1;
     grid-row: 1;
@@ -1318,7 +1396,7 @@ body.fullscreen-preview .menu-preview {
 .tile-template-menu .menu-item-title {
     font-family: 'Netflix Sans', sans-serif;
     font-weight: 700;
-    font-size: clamp(1.09rem, 3.22vw, 1.27rem);
+    font-size: clamp(calc(1.09rem + 2px), calc(3.22vw + 2px), calc(1.27rem + 2px));
     color: #333333;
 }
 
@@ -1343,12 +1421,16 @@ body.fullscreen-preview .menu-preview {
     background: linear-gradient(135deg, #c44d6a 0%, #a83a55 50%, #8b2d47 100%);
 }
 
+.tile-template-menu .menu-item-tag--purple {
+    background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 50%, #5b21b6 100%);
+}
+
 .tile-template-menu .menu-item-desc {
     grid-column: 1;
     grid-row: 2;
     font-family: 'Netflix Sans', sans-serif;
     font-weight: 400;
-    font-size: clamp(0.6875rem, 2.2vw, 0.7875rem);
+    font-size: clamp(0.8125rem, 2.2vw, 0.9125rem);
     color: #757575;
     line-height: 1.3;
 }
@@ -1378,7 +1460,7 @@ body.fullscreen-preview .menu-preview {
 
 /* Customization template: exact recreation of “Make it your Matchanese” menu */
 .tile-template-customization {
-    background: #1b5e20;
+    background: linear-gradient(135deg, #26710c 0%, #1a5c0a 50%, #104f0f 100%);
     padding: 0;
     overflow: hidden;
     border-radius: 24px;
@@ -1400,14 +1482,15 @@ body.fullscreen-preview .menu-preview {
 .tile-template-customization .customization-header {
     background: transparent;
     color: #fff;
-    padding: 0.75rem 0 0.5rem;
+    padding: 1.25rem 0 1rem;
     flex-shrink: 0;
     text-align: center;
 }
 
 .tile-template-customization .customization-title {
     margin: 0;
-    font-size: clamp(1.25rem, 5vw, 1.75rem);
+    font-family: 'Netflix Sans', 'DM Sans', sans-serif;
+    font-size: clamp(2.53125rem, 10.125vw, 3.54375rem);
     font-weight: 700;
     line-height: 1.2;
     letter-spacing: 0.02em;
@@ -1416,7 +1499,7 @@ body.fullscreen-preview .menu-preview {
 
 .tile-template-customization .customization-subtitle {
     margin: 0.25rem 0 0;
-    font-size: clamp(0.8rem, 3vw, 0.95rem);
+    font-size: clamp(1.62rem, 6.075vw, 1.92375rem);
     font-weight: 400;
     color: rgba(255, 255, 255, 0.9);
 }
@@ -1462,7 +1545,7 @@ body.fullscreen-preview .menu-preview {
 }
 
 .tile-template-customization .customization-option-label {
-    font-size: 0.6rem;
+    font-size: 0.72rem;
     font-weight: 600;
     color: #6DC24D;
     text-transform: uppercase;
@@ -1472,7 +1555,7 @@ body.fullscreen-preview .menu-preview {
 }
 
 .tile-template-customization .customization-option-num {
-    font-size: clamp(1.75rem, 6vw, 2.5rem);
+    font-size: clamp(2.1rem, 7.2vw, 3rem);
     font-weight: 900;
     color: #6DC24D;
     line-height: 1.1;
@@ -1486,7 +1569,7 @@ body.fullscreen-preview .menu-preview {
 .tile-template-customization .customization-options-three:not(.customization-options-sweetness) .customization-option:nth-child(3) .customization-option-num { color: #235f2f; font-weight: 900; -webkit-text-stroke: 0.035em currentColor; }
 
 .tile-template-customization .customization-option-meta {
-    font-size: 0.6rem;
+    font-size: 0.72rem;
     color: #333;
     margin-top: 0.25rem;
     text-transform: uppercase;
@@ -1498,6 +1581,7 @@ body.fullscreen-preview .menu-preview {
 .tile-template-customization .customization-options-sweetness .customization-option-num {
     font-size: clamp(1.65rem, 8vw, 4rem);
     font-size: clamp(1.65rem, 8.25cqw, 4.125rem);
+    color: #2f8f35;
 }
 
 .tile-template-customization .customization-options-sweetness .customization-option-meta {
@@ -1532,11 +1616,15 @@ body.fullscreen-preview .menu-preview {
 }
 
 .tile-template-customization .customization-option-price {
-    font-size: 0.78rem;
+    font-size: 0.936rem;
     font-weight: 500;
     color: #333;
     margin-top: 0.15rem;
     display: block;
+}
+
+.tile-template-customization .customization-card-milk .customization-option-price {
+    font-size: 1.404rem;
 }
 
 .tile-template-customization .customization-card-milk {
@@ -1545,8 +1633,8 @@ body.fullscreen-preview .menu-preview {
     justify-content: space-between;
     padding: 0 0 0 1.25rem;
     overflow: hidden;
-    height: 5.85rem;
-    min-height: 5.85rem;
+    height: 8.775rem;
+    min-height: 8.775rem;
 }
 
 .tile-template-customization .customization-milk-left {
@@ -1559,12 +1647,12 @@ body.fullscreen-preview .menu-preview {
 }
 
 .tile-template-customization .customization-milk-meta {
-    font-size: 0.7rem;
+    font-size: 1.05rem;
     color: #6b7280;
 }
 
 .tile-template-customization .customization-milk-name {
-    font-size: 1.05rem;
+    font-size: 1.535625rem;
     font-weight: 700;
     color: #111;
 }
@@ -1578,6 +1666,10 @@ body.fullscreen-preview .menu-preview {
     object-fit: contain;
     object-position: right center;
     display: block;
+}
+
+.tile-template-customization .customization-card-title-sweetness {
+    margin-bottom: 0.45rem;
 }
 
 .tile-placeholder {

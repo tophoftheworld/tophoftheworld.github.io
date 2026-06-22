@@ -501,6 +501,16 @@ function getRequestTypeLabel(request) {
     return { label: 'Payroll', cssClass: 'request-type-payroll' };
 }
 
+function escapeHtml(s) {
+    if (s == null) return '';
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 function isPayrollRequestRecord(request) {
     return request._sourceCollection !== 'substitution_requests' && request.type !== 'substitution';
 }
@@ -698,6 +708,11 @@ function renderRequests() {
                    </div>`;
             }
         }
+
+        const reasonOneLine = (request.reason || '').trim().replace(/\s+/g, ' ');
+        const reasonPreviewHtml = reasonOneLine
+            ? `<div class="request-preview-reason" title="${escapeHtml(reasonOneLine)}"><span class="request-preview-label">Reason:</span><span class="request-preview-reason-text">${escapeHtml(reasonOneLine)}</span></div>`
+            : '';
         
         const isPayrollRequest = !isSubstitution;
         const eligibleReapply = isEligibleBulkReapply(request);
@@ -783,6 +798,7 @@ function renderRequests() {
                         <div class="request-preview">
                             ${dateDisplay}
                             ${previewText || ''}
+                            ${reasonPreviewHtml}
                         </div>
                     </div>
                     <div class="request-actions">

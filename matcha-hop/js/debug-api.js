@@ -58,8 +58,8 @@ export async function getFirebaseDebugSnapshot() {
       sampleIds: posts.slice(0, 8).map((p) => p.id),
       latest: posts.slice(0, 25).map((p) => ({
         id: p.id,
-        brandName: p.visit?.brandName || p.brandName || '',
-        drinkName: p.drinks?.[0]?.name || p.drinkName || '',
+        brandName: p.visit?.brandName || '',
+        drinkName: p.post?.drinks?.[0]?.name || '',
         createdAt: Number(p.createdAt) || 0,
       })),
     },

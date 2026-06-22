@@ -1,6 +1,6 @@
 // Import Firebase modules
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
-import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, setDoc, query, where, orderBy, deleteDoc, addDoc, Timestamp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, setDoc, query, where, orderBy, limit, documentId, deleteDoc, addDoc, Timestamp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 
 // Read-only mode detection
 // Admin access requires explicit ?admin=true parameter — being in an iframe is not enough,
@@ -24,7 +24,8 @@ function hideAdminControls() {
             'syncBtn',
             'deleteFutureBtn',
             'deleteSelectedBtn',
-            'copySelectedBtn'
+            'copySelectedBtn',
+            'copyPrevWeekBtn'
         ];
         
         adminButtons.forEach(buttonId => {
@@ -64,8 +65,11 @@ const db = getFirestore(app);
 let employees = {};
 /** Pending substitution requests for current user (employeeId), used for badges and modal state */
 let pendingSubstitutionRequests = [];
-// Profile photo URLs for scheduled shift avatars (id -> photoUrl)
+// Profile photo URLs (id -> photoUrl)
 let employeePhotoUrls = {};
+// Most recent clock-in selfie per employee (id -> photoUrl), used for scheduled shift avatars
+let employeeLastTimeInPhotos = {};
+let employeeLastTimeInPhotoDates = {};
 // Employee IDs that are archived - excluded from schedule dropdown only (names still shown on existing shifts)
 let archivedEmployeeIds = new Set();
 // Inactive employees (active === false in Firestore) — same dropdown exclusion as archived
@@ -76,6 +80,62 @@ function employeeShownInShiftDropdown(employeeId) {
 function getEmployeeProfilePhotoUrl(employeeId) {
     if (!employeeId || employeeId === 'unassigned') return null;
     return employeePhotoUrls[employeeId] || null;
+}
+function getEmployeeLastTimeInPhotoUrl(employeeId) {
+    if (!employeeId || employeeId === 'unassigned') return null;
+    return employeeLastTimeInPhotos[employeeId] || null;
+}
+function rememberEmployeeTimeInPhoto(employeeId, dateStr, selfie) {
+    if (!employeeId || employeeId === 'unassigned' || !selfie || !dateStr) return;
+    const previousDate = employeeLastTimeInPhotoDates[employeeId] || '';
+    if (dateStr > previousDate) {
+        employeeLastTimeInPhotoDates[employeeId] = dateStr;
+        employeeLastTimeInPhotos[employeeId] = selfie;
+    }
+}
+async function loadLastTimeInPhotosFromCollection(collectionName, employeeId) {
+    let latestDate = employeeLastTimeInPhotoDates[employeeId] || '';
+    let latestSelfie = employeeLastTimeInPhotos[employeeId] || null;
+    const attendanceRef = collection(db, collectionName, employeeId, "dates");
+
+    const snapshot = await getDocs(query(
+        attendanceRef,
+        orderBy(documentId(), 'desc'),
+        limit(40)
+    ));
+    snapshot.forEach((docSnap) => {
+        const selfie = docSnap.data().clockIn?.selfie;
+        if (selfie && docSnap.id > latestDate) {
+            latestDate = docSnap.id;
+            latestSelfie = selfie;
+        }
+    });
+
+    if (latestSelfie) {
+        employeeLastTimeInPhotoDates[employeeId] = latestDate;
+        employeeLastTimeInPhotos[employeeId] = latestSelfie;
+    }
+}
+async function loadEmployeeLastTimeInPhotos(employeeIds = null) {
+    const ids = (employeeIds || Object.keys(employees)).filter(id => id && id !== 'unassigned');
+    if (ids.length === 0) return;
+
+    await Promise.all(ids.map(async (employeeId) => {
+        if (employeeLastTimeInPhotos[employeeId]) return;
+        try {
+            await loadLastTimeInPhotosFromCollection('attendance_v2', employeeId);
+            if (!employeeLastTimeInPhotos[employeeId]) {
+                await loadLastTimeInPhotosFromCollection('attendance', employeeId);
+            }
+        } catch (error) {
+            console.warn('Failed to load last time-in photo for', employeeId, error);
+        }
+    }));
+}
+function refreshEmployeeLastTimeInPhotosInBackground(employeeIds = null) {
+    loadEmployeeLastTimeInPhotos(employeeIds)
+        .then(() => renderCurrentView())
+        .catch((error) => console.warn('Last time-in photo refresh failed:', error));
 }
 // Shift types configuration
 const SHIFT_TYPES = {
@@ -232,12 +292,6 @@ function setupEventListeners() {
     prevWeekBtn.addEventListener('click', () => changeWeek(-1));
     nextWeekBtn.addEventListener('click', () => changeWeek(1));
     
-    // Copy previous week button
-    const copyPreviousWeekBtn = document.getElementById('copyPreviousWeekBtn');
-    if (copyPreviousWeekBtn) {
-        copyPreviousWeekBtn.addEventListener('click', copyPreviousWeekSchedule);
-    }
-
     // View toggle
     calendarViewRadio.addEventListener('change', () => toggleView('calendar'));
     employeeViewRadio.addEventListener('change', () => toggleView('employee'));
@@ -457,6 +511,11 @@ function setupEventListeners() {
     document.getElementById('deleteSelectedBtn').addEventListener('click', deleteSelectedShifts);
     document.getElementById('exitSelectionBtn').addEventListener('click', exitMultiSelectMode);
     document.getElementById('copySelectedBtn').addEventListener('click', copySelectedShiftsToNextDay);
+
+    const copyPrevWeekBtn = document.getElementById('copyPrevWeekBtn');
+    if (copyPrevWeekBtn) {
+        copyPrevWeekBtn.addEventListener('click', copyFromPreviousWeek);
+    }
 
     const multiSelectControls = document.getElementById('multiSelectControls');
 
@@ -916,6 +975,7 @@ async function loadActualAttendanceForDate(dateStr) {
                 };
                 
                 actualAttendanceCache[dateStr][employeeId] = attendanceData;
+                rememberEmployeeTimeInPhoto(employeeId, dateStr, attendanceData.timeInPhoto);
                 
             } catch (error) {
             }
@@ -1003,12 +1063,14 @@ function updateCellsForDate(dateStr) {
                         </div>
                     `;
                 } else {
-                    // Use same photo layout for scheduled shifts: profile photo or placeholder
+                    // Scheduled shifts: last clock-in selfie or placeholder
                     const whitePlaceholderPhoto = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iMjAiIGZpbGw9IiNGRkZGRkYiIHN0cm9rZT0iI0NDQ0NDQyIgc3Ryb2tlLXdpZHRoPSIyIi8+CjxwYXRoIGQ9Ik0yMCAxMkMxNi42ODYzIDEyIDE0IDE0LjY4NjMgMTQgMThDMTQgMjEuMzEzNyAxNi42ODYzIDI0IDIwIDI0QzIzLjMxMzcgMjQgMjYgMjEuMzEzNyAyNiAxOEMyNiAxNC42ODYzIDIzLjMxMzcgMTIgMjAgMTJaIiBmaWxsPSIjRkZGRkZGIi8+CjxwYXRoIGQ9Ik0xMCAzNkMxMCAzMS41ODE3IDEzLjU4MTcgMjggMTggMjhIMjJDMjYuNDE4MyAyOCAzMCAzMS41ODE3IDMwIDM2VjM4SDEwVjM2WiIgZmlsbD0iI0ZGRkZGRiIvPgo8L3N2Zz4K';
-                    const scheduledPhotoSrc = getEmployeeProfilePhotoUrl(shift.employeeId) || whitePlaceholderPhoto;
+                    const scheduledPhotoSrc = shift.isActual
+                        ? (shift.timeInPhoto || whitePlaceholderPhoto)
+                        : (getEmployeeLastTimeInPhotoUrl(shift.employeeId) || whitePlaceholderPhoto);
                     const timeDisplay = getShiftTimeDisplayForScheduled(shift);
                     shiftBlock.innerHTML = `
-                        <img src="${scheduledPhotoSrc}" class="shift-employee-photo" alt="Scheduled Shift" />
+                        <img src="${scheduledPhotoSrc}" class="shift-employee-photo" alt="Last Time In Photo" />
                         <div class="shift-details-container">
                             <div class="shift-employee">${shift.employeeId === 'unassigned' ? 'UNASSIGNED' : (employeeNicknames[shift.employeeId] || employees[shift.employeeId]?.split(' ')[0] || employees[shift.employeeId])}</div>
                             <div class="shift-time">${timeDisplay.startTime}</div>
@@ -1192,6 +1254,155 @@ async function deleteSelectedShifts() {
     renderCurrentView();
 }
 
+function getScheduledShiftsForWeekStart(weekStartDate) {
+    const weekKey = formatDate(weekStartDate);
+    const weekData = scheduleData[weekKey] || {};
+    const weekStart = new Date(weekStartDate);
+    weekStart.setHours(0, 0, 0, 0);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+
+    const shifts = [];
+    for (const dateStr in weekData) {
+        const shiftDate = new Date(dateStr + 'T00:00:00');
+        if (shiftDate < weekStart || shiftDate > weekEnd) continue;
+        for (const shift of weekData[dateStr]) {
+            if (shift.id && shift.id.startsWith('actual_')) continue;
+            shifts.push(shift);
+        }
+    }
+    return shifts;
+}
+
+async function ensureWeekLoadedFromFirebase(weekKey) {
+    const weekData = scheduleData[weekKey];
+    if (weekData && Object.keys(weekData).length > 0) return;
+
+    const schedulesRef = collection(db, 'schedules', weekKey, 'shifts');
+    const snapshot = await getDocs(schedulesRef);
+    if (!scheduleData[weekKey]) scheduleData[weekKey] = {};
+
+    snapshot.forEach((docSnap) => {
+        const shift = { id: docSnap.id, ...docSnap.data() };
+        if (shift.id && shift.id.startsWith('actual_')) return;
+
+        const dateStr = shift.date;
+        if (!dateStr) return;
+        if (!scheduleData[weekKey][dateStr]) scheduleData[weekKey][dateStr] = [];
+
+        const existingIndex = scheduleData[weekKey][dateStr].findIndex(s => s.id === shift.id);
+        if (existingIndex !== -1) {
+            scheduleData[weekKey][dateStr][existingIndex] = shift;
+        } else {
+            scheduleData[weekKey][dateStr].push(shift);
+        }
+    });
+}
+
+function cloneShiftForDate(shift, newDateStr) {
+    const newShift = {
+        id: generateShiftId(),
+        date: newDateStr,
+        branch: shift.branch,
+        type: shift.type,
+        employeeId: shift.employeeId,
+        customStart: shift.customStart,
+        customEnd: shift.customEnd,
+        role: shift.role || 'barista',
+        createdAt: new Date().toISOString(),
+    };
+    if (shift.role === 'custom') {
+        newShift.customRole = shift.customRole || '';
+    }
+    return newShift;
+}
+
+async function removeScheduledShiftsForWeekDates(weekKey, dateStrs) {
+    const deletePromises = [];
+
+    for (const dateStr of dateStrs) {
+        const shifts = [...((scheduleData[weekKey] || {})[dateStr] || [])];
+        for (const shift of shifts) {
+            if (shift.id && shift.id.startsWith('actual_')) continue;
+
+            const arr = scheduleData[weekKey][dateStr];
+            const idx = arr.findIndex(s => s.id === shift.id);
+            if (idx !== -1) arr.splice(idx, 1);
+
+            deletePromises.push(
+                deleteDoc(doc(db, 'schedules', weekKey, 'shifts', shift.id)).catch(() => {})
+            );
+        }
+
+        if (scheduleData[weekKey] && scheduleData[weekKey][dateStr]?.length === 0) {
+            delete scheduleData[weekKey][dateStr];
+        }
+    }
+
+    if (deletePromises.length > 0) {
+        await Promise.all(deletePromises);
+        markLocalChanges();
+    }
+}
+
+async function copyFromPreviousWeek() {
+    if (READ_ONLY_MODE) return;
+
+    const prevWeekStart = new Date(currentWeekStart);
+    prevWeekStart.setDate(prevWeekStart.getDate() - 7);
+    const currentWeekKey = getWeekKey();
+    const currentWeekDateStrs = getWeekDates().map(formatDate);
+
+    const copyBtn = document.getElementById('copyPrevWeekBtn');
+    if (copyBtn) copyBtn.disabled = true;
+
+    try {
+        await ensureWeekLoadedFromFirebase(formatDate(prevWeekStart));
+
+        const shiftsToCopy = getScheduledShiftsForWeekStart(prevWeekStart);
+        if (shiftsToCopy.length === 0) {
+            alert('No scheduled shifts found in the previous week.');
+            return;
+        }
+
+        const existingScheduled = getScheduledShiftsForWeekStart(currentWeekStart);
+        let message;
+        if (existingScheduled.length > 0) {
+            message = `Replace ${existingScheduled.length} scheduled shift${existingScheduled.length > 1 ? 's' : ''} in this week with ${shiftsToCopy.length} from the previous week?`;
+        } else {
+            message = `Copy ${shiftsToCopy.length} scheduled shift${shiftsToCopy.length > 1 ? 's' : ''} from the previous week?`;
+        }
+        if (!confirm(message)) return;
+
+        if (existingScheduled.length > 0) {
+            await removeScheduledShiftsForWeekDates(currentWeekKey, currentWeekDateStrs);
+        }
+
+        for (const shift of shiftsToCopy) {
+            const prevDate = new Date(shift.date + 'T00:00:00');
+            const newDate = new Date(prevDate);
+            newDate.setDate(prevDate.getDate() + 7);
+            const newDateStr = formatDate(newDate);
+            const newWeekKey = getWeekKeyForDate(newDate);
+            const newShift = cloneShiftForDate(shift, newDateStr);
+
+            if (!scheduleData[newWeekKey]) scheduleData[newWeekKey] = {};
+            if (!scheduleData[newWeekKey][newDateStr]) scheduleData[newWeekKey][newDateStr] = [];
+            scheduleData[newWeekKey][newDateStr].push(newShift);
+        }
+
+        markLocalChanges();
+        saveToLocalStorage();
+        await syncToFirebase();
+        renderCurrentView();
+    } catch (error) {
+        console.error('copyFromPreviousWeek:', error);
+        alert('Failed to copy shifts from the previous week.');
+    } finally {
+        if (copyBtn) copyBtn.disabled = false;
+    }
+}
+
 async function copySelectedShiftsToNextDay() {
     if (selectedShifts.size === 0) return;
 
@@ -1269,354 +1480,6 @@ function changeWeek(direction) {
     loadScheduleData();
 }
 
-function isCurrentWeekEmpty() {
-    const currentWeekKey = getWeekKey();
-    if (!scheduleData[currentWeekKey]) {
-        return true;
-    }
-    
-    const weekData = scheduleData[currentWeekKey];
-    // Check if there are any dates with shifts
-    for (const dateStr in weekData) {
-        if (weekData[dateStr] && weekData[dateStr].length > 0) {
-            return false;
-        }
-    }
-    return true;
-}
-
-function updateCopyPreviousWeekButton() {
-    const copyBtn = document.getElementById('copyPreviousWeekBtn');
-    if (!copyBtn) {
-        console.log('Copy button element not found');
-        return;
-    }
-    
-    const isEmpty = isCurrentWeekEmpty();
-    console.log('🔍 DEBUG - Week is empty:', isEmpty);
-    console.log('🔍 DEBUG - Read only mode:', READ_ONLY_MODE);
-    
-    // Check if previous week has data to copy (what's actually displayed)
-    const previousWeek = new Date(currentWeekStart);
-    previousWeek.setDate(currentWeekStart.getDate() - 7);
-    const previousWeekKey = formatDate(previousWeek);
-    
-    // Get the dates for the previous week
-    const previousWeekDates = getWeekDatesForDate(previousWeek);
-    let hasPreviousData = false;
-    let totalDisplayedShifts = 0;
-    
-    // Define branches and shift categories
-    const branches = ['podium', 'smnorth', 'popup', 'workshop', 'other'];
-    const shiftCategories = ['opening', 'midshift', 'closing', 'closingHalf', 'custom'];
-    
-    // Check what's actually displayed for each day of the previous week
-    previousWeekDates.forEach(date => {
-        const dateStr = formatDate(date);
-        branches.forEach(branchKey => {
-            shiftCategories.forEach(category => {
-                const dataInfo = getDataForDate(dateStr, branchKey, category);
-                const displayedShifts = dataInfo.data;
-                totalDisplayedShifts += displayedShifts.length;
-            });
-        });
-    });
-    
-    hasPreviousData = totalDisplayedShifts > 0;
-    
-    console.log('🔍 DEBUG - Previous week has data:', hasPreviousData);
-    console.log('🔍 DEBUG - Previous week key:', previousWeekKey);
-    console.log('🔍 DEBUG - Total displayed shifts:', totalDisplayedShifts);
-    console.log('🔍 DEBUG - Schedule data keys:', Object.keys(scheduleData));
-    
-    
-    if (isEmpty && !READ_ONLY_MODE && hasPreviousData) {
-        copyBtn.style.display = 'flex';
-        console.log('✅ Showing copy button - all conditions met');
-    } else {
-        copyBtn.style.display = 'none';
-        console.log('❌ Hiding copy button - conditions not met:');
-        console.log('  - isEmpty:', isEmpty);
-        console.log('  - !READ_ONLY_MODE:', !READ_ONLY_MODE);
-        console.log('  - hasPreviousData:', hasPreviousData);
-
-
-
-    }
-}
-
-function copyPreviousWeekSchedule() {
-    const currentWeekKey = getWeekKey();
-    const previousWeek = new Date(currentWeekStart);
-    previousWeek.setDate(currentWeekStart.getDate() - 7);
-    const previousWeekKey = formatDate(previousWeek);
-
-    // Check if current week already has schedules
-    const hasCurrentSchedules = scheduleData[currentWeekKey] &&
-        Object.keys(scheduleData[currentWeekKey]).length > 0;
-
-    if (hasCurrentSchedules) {
-        if (!confirm('Current week already has shifts. Copy previous week anyway? This will add to existing shifts.')) {
-            return;
-        }
-    }
-
-    // Check if previous week has data
-    if (!scheduleData[previousWeekKey] || Object.keys(scheduleData[previousWeekKey]).length === 0) {
-        alert('No schedule found for previous week to copy.');
-        return;
-    }
-
-    if (!confirm('Copy all shifts from previous week to current week?')) {
-        return;
-    }
-
-    // Initialize current week data
-    if (!scheduleData[currentWeekKey]) scheduleData[currentWeekKey] = {};
-
-    // DEBUG: Print what's actually displayed on the previous week
-    console.log('🔍 DEBUG COPY FUNCTION START');
-    console.log('Previous week key:', previousWeekKey);
-    console.log('Current week key:', currentWeekKey);
-    
-    const currentWeekDates = getWeekDates();
-    const previousWeekDates = getWeekDatesForDate(previousWeek);
-    const branches = ['podium', 'smnorth', 'popup', 'workshop', 'other'];
-    const shiftCategories = ['opening', 'midshift', 'closing', 'closingHalf', 'custom'];
-    
-    console.log('Previous week dates:', previousWeekDates.map(d => formatDate(d)));
-    console.log('Current week dates:', currentWeekDates.map(d => formatDate(d)));
-    
-    // Loop through all 7 days of the previous week
-    previousWeekDates.forEach((prevDate, dayIndex) => {
-        const prevDateStr = formatDate(prevDate);
-        const currentDate = currentWeekDates[dayIndex];
-        const currentDateStr = formatDate(currentDate);
-        
-        console.log(`\n📅 Processing day ${dayIndex}: ${prevDateStr} -> ${currentDateStr}`);
-
-        // Check both scheduled data and attendance data for this day
-        console.log(`  🔍 Checking scheduled data for ${prevDateStr}:`, scheduleData[previousWeekKey][prevDateStr] || 'No scheduled data');
-        console.log(`  🔍 Checking attendance data for ${prevDateStr}:`, actualAttendanceCache[prevDateStr] || 'No attendance data');
-        
-        // Get what's actually displayed for each branch and category on this day of the previous week
-        branches.forEach(branchKey => {
-            shiftCategories.forEach(category => {
-                const dataInfo = getDataForDate(prevDateStr, branchKey, category);
-                const displayedShifts = dataInfo.data;
-                
-                if (displayedShifts.length > 0) {
-                    console.log(`  📍 ${branchKey} ${category}: ${displayedShifts.length} shifts`);
-                    displayedShifts.forEach((shift, shiftIndex) => {
-                        console.log(`    Shift ${shiftIndex + 1}:`, {
-                            id: shift.id,
-                            employeeId: shift.employeeId,
-                            type: shift.type,
-                            branch: shift.branch,
-                            isActual: shift.isActual,
-                            customStart: shift.customStart,
-                            customEnd: shift.customEnd,
-                            timeIn: shift.timeIn,
-                            timeOut: shift.timeOut
-                        });
-                        
-                        // Show what would be created
-                        let newShift;
-                        if (shift.isActual) {
-                            newShift = {
-                                id: 'GENERATED_ID',
-                                date: currentDateStr,
-                                branch: shift.branch,
-                                type: shift.type,
-                                employeeId: shift.employeeId,
-                                isActual: false,
-                                customStart: shift.customStart,
-                                customEnd: shift.customEnd
-                            };
-                        } else {
-                            newShift = {
-                                id: 'GENERATED_ID',
-                                date: currentDateStr,
-                                branch: shift.branch,
-                                type: shift.type,
-                                employeeId: shift.employeeId,
-                                isActual: false,
-                                customStart: shift.customStart,
-                                customEnd: shift.customEnd
-                            };
-                        }
-                        console.log(`    Would create:`, newShift);
-                    });
-                } else {
-                    // Also check if there's scheduled data for this branch/category that should be copied
-                    const scheduledShifts = scheduleData[previousWeekKey][prevDateStr] || [];
-                    const matchingScheduledShifts = scheduledShifts.filter(shift => 
-                        shift.branch === branchKey && shift.type === category && !shift.isActual
-                    );
-                    
-                    if (matchingScheduledShifts.length > 0) {
-                        console.log(`  📅 Found ${matchingScheduledShifts.length} scheduled shifts for ${branchKey} ${category} that weren't worked`);
-                        matchingScheduledShifts.forEach((shift, shiftIndex) => {
-                            console.log(`    Scheduled shift ${shiftIndex + 1}:`, {
-                                id: shift.id,
-                                employeeId: shift.employeeId,
-                                type: shift.type,
-                                branch: shift.branch,
-                                isActual: shift.isActual,
-                                customStart: shift.customStart,
-                                customEnd: shift.customEnd
-                            });
-                            
-                            const newShift = {
-                                id: 'GENERATED_ID',
-                                date: currentDateStr,
-                                branch: shift.branch,
-                                type: shift.type,
-                                employeeId: shift.employeeId,
-                                isActual: false,
-                                customStart: shift.customStart,
-                                customEnd: shift.customEnd
-                            };
-                            console.log(`    Would create:`, newShift);
-                        });
-                    }
-                }
-            });
-        });
-    });
-
-    // Now actually perform the copying
-    console.log('🔄 Starting actual copy process...');
-    
-    let copiedShifts = 0;
-    
-    // Iterate through all 7 days of the previous week
-    previousWeekDates.forEach((prevDate, dayIndex) => {
-        const prevDateStr = formatDate(prevDate);
-        const currentDate = currentWeekDates[dayIndex];
-        const currentDateStr = formatDate(currentDate);
-        
-        console.log(`\n📅 Copying day ${dayIndex}: ${prevDateStr} -> ${currentDateStr}`);
-
-        // Get what's actually displayed for each branch and category on this day of the previous week
-        branches.forEach(branchKey => {
-            shiftCategories.forEach(category => {
-                const dataInfo = getDataForDate(prevDateStr, branchKey, category);
-                const displayedShifts = dataInfo.data;
-                
-                if (displayedShifts.length > 0) {
-                    console.log(`  📍 ${branchKey} ${category}: copying ${displayedShifts.length} shifts`);
-                    displayedShifts.forEach((shift) => {
-                        // Create new shift for current week
-                        let newShift;
-                        if (shift.isActual) {
-                            // Convert attendance data to scheduled shift using PROPER SHIFT TIMES
-                            const shiftType = SHIFT_TYPES[shift.type];
-                            newShift = {
-                                id: generateShiftId(),
-                                date: currentDateStr,
-                                branch: shift.branch,
-                                type: shift.type,
-                                employeeId: shift.employeeId,
-                                isActual: false,
-                                customStart: shiftType ? shiftType.start : null,
-                                customEnd: shiftType ? shiftType.end : null
-                            };
-                        } else {
-                            // Copy scheduled shift as-is
-                            newShift = {
-                                id: generateShiftId(),
-                                date: currentDateStr,
-                                branch: shift.branch,
-                                type: shift.type,
-                                employeeId: shift.employeeId,
-                                isActual: false,
-                                customStart: shift.customStart,
-                                customEnd: shift.customEnd
-                            };
-                        }
-                        
-                        // Add to schedule data
-                        if (!scheduleData[currentWeekKey]) {
-                            scheduleData[currentWeekKey] = {};
-                        }
-                        if (!scheduleData[currentWeekKey][currentDateStr]) {
-                            scheduleData[currentWeekKey][currentDateStr] = [];
-                        }
-                        scheduleData[currentWeekKey][currentDateStr].push(newShift);
-                        copiedShifts++;
-                    });
-                } else {
-                    // Also check if there's scheduled data for this branch/category that should be copied
-                    const scheduledShifts = scheduleData[previousWeekKey]?.[prevDateStr] || [];
-                    const matchingScheduledShifts = scheduledShifts.filter(shift => 
-                        shift.branch === branchKey && shift.type === category && !shift.isActual
-                    );
-                    
-                    if (matchingScheduledShifts.length > 0) {
-                        console.log(`  📅 Copying ${matchingScheduledShifts.length} scheduled shifts for ${branchKey} ${category}`);
-                        matchingScheduledShifts.forEach((shift) => {
-                            const newShift = {
-                                id: generateShiftId(),
-                                date: currentDateStr,
-                                branch: shift.branch,
-                                type: shift.type,
-                                employeeId: shift.employeeId,
-                                isActual: false,
-                                customStart: shift.customStart,
-                                customEnd: shift.customEnd
-                            };
-                            
-                            // Add to schedule data
-                            if (!scheduleData[currentWeekKey]) {
-                                scheduleData[currentWeekKey] = {};
-                            }
-                            if (!scheduleData[currentWeekKey][currentDateStr]) {
-                                scheduleData[currentWeekKey][currentDateStr] = [];
-                            }
-                            scheduleData[currentWeekKey][currentDateStr].push(newShift);
-                            copiedShifts++;
-                        });
-                    }
-                }
-            });
-        });
-    });
-    
-    console.log(`✅ Copy complete! Copied ${copiedShifts} shifts total.`);
-    console.log('🔍 DEBUG - Current week data after copy:', scheduleData[currentWeekKey]);
-    
-    // Mark that we have local changes that need to be saved
-    localChanges = true;
-    
-    // Save to localStorage immediately as backup
-    localStorage.setItem('scheduleData', JSON.stringify(scheduleData));
-    console.log('💾 Saved to localStorage as backup');
-    
-    // Save to Firebase and refresh the view
-    syncToFirebase().then(() => {
-        console.log('🔥 Firebase sync complete');
-        renderCurrentView();
-    }).catch((error) => {
-        console.error('❌ Firebase sync failed:', error);
-        // Even if Firebase fails, refresh the view with local data
-        renderCurrentView();
-    });
-    
-    alert(`Successfully copied ${copiedShifts} shifts from previous week!`);
-}
-
-function getWeekDatesForDate(weekStart) {
-    const dates = [];
-    for (let i = 0; i < 7; i++) {
-        const date = new Date(weekStart);
-        date.setDate(weekStart.getDate() + i);
-        date.setHours(0, 0, 0, 0);
-        dates.push(date);
-    }
-    return dates;
-}
-
 function updateWeekTitle() {
     const weekEnd = new Date(currentWeekStart);
     weekEnd.setDate(currentWeekStart.getDate() + 6);
@@ -1675,9 +1538,6 @@ function renderCurrentView() {
     
     // Also update mobile view if it exists
     renderMobileView();
-    
-    // Show/hide copy previous week button based on whether current week is empty
-    updateCopyPreviousWeekButton();
 }
 
 // Employee dropdown population (excludes archived and inactive employees)
@@ -1840,9 +1700,9 @@ async function loadAllEmployees() {
             if (data.active === false) inactiveEmployeeIds.add(docSnap.id);
         });
 
-        // Re-populate dropdowns after loading employees
         populateEmployeeDropdowns();
         renderCurrentView();
+        refreshEmployeeLastTimeInPhotosInBackground();
         return employees;
     } catch (error) {
 
@@ -2213,14 +2073,16 @@ async function renderShiftView() {
                                 </div>
                             `;
                         } else {
-                            // Use same photo layout for scheduled shifts: profile photo or placeholder
+                            // Scheduled shifts: last clock-in selfie or placeholder
                             const whitePlaceholderPhoto = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iMjAiIGZpbGw9IiNGRkZGRkYiIHN0cm9rZT0iI0NDQ0NDQyIgc3Ryb2tlLXdpZHRoPSIyIi8+CjxwYXRoIGQ9Ik0yMCAxMkMxNi42ODYzIDEyIDE0IDE0LjY4NjMgMTQgMThDMTQgMjEuMzEzNyAxNi42ODYzIDI0IDIwIDI0QzIzLjMxMzcgMjQgMjYgMjEuMzEzNyAyNiAxOEMyNiAxNC42ODYzIDIzLjMxMzcgMTIgMjAgMTJaIiBmaWxsPSIjRkZGRkZGIi8+CjxwYXRoIGQ9Ik0xMCAzNkMxMCAzMS41ODE3IDEzLjU4MTcgMjggMTggMjhIMjJDMjYuNDE4MyAyOCAzMCAzMS41ODE3IDMwIDM2VjM4SDEwVjM2WiIgZmlsbD0iI0ZGRkZGRiIvPgo8L3N2Zz4K';
-                            const scheduledPhotoSrc = getEmployeeProfilePhotoUrl(shift.employeeId) || whitePlaceholderPhoto;
+                            const scheduledPhotoSrc = shift.isActual
+                                ? (shift.timeInPhoto || whitePlaceholderPhoto)
+                                : (getEmployeeLastTimeInPhotoUrl(shift.employeeId) || whitePlaceholderPhoto);
                             const timeDisplay = getShiftTimeDisplayForScheduled(shift);
                             const roleLabel = getShiftRoleDisplay(shift);
                             shiftContent = `
                                 <div class="shift-photo-wrap">
-                                    <img src="${scheduledPhotoSrc}" class="shift-employee-photo" alt="Scheduled Shift" />
+                                    <img src="${scheduledPhotoSrc}" class="shift-employee-photo" alt="Last Time In Photo" />
                                     <span class="shift-role-tag">${roleLabel}</span>
                                 </div>
                                 <div class="shift-details-container">
@@ -2830,14 +2692,16 @@ function renderEmployeeView() {
                             </div>
                         `;
                     } else {
-                        // Use same photo layout for scheduled shifts: profile photo or placeholder
+                        // Scheduled shifts: last clock-in selfie or placeholder
                         const whitePlaceholderPhoto = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iMjAiIGZpbGw9IiNGRkZGRkYiIHN0cm9rZT0iI0NDQ0NDQyIgc3Ryb2tlLXdpZHRoPSIyIi8+CjxwYXRoIGQ9Ik0yMCAxMkMxNi42ODYzIDEyIDE0IDE0LjY4NjMgMTQgMThDMTQgMjEuMzEzNyAxNi42ODYzIDI0IDIwIDI0QzIzLjMxMzcgMjQgMjYgMjEuMzEzNyAyNiAxOEMyNiAxNC42ODYzIDIzLjMxMzcgMTIgMjAgMTJaIiBmaWxsPSIjRkZGRkZGIi8+CjxwYXRoIGQ9Ik0xMCAzNkMxMCAzMS41ODE3IDEzLjU4MTcgMjggMTggMjhIMjJDMjYuNDE4MyAyOCAzMCAzMS41ODE3IDMwIDM2VjM4SDEwVjM2WiIgZmlsbD0iI0ZGRkZGRiIvPgo8L3N2Zz4K';
-                        const scheduledPhotoSrc = getEmployeeProfilePhotoUrl(shift.employeeId) || whitePlaceholderPhoto;
+                        const scheduledPhotoSrc = shift.isActual
+                            ? (shift.timeInPhoto || whitePlaceholderPhoto)
+                            : (getEmployeeLastTimeInPhotoUrl(shift.employeeId) || whitePlaceholderPhoto);
                         const timeDisplay = getShiftTimeDisplayForScheduled(shift);
                         const roleLabel = getShiftRoleDisplay(shift);
                         shiftContent = `
                             <div class="shift-photo-wrap">
-                                <img src="${scheduledPhotoSrc}" class="shift-employee-photo" alt="Scheduled Shift" />
+                                <img src="${scheduledPhotoSrc}" class="shift-employee-photo" alt="Last Time In Photo" />
                                 <span class="shift-role-tag">${roleLabel}</span>
                             </div>
                             <div class="shift-details-container">
@@ -4465,10 +4329,25 @@ async function loadScheduleData() {
     try {
         await syncFromFirebase();
         renderCurrentView(); // Re-render with updated data
+        refreshEmployeeLastTimeInPhotosInBackground(getEmployeeIdsInLoadedSchedule());
     } catch (error) {
 
         updateSyncStatus('local');
     }
+}
+
+function getEmployeeIdsInLoadedSchedule() {
+    const ids = new Set();
+    Object.values(scheduleData).forEach((week) => {
+        Object.values(week).forEach((shifts) => {
+            shifts.forEach((shift) => {
+                if (shift.employeeId && shift.employeeId !== 'unassigned') {
+                    ids.add(shift.employeeId);
+                }
+            });
+        });
+    });
+    return [...ids];
 }
 
 async function syncFromFirebase() {
@@ -5244,12 +5123,14 @@ function buildMobileShiftCard(shift, dateStr) {
                 <div class="shift-time ${timeInClass}">${timeOneLine}</div>
             </div>`;
     } else {
-        const photoSrc = getEmployeeProfilePhotoUrl(shift.employeeId) || MOBILE_SCHED_PLACEHOLDER;
+        const photoSrc = shift.isActual
+            ? (shift.timeInPhoto || MOBILE_ACTUAL_PLACEHOLDER)
+            : (getEmployeeLastTimeInPhotoUrl(shift.employeeId) || MOBILE_SCHED_PLACEHOLDER);
         const timeDisplay = getShiftTimeDisplayForScheduled(shift);
         const timeOneLine = `${timeDisplay.startTime} – ${timeDisplay.endTime}`;
         shiftContent = `
             <div class="shift-photo-wrap">
-                <img src="${photoSrc}" class="shift-employee-photo" alt="Scheduled Shift" />
+                <img src="${photoSrc}" class="shift-employee-photo" alt="Last Time In Photo" />
             </div>
             <div class="shift-details-container">
                 <div class="shift-employee">${empName}</div>

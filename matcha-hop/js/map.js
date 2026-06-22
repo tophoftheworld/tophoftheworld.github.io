@@ -8,10 +8,47 @@ let map = null;
 let placesService = null;
 let myCafeMarkers = [];
 let curatedOverlays = [];
+let popUpMarkers = [];
+let eventOverlays = [];
 let selectedCafeId = null;
+let selectedEventId = null;
+let mapBackgroundClickHandler = null;
+let overlayClickSuppressUntil = 0;
 
-export const DEFAULT_CENTER = { lat: 14.5995, lng: 120.9842 };
-export const DEFAULT_ZOOM = 13;
+function markOverlayClick() {
+  overlayClickSuppressUntil = Date.now() + 80;
+}
+
+function bindOverlayClickHandler(el, onClick) {
+  if (!el || typeof onClick !== 'function') return;
+  el.addEventListener('click', (e) => {
+    if (e?.stopPropagation) e.stopPropagation();
+    markOverlayClick();
+    onClick();
+  });
+}
+
+export function shouldSkipMapBackgroundClick() {
+  return Date.now() < overlayClickSuppressUntil;
+}
+
+function ensureMapBackgroundClickListener() {
+  if (!map || map._matchaHopBackgroundClickBound) return;
+  map._matchaHopBackgroundClickBound = true;
+  map.addListener('click', () => {
+    if (Date.now() < overlayClickSuppressUntil) return;
+    if (mapBackgroundClickHandler) mapBackgroundClickHandler();
+  });
+}
+
+export function setMapBackgroundClickHandler(fn) {
+  mapBackgroundClickHandler = typeof fn === 'function' ? fn : null;
+  ensureMapBackgroundClickListener();
+}
+
+/** Metro Manila default when geolocation and saved viewport are unavailable (v2 aligns via bootstrap). */
+export const DEFAULT_CENTER = { lat: 14.5876, lng: 121.0609 };
+export const DEFAULT_ZOOM = 15;
 
 const BASE_STYLES = [
   { featureType: 'transit', stylers: [{ visibility: 'off' }] },
@@ -61,10 +98,15 @@ export function initMap(containerId, options = {}) {
   const el = document.getElementById(containerId);
   if (!el || typeof google === 'undefined' || !google.maps) return null;
 
-  const initialZoom = DEFAULT_ZOOM;
+  const ic = options.initialCenter;
+  const hasIc = ic && typeof ic.lat === 'number' && typeof ic.lng === 'number';
+  const center = hasIc ? { lat: ic.lat, lng: ic.lng } : DEFAULT_CENTER;
+  const initialZoom = typeof options.initialZoom === 'number' && Number.isFinite(options.initialZoom)
+    ? options.initialZoom
+    : DEFAULT_ZOOM;
   const forAdmin = options.forAdmin === true;
   map = new google.maps.Map(el, {
-    center: DEFAULT_CENTER,
+    center,
     zoom: initialZoom,
     styles: getMapStylesForZoom(initialZoom),
     disableDefaultUI: !forAdmin,
@@ -86,6 +128,8 @@ export function initMap(containerId, options = {}) {
     placesService = new google.maps.places.PlacesService(map);
   }
   myCafeMarkers = [];
+
+  ensureMapBackgroundClickListener();
 
   return map;
 }
@@ -143,84 +187,109 @@ function rectsOverlap(a, b, padding = OVERLAP_PADDING_PX) {
   return !(a.right < b.left - padding || a.left > b.right + padding || a.bottom < b.top - padding || a.top > b.bottom + padding);
 }
 
-/** Pill-shaped name tag overlay. Icon precedence: liked+tried heart, liked-only star, tried-only check; selected inverts icon to white. */
-class NameTagOverlay extends google.maps.OverlayView {
-  constructor(position, label, onClick, options = {}) {
-    super();
-    this.position = position;
-    this.label = label;
-    this.onClick = onClick;
-    this.cafe = options.cafe ?? null;
-    this.starred = options.starred === true;
-    this.alwaysDot = options.alwaysDot === true;
-    this.tried = options.tried === true || options.logged === true;
-    this.liked = options.liked === true;
-    this.div = null;
-    this.showAsDot = this.starred ? false : true;
-  }
-  setShowAsDot(show) {
-    if (this.starred) show = false;
-    if (this.alwaysDot) show = true;
-    if (this.showAsDot === show) return;
-    this.showAsDot = show;
-    this.updateDisplay();
-  }
-  updateDisplay() {
-    if (!this.div) return;
-    const classes = ['matcha-hop-name-tag'];
-    if (this.showAsDot) classes.push('matcha-hop-dot');
-    if (this.tried) classes.push('tried');
-    if (this.liked) classes.push('liked');
-    if (this.cafe && selectedCafeId === this.cafe.id) classes.push('selected');
-    this.div.className = classes.join(' ');
-    this.div.innerHTML = '';
-    const iconEl = document.createElement('span');
-    if (this.liked && this.tried) {
-      iconEl.className = 'matcha-hop-state-icon matcha-hop-heart';
-      iconEl.innerHTML = MARKER_ICON_SVG.heart;
-    } else if (this.liked && !this.tried) {
-      iconEl.className = 'matcha-hop-state-icon matcha-hop-star';
-      iconEl.innerHTML = MARKER_ICON_SVG.star;
-    } else if (!this.liked && this.tried) {
-      iconEl.className = 'matcha-hop-state-icon matcha-hop-check';
-      iconEl.innerHTML = MARKER_ICON_SVG.check;
+/**
+ * Pill-shaped name tag overlay. Extends google.maps.OverlayView — must be defined lazily so
+ * importing this module before the Maps script loads does not throw (google is undefined).
+ */
+let NameTagOverlayClass = null;
+
+function getNameTagOverlayClass() {
+  if (NameTagOverlayClass) return NameTagOverlayClass;
+  if (typeof google === 'undefined' || !google.maps?.OverlayView) return null;
+  NameTagOverlayClass = class NameTagOverlay extends google.maps.OverlayView {
+    constructor(position, label, onClick, options = {}) {
+      super();
+      this.position = position;
+      this.label = label;
+      this.onClick = onClick;
+      this.cafe = options.cafe ?? null;
+      this.starred = options.starred === true;
+      this.alwaysDot = options.alwaysDot === true;
+      this.tried = options.tried === true || options.logged === true;
+      this.liked = options.liked === true;
+      this.logoUrl = options.logoUrl || options.cafe?.logoUrl || null;
+      this.div = null;
+      this.showAsDot = this.starred ? false : true;
     }
-    if (iconEl.className) {
-      iconEl.setAttribute('aria-hidden', 'true');
-      this.div.appendChild(iconEl);
+    setShowAsDot(show) {
+      if (this.starred) show = false;
+      if (this.alwaysDot) show = true;
+      if (this.showAsDot === show) return;
+      this.showAsDot = show;
+      this.updateDisplay();
     }
-    if (!this.showAsDot) {
-      const labelEl = document.createElement('span');
-      labelEl.className = 'matcha-hop-label';
-      labelEl.textContent = this.label;
-      this.div.appendChild(labelEl);
+    updateDisplay() {
+      if (!this.div) return;
+      const classes = ['matcha-hop-name-tag'];
+      if (this.showAsDot) classes.push('matcha-hop-dot');
+      if (this.tried) classes.push('tried');
+      if (this.liked) classes.push('liked');
+      if (this.cafe && selectedCafeId === this.cafe.id) classes.push('selected');
+      this.div.className = classes.join(' ');
+      this.div.innerHTML = '';
+      const logoUrl = (this.cafe && this.cafe.logoUrl) || this.logoUrl || null;
+      if (!this.showAsDot && logoUrl) {
+        const thumbEl = document.createElement('img');
+        thumbEl.className = 'matcha-hop-thumb';
+        thumbEl.src = logoUrl;
+        thumbEl.alt = '';
+        thumbEl.setAttribute('aria-hidden', 'true');
+        thumbEl.referrerPolicy = 'no-referrer';
+        this.div.appendChild(thumbEl);
+      }
+      if (!this.showAsDot) {
+        const labelEl = document.createElement('span');
+        labelEl.className = 'matcha-hop-label';
+        labelEl.textContent = this.label;
+        this.div.appendChild(labelEl);
+      }
+      let iconEl = null;
+      if (this.liked && this.tried) {
+        iconEl = document.createElement('span');
+        iconEl.className = 'matcha-hop-state-icon matcha-hop-heart';
+        iconEl.innerHTML = MARKER_ICON_SVG.heart;
+      } else if (this.liked && !this.tried) {
+        iconEl = document.createElement('span');
+        iconEl.className = 'matcha-hop-state-icon matcha-hop-star';
+        iconEl.innerHTML = MARKER_ICON_SVG.star;
+      } else if (!this.liked && this.tried) {
+        iconEl = document.createElement('span');
+        iconEl.className = 'matcha-hop-state-icon matcha-hop-check';
+        iconEl.innerHTML = MARKER_ICON_SVG.check;
+      }
+      if (iconEl) {
+        iconEl.setAttribute('aria-hidden', 'true');
+        this.div.appendChild(iconEl);
+      }
+      applyCuratedOverlayZIndex();
     }
-  }
-  onAdd() {
-    this.div = document.createElement('div');
-    this.div.style.position = 'absolute';
-    this.div.style.cursor = 'pointer';
-    if (this.onClick) this.div.addEventListener('click', () => this.onClick());
-    this.updateDisplay();
-    const panes = this.getPanes();
-    if (panes) panes.floatPane.appendChild(this.div);
-  }
-  draw() {
-    if (!this.div || !this.position) return;
-    const projection = this.getProjection();
-    if (!projection) return;
-    const point = projection.fromLatLngToDivPixel(
-      this.position instanceof google.maps.LatLng ? this.position : new google.maps.LatLng(this.position.lat, this.position.lng)
-    );
-    if (!point) return;
-    this.div.style.left = point.x + 'px';
-    this.div.style.top = point.y + 'px';
-    this.div.style.transform = this.showAsDot ? 'translate(-50%, -50%)' : 'translate(-50%, -100%)';
-  }
-  onRemove() {
-    if (this.div && this.div.parentNode) this.div.parentNode.removeChild(this.div);
-    this.div = null;
-  }
+    onAdd() {
+      this.div = document.createElement('div');
+      this.div.style.position = 'absolute';
+      this.div.style.cursor = 'pointer';
+      bindOverlayClickHandler(this.div, this.onClick);
+      this.updateDisplay();
+      const panes = this.getPanes();
+      if (panes) panes.floatPane.appendChild(this.div);
+    }
+    draw() {
+      if (!this.div || !this.position) return;
+      const projection = this.getProjection();
+      if (!projection) return;
+      const point = projection.fromLatLngToDivPixel(
+        this.position instanceof google.maps.LatLng ? this.position : new google.maps.LatLng(this.position.lat, this.position.lng)
+      );
+      if (!point) return;
+      this.div.style.left = point.x + 'px';
+      this.div.style.top = point.y + 'px';
+      this.div.style.transform = this.showAsDot ? 'translate(-50%, -50%)' : 'translate(-50%, -100%)';
+    }
+    onRemove() {
+      if (this.div && this.div.parentNode) this.div.parentNode.removeChild(this.div);
+      this.div = null;
+    }
+  };
+  return NameTagOverlayClass;
 }
 
 export function clearCuratedPins() {
@@ -228,22 +297,44 @@ export function clearCuratedPins() {
   curatedOverlays = [];
 }
 
+function overlayZIndexFor(o) {
+  if (!o?.div) return 100;
+  const cafe = o.cafe || {};
+  let z = 100;
+  if (cafe.brandId || cafe.logoUrl || o.logoUrl) z = 200;
+  if (o.tried) z = 250;
+  if (o.liked) z = 300;
+  if (cafe.id && selectedCafeId === cafe.id) z = 450;
+  return z;
+}
+
+function applyCuratedOverlayZIndex() {
+  curatedOverlays.forEach((o) => {
+    if (!o.div) return;
+    o.div.style.zIndex = String(overlayZIndexFor(o));
+  });
+}
+
 export function setSelectedCafeId(id) {
   selectedCafeId = id ?? null;
   curatedOverlays.forEach((o) => o.updateDisplay && o.updateDisplay());
+  applyCuratedOverlayZIndex();
 }
 
 export function addCuratedPins(cafes, onClick) {
   clearCuratedPins();
   if (!map) return;
+  const OverlayCtor = getNameTagOverlayClass();
+  if (!OverlayCtor) return;
   (cafes || []).forEach((cafe) => {
     const position = new google.maps.LatLng(cafe.lat, cafe.lng);
-    const overlay = new NameTagOverlay(position, cafe.name || 'Cafe', () => onClick && onClick(cafe), {
+    const overlay = new OverlayCtor(position, cafe.name || 'Cafe', () => onClick && onClick(cafe), {
       cafe,
       starred: cafe.starred === true,
       alwaysDot: cafe.classification === 'cafe_specialty_matcha',
       tried: cafe.tried === true || cafe.logged === true,
       liked: cafe.liked === true,
+      logoUrl: cafe.logoUrl || null,
     });
     overlay.setMap(map);
     curatedOverlays.push(overlay);
@@ -287,6 +378,143 @@ function runOverlapDetection() {
     }
   }
   curatedOverlays.forEach((o) => o.draw());
+  applyCuratedOverlayZIndex();
+}
+
+/** Pop-up marker icon: transparent fill, thin green ring, small inner dot. */
+function getPopUpRingIcon(color = '#239c02') {
+  if (typeof google === 'undefined' || !google.maps) return null;
+  return {
+    path: google.maps.SymbolPath.CIRCLE,
+    fillColor: color,
+    fillOpacity: 0.08,
+    strokeColor: color,
+    strokeOpacity: 0.95,
+    strokeWeight: 1.5,
+    scale: 11,
+  };
+}
+
+export function clearPopUpPins() {
+  popUpMarkers.forEach((m) => removeMarker(m));
+  popUpMarkers = [];
+}
+
+/** Render thin-green-outline markers for active/upcoming pop-ups. `popUps` items must include lat/lng. */
+export function addPopUpPins(popUps, onClick) {
+  clearPopUpPins();
+  if (!map || typeof google === 'undefined' || !google.maps) return;
+  const icon = getPopUpRingIcon();
+  if (!icon) return;
+  (popUps || []).forEach((pop) => {
+    const lat = Number(pop?.lat);
+    const lng = Number(pop?.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    const marker = new google.maps.Marker({
+      position: { lat, lng },
+      map,
+      icon,
+      title: pop?.name || pop?.address || 'Pop-up',
+      zIndex: 220,
+    });
+    marker.addListener('click', () => onClick && onClick(pop));
+    popUpMarkers.push(marker);
+  });
+}
+
+let EventTagOverlayClass = null;
+
+function getEventTagOverlayClass() {
+  if (EventTagOverlayClass) return EventTagOverlayClass;
+  if (typeof google === 'undefined' || !google.maps?.OverlayView) return null;
+  EventTagOverlayClass = class EventTagOverlay extends google.maps.OverlayView {
+    constructor(position, dateLabel, nameLabel, onClick, options = {}) {
+      super();
+      this.position = position;
+      this.dateLabel = dateLabel || '';
+      this.nameLabel = nameLabel || 'Event';
+      this.onClick = onClick;
+      this.eventId = options.eventId ?? null;
+      this.div = null;
+    }
+    updateDisplay() {
+      if (!this.div) return;
+      const classes = ['matcha-hop-event-tag'];
+      if (this.eventId && selectedEventId === this.eventId) classes.push('selected');
+      this.div.className = classes.join(' ');
+      this.div.innerHTML = '';
+      if (this.dateLabel) {
+        const dateEl = document.createElement('span');
+        dateEl.className = 'matcha-hop-event-date';
+        dateEl.textContent = this.dateLabel;
+        this.div.appendChild(dateEl);
+      }
+      const nameEl = document.createElement('span');
+      nameEl.className = 'matcha-hop-event-name';
+      nameEl.textContent = this.nameLabel;
+      this.div.appendChild(nameEl);
+    }
+    onAdd() {
+      this.div = document.createElement('div');
+      this.div.style.position = 'absolute';
+      this.div.style.cursor = 'pointer';
+      this.div.style.zIndex = '320';
+      bindOverlayClickHandler(this.div, this.onClick);
+      this.updateDisplay();
+      const panes = this.getPanes();
+      if (panes) panes.floatPane.appendChild(this.div);
+    }
+    draw() {
+      if (!this.div || !this.position) return;
+      const projection = this.getProjection();
+      if (!projection) return;
+      const point = projection.fromLatLngToDivPixel(
+        this.position instanceof google.maps.LatLng ? this.position : new google.maps.LatLng(this.position.lat, this.position.lng)
+      );
+      if (!point) return;
+      this.div.style.left = point.x + 'px';
+      this.div.style.top = point.y + 'px';
+      this.div.style.transform = 'translate(-50%, -100%)';
+    }
+    onRemove() {
+      if (this.div && this.div.parentNode) this.div.parentNode.removeChild(this.div);
+      this.div = null;
+    }
+  };
+  return EventTagOverlayClass;
+}
+
+export function clearEventPins() {
+  eventOverlays.forEach((o) => o.setMap(null));
+  eventOverlays = [];
+}
+
+export function setSelectedEventId(id) {
+  selectedEventId = id ?? null;
+  eventOverlays.forEach((o) => o.updateDisplay && o.updateDisplay());
+}
+
+/** White pill tags for active/upcoming events — date + name on the tag. */
+export function addEventPins(events, onClick) {
+  clearEventPins();
+  if (!map) return;
+  const OverlayCtor = getEventTagOverlayClass();
+  if (!OverlayCtor) return;
+  (events || []).forEach((ev) => {
+    const lat = Number(ev?.lat);
+    const lng = Number(ev?.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    const position = new google.maps.LatLng(lat, lng);
+    const overlay = new OverlayCtor(
+      position,
+      ev.dateLabel || ev.dateTag || '',
+      ev.title || ev.name || ev.location || 'Event',
+      () => onClick && onClick(ev),
+      { eventId: ev?.id || null },
+    );
+    overlay.setMap(map);
+    eventOverlays.push(overlay);
+  });
 }
 
 export function addMyCafePin(cafe, onClick) {

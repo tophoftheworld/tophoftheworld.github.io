@@ -1,0 +1,40 @@
+{
+  "categories": [
+    { "id": "matcha", "name": "MATCHA" },
+    { "id": "hojicha", "name": "HOJICHA" }
+  ],
+  "items": [
+    {
+      "categoryId": "matcha",
+      "name": "Matchanese Tea",
+      "description": "Freshly Whisked Pure Matcha",
+      "price": 0,
+      "type": "",
+      "shorthand": "MT"
+    },
+    {
+      "categoryId": "matcha",
+      "name": "Signature Matchanese Latte",
+      "description": "Matcha Cold Whisked with Milk",
+      "price": 0,
+      "type": "",
+      "shorthand": "SML"
+    },
+    {
+      "categoryId": "matcha",
+      "name": "Strawberry Matchanese Latte",
+      "description": "Our Signature Matcha Latte with Strawberry Puree",
+      "price": 0,
+      "type": "",
+      "shorthand": "STML"
+    },
+    {
+      "categoryId": "hojicha",
+      "name": "Hojicha Latte",
+      "description": "Hōjicha Cold Whisked with Milk",
+      "price": 0,
+      "type": "",
+      "shorthand": "HL"
+    }
+  ]
+}

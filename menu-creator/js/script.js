@@ -24,7 +24,11 @@ import {
 
     const CM_TO_PX = 37.7952755906; // 1 cm ≈ 37.8 px at 96 dpi
     const STORAGE_KEY = 'menu-creator-state';
+    const CATEGORY_STORAGE_KEY = 'menu-creator-categories';
+    const DRINK_DEDUP_RESOLVED_KEY = 'menu-creator-drink-dedup-resolved-v1';
+    const VIEW_ROTATION_SESSION_KEY = 'menu-creator-preview-rotation-deg';
     const MENU_PAYLOAD_VERSION = 2;
+    const VIEWER_MODE = new URLSearchParams(window.location.search).get('mode') === 'viewer';
 
     function getDefaultState() {
         return {
@@ -70,9 +74,19 @@ import {
 
     function hasActiveLiveOrder(liveData) {
         if (!liveData || typeof liveData !== 'object') return false;
-        const items = Array.isArray(liveData.items) ? liveData.items : [];
+        const items = Array.isArray(liveData.items)
+            ? liveData.items
+            : (liveData.items && typeof liveData.items === 'object' ? Object.values(liveData.items) : []);
         const status = (liveData.status || '').toString().toLowerCase();
-        return items.length > 0 && status !== 'idle';
+        const total = Number(liveData.total);
+        const hasItems = items.length > 0;
+        const hasPositiveTotal = Number.isFinite(total) && total > 0;
+        const activeStatuses = new Set(['editing', 'reviewing', 'payment', 'checkout', 'pending', 'serving', 'open']);
+        if (activeStatuses.has(status)) return true;
+        if (status === 'idle' || status === 'closed' || status === 'completed' || status === 'voided') {
+            return false;
+        }
+        return hasItems || hasPositiveTotal;
     }
 
     const $ = (id) => document.getElementById(id);
@@ -96,6 +110,7 @@ import {
     const drinksListEl = $('drinksList');
     const drinksListHintEl = $('drinksListHint');
     const addDrinkBtnEl = $('addDrinkBtn');
+    const manageCategoriesBtnEl = $('manageCategoriesBtn');
     const drinkModalBackdropEl = $('drinkModalBackdrop');
     const drinkModalTitleEl = $('drinkModalTitle');
     const drinkNameEl = $('drinkName');
@@ -105,6 +120,12 @@ import {
     const drinkEditIdEl = $('drinkEditId');
     const saveDrinkBtnEl = $('saveDrinkBtn');
     const cancelDrinkBtnEl = $('cancelDrinkBtn');
+    const categoryModalBackdropEl = $('categoryModalBackdrop');
+    const newCategoryNameEl = $('newCategoryName');
+    const addCategoryBtnEl = $('addCategoryBtn');
+    const closeCategoryBtnEl = $('closeCategoryBtn');
+    const categoryListEl = $('categoryList');
+    const categoryStatusEl = $('categoryStatus');
     const exportPhotoBtnEl = $('exportPhotoBtn');
     const fullscreenPreviewBtnEl = $('fullscreenPreviewBtn');
     const menuSaveModalBackdropEl = $('menuSaveModalBackdrop');
@@ -132,6 +153,19 @@ import {
     let savedMenusCache = [];
     let selectedSavedMenuId = '';
     let selectedSaveTargetMenuId = '';
+    let customCategoriesCache = [];
+    let previewZoom = 1;
+    let previewPanX = 0;
+    let previewPanY = 0;
+    let previewIsPanning = false;
+    let previewPanStartX = 0;
+    let previewPanStartY = 0;
+    let previewActivePanPointerId = null;
+    let previewMiddleClickLastAt = 0;
+    let viewRotationDeg = 0;
+    let activeEventKeysCache = [];
+    let activeEventKeysLoaded = false;
+    let activeEventKeysLoading = false;
 
     function saveState() {
         try {
@@ -230,7 +264,7 @@ import {
                     return;
                 }
                 applyLoadedState(data.state);
-                loadedMenuDrinks = Array.isArray(data.drinksSnapshot) ? data.drinksSnapshot : [];
+                loadedMenuDrinks = dedupeDrinkSnapshotByName(Array.isArray(data.drinksSnapshot) ? data.drinksSnapshot : []);
                 saveState();
                 applyStateToForm();
                 renderColumnWidthInputs();
@@ -274,7 +308,7 @@ import {
         }
         if (!loadedState || typeof loadedState !== 'object') throw new Error('Invalid menu state');
         applyLoadedState(loadedState);
-        loadedMenuDrinks = Array.isArray(data.drinksSnapshot) ? data.drinksSnapshot : [];
+        loadedMenuDrinks = dedupeDrinkSnapshotByName(Array.isArray(data.drinksSnapshot) ? data.drinksSnapshot : []);
         saveState();
         applyStateToForm();
         renderColumnWidthInputs();
@@ -555,7 +589,7 @@ import {
             col.rowHeights.forEach((_, j) => {
                 if ((state.tileTemplate[i] && state.tileTemplate[i][j]) === 'menu') {
                     const p = state.tileTemplateProps[i][j] || {};
-                    state.tileTemplateProps[i][j] = { ...p, category: p.category != null ? p.category : '', categoryTag: (p.categoryTag != null ? p.categoryTag : ''), drinkIds: Array.isArray(p.drinkIds) ? p.drinkIds : [], drinkTags: (p.drinkTags && typeof p.drinkTags === 'object') ? p.drinkTags : {}, drinkTagColors: (p.drinkTagColors && typeof p.drinkTagColors === 'object') ? p.drinkTagColors : {} };
+                    state.tileTemplateProps[i][j] = { ...p, category: p.category != null ? p.category : '', categoryTag: (p.categoryTag != null ? p.categoryTag : ''), drinkIds: Array.isArray(p.drinkIds) ? p.drinkIds : [], drinkTags: (p.drinkTags && typeof p.drinkTags === 'object') ? p.drinkTags : {}, drinkTagColors: (p.drinkTagColors && typeof p.drinkTagColors === 'object') ? p.drinkTagColors : {}, hidePrices: Boolean(p.hidePrices) };
                 }
             });
         });
@@ -565,7 +599,100 @@ import {
         const set = new Set();
         drinksCache.forEach(d => { if (d.category) set.add(d.category); });
         loadedMenuDrinks.forEach(d => { if (d && d.category) set.add(d.category); });
+        customCategoriesCache.forEach((c) => { if (c) set.add(c); });
         return Array.from(set).sort();
+    }
+
+    function normalizeDrinkName(name) {
+        return String(name || '').trim().toLowerCase();
+    }
+
+    function dedupeDrinkSnapshotByName(drinks) {
+        if (!Array.isArray(drinks)) return [];
+        const map = new Map();
+        drinks.forEach((drink) => {
+            const nameKey = normalizeDrinkName(drink && drink.name);
+            if (!nameKey) return;
+            const current = map.get(nameKey);
+            if (!current || scoreDrinkCompleteness(drink) > scoreDrinkCompleteness(current)) {
+                map.set(nameKey, drink);
+            }
+        });
+        return Array.from(map.values());
+    }
+
+    function scoreDrinkCompleteness(drink) {
+        if (!drink || typeof drink !== 'object') return 0;
+        let score = 0;
+        if ((drink.description || '').trim()) score += 1;
+        if ((drink.price || '').trim()) score += 1;
+        if ((drink.category || '').trim()) score += 1;
+        return score;
+    }
+
+    function loadCustomCategories() {
+        try {
+            const raw = localStorage.getItem(CATEGORY_STORAGE_KEY);
+            const parsed = raw ? JSON.parse(raw) : [];
+            customCategoriesCache = Array.isArray(parsed)
+                ? parsed.map((c) => String(c || '').trim()).filter(Boolean)
+                : [];
+        } catch (e) {
+            customCategoriesCache = [];
+        }
+    }
+
+    function saveCustomCategories() {
+        const normalized = Array.from(new Set(customCategoriesCache.map((c) => String(c || '').trim()).filter(Boolean)));
+        customCategoriesCache = normalized;
+        try {
+            localStorage.setItem(CATEGORY_STORAGE_KEY, JSON.stringify(normalized));
+        } catch (e) { /* ignore */ }
+    }
+
+    function renderDrinkCategoryOptions(selectedCategory) {
+        if (!drinkCategoryEl) return;
+        const categories = getUniqueCategories();
+        drinkCategoryEl.innerHTML = '<option value="">Uncategorized</option>' +
+            categories.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+        if (selectedCategory && categories.includes(selectedCategory)) {
+            drinkCategoryEl.value = selectedCategory;
+        } else {
+            drinkCategoryEl.value = '';
+        }
+    }
+
+    function setCategoryStatus(message, isError) {
+        if (!categoryStatusEl) return;
+        categoryStatusEl.textContent = message || '';
+        categoryStatusEl.style.color = isError ? '#b91c1c' : '';
+    }
+
+    function renderCategoryList() {
+        if (!categoryListEl) return;
+        const categories = getUniqueCategories();
+        if (categories.length === 0) {
+            categoryListEl.innerHTML = '<div class="menu-load-empty">No categories yet.</div>';
+            return;
+        }
+        categoryListEl.innerHTML = categories.map((category) => {
+            const fromCustom = customCategoriesCache.includes(category);
+            return `<div class="category-item" data-name="${escapeHtml(category)}">
+                <span>${escapeHtml(category)}</span>
+                <button type="button" class="btn btn-secondary category-remove-btn" data-name="${escapeHtml(category)}"${fromCustom ? '' : ' disabled title="Used by drinks. Remove from drinks first."'}>Remove</button>
+            </div>`;
+        }).join('');
+        categoryListEl.querySelectorAll('.category-remove-btn').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const name = (btn.getAttribute('data-name') || '').trim();
+                if (!name) return;
+                customCategoriesCache = customCategoriesCache.filter((c) => c !== name);
+                saveCustomCategories();
+                renderCategoryList();
+                renderDrinkCategoryOptions(drinkCategoryEl ? drinkCategoryEl.value : '');
+                setCategoryStatus('Category removed.');
+            });
+        });
     }
 
     function applyStateToForm() {
@@ -629,8 +756,28 @@ import {
 
     const MENU_TAG_COLOR_OPTIONS = [
         { id: 'green', label: 'Green', class: 'menu-props-tag-color-btn--green' },
-        { id: 'pink', label: 'Pink', class: 'menu-props-tag-color-btn--pink' }
+        { id: 'pink', label: 'Pink', class: 'menu-props-tag-color-btn--pink' },
+        { id: 'purple', label: 'Purple', class: 'menu-props-tag-color-btn--purple' }
     ];
+
+    function getDrinkTagColorId(drinkTagColors, drinkId) {
+        const raw = drinkTagColors && drinkTagColors[drinkId];
+        if (MENU_TAG_COLOR_OPTIONS.some((o) => o.id === raw)) return raw;
+        return 'green';
+    }
+
+    function openTagColorPicker(drinkId, colIdx, rowIdx, saveState, renderTiles, renderColumnRowsSection) {
+        if (!state.tileTemplateProps[colIdx] || !state.tileTemplateProps[colIdx][rowIdx]) return;
+        const colors = state.tileTemplateProps[colIdx][rowIdx].drinkTagColors || {};
+        const current = getDrinkTagColorId(colors, drinkId);
+        const idx = MENU_TAG_COLOR_OPTIONS.findIndex((o) => o.id === current);
+        const next = MENU_TAG_COLOR_OPTIONS[(idx + 1) % MENU_TAG_COLOR_OPTIONS.length];
+        if (!state.tileTemplateProps[colIdx][rowIdx].drinkTagColors) state.tileTemplateProps[colIdx][rowIdx].drinkTagColors = {};
+        state.tileTemplateProps[colIdx][rowIdx].drinkTagColors[drinkId] = next.id;
+        saveState();
+        renderTiles();
+        renderColumnRowsSection();
+    }
 
     function getMenuTemplateHtml(props) {
         const category = (props && props.category) ? String(props.category).trim() : '';
@@ -639,20 +786,22 @@ import {
         const sectionTitle = category || 'Matcha Lattes';
         const icedLabel = 'Iced';
         const categoryTag = (props && props.categoryTag != null) ? String(props.categoryTag).trim() : '';
+        const hidePrices = Boolean(props && props.hidePrices);
         let itemsHtml;
-        let itemsClass = '';
+        let itemsClass = hidePrices ? ' menu-items--no-prices' : '';
         if (drinks.length === 0) {
             itemsHtml = '<div class="menu-item menu-item-placeholder">Select category and drinks in the panel.</div>';
         } else {
             const drinkTags = (props && props.drinkTags && typeof props.drinkTags === 'object') ? props.drinkTags : {};
             const drinkTagColors = (props && props.drinkTagColors && typeof props.drinkTagColors === 'object') ? props.drinkTagColors : {};
             const allNoDesc = drinks.every(d => !(d.description || '').trim());
-            itemsClass = allNoDesc ? ' menu-items--no-desc' : '';
+            if (allNoDesc) itemsClass += ' menu-items--no-desc';
             itemsHtml = drinks.map(d => {
                 const tagText = (drinkTags[d.id] || '').trim();
-                const tagColor = drinkTagColors[d.id] === 'pink' ? 'pink' : 'green';
+                const tagColor = getDrinkTagColorId(drinkTagColors, d.id);
                 const tag = tagText ? `<span class="menu-item-tag menu-item-tag--${tagColor}">${escapeHtml(tagText)}</span>` : '';
-                return `<div class="menu-item"><div class="menu-item-head"><span class="menu-item-title">${escapeHtml(d.name || '')}</span>${tag}</div><div class="menu-item-desc">${escapeHtml(d.description || '')}</div><div class="menu-item-price">${formatPriceHtml(d.price)}</div></div>`;
+                const priceHtml = hidePrices ? '' : `<div class="menu-item-price">${formatPriceHtml(d.price)}</div>`;
+                return `<div class="menu-item"><div class="menu-item-head"><span class="menu-item-title">${escapeHtml(d.name || '')}</span>${tag}</div><div class="menu-item-desc">${escapeHtml(d.description || '')}</div>${priceHtml}</div>`;
             }).join('');
         }
         const cardClass = 'menu-card' + ((sectionTitle || '').toLowerCase().includes('hōjicha') || (sectionTitle || '').toLowerCase().includes('hojicha') ? ' menu-card--hojicha' : '');
@@ -663,14 +812,100 @@ import {
         return `<div class="${cardClass}"><div class="menu-header"><h2 class="menu-title">${escapeHtml(sectionTitle)}</h2>${headerRight}</div><div class="menu-items${itemsClass}">${itemsHtml}</div></div>`;
     }
 
-    function getCustomizationTemplateHtml() {
+    function getCustomizationDefaults() {
+        return {
+            level2Price: 40,
+            level3Price: 80,
+            defaultMilk: 'dairy',
+            dairyPrice: 0,
+            oatPrice: 0,
+            strengthPanelHeight: 34,
+            sweetnessPanelHeight: 34,
+            dairyPanelHeight: 16,
+            oatPanelHeight: 16,
+            titleFontSize: 44,
+            subtitleFontSize: 28
+        };
+    }
+
+    function getCustomizationProps(rawProps) {
+        const defaults = getCustomizationDefaults();
+        const p = rawProps && typeof rawProps === 'object' ? rawProps : {};
+        const parsePrice = (v, fallback) => {
+            const n = Number(v);
+            if (!Number.isFinite(n)) return fallback;
+            return Math.max(0, Math.round(n));
+        };
+        const parseHeight = (v, fallback) => {
+            const n = Number(v);
+            if (!Number.isFinite(n)) return fallback;
+            return Math.max(1, n);
+        };
+        const parseFontSize = (v, fallback) => {
+            const n = Number(v);
+            if (!Number.isFinite(n)) return fallback;
+            return Math.max(8, Math.min(200, n));
+        };
+        const out = {
+            ...defaults,
+            level2Price: parsePrice(p.level2Price, defaults.level2Price),
+            level3Price: parsePrice(p.level3Price, defaults.level3Price),
+            defaultMilk: p.defaultMilk === 'oat' ? 'oat' : 'dairy',
+            dairyPrice: parsePrice(p.dairyPrice, defaults.dairyPrice),
+            oatPrice: parsePrice(p.oatPrice, defaults.oatPrice),
+            strengthPanelHeight: parseHeight(p.strengthPanelHeight, defaults.strengthPanelHeight),
+            sweetnessPanelHeight: parseHeight(p.sweetnessPanelHeight, defaults.sweetnessPanelHeight),
+            dairyPanelHeight: parseHeight(p.dairyPanelHeight, defaults.dairyPanelHeight),
+            oatPanelHeight: parseHeight(p.oatPanelHeight, defaults.oatPanelHeight),
+            titleFontSize: parseFontSize(p.titleFontSize, defaults.titleFontSize),
+            subtitleFontSize: parseFontSize(p.subtitleFontSize, defaults.subtitleFontSize)
+        };
+        return out;
+    }
+
+    function formatCustomizationPriceText(value) {
+        const amount = Math.max(0, Number(value) || 0);
+        if (amount <= 0) return 'FREE';
+        return `+ <span class="price-currency">Php</span> ${amount}`;
+    }
+
+    function getCustomizationTemplateHtml(rawProps) {
+        const props = getCustomizationProps(rawProps);
+        const hidePrices = Boolean(rawProps && rawProps.hidePrices);
+        const panelHeights = [
+            props.strengthPanelHeight,
+            props.sweetnessPanelHeight,
+            props.dairyPanelHeight,
+            props.oatPanelHeight
+        ];
+        const totalHeight = panelHeights.reduce((sum, v) => sum + v, 0) || 1;
+        const normalized = panelHeights.map((v) => Math.max(0.1, v / totalHeight));
+        const rowStyle = `grid-template-rows:${normalized.map((v) => `${v}fr`).join(' ')};`;
+        const dairyIsDefault = props.defaultMilk === 'dairy';
+        const dairyCardHtml = `<div class="customization-card customization-card-milk">
+    <div class="customization-milk-left">
+      <span class="customization-milk-meta">${dairyIsDefault ? 'Default' : 'Alternate Option'}</span>
+      <span class="customization-milk-name">Dairy Milk</span>
+      ${hidePrices || dairyIsDefault || Number(props.dairyPrice) <= 0 ? '' : `<span class="customization-option-price">${formatCustomizationPriceText(props.dairyPrice)}</span>`}
+    </div>
+    <img src="img/dairy.jpg" alt="Dairy" class="customization-milk-img">
+  </div>`;
+        const oatCardHtml = `<div class="customization-card customization-card-milk">
+    <div class="customization-milk-left">
+      <span class="customization-milk-meta">${dairyIsDefault ? 'Alternate Option' : 'Default'}</span>
+      <span class="customization-milk-name">Oat Milk</span>
+      ${!hidePrices && dairyIsDefault ? `<span class="customization-option-price">${formatCustomizationPriceText(props.oatPrice)}</span>` : ''}
+    </div>
+    <img src="img/oat.jpg" alt="Oat" class="customization-milk-img">
+  </div>`;
+        const milkCardsHtml = dairyIsDefault ? `${dairyCardHtml}${oatCardHtml}` : `${oatCardHtml}${dairyCardHtml}`;
         return `
-<div class="customization-wrap">
+<div class="customization-wrap" style="${rowStyle}">
   <header class="customization-header">
-    <h1 class="customization-title">Make it your Matchanese</h1>
-    <p class="customization-subtitle">Customization Options</p>
+    <h1 class="customization-title" style="font-size:${props.titleFontSize}px;">Make it your<br>Matchanese</h1>
+    <p class="customization-subtitle" style="font-size:${props.subtitleFontSize}px;">Customization Options</p>
   </header>
-  <div class="customization-card">
+  <div class="customization-card customization-card-strength">
     <h2 class="customization-card-title">Matcha Strength</h2>
     <div class="customization-options customization-options-three">
       <div class="customization-option">
@@ -682,18 +917,18 @@ import {
         <span class="customization-option-label">LEVEL</span>
         <span class="customization-option-num">2</span>
         <span class="customization-option-meta customization-option-meta-green">RECOMMENDED</span>
-        <span class="customization-option-price">+ <span class="price-currency">Php</span> 40</span>
+        ${hidePrices ? '' : `<span class="customization-option-price">${formatCustomizationPriceText(props.level2Price)}</span>`}
       </div>
       <div class="customization-option">
         <span class="customization-option-label">LEVEL</span>
         <span class="customization-option-num">3</span>
         <span class="customization-option-meta">INTENSE</span>
-        <span class="customization-option-price">+ <span class="price-currency">Php</span> 80</span>
+        ${hidePrices ? '' : `<span class="customization-option-price">${formatCustomizationPriceText(props.level3Price)}</span>`}
       </div>
     </div>
   </div>
-  <div class="customization-card">
-    <h2 class="customization-card-title">Sweetness</h2>
+  <div class="customization-card customization-card-sweetness">
+    <h2 class="customization-card-title customization-card-title-sweetness">Sweetness</h2>
     <div class="customization-options customization-options-three customization-options-sweetness">
       <div class="customization-option">
         <span class="customization-option-num">0%</span>
@@ -709,21 +944,7 @@ import {
       </div>
     </div>
   </div>
-  <div class="customization-card customization-card-milk">
-    <div class="customization-milk-left">
-      <span class="customization-milk-meta">Default</span>
-      <span class="customization-milk-name">Dairy Milk</span>
-    </div>
-    <img src="img/dairy.jpg" alt="Dairy" class="customization-milk-img">
-  </div>
-  <div class="customization-card customization-card-milk">
-    <div class="customization-milk-left">
-      <span class="customization-milk-meta">Upgrade to</span>
-      <span class="customization-milk-name">Oat Milk</span>
-      <span class="customization-option-price">FREE</span>
-    </div>
-    <img src="img/oat.jpg" alt="Oat" class="customization-milk-img">
-  </div>
+  ${milkCardsHtml}
 </div>`;
     }
 
@@ -751,6 +972,67 @@ import {
         }
     }
 
+    async function resolveDuplicateDrinksByName() {
+        const grouped = new Map();
+        drinksCache.forEach((drink) => {
+            const key = normalizeDrinkName(drink && drink.name);
+            if (!key) return;
+            if (!grouped.has(key)) grouped.set(key, []);
+            grouped.get(key).push(drink);
+        });
+        const duplicateGroups = Array.from(grouped.values()).filter((group) => group.length > 1);
+        if (duplicateGroups.length === 0) return 0;
+        const idMap = new Map();
+        const toDelete = [];
+        duplicateGroups.forEach((group) => {
+            const sorted = group.slice().sort((a, b) => {
+                const scoreDiff = scoreDrinkCompleteness(b) - scoreDrinkCompleteness(a);
+                if (scoreDiff !== 0) return scoreDiff;
+                return String(a.id || '').localeCompare(String(b.id || ''));
+            });
+            const keep = sorted[0];
+            sorted.slice(1).forEach((dup) => {
+                idMap.set(dup.id, keep.id);
+                toDelete.push(dup.id);
+            });
+        });
+
+        if (idMap.size > 0 && Array.isArray(state.tileTemplateProps)) {
+            state.tileTemplateProps.forEach((col) => {
+                if (!Array.isArray(col)) return;
+                col.forEach((props) => {
+                    if (!props || !Array.isArray(props.drinkIds)) return;
+                    props.drinkIds = props.drinkIds.map((id) => idMap.get(id) || id).filter((id, idx, arr) => arr.indexOf(id) === idx);
+                });
+            });
+            saveState();
+        }
+
+        for (const id of toDelete) {
+            try {
+                await deleteDoc(doc(db, DRINKS_COLLECTION, id));
+            } catch (e) {
+                console.error('Delete duplicate drink failed:', id, e);
+            }
+        }
+        return toDelete.length;
+    }
+
+    async function runOneTimeDrinkDuplicateResolution() {
+        let alreadyResolved = false;
+        try {
+            alreadyResolved = localStorage.getItem(DRINK_DEDUP_RESOLVED_KEY) === '1';
+        } catch (e) { /* ignore */ }
+        if (alreadyResolved) return;
+        const removed = await resolveDuplicateDrinksByName();
+        if (removed > 0) {
+            await loadDrinksFromFirebase();
+        }
+        try {
+            localStorage.setItem(DRINK_DEDUP_RESOLVED_KEY, '1');
+        } catch (e) { /* ignore */ }
+    }
+
     async function seedDrinksIfEmpty() {
         if (drinksCache.length > 0) return;
         try {
@@ -773,21 +1055,35 @@ import {
         if (!drinksListEl || !drinksListHintEl) return;
         if (drinksCache.length === 0) {
             drinksListEl.innerHTML = '';
-            drinksListHintEl.textContent = 'No drinks yet. Click Add drink to add one.';
+            drinksListHintEl.textContent = 'No menu items yet. Click Add item to add one.';
             return;
         }
-        drinksListHintEl.textContent = drinksCache.length + ' drink(s).';
-        drinksListEl.innerHTML = drinksCache.map(d => {
-            const meta = [d.category, d.price].filter(Boolean).join(' · ');
-            return `<div class="drink-item" data-id="${escapeHtml(d.id)}">
-                <div class="drink-item-name">${escapeHtml(d.name || '')}</div>
-                ${d.description ? `<div class="drink-item-meta">${escapeHtml(d.description)}</div>` : ''}
-                ${meta ? `<div class="drink-item-meta">${escapeHtml(meta)}</div>` : ''}
-                <div class="drink-item-actions">
-                    <button type="button" class="btn btn-secondary drink-edit-btn" data-id="${escapeHtml(d.id)}">Edit</button>
-                    <button type="button" class="btn btn-secondary drink-duplicate-btn" data-id="${escapeHtml(d.id)}">Duplicate</button>
-                </div>
-            </div>`;
+        drinksListHintEl.textContent = drinksCache.length + ' item(s).';
+        const grouped = new Map();
+        drinksCache.forEach((d) => {
+            const category = (d.category || '').trim() || 'Uncategorized';
+            if (!grouped.has(category)) grouped.set(category, []);
+            grouped.get(category).push(d);
+        });
+        const categories = Array.from(grouped.keys()).sort((a, b) => a.localeCompare(b));
+        drinksListEl.innerHTML = categories.map((category) => {
+            const items = grouped.get(category) || [];
+            const itemsHtml = items.map(d => {
+                const meta = [d.price].filter(Boolean).join(' · ');
+                return `<div class="drink-item" data-id="${escapeHtml(d.id)}">
+                    <div class="drink-item-name">${escapeHtml(d.name || '')}</div>
+                    ${d.description ? `<div class="drink-item-meta">${escapeHtml(d.description)}</div>` : ''}
+                    ${meta ? `<div class="drink-item-meta">${escapeHtml(meta)}</div>` : ''}
+                    <div class="drink-item-actions">
+                        <button type="button" class="btn btn-secondary drink-edit-btn" data-id="${escapeHtml(d.id)}">Edit</button>
+                        <button type="button" class="btn btn-secondary drink-duplicate-btn" data-id="${escapeHtml(d.id)}">Duplicate</button>
+                    </div>
+                </div>`;
+            }).join('');
+            return `<section class="drink-category-group">
+                <h3 class="drink-category-title">${escapeHtml(category)}</h3>
+                ${itemsHtml}
+            </section>`;
         }).join('');
         drinksListEl.querySelectorAll('.drink-edit-btn').forEach(btn => {
             btn.addEventListener('click', () => startEditDrink(btn.getAttribute('data-id')));
@@ -798,22 +1094,22 @@ import {
     }
 
     function openDrinkModal(editData) {
+        const selectedCategory = editData ? (editData.category || '') : '';
+        renderDrinkCategoryOptions(selectedCategory);
         if (editData) {
             drinkNameEl.value = editData.name || '';
             drinkDescEl.value = editData.description || '';
             drinkPriceEl.value = editData.price || '';
-            drinkCategoryEl.value = editData.category || '';
             drinkEditIdEl.value = editData.id || '';
-            drinkModalTitleEl.textContent = 'Edit drink';
-            saveDrinkBtnEl.textContent = 'Update drink';
+            drinkModalTitleEl.textContent = 'Edit item';
+            saveDrinkBtnEl.textContent = 'Update item';
         } else {
             drinkNameEl.value = '';
             drinkDescEl.value = '';
             drinkPriceEl.value = '';
-            drinkCategoryEl.value = '';
             drinkEditIdEl.value = '';
-            drinkModalTitleEl.textContent = 'Add drink';
-            saveDrinkBtnEl.textContent = 'Save drink';
+            drinkModalTitleEl.textContent = 'Add item';
+            saveDrinkBtnEl.textContent = 'Save item';
         }
         drinkModalBackdropEl.hidden = false;
         drinkModalBackdropEl.setAttribute('aria-hidden', 'false');
@@ -825,10 +1121,304 @@ import {
         drinkNameEl.value = '';
         drinkDescEl.value = '';
         drinkPriceEl.value = '';
-        drinkCategoryEl.value = '';
+        renderDrinkCategoryOptions('');
         drinkEditIdEl.value = '';
-        drinkModalTitleEl.textContent = 'Add drink';
-        saveDrinkBtnEl.textContent = 'Save drink';
+        drinkModalTitleEl.textContent = 'Add item';
+        saveDrinkBtnEl.textContent = 'Save item';
+    }
+
+    function openCategoryModal() {
+        if (!categoryModalBackdropEl) return;
+        setCategoryStatus('');
+        if (newCategoryNameEl) newCategoryNameEl.value = '';
+        renderCategoryList();
+        categoryModalBackdropEl.hidden = false;
+        categoryModalBackdropEl.setAttribute('aria-hidden', 'false');
+    }
+
+    function closeCategoryModal() {
+        if (!categoryModalBackdropEl) return;
+        categoryModalBackdropEl.hidden = true;
+        categoryModalBackdropEl.setAttribute('aria-hidden', 'true');
+        if (newCategoryNameEl) newCategoryNameEl.value = '';
+        setCategoryStatus('');
+    }
+
+    function isPreviewInteractionEnabled() {
+        return !fullscreenPreviewActive;
+    }
+
+    function isPreviewZoomEnabled() {
+        return !fullscreenPreviewActive;
+    }
+
+    function setupPreviewInteractions() {
+        if (!previewWrapEl) return;
+        previewWrapEl.addEventListener('wheel', (e) => {
+            if (!isPreviewZoomEnabled()) return;
+            e.preventDefault();
+            const factor = e.deltaY < 0 ? 1.1 : 0.9;
+            previewZoom = Math.max(0.5, Math.min(4, previewZoom * factor));
+            fitCanvasToPreview();
+        }, { passive: false });
+
+        function endPreviewPan() {
+            if (!previewIsPanning) return;
+            previewIsPanning = false;
+            if (previewActivePanPointerId != null) {
+                try {
+                    previewWrapEl.releasePointerCapture(previewActivePanPointerId);
+                } catch (err) { /* ignore */ }
+                previewActivePanPointerId = null;
+            }
+            previewWrapEl.classList.remove('is-panning');
+        }
+
+        const VIEWER_HOLD_MS = 550;
+        const VIEWER_MOVE_CANCEL_HOLD_PX = 10;
+        let viewerHoldTimer = null;
+        let viewerGesturePointerId = null;
+        let viewerGestureStartX = 0;
+        let viewerGestureStartY = 0;
+
+        function beginPanFromEvent(e) {
+            previewIsPanning = true;
+            previewActivePanPointerId = e.pointerId;
+            previewPanStartX = e.clientX - previewPanX;
+            previewPanStartY = e.clientY - previewPanY;
+            previewWrapEl.classList.add('is-panning');
+            try {
+                previewWrapEl.setPointerCapture(e.pointerId);
+            } catch (err) { /* ignore */ }
+        }
+
+        previewWrapEl.addEventListener('pointerdown', (e) => {
+            if (!isPreviewInteractionEnabled()) return;
+            if (!e.isPrimary) return;
+            if (e.pointerType === 'mouse' && e.button !== 0) return;
+
+            if (VIEWER_MODE) {
+                if (viewerHoldTimer) {
+                    clearTimeout(viewerHoldTimer);
+                    viewerHoldTimer = null;
+                }
+                const pid = e.pointerId;
+                viewerGesturePointerId = pid;
+                viewerGestureStartX = e.clientX;
+                viewerGestureStartY = e.clientY;
+                viewerHoldTimer = setTimeout(() => {
+                    viewerHoldTimer = null;
+                    if (viewerGesturePointerId !== pid) return;
+                    if (previewIsPanning) return;
+                    openLoadMenuModal();
+                    viewerGesturePointerId = null;
+                }, VIEWER_HOLD_MS);
+                return;
+            }
+
+            beginPanFromEvent(e);
+        });
+
+        previewWrapEl.addEventListener('pointermove', (e) => {
+            if (VIEWER_MODE) {
+                if (!isPreviewInteractionEnabled()) return;
+                if (viewerGesturePointerId == null) return;
+                if (e.pointerId !== viewerGesturePointerId) return;
+                if (previewIsPanning) {
+                    previewPanX = e.clientX - previewPanStartX;
+                    previewPanY = e.clientY - previewPanStartY;
+                    fitCanvasToPreview();
+                    return;
+                }
+                const dx = e.clientX - viewerGestureStartX;
+                const dy = e.clientY - viewerGestureStartY;
+                if (dx * dx + dy * dy > VIEWER_MOVE_CANCEL_HOLD_PX * VIEWER_MOVE_CANCEL_HOLD_PX) {
+                    if (viewerHoldTimer) {
+                        clearTimeout(viewerHoldTimer);
+                        viewerHoldTimer = null;
+                    }
+                    beginPanFromEvent(e);
+                }
+                return;
+            }
+            if (!previewIsPanning || e.pointerId !== previewActivePanPointerId) return;
+            previewPanX = e.clientX - previewPanStartX;
+            previewPanY = e.clientY - previewPanStartY;
+            fitCanvasToPreview();
+        });
+
+        previewWrapEl.addEventListener('pointerup', (e) => {
+            if (VIEWER_MODE) {
+                if (viewerHoldTimer) {
+                    clearTimeout(viewerHoldTimer);
+                    viewerHoldTimer = null;
+                }
+                if (previewIsPanning && e.pointerId === previewActivePanPointerId) {
+                    endPreviewPan();
+                }
+                if (viewerGesturePointerId != null && e.pointerId === viewerGesturePointerId) {
+                    viewerGesturePointerId = null;
+                }
+                return;
+            }
+            if (e.pointerId !== previewActivePanPointerId) return;
+            endPreviewPan();
+        });
+        previewWrapEl.addEventListener('pointercancel', (e) => {
+            if (VIEWER_MODE) {
+                if (viewerHoldTimer) {
+                    clearTimeout(viewerHoldTimer);
+                    viewerHoldTimer = null;
+                }
+                if (previewIsPanning && e.pointerId === previewActivePanPointerId) {
+                    endPreviewPan();
+                }
+                if (viewerGesturePointerId != null && e.pointerId === viewerGesturePointerId) {
+                    viewerGesturePointerId = null;
+                }
+                return;
+            }
+            if (e.pointerId !== previewActivePanPointerId) return;
+            endPreviewPan();
+        });
+
+        /* Mouse left the preview while deciding (no pan yet): cancel hold, same as before. */
+        previewWrapEl.addEventListener('pointerleave', (e) => {
+            if (!VIEWER_MODE || e.pointerType !== 'mouse') return;
+            if (previewIsPanning) return;
+            if (viewerGesturePointerId == null || e.pointerId !== viewerGesturePointerId) return;
+            if (viewerHoldTimer) {
+                clearTimeout(viewerHoldTimer);
+                viewerHoldTimer = null;
+            }
+            viewerGesturePointerId = null;
+        });
+
+        previewWrapEl.addEventListener('dblclick', () => {
+            if (VIEWER_MODE) {
+                cycleViewRotation();
+                return;
+            }
+            if (!isPreviewInteractionEnabled()) return;
+            previewZoom = 1;
+            previewPanX = 0;
+            previewPanY = 0;
+            fitCanvasToPreview();
+        });
+
+        previewWrapEl.addEventListener('mousedown', (e) => {
+            if (!VIEWER_MODE || e.button !== 1) return;
+            const now = Date.now();
+            if (now - previewMiddleClickLastAt < 400) {
+                e.preventDefault();
+                previewZoom = 1;
+                previewPanX = 0;
+                previewPanY = 0;
+                fitCanvasToPreview();
+            }
+            previewMiddleClickLastAt = now;
+        });
+    }
+
+    function normalizeViewRotationDeg(deg) {
+        const n = Math.round(Number(deg) || 0) % 360;
+        return n < 0 ? n + 360 : n;
+    }
+
+    function loadViewRotation() {
+        try {
+            const raw = sessionStorage.getItem(VIEW_ROTATION_SESSION_KEY);
+            if (raw == null) return;
+            const r = normalizeViewRotationDeg(Number(raw));
+            if (r === 0 || r === 90 || r === 180 || r === 270) viewRotationDeg = r;
+        } catch (e) { /* ignore */ }
+    }
+
+    function saveViewRotation() {
+        try {
+            sessionStorage.setItem(VIEW_ROTATION_SESSION_KEY, String(viewRotationDeg));
+        } catch (e) { /* ignore */ }
+    }
+
+    function cycleViewRotation() {
+        viewRotationDeg = (normalizeViewRotationDeg(viewRotationDeg) + 90) % 360;
+        saveViewRotation();
+        fitCanvasToPreview();
+    }
+
+    function isKeydownInEditableField(target) {
+        if (!target) return false;
+        const tag = target.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+        return Boolean(target.isContentEditable);
+    }
+
+    function setupViewerModeUi() {
+        if (!VIEWER_MODE) return;
+        document.body.classList.add('viewer-mode');
+    }
+
+    /**
+     * Match customer-display exactly:
+     * load from `branches`, keep popup events that are not archived.
+     * (Same source/filtering used by pos/js/customer-display.js.)
+     */
+    async function loadActiveEventKeys(opts) {
+        const force = opts && opts.force === true;
+        if (!force && activeEventKeysLoaded) return activeEventKeysCache;
+        if (activeEventKeysLoading && !force) return activeEventKeysCache;
+        activeEventKeysLoading = true;
+        try {
+            const snapshot = await getDocs(collection(db, 'branches'));
+            const popupEvents = [];
+            snapshot.forEach((docSnap) => {
+                const data = docSnap.data();
+                if (data && data.type === 'popup' && data.key && !data.archived) {
+                    const key = String(data.key);
+                    const nameRaw = data.name != null ? String(data.name).trim() : '';
+                    popupEvents.push({ key, name: nameRaw || key });
+                }
+            });
+            activeEventKeysCache = popupEvents.sort((a, b) => a.key.localeCompare(b.key));
+            activeEventKeysLoaded = true;
+            return activeEventKeysCache;
+        } catch (err) {
+            console.error('Load POS events for menu creator failed:', err);
+            activeEventKeysCache = [];
+            activeEventKeysLoaded = true;
+            return [];
+        } finally {
+            activeEventKeysLoading = false;
+        }
+    }
+
+    function buildPosEventDropdownHtml(selectedKey) {
+        const sel = (selectedKey || '').trim();
+        let html = '<option value="">— Select POS event —</option>';
+        activeEventKeysCache.forEach((row) => {
+            const label = `${row.name} — ${row.key}`;
+            html += `<option value="${escapeHtml(row.key)}">${escapeHtml(label)}</option>`;
+        });
+        const hasKey = activeEventKeysCache.some((r) => r.key === sel);
+        if (sel && !hasKey) {
+            html += `<option value="${escapeHtml(sel)}">${escapeHtml('Saved key: ' + sel)}</option>`;
+        }
+        return html;
+    }
+
+    function posEventDropdownHint() {
+        if (!activeEventKeysLoaded) return 'Loading POS events…';
+        if (activeEventKeysCache.length === 0) {
+            return 'No active popup events found (branches).';
+        }
+        return '';
+    }
+
+    function ensureActiveEventKeysLoaded() {
+        if (activeEventKeysLoaded || activeEventKeysLoading) return;
+        loadActiveEventKeys().then(() => {
+            renderColumnRowsSection();
+        });
     }
 
     function startEditDrink(id) {
@@ -840,10 +1430,18 @@ import {
     async function duplicateDrink(id) {
         const d = drinksCache.find(x => x.id === id);
         if (!d) return;
+        const baseName = ((d.name || '').trim() || 'Untitled') + ' (copy)';
+        const existing = new Set(drinksCache.map((item) => normalizeDrinkName(item.name)));
+        let candidate = baseName;
+        let copyIndex = 2;
+        while (existing.has(normalizeDrinkName(candidate))) {
+            candidate = `${baseName} ${copyIndex}`;
+            copyIndex += 1;
+        }
         try {
             const ref = collection(db, DRINKS_COLLECTION);
             await addDoc(ref, {
-                name: (d.name || '') + ' (copy)',
+                name: candidate,
                 description: d.description || '',
                 price: d.price || '',
                 category: d.category || ''
@@ -866,21 +1464,53 @@ import {
             return;
         }
         const editId = (drinkEditIdEl.value || '').trim();
+        const normalizedName = normalizeDrinkName(name);
+        const existingWithSameName = drinksCache.find((d) => normalizeDrinkName(d.name) === normalizedName && d.id !== editId);
         try {
+            if (existingWithSameName && editId) {
+                alert('Another drink already uses this name. Please use a unique name.');
+                return;
+            }
             if (editId) {
                 const ref = doc(db, DRINKS_COLLECTION, editId);
                 await updateDoc(ref, { name, description, price, category });
+            } else if (existingWithSameName) {
+                const ref = doc(db, DRINKS_COLLECTION, existingWithSameName.id);
+                await updateDoc(ref, { name, description, price, category });
+                alert('A drink with that name already exists. Updated existing item instead.');
             } else {
                 const ref = collection(db, DRINKS_COLLECTION);
                 await addDoc(ref, { name, description, price, category });
             }
             await loadDrinksFromFirebase();
+            renderDrinkCategoryOptions(category);
             renderDrinksList();
+            renderColumnRowsSection();
+            renderTiles();
             closeDrinkModal();
         } catch (e) {
             console.error('Save drink:', e);
             alert('Failed to save: ' + (e.message || e));
         }
+    }
+
+    function addCategory() {
+        const categoryName = (newCategoryNameEl && newCategoryNameEl.value ? newCategoryNameEl.value : '').trim();
+        if (!categoryName) {
+            setCategoryStatus('Enter a category name.', true);
+            return;
+        }
+        const exists = getUniqueCategories().some((c) => c.toLowerCase() === categoryName.toLowerCase());
+        if (exists) {
+            setCategoryStatus('Category already exists.');
+            return;
+        }
+        customCategoriesCache.push(categoryName);
+        saveCustomCategories();
+        renderCategoryList();
+        renderDrinkCategoryOptions(categoryName);
+        if (newCategoryNameEl) newCategoryNameEl.value = '';
+        setCategoryStatus('Category added.');
     }
 
     function toPx(value) {
@@ -1363,12 +1993,16 @@ import {
                     }
                     if (templateSelect.value === 'menu') {
                         const p = state.tileTemplateProps[colIdx][rowIdx] || {};
-                        state.tileTemplateProps[colIdx][rowIdx] = { ...p, category: p.category != null ? p.category : '', categoryTag: (p.categoryTag != null ? p.categoryTag : ''), drinkIds: Array.isArray(p.drinkIds) ? p.drinkIds : [], drinkTags: (p.drinkTags && typeof p.drinkTags === 'object') ? p.drinkTags : {}, drinkTagColors: (p.drinkTagColors && typeof p.drinkTagColors === 'object') ? p.drinkTagColors : {} };
+                        state.tileTemplateProps[colIdx][rowIdx] = { ...p, category: p.category != null ? p.category : '', categoryTag: (p.categoryTag != null ? p.categoryTag : ''), drinkIds: Array.isArray(p.drinkIds) ? p.drinkIds : [], drinkTags: (p.drinkTags && typeof p.drinkTags === 'object') ? p.drinkTags : {}, drinkTagColors: (p.drinkTagColors && typeof p.drinkTagColors === 'object') ? p.drinkTagColors : {}, hidePrices: Boolean(p.hidePrices) };
                     }
                     if (templateSelect.value === 'photo') {
                         const p = state.tileTemplateProps[colIdx][rowIdx] || {};
                         const { mediaItems, imageUrls, galleryIntervalSeconds } = getGalleryProps(p);
                         state.tileTemplateProps[colIdx][rowIdx] = { ...p, mediaItems, imageUrls, galleryIntervalSeconds };
+                    }
+                    if (templateSelect.value === 'customization') {
+                        const p = state.tileTemplateProps[colIdx][rowIdx] || {};
+                        state.tileTemplateProps[colIdx][rowIdx] = { ...p, ...getCustomizationProps(p) };
                     }
                     if (templateSelect.value === 'customer-display') {
                         const p = state.tileTemplateProps[colIdx][rowIdx] || {};
@@ -1497,6 +2131,26 @@ import {
                     categoryTagLabel.style.marginTop = '0.35rem';
                     propsPanel.appendChild(categoryTagLabel);
                     propsPanel.appendChild(categoryTagInput);
+                    const hidePricesLabel = document.createElement('label');
+                    hidePricesLabel.className = 'menu-props-hide-prices';
+                    hidePricesLabel.style.display = 'flex';
+                    hidePricesLabel.style.alignItems = 'center';
+                    hidePricesLabel.style.gap = '0.5rem';
+                    hidePricesLabel.style.marginTop = '0.35rem';
+                    const hidePricesCheck = document.createElement('input');
+                    hidePricesCheck.type = 'checkbox';
+                    hidePricesCheck.checked = Boolean(menuProps.hidePrices);
+                    hidePricesCheck.addEventListener('change', () => {
+                        if (!state.tileTemplateProps[colIdx][rowIdx]) state.tileTemplateProps[colIdx][rowIdx] = { category: '', categoryTag: '', drinkIds: [], drinkTags: {}, drinkTagColors: {} };
+                        state.tileTemplateProps[colIdx][rowIdx].hidePrices = hidePricesCheck.checked;
+                        saveState();
+                        renderTiles();
+                    });
+                    hidePricesLabel.appendChild(hidePricesCheck);
+                    const hidePricesText = document.createElement('span');
+                    hidePricesText.textContent = 'Hide prices';
+                    hidePricesLabel.appendChild(hidePricesText);
+                    propsPanel.appendChild(hidePricesLabel);
                     const fromCache = currentCategory ? drinksCache.filter(d => (d.category || '').trim() === currentCategory) : [];
                     const fromLoaded = currentCategory ? (loadedMenuDrinks || []).filter(d => d && (d.category || '').trim() === currentCategory) : [];
                     const seenIds = new Set(fromCache.map(d => d.id));
@@ -1526,7 +2180,7 @@ import {
                         nameSpan.textContent = d.name || id;
                         const tagCell = document.createElement('span');
                         tagCell.className = 'menu-props-tag-cell';
-                        const currentColor = currentDrinkTagColors[id] === 'pink' ? 'pink' : 'green';
+                        const currentColor = getDrinkTagColorId(currentDrinkTagColors, id);
                         const colorOpt = MENU_TAG_COLOR_OPTIONS.find(o => o.id === currentColor) || MENU_TAG_COLOR_OPTIONS[0];
                         const tagColorTrigger = document.createElement('button');
                         tagColorTrigger.type = 'button';
@@ -1539,7 +2193,7 @@ import {
                         tagColorTrigger.addEventListener('click', (e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            openTagColorPicker(tagColorTrigger, id, colIdx, rowIdx, saveState, renderTiles, renderColumnRowsSection);
+                            openTagColorPicker(id, colIdx, rowIdx, saveState, renderTiles, renderColumnRowsSection);
                         });
                         const tagBtn = document.createElement('button');
                         tagBtn.type = 'button';
@@ -1833,24 +2487,125 @@ import {
 
                     if (takeoverInput.checked) {
                         const eventLabel = document.createElement('label');
-                        eventLabel.textContent = 'Customer display event key';
-                        const eventInput = document.createElement('input');
-                        eventInput.type = 'text';
-                        eventInput.placeholder = 'e.g. bgc-night-market';
-                        eventInput.value = photoProps.customerDisplayEventKey || '';
-                        eventInput.addEventListener('input', () => {
+                        eventLabel.textContent = 'POS event';
+                        const eventSelect = document.createElement('select');
+                        const selectedEvent = (photoProps.customerDisplayEventKey || '').trim();
+                        eventSelect.innerHTML = buildPosEventDropdownHtml(selectedEvent);
+                        eventSelect.value = selectedEvent;
+                        if (!activeEventKeysLoaded) ensureActiveEventKeysLoaded();
+                        eventSelect.addEventListener('change', () => {
                             if (!state.tileTemplateProps[colIdx][rowIdx]) state.tileTemplateProps[colIdx][rowIdx] = {};
-                            state.tileTemplateProps[colIdx][rowIdx].customerDisplayEventKey = eventInput.value.trim();
+                            state.tileTemplateProps[colIdx][rowIdx].customerDisplayEventKey = eventSelect.value.trim();
                             saveState();
                             renderTiles();
                         });
+                        const refreshBtn = document.createElement('button');
+                        refreshBtn.type = 'button';
+                        refreshBtn.className = 'btn btn-secondary';
+                        refreshBtn.textContent = 'Refresh';
+                        refreshBtn.title = 'Reload POS event list from Firebase';
+                        refreshBtn.addEventListener('click', (ev) => {
+                            ev.preventDefault();
+                            activeEventKeysLoaded = false;
+                            loadActiveEventKeys({ force: true }).then(() => renderColumnRowsSection());
+                        });
+                        const eventRow = document.createElement('div');
+                        eventRow.style.display = 'flex';
+                        eventRow.style.gap = '0.5rem';
+                        eventRow.style.alignItems = 'center';
+                        eventRow.style.flexWrap = 'wrap';
+                        eventSelect.style.flex = '1';
+                        eventSelect.style.minWidth = '8rem';
+                        eventRow.appendChild(eventSelect);
+                        eventRow.appendChild(refreshBtn);
                         const eventHint = document.createElement('span');
                         eventHint.className = 'form-hint';
-                        eventHint.textContent = 'Idle shows gallery; active order shows customer display.';
+                        const hintExtra = posEventDropdownHint();
+                        eventHint.textContent = hintExtra
+                            ? hintExtra
+                            : 'Idle shows gallery; active order shows customer display.';
                         propsPanel.appendChild(eventLabel);
-                        propsPanel.appendChild(eventInput);
+                        propsPanel.appendChild(eventRow);
                         propsPanel.appendChild(eventHint);
                     }
+                    block.appendChild(propsPanel);
+                }
+                if (templateVal === 'customization') {
+                    const propsPanel = document.createElement('div');
+                    propsPanel.className = 'tile-template-props';
+                    const customProps = getCustomizationProps((state.tileTemplateProps[colIdx] && state.tileTemplateProps[colIdx][rowIdx]) || {});
+                    if (!state.tileTemplateProps[colIdx][rowIdx]) state.tileTemplateProps[colIdx][rowIdx] = {};
+                    const hidePricesOnTile = Boolean((state.tileTemplateProps[colIdx][rowIdx] || {}).hidePrices);
+                    state.tileTemplateProps[colIdx][rowIdx] = { ...state.tileTemplateProps[colIdx][rowIdx], ...customProps, hidePrices: hidePricesOnTile };
+
+                    const hidePricesCustomLabel = document.createElement('label');
+                    hidePricesCustomLabel.className = 'menu-props-hide-prices';
+                    hidePricesCustomLabel.style.display = 'flex';
+                    hidePricesCustomLabel.style.alignItems = 'center';
+                    hidePricesCustomLabel.style.gap = '0.5rem';
+                    hidePricesCustomLabel.style.marginBottom = '0.35rem';
+                    const hidePricesCustomCheck = document.createElement('input');
+                    hidePricesCustomCheck.type = 'checkbox';
+                    hidePricesCustomCheck.checked = hidePricesOnTile;
+                    hidePricesCustomCheck.addEventListener('change', () => {
+                        state.tileTemplateProps[colIdx][rowIdx].hidePrices = hidePricesCustomCheck.checked;
+                        saveState();
+                        renderTiles();
+                    });
+                    hidePricesCustomLabel.appendChild(hidePricesCustomCheck);
+                    const hidePricesCustomText = document.createElement('span');
+                    hidePricesCustomText.textContent = 'Hide prices';
+                    hidePricesCustomLabel.appendChild(hidePricesCustomText);
+                    propsPanel.appendChild(hidePricesCustomLabel);
+
+                    const addNumberInput = (labelText, key, min = 0) => {
+                        const label = document.createElement('label');
+                        label.textContent = labelText;
+                        const input = document.createElement('input');
+                        input.type = 'number';
+                        input.min = String(min);
+                        input.step = '1';
+                        input.value = String(customProps[key]);
+                        input.addEventListener('input', () => {
+                            const value = Math.max(min, Number(input.value) || 0);
+                            state.tileTemplateProps[colIdx][rowIdx][key] = value;
+                            saveState();
+                            renderTiles();
+                        });
+                        propsPanel.appendChild(label);
+                        propsPanel.appendChild(input);
+                    };
+
+                    addNumberInput('Level 2 price', 'level2Price');
+                    addNumberInput('Level 3 price', 'level3Price');
+                    addNumberInput('Main header font size (px)', 'titleFontSize', 8);
+                    addNumberInput('Subheader font size (px)', 'subtitleFontSize', 8);
+
+                    const defaultMilkLabel = document.createElement('label');
+                    defaultMilkLabel.textContent = 'Default milk';
+                    const defaultMilkSelect = document.createElement('select');
+                    defaultMilkSelect.innerHTML = '<option value="dairy">Dairy</option><option value="oat">Oat</option>';
+                    defaultMilkSelect.value = customProps.defaultMilk;
+                    defaultMilkSelect.addEventListener('change', () => {
+                        state.tileTemplateProps[colIdx][rowIdx].defaultMilk = defaultMilkSelect.value === 'oat' ? 'oat' : 'dairy';
+                        saveState();
+                        renderTiles();
+                    });
+                    propsPanel.appendChild(defaultMilkLabel);
+                    propsPanel.appendChild(defaultMilkSelect);
+
+                    addNumberInput('Dairy milk price (0 = FREE)', 'dairyPrice');
+                    addNumberInput('Oat milk price (0 = FREE)', 'oatPrice');
+
+                    addNumberInput('Strength panel height', 'strengthPanelHeight', 1);
+                    addNumberInput('Sweetness panel height', 'sweetnessPanelHeight', 1);
+                    addNumberInput('Dairy panel height', 'dairyPanelHeight', 1);
+                    addNumberInput('Oat panel height', 'oatPanelHeight', 1);
+
+                    const hint = document.createElement('span');
+                    hint.className = 'form-hint';
+                    hint.textContent = 'Panel heights are relative weights.';
+                    propsPanel.appendChild(hint);
                     block.appendChild(propsPanel);
                 }
                 if (templateVal === 'customer-display') {
@@ -1859,17 +2614,37 @@ import {
                     const displayProps = (state.tileTemplateProps[colIdx] && state.tileTemplateProps[colIdx][rowIdx]) || {};
 
                     const eventLabel = document.createElement('label');
-                    eventLabel.textContent = 'Event key (optional)';
-                    const eventInput = document.createElement('input');
-                    eventInput.type = 'text';
-                    eventInput.placeholder = 'e.g. bgc-night-market';
-                    eventInput.value = displayProps.eventKey || '';
-                    eventInput.addEventListener('input', () => {
+                    eventLabel.textContent = 'POS event';
+                    const eventSelect = document.createElement('select');
+                    const selectedEvent = (displayProps.eventKey || '').trim();
+                    eventSelect.innerHTML = buildPosEventDropdownHtml(selectedEvent);
+                    eventSelect.value = selectedEvent;
+                    if (!activeEventKeysLoaded) ensureActiveEventKeysLoaded();
+                    eventSelect.addEventListener('change', () => {
                         if (!state.tileTemplateProps[colIdx][rowIdx]) state.tileTemplateProps[colIdx][rowIdx] = {};
-                        state.tileTemplateProps[colIdx][rowIdx].eventKey = eventInput.value.trim();
+                        state.tileTemplateProps[colIdx][rowIdx].eventKey = eventSelect.value.trim();
                         saveState();
                         renderTiles();
                     });
+                    const refreshEventsBtn = document.createElement('button');
+                    refreshEventsBtn.type = 'button';
+                    refreshEventsBtn.className = 'btn btn-secondary';
+                    refreshEventsBtn.textContent = 'Refresh';
+                    refreshEventsBtn.title = 'Reload POS event list from Firebase';
+                    refreshEventsBtn.addEventListener('click', (ev) => {
+                        ev.preventDefault();
+                        activeEventKeysLoaded = false;
+                        loadActiveEventKeys({ force: true }).then(() => renderColumnRowsSection());
+                    });
+                    const eventSelectRow = document.createElement('div');
+                    eventSelectRow.style.display = 'flex';
+                    eventSelectRow.style.gap = '0.5rem';
+                    eventSelectRow.style.alignItems = 'center';
+                    eventSelectRow.style.flexWrap = 'wrap';
+                    eventSelect.style.flex = '1';
+                    eventSelect.style.minWidth = '8rem';
+                    eventSelectRow.appendChild(eventSelect);
+                    eventSelectRow.appendChild(refreshEventsBtn);
 
                     const showSettingsWrap = document.createElement('label');
                     showSettingsWrap.className = 'menu-save-new-toggle';
@@ -1889,10 +2664,13 @@ import {
 
                     const hint = document.createElement('span');
                     hint.className = 'form-hint';
-                    hint.textContent = 'This embeds ../pos/customer-display.html so updates happen in one source only.';
+                    const posHint = posEventDropdownHint();
+                    hint.textContent = posHint
+                        ? posHint
+                        : 'This embeds ../pos/customer-display.html so updates happen in one source only.';
 
                     propsPanel.appendChild(eventLabel);
-                    propsPanel.appendChild(eventInput);
+                    propsPanel.appendChild(eventSelectRow);
                     propsPanel.appendChild(showSettingsWrap);
                     propsPanel.appendChild(hint);
                     block.appendChild(propsPanel);
@@ -2040,7 +2818,8 @@ import {
                     const menuProps = (state.tileTemplateProps && state.tileTemplateProps[colIdx] && state.tileTemplateProps[colIdx][r]) || { category: '', drinkIds: [] };
                     tile.innerHTML = getMenuTemplateHtml(menuProps);
                 } else if (template === 'customization') {
-                    tile.innerHTML = getCustomizationTemplateHtml();
+                    const customProps = (state.tileTemplateProps && state.tileTemplateProps[colIdx] && state.tileTemplateProps[colIdx][r]) || {};
+                    tile.innerHTML = getCustomizationTemplateHtml(customProps);
                 } else if (template === 'photo') {
                     const photoProps = (state.tileTemplateProps && state.tileTemplateProps[colIdx] && state.tileTemplateProps[colIdx][r]) || {};
                     const { mediaItems, galleryIntervalSeconds } = getGalleryProps(photoProps);
@@ -2184,16 +2963,32 @@ import {
         const wrapW = previewWrapEl.clientWidth;
         const wrapH = previewWrapEl.clientHeight;
         if (wrapW <= 0 || wrapH <= 0 || w <= 0 || h <= 0) return;
+        const rot = normalizeViewRotationDeg(viewRotationDeg);
+        const fitW = (rot === 90 || rot === 270) ? h : w;
+        const fitH = (rot === 90 || rot === 270) ? w : h;
         // In fullscreen preview we allow upscaling so the menu maximizes
         // available screen space (important for iPad PWA).
-        let scale = Math.min(wrapW / w, wrapH / h);
+        let scale = Math.min(wrapW / fitW, wrapH / fitH);
         if (!fullscreenPreviewActive) scale = Math.min(scale, 1);
-        canvasFitWrapperEl.style.width = w * scale + 'px';
-        canvasFitWrapperEl.style.height = h * scale + 'px';
+        const interactionZoom = isPreviewZoomEnabled() ? previewZoom : 1;
+        const totalScale = scale * interactionZoom;
+        const offsetX = isPreviewInteractionEnabled() ? previewPanX : 0;
+        const offsetY = isPreviewInteractionEnabled() ? previewPanY : 0;
+        const Ws = w * totalScale;
+        const Hs = h * totalScale;
+        const aw = (rot === 90 || rot === 270) ? Hs : Ws;
+        const ah = (rot === 90 || rot === 270) ? Ws : Hs;
+        canvasFitWrapperEl.style.display = 'flex';
+        canvasFitWrapperEl.style.alignItems = 'center';
+        canvasFitWrapperEl.style.justifyContent = 'center';
+        canvasFitWrapperEl.style.width = aw + 'px';
+        canvasFitWrapperEl.style.height = ah + 'px';
+        canvasFitWrapperEl.style.transform = `translate(${offsetX}px, ${offsetY}px)`;
         canvasScalerEl.style.width = w + 'px';
         canvasScalerEl.style.height = h + 'px';
-        canvasScalerEl.style.transformOrigin = '0 0';
-        canvasScalerEl.style.transform = 'scale(' + scale + ')';
+        canvasScalerEl.style.transformOrigin = 'center center';
+        canvasScalerEl.style.flexShrink = '0';
+        canvasScalerEl.style.transform = 'scale(' + totalScale + ') rotate(' + rot + 'deg)';
     }
 
     function debounce(fn, ms) {
@@ -2205,8 +3000,14 @@ import {
     }
 
     function init() {
+        setupViewerModeUi();
+        setupPreviewInteractions();
+        loadViewRotation();
+        ensureActiveEventKeysLoaded();
         loadState();
+        loadCustomCategories();
         applyStateToForm();
+        renderDrinkCategoryOptions('');
 
         orientationEl.addEventListener('change', () => {
             state.orientation = orientationEl.value;
@@ -2294,8 +3095,9 @@ import {
                     layoutPanelEl.hidden = true;
                     drinksPanelEl.classList.add('active');
                     drinksPanelEl.hidden = false;
-                    loadDrinksFromFirebase().then(() => seedDrinksIfEmpty()).then(() => {
+                    loadDrinksFromFirebase().then(() => seedDrinksIfEmpty()).then(() => runOneTimeDrinkDuplicateResolution()).then(() => {
                         renderDrinksList();
+                        renderDrinkCategoryOptions(drinkCategoryEl ? drinkCategoryEl.value : '');
                         renderColumnRowsSection();
                         renderTiles();
                     });
@@ -2304,8 +3106,19 @@ import {
         });
 
         if (addDrinkBtnEl) addDrinkBtnEl.addEventListener('click', () => openDrinkModal());
+        if (manageCategoriesBtnEl) manageCategoriesBtnEl.addEventListener('click', openCategoryModal);
         if (saveDrinkBtnEl) saveDrinkBtnEl.addEventListener('click', saveDrink);
         if (cancelDrinkBtnEl) cancelDrinkBtnEl.addEventListener('click', closeDrinkModal);
+        if (addCategoryBtnEl) addCategoryBtnEl.addEventListener('click', addCategory);
+        if (closeCategoryBtnEl) closeCategoryBtnEl.addEventListener('click', closeCategoryModal);
+        if (newCategoryNameEl) {
+            newCategoryNameEl.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    addCategory();
+                }
+            });
+        }
         if (exportPhotoBtnEl) exportPhotoBtnEl.addEventListener('click', exportAsPng);
         if (fullscreenPreviewBtnEl) fullscreenPreviewBtnEl.addEventListener('click', toggleFullscreenPreview);
         const saveMenuBtnEl = $('saveMenuBtn');
@@ -2325,8 +3138,35 @@ import {
                 if (e.target === drinkModalBackdropEl) closeDrinkModal();
             });
         }
+        if (categoryModalBackdropEl) {
+            categoryModalBackdropEl.addEventListener('click', (e) => {
+                if (e.target === categoryModalBackdropEl) closeCategoryModal();
+            });
+        }
         document.addEventListener('keydown', (e) => {
+            if (
+                (e.key === 'r' || e.key === 'R') &&
+                !e.ctrlKey && !e.metaKey && !e.altKey
+            ) {
+                if (isKeydownInEditableField(e.target)) return;
+                e.preventDefault();
+                cycleViewRotation();
+                return;
+            }
+            if (
+                VIEWER_MODE &&
+                e.key === 'Tab' &&
+                (!menuLoadModalBackdropEl || menuLoadModalBackdropEl.hidden) &&
+                (!menuSaveModalBackdropEl || menuSaveModalBackdropEl.hidden) &&
+                (!drinkModalBackdropEl || drinkModalBackdropEl.hidden) &&
+                (!categoryModalBackdropEl || categoryModalBackdropEl.hidden)
+            ) {
+                e.preventDefault();
+                openLoadMenuModal();
+                return;
+            }
             if (e.key === 'Escape' && drinkModalBackdropEl && !drinkModalBackdropEl.hidden) closeDrinkModal();
+            if (e.key === 'Escape' && categoryModalBackdropEl && !categoryModalBackdropEl.hidden) closeCategoryModal();
             if (e.key === 'Escape' && menuSaveModalBackdropEl && !menuSaveModalBackdropEl.hidden) closeSaveMenuModal();
             if (e.key === 'Escape' && menuLoadModalBackdropEl && !menuLoadModalBackdropEl.hidden) closeLoadMenuModal();
         });
@@ -2361,8 +3201,9 @@ import {
             });
         }
 
-        loadDrinksFromFirebase().then(() => seedDrinksIfEmpty()).then(() => {
+        loadDrinksFromFirebase().then(() => seedDrinksIfEmpty()).then(() => runOneTimeDrinkDuplicateResolution()).then(() => {
             renderDrinksList();
+            renderDrinkCategoryOptions(drinkCategoryEl ? drinkCategoryEl.value : '');
             renderColumnRowsSection();
             renderTiles();
         });

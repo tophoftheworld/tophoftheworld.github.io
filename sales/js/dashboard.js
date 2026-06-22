@@ -7,6 +7,13 @@ const dateRangeInput = document.getElementById("dateRange");
 let salesData = [];
 let currentBranch = 'sm-north';
 let myChart = null;
+/** Increments each load; stale async completions are ignored after branch changes. */
+let salesLoadGeneration = 0;
+
+/** Podium and MOA share the same daily-sales schema (walk-in breakdown, QR, gift cards). */
+function usesPodiumLayout() {
+    return currentBranch === 'podium' || currentBranch === 'moa';
+}
 
 function formatDateRange(startDate, endDate) {
     const startMonth = startDate.toLocaleString('en-US', { month: 'short' });
@@ -414,19 +421,28 @@ async function saveRecordsToFirebase(records) {
 }
 
 async function loadSalesData() {
-    let collectionPath;
+    const branchEl = document.getElementById('branchSelector');
+    const branch = (branchEl && branchEl.value) ? branchEl.value : currentBranch;
+    currentBranch = branch;
 
-    if (currentBranch === 'sm-north') {
-        // Use new structure for SM North
-        collectionPath = 'sales-data/sm-north/daily';
-        const snapshot = await getDocs(collection(db, 'sales-data', 'sm-north', 'daily'));
-        salesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const gen = ++salesLoadGeneration;
+
+    let snapshot;
+    if (branch === 'sm-north') {
+        snapshot = await getDocs(collection(db, 'sales-data', 'sm-north', 'daily'));
+    } else if (branch === 'podium') {
+        snapshot = await getDocs(collection(db, 'sales-data', 'podium', 'daily'));
+    } else if (branch === 'moa') {
+        snapshot = await getDocs(collection(db, 'sales-data', 'moa', 'daily'));
     } else {
-        // Use new structure for Podium
-        collectionPath = 'sales-data/podium/daily';
-        const snapshot = await getDocs(collection(db, 'sales-data', 'podium', 'daily'));
-        salesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        snapshot = null;
     }
+
+    if (gen !== salesLoadGeneration) return;
+
+    salesData = snapshot
+        ? snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+        : [];
 
     filterAndRender();
 }
@@ -549,13 +565,14 @@ document.addEventListener('DOMContentLoaded', function () {
     // Show/hide import section based on branch
     toggleImportSection();
 
-    // Branch selector handler
-    document.getElementById('branchSelector').addEventListener('change', function (e) {
-        currentBranch = e.target.value;
+    currentBranch = document.getElementById('branchSelector').value;
 
-        toggleImportSection(); // Add this line
+    document.getElementById('branchSelector').addEventListener('change', function () {
+        toggleImportSection();
         loadSalesData();
     });
+
+    loadSalesData();
 
     // Add window resize listener to update table format on mobile/desktop switch
     window.addEventListener('resize', function() {
@@ -858,7 +875,7 @@ function generateTableHeaders(viewType) {
     let headers = [];
 
     // Branch-specific headers
-    if (currentBranch === 'podium') {
+    if (usesPodiumLayout()) {
         switch (viewType) {
             case 'daily':
                 headers = ['Date', 'Day', 'Staff', 'Total Sales', 'Walk-In Sales', 'Cash', 'Card', 'QR', 'Grab', 'Gift Cards', 'Expenses', 'Cash Left'];
@@ -914,7 +931,7 @@ function updateTableForView(days, dataMap, viewType) {
                 // Check if mobile view (screen width <= 768px)
                 const isMobile = window.innerWidth <= 768;
                 
-                if (currentBranch === 'podium') {
+                if (usesPodiumLayout()) {
                     cells = [
                         isMobile ? 
                             date.toLocaleDateString("en-PH", { month: 'short', day: 'numeric' }) :
@@ -995,7 +1012,7 @@ function updateTableForView(days, dataMap, viewType) {
                     weekTotals.grab += data.grab || 0;
                     weekTotals.expenses += data.expenses || 0;
 
-                    if (currentBranch === 'podium') {
+                    if (usesPodiumLayout()) {
                         weekTotals.qr += data.qr || 0;
                         weekTotals.giftCard += data.giftCard || 0;
                     } else {
@@ -1014,7 +1031,7 @@ function updateTableForView(days, dataMap, viewType) {
             const tr = document.createElement("tr");
             let cells = [];
 
-            if (currentBranch === 'podium') {
+            if (usesPodiumLayout()) {
                 cells = [
                     dateRange,
                     format(weekTotals.totalSales, true),
@@ -1107,7 +1124,7 @@ function updateTableForView(days, dataMap, viewType) {
                     monthTotals.expenses += data.expenses || 0;
                     monthTotals.cashLeft += data.actualCashLeft || 0;
 
-                    if (currentBranch === 'podium') {
+                    if (usesPodiumLayout()) {
                         monthTotals.qr += data.qr || 0;
                         monthTotals.giftCard += data.giftCard || 0;
                     } else {
@@ -1121,7 +1138,7 @@ function updateTableForView(days, dataMap, viewType) {
             const tr = document.createElement("tr");
             let cells = [];
 
-            if (currentBranch === 'podium') {
+            if (usesPodiumLayout()) {
                 cells = [
                     monthKey,
                     format(monthTotals.totalSales, true),
@@ -1159,7 +1176,7 @@ function updateTableForView(days, dataMap, viewType) {
 }
 
 function calculateWalkInSales(data) {
-    if (currentBranch === 'podium') {
+    if (usesPodiumLayout()) {
         return (data.cash || 0) + (data.card || 0) + (data.qr || 0) + (data.giftCard || 0);
     } else {
         const hasGrabData = 'grab' in data && data.grab !== undefined;
@@ -1179,8 +1196,8 @@ function isCurrentMonth(monthKey) {
 
 function calculateTotalSales(data) {
     // Use branch-based logic instead of field detection
-    if (currentBranch === 'podium') {
-        // Podium structure: walkIn + grab
+    if (usesPodiumLayout()) {
+        // Podium / MOA structure: walkIn + grab
         const walkInSales = calculateWalkInSales(data);
         return walkInSales + (data.grab || 0);
     } else {
@@ -1800,14 +1817,6 @@ function adjustDateForTimezone(date) {
         ));
         return adjustedDate.toISOString().split('T')[0];
     }
-
-// Branch selector handler
-document.getElementById('branchSelector').addEventListener('change', function (e) {
-    currentBranch = e.target.value;
-    loadSalesData(); // Reload data for new branch
-});
-
-loadSalesData();
 
 // Default view type
 let currentGraphView = "daily";

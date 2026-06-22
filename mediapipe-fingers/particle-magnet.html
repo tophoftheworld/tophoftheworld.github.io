@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Particle Magnet — Finger Lab</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body class="exp-page">
+  <header class="exp-topbar">
+    <a class="back" href="./index.html">← Finger Lab</a>
+    <h1>Particle Magnet</h1>
+    <div class="exp-hud">
+      <span>Mode: <strong id="modeLabel">Attract</strong></span>
+      <span>Pinch to toggle</span>
+    </div>
+  </header>
+
+  <div class="stage-wrap">
+    <div class="stage" id="stage">
+      <div class="loading-overlay" id="loading">
+        <div class="spinner"></div>
+        <span>Starting camera &amp; hand model…</span>
+      </div>
+      <video id="webcam" playsinline muted></video>
+      <canvas id="particles" class="interactive"></canvas>
+      <canvas id="overlay" class="overlay"></canvas>
+    </div>
+  </div>
+
+  <p class="hint-bar">All five fingertips act as force points · Pinch thumb+index on either hand to switch attract / repel</p>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <script src="./js/hands-runtime.js"></script>
+  <script src="./js/exp-template.js"></script>
+  <script src="./js/particle-magnet.js"></script>
+</body>
+</html>

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Air Paint 3D — Finger Lab</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <style>
+    .color-picks {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .color-picks button {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      cursor: pointer;
+      padding: 0;
+    }
+    .color-picks button.active {
+      border-color: #e8ecf4;
+      box-shadow: 0 0 0 1px var(--bg);
+    }
+  </style>
+</head>
+<body class="exp-page">
+  <header class="exp-topbar">
+    <a class="back" href="./index.html">← Finger Lab</a>
+    <h1>Air Paint 3D</h1>
+    <div class="exp-hud">
+      <span>Right pinch: <strong>draw</strong></span>
+      <span>Left pinch: <strong>rotate</strong></span>
+      <span>Depth: <strong id="depthLabel">—</strong></span>
+      <div class="color-picks" id="colorPicks"></div>
+    </div>
+  </header>
+
+  <div class="stage-wrap">
+    <div class="stage" id="stage">
+      <div class="loading-overlay" id="loading">
+        <div class="spinner"></div>
+        <span>Starting camera &amp; hand model…</span>
+      </div>
+      <video id="webcam" playsinline muted></video>
+      <canvas id="webgl" class="webgl-layer"></canvas>
+      <canvas id="overlay" class="overlay"></canvas>
+    </div>
+  </div>
+
+  <p class="hint-bar">
+    Right pinch draws in 3D — move hand closer (bigger in frame) or farther (smaller) for depth ·
+    Left pinch + drag rotates · <kbd>C</kbd> color · <kbd>R</kbd> clear · Reach far/near once to calibrate
+  </p>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <script src="./js/hands-runtime.js"></script>
+  <script src="./js/exp-template.js"></script>
+  <script src="./js/air-paint.js"></script>
+</body>
+</html>

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Event Booking Dashboard</title>
+    <link rel="icon" href="data:," />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="css/admin.css" />
+</head>
+<body>
+    <div class="container">
+        <header class="admin-header">
+            <h1>Event Booking Dashboard</h1>
+            <button type="button" class="btn-secondary" id="refreshBtn">Refresh</button>
+        </header>
+
+        <div class="filters-bar">
+            <div class="filter-group">
+                <label for="filterMonth">Month</label>
+                <input type="month" id="filterMonth" />
+            </div>
+            <div class="filter-group">
+                <label for="filterEventType">Event name</label>
+                <input type="text" id="filterEventType" placeholder="All events" />
+            </div>
+            <div class="filter-group">
+                <label for="filterStatus">Status</label>
+                <select id="filterStatus">
+                    <option value="">All</option>
+                    <option value="open">Open</option>
+                    <option value="full">Full</option>
+                    <option value="cancelled">Cancelled</option>
+                </select>
+            </div>
+            <div class="filter-group grow">
+                <label for="searchInput">Search</label>
+                <input type="search" id="searchInput" placeholder="Event, session, or ID" />
+            </div>
+        </div>
+
+        <p class="status-bar" id="statusBar" role="status" aria-live="polite"></p>
+
+        <div class="workspace" id="workspace">
+            <div class="list-pane" id="listPane">
+                <div class="list-pane-toolbar">
+                    <div class="list-toolbar-left">
+                        <div class="view-toggle" role="tablist" aria-label="View mode">
+                            <button type="button" class="view-toggle-btn active" data-view="list" role="tab" aria-selected="true">List</button>
+                            <button type="button" class="view-toggle-btn" data-view="calendar" role="tab" aria-selected="false">Calendar</button>
+                        </div>
+                        <div class="list-group-toggle" id="listGroupToggle" role="tablist" aria-label="List grouping">
+                            <button type="button" class="list-group-btn active" data-group="events" role="tab" aria-selected="true">Events</button>
+                            <button type="button" class="list-group-btn" data-group="sessions" role="tab" aria-selected="false">Sessions</button>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-primary" id="addEventBtn">+ Add event</button>
+                </div>
+
+                <div class="list-pane-scroll">
+                    <div id="listView">
+                        <div class="table-wrap">
+                            <table class="sessions-table">
+                                <thead id="listTableHead">
+                                    <tr>
+                                        <th class="col-event">Event</th>
+                                        <th class="col-date">Date</th>
+                                        <th class="col-seats">Booked</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="sessionsTbody"></tbody>
+                            </table>
+                            <p class="empty-state hidden" id="emptyState">No sessions for this filter yet.</p>
+                        </div>
+                    </div>
+
+                    <div id="calendarView" class="hidden">
+                        <div class="calendar-head">
+                            <button type="button" class="btn-secondary" id="prevMonthBtn">Prev</button>
+                            <strong id="calendarMonthLabel"></strong>
+                            <button type="button" class="btn-secondary" id="nextMonthBtn">Next</button>
+                        </div>
+                        <div class="calendar-grid" id="calendarGrid"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="detail-modal-backdrop hidden" id="detailModalBackdrop" aria-hidden="true"></div>
+            <aside class="detail-pane hidden" id="detailPane" aria-label="Event details">
+                <div class="detail-pane-inner">
+                    <header class="detail-pane-header" id="detailPaneHeader">
+                        <div class="detail-header-row">
+                            <h2 class="detail-pane-title" id="detailPaneTitle">Event</h2>
+                            <button type="button" class="detail-close-btn" id="detailCloseBtn" aria-label="Close panel">&times;</button>
+                        </div>
+                    </header>
+                    <div class="detail-pane-body" id="detailPaneBody">
+                        <p class="detail-placeholder">Select an event or add one to get started.</p>
+                    </div>
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    <datalist id="eventTypeSuggestions"></datalist>
+
+    <script type="module" src="js/admin.js"></script>
+</body>
+</html>

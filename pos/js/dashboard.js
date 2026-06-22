@@ -21,6 +21,15 @@ let dashboardLoadGeneration = 0;
 
 const MANUAL_SALES_STORAGE_KEY = 'posDashboardManualSales';
 
+function escapeHtml(text) {
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
 function getManualSalesMap() {
     try {
         return JSON.parse(localStorage.getItem(MANUAL_SALES_STORAGE_KEY) || '{}');
@@ -1786,15 +1795,15 @@ async function loadEventsList() {
             html += activeEvents.map(event => `
         <div class="event-item">
             <div class="event-info">
-                <strong>${event.name}</strong>
+                <strong>${escapeHtml(event.name)}</strong>
                 <small>${event.serviceType === 'package' ? 'Package Service' : 'Pop-Up Service'} • Created: ${new Date(event.createdAt).toLocaleDateString()}</small>
                 ${event.customMenu ? '<span class="custom-menu-indicator">Custom Menu</span>' : '<span class="default-menu-indicator">Default Menu</span>'}
             </div>
             <div class="event-actions">
-                <button class="btn-menu" onclick="manageEventMenu('${event.id}', '${event.name}')">Menu</button>
-                <button class="btn-edit" onclick="editEvent('${event.id}', '${event.name}')">Edit</button>
-                <button class="btn-archive" onclick="archiveEvent('${event.id}', '${event.name}', true)">Archive</button>
-                <button class="btn-delete" onclick="deleteEvent('${event.id}', '${event.name}')">Delete</button>
+                <button type="button" class="btn-menu" data-action="menu" data-event-id="${escapeHtml(event.id)}" data-event-name="${escapeHtml(event.name)}">Menu</button>
+                <button type="button" class="btn-edit" data-action="edit" data-event-id="${escapeHtml(event.id)}" data-event-name="${escapeHtml(event.name)}">Edit</button>
+                <button type="button" class="btn-archive" data-action="archive" data-event-id="${escapeHtml(event.id)}" data-event-name="${escapeHtml(event.name)}">Archive</button>
+                <button type="button" class="btn-delete" data-action="delete" data-event-id="${escapeHtml(event.id)}" data-event-name="${escapeHtml(event.name)}">Delete</button>
             </div>
         </div>
     `).join('');
@@ -1807,12 +1816,12 @@ async function loadEventsList() {
             html += archivedEvents.map(event => `
                 <div class="event-item archived">
                     <div class="event-info">
-                        <strong>${event.name}</strong>
+                        <strong>${escapeHtml(event.name)}</strong>
                         <small>${event.serviceType === 'package' ? 'Package Service' : 'Pop-Up Service'} • Archived</small>
                     </div>
                     <div class="event-actions">
-                        <button class="btn-unarchive" onclick="archiveEvent('${event.id}', '${event.name}', false)">Unarchive</button>
-                        <button class="btn-delete" onclick="deleteEvent('${event.id}', '${event.name}')">Delete</button>
+                        <button type="button" class="btn-unarchive" data-action="unarchive" data-event-id="${escapeHtml(event.id)}" data-event-name="${escapeHtml(event.name)}">Unarchive</button>
+                        <button type="button" class="btn-delete" data-action="delete" data-event-id="${escapeHtml(event.id)}" data-event-name="${escapeHtml(event.name)}">Delete</button>
                     </div>
                 </div>
             `).join('');
@@ -1820,6 +1829,18 @@ async function loadEventsList() {
         }
 
         container.innerHTML = html;
+        container.onclick = (e) => {
+            const btn = e.target.closest('[data-action]');
+            if (!btn || !container.contains(btn)) return;
+            const { eventId, eventName } = btn.dataset;
+            switch (btn.dataset.action) {
+                case 'menu': window.manageEventMenu(eventId, eventName); break;
+                case 'edit': window.editEvent(eventId, eventName); break;
+                case 'archive': window.archiveEvent(eventId, eventName, true); break;
+                case 'unarchive': window.archiveEvent(eventId, eventName, false); break;
+                case 'delete': window.deleteEvent(eventId, eventName); break;
+            }
+        };
     } catch (error) {
         container.innerHTML = '<p class="error">Error loading events</p>';
     }

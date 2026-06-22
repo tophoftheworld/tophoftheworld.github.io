@@ -13,3 +13,6 @@ window.FIREBASE_CONFIG = {
   messagingSenderId: '339591618451',
   appId: '1:339591618451:web:23f9d95833ee5010bbd266',
 };
+
+/** When true, never calls Firebase Anonymous sign-in (faster startup, no Identity Toolkit POST). Set false when Storage rules require request.auth for photo uploads. */
+window.MATCHA_HOP_SKIP_ANONYMOUS_AUTH = true;

@@ -1,20 +1,20 @@
 {
-  "name": "chatbase-leads-dashboard-functions",
+  "name": "chatbase-conversations-dashboard-functions",
   "version": "1.0.0",
   "private": true,
   "main": "index.js",
   "engines": {
-    "node": ">=20"
+    "node": "20"
   },
   "scripts": {
-    "serve": "firebase emulators:start --only functions,firestore,hosting",
-    "deploy": "firebase deploy --only functions,hosting,firestore:rules",
+    "serve": "firebase emulators:start",
+    "deploy": "node ../scripts/prepare-deploy.mjs && firebase deploy --only functions:api,hosting",
     "lint": "echo \"No lint configured\"",
     "test": "node --test tests/*.test.js"
   },
   "dependencies": {
     "express": "^4.21.2",
-    "firebase-admin": "^12.7.0",
+    "firebase-admin": "^13.0.2",
     "firebase-functions": "^6.3.2"
   }
 }

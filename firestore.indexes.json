@@ -7,6 +7,15 @@
         { "fieldPath": "periodId", "order": "ASCENDING" },
         { "fieldPath": "employeeId", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "workshop_sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "workshopType", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "ASCENDING" },
+        { "fieldPath": "startTime", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

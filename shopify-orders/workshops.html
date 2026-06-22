@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Workshop Management</title>
+    <link rel="icon" href="data:," />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/hub/hub-shell.css" />
+    <link rel="stylesheet" href="css/orders-dashboard.css?v=45" />
+    <link rel="stylesheet" href="/hub/hub.css" />
+</head>
+<body>
+    <div class="container">
+        <header class="admin-header app-chrome">
+            <div class="logo-section">
+                <div data-hub-nav-logo>
+                    <img src="img/matchanese-logo.png" class="logo" alt="Matchanese" />
+                </div>
+                <h1 class="app-title">Workshop Management</h1>
+            </div>
+            <div class="header-actions">
+                <a href="/shopify/" class="workshop-nav-back">← Shopify Orders</a>
+            </div>
+        </header>
+
+        <div class="main-controls workshops-controls app-chrome">
+            <div class="type-selector workshops-range-toggle" id="rangeToggle" aria-label="Workshop date range">
+                <button type="button" class="type-btn active" data-range="upcoming">Upcoming</button>
+                <button type="button" class="type-btn" data-range="past">Past</button>
+            </div>
+        </div>
+
+        <p class="status-bar app-chrome" id="statusBar" aria-live="polite" role="status"></p>
+
+        <div class="list-pane-scroll workshop-table-wrap">
+            <div class="entity-card-list" id="workshopsCardList" aria-label="Workshops"></div>
+            <div class="data-table-container list-table-wrap">
+                <table class="workshops-index-table" id="workshopsTable">
+                    <thead>
+                        <tr>
+                            <th class="col-date" scope="col">Date</th>
+                            <th class="col-workshop" scope="col">Workshop</th>
+                            <th class="col-location" scope="col">Location</th>
+                            <th class="col-times" scope="col">Session time(s)</th>
+                            <th class="col-seats" scope="col">Registered</th>
+                            <th class="col-nobooking" scope="col">No booking</th>
+                        </tr>
+                    </thead>
+                    <tbody id="workshopsBody"></tbody>
+                </table>
+            </div>
+            <nav class="pagination-bar list-pane-pagination" aria-label="Workshops pagination">
+                <button type="button" class="action-btn secondary" id="btnPrev" disabled>Previous</button>
+                <span class="page-indicator" id="pageIndicator">Page 1 of 1</span>
+                <button type="button" class="action-btn secondary" id="btnNext" disabled>Next</button>
+            </nav>
+        </div>
+    </div>
+
+    <script src="/hub/hub.js" defer></script>
+    <script type="module" src="js/workshops-list.js?v=45"></script>
+</body>
+</html>

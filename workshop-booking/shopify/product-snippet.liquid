@@ -1,0 +1,35 @@
+{% comment %}
+  Workshop booking — paste into product template (e.g. main-product.liquid)
+  above the buy buttons. Hide the theme default Add to cart on this product.
+
+  SETUP:
+  1. Deploy workshop-booking to Firebase Hosting (or use your GitHub Pages URL)
+  2. Create sessions in admin with event name = WB_EVENT_NAME below
+  3. Use a dedicated test product; set WB_EVENT_NAME to match admin
+
+  Change WB_HOST and WB_EVENT_NAME:
+{% endcomment %}
+{% assign wb_host = "https://matchanese-attendance.web.app" %}
+{% assign wb_event_name = "Matcha Workshop" %}
+
+<link rel="stylesheet" href="{{ wb_host }}/widget/booking-widget.css">
+
+<div
+  class="workshop-booking-widget"
+  data-workshop-booking
+  data-variant-id="{{ product.selected_or_first_available_variant.id }}"
+  data-event-name="{{ wb_event_name }}"
+></div>
+
+<script type="module" src="{{ wb_host }}/widget/booking-widget.js"></script>
+
+{% comment %} Optional: hide default add to cart on this product only {% endcomment %}
+{% if product.handle == 'matcha-workshop-booking-test' %}
+<style>
+  .product-form [name="add"],
+  .product-form .shopify-payment-button,
+  .product-form button[type="submit"][name="add"] {
+    display: none !important;
+  }
+</style>
+{% endif %}

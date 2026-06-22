@@ -1,0 +1,216 @@
+@font-face {
+    font-family: 'Aestetico Formal Semi';
+    src: url('AesteticoFormal-SemiBoldIt.eot');
+    src: local('Aestetico Formal Semi Bold Italic'), local('AesteticoFormal-SemiBoldIt'),
+        url('AesteticoFormal-SemiBoldIt.eot?#iefix') format('embedded-opentype'),
+        url('AesteticoFormal-SemiBoldIt.woff2') format('woff2'),
+        url('AesteticoFormal-SemiBoldIt.woff') format('woff'),
+        url('AesteticoFormal-SemiBoldIt.ttf') format('truetype');
+    font-weight: 600;
+    font-style: italic;
+}
+
+@font-face {
+    font-family: 'Aestetico Formal';
+    src: url('AesteticoFormal-BlackIt.eot');
+    src: local('Aestetico Formal Black Italic'), local('AesteticoFormal-BlackIt'),
+        url('AesteticoFormal-BlackIt.eot?#iefix') format('embedded-opentype'),
+        url('AesteticoFormal-BlackIt.woff2') format('woff2'),
+        url('AesteticoFormal-BlackIt.woff') format('woff'),
+        url('AesteticoFormal-BlackIt.ttf') format('truetype');
+    font-weight: 900;
+    font-style: italic;
+}
+
+@font-face {
+    font-family: 'Aestetico Formal Extra';
+    src: url('AesteticoFormal-ExtraLight.eot');
+    src: local('Aestetico Formal Extra Light'), local('AesteticoFormal-ExtraLight'),
+        url('AesteticoFormal-ExtraLight.eot?#iefix') format('embedded-opentype'),
+        url('AesteticoFormal-ExtraLight.woff2') format('woff2'),
+        url('AesteticoFormal-ExtraLight.woff') format('woff'),
+        url('AesteticoFormal-ExtraLight.ttf') format('truetype');
+    font-weight: 200;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: 'Aestetico Formal';
+    src: url('AesteticoFormal-BoldIt.eot');
+    src: local('Aestetico Formal Bold Italic'), local('AesteticoFormal-BoldIt'),
+        url('AesteticoFormal-BoldIt.eot?#iefix') format('embedded-opentype'),
+        url('AesteticoFormal-BoldIt.woff2') format('woff2'),
+        url('AesteticoFormal-BoldIt.woff') format('woff'),
+        url('AesteticoFormal-BoldIt.ttf') format('truetype');
+    font-weight: bold;
+    font-style: italic;
+}
+
+@font-face {
+    font-family: 'Aestetico Formal';
+    src: url('AesteticoFormal-Medium.eot');
+    src: local('Aestetico Formal Medium'), local('AesteticoFormal-Medium'),
+        url('AesteticoFormal-Medium.eot?#iefix') format('embedded-opentype'),
+        url('AesteticoFormal-Medium.woff2') format('woff2'),
+        url('AesteticoFormal-Medium.woff') format('woff'),
+        url('AesteticoFormal-Medium.ttf') format('truetype');
+    font-weight: 500;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: 'Aestetico Formal';
+    src: url('AesteticoFormal-LightIt.eot');
+    src: local('Aestetico Formal Light Italic'), local('AesteticoFormal-LightIt'),
+        url('AesteticoFormal-LightIt.eot?#iefix') format('embedded-opentype'),
+        url('AesteticoFormal-LightIt.woff2') format('woff2'),
+        url('AesteticoFormal-LightIt.woff') format('woff'),
+        url('AesteticoFormal-LightIt.ttf') format('truetype');
+    font-weight: 300;
+    font-style: italic;
+}
+
+@font-face {
+    font-family: 'Aestetico Formal Extra';
+    src: url('AesteticoFormal-ExtraBoldIt.eot');
+    src: local('Aestetico Formal Extra Bold Italic'), local('AesteticoFormal-ExtraBoldIt'),
+        url('AesteticoFormal-ExtraBoldIt.eot?#iefix') format('embedded-opentype'),
+        url('AesteticoFormal-ExtraBoldIt.woff2') format('woff2'),
+        url('AesteticoFormal-ExtraBoldIt.woff') format('woff'),
+        url('AesteticoFormal-ExtraBoldIt.ttf') format('truetype');
+    font-weight: 800;
+    font-style: italic;
+}
+
+@font-face {
+    font-family: 'Aestetico Formal';
+    src: url('AesteticoFormal-RegularIt.eot');
+    src: local('Aestetico Formal Italic'), local('AesteticoFormal-RegularIt'),
+        url('AesteticoFormal-RegularIt.eot?#iefix') format('embedded-opentype'),
+        url('AesteticoFormal-RegularIt.woff2') format('woff2'),
+        url('AesteticoFormal-RegularIt.woff') format('woff'),
+        url('AesteticoFormal-RegularIt.ttf') format('truetype');
+    font-weight: normal;
+    font-style: italic;
+}
+
+@font-face {
+    font-family: 'Aestetico Formal';
+    src: url('AesteticoFormal-Light.eot');
+    src: local('Aestetico Formal Light'), local('AesteticoFormal-Light'),
+        url('AesteticoFormal-Light.eot?#iefix') format('embedded-opentype'),
+        url('AesteticoFormal-Light.woff2') format('woff2'),
+        url('AesteticoFormal-Light.woff') format('woff'),
+        url('AesteticoFormal-Light.ttf') format('truetype');
+    font-weight: 300;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: 'Aestetico Formal Extra';
+    src: url('AesteticoFormal-ExtraBold.eot');
+    src: local('Aestetico Formal Extra Bold'), local('AesteticoFormal-ExtraBold'),
+        url('AesteticoFormal-ExtraBold.eot?#iefix') format('embedded-opentype'),
+        url('AesteticoFormal-ExtraBold.woff2') format('woff2'),
+        url('AesteticoFormal-ExtraBold.woff') format('woff'),
+        url('AesteticoFormal-ExtraBold.ttf') format('truetype');
+    font-weight: 800;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: 'Aestetico Formal';
+    src: url('AesteticoFormal-MediumIt.eot');
+    src: local('Aestetico Formal Medium Italic'), local('AesteticoFormal-MediumIt'),
+        url('AesteticoFormal-MediumIt.eot?#iefix') format('embedded-opentype'),
+        url('AesteticoFormal-MediumIt.woff2') format('woff2'),
+        url('AesteticoFormal-MediumIt.woff') format('woff'),
+        url('AesteticoFormal-MediumIt.ttf') format('truetype');
+    font-weight: 500;
+    font-style: italic;
+}
+
+@font-face {
+    font-family: 'Aestetico Formal Extra';
+    src: url('AesteticoFormal-ExtraLightIt.eot');
+    src: local('Aestetico Formal Extra Light Italic'), local('AesteticoFormal-ExtraLightIt'),
+        url('AesteticoFormal-ExtraLightIt.eot?#iefix') format('embedded-opentype'),
+        url('AesteticoFormal-ExtraLightIt.woff2') format('woff2'),
+        url('AesteticoFormal-ExtraLightIt.woff') format('woff'),
+        url('AesteticoFormal-ExtraLightIt.ttf') format('truetype');
+    font-weight: 200;
+    font-style: italic;
+}
+
+@font-face {
+    font-family: 'Aestetico Formal';
+    src: url('AesteticoFormal-Black.eot');
+    src: local('Aestetico Formal Black'), local('AesteticoFormal-Black'),
+        url('AesteticoFormal-Black.eot?#iefix') format('embedded-opentype'),
+        url('AesteticoFormal-Black.woff2') format('woff2'),
+        url('AesteticoFormal-Black.woff') format('woff'),
+        url('AesteticoFormal-Black.ttf') format('truetype');
+    font-weight: 900;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: 'Aestetico Formal';
+    src: url('AesteticoFormal-Bold.eot');
+    src: local('Aestetico Formal Bold'), local('AesteticoFormal-Bold'),
+        url('AesteticoFormal-Bold.eot?#iefix') format('embedded-opentype'),
+        url('AesteticoFormal-Bold.woff2') format('woff2'),
+        url('AesteticoFormal-Bold.woff') format('woff'),
+        url('AesteticoFormal-Bold.ttf') format('truetype');
+    font-weight: bold;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: 'Aestetico Formal';
+    src: url('AesteticoFormal-ThinIt.eot');
+    src: local('Aestetico Formal Thin Italic'), local('AesteticoFormal-ThinIt'),
+        url('AesteticoFormal-ThinIt.eot?#iefix') format('embedded-opentype'),
+        url('AesteticoFormal-ThinIt.woff2') format('woff2'),
+        url('AesteticoFormal-ThinIt.woff') format('woff'),
+        url('AesteticoFormal-ThinIt.ttf') format('truetype');
+    font-weight: 100;
+    font-style: italic;
+}
+
+@font-face {
+    font-family: 'Aestetico Formal';
+    src: url('AesteticoFormal-Thin.eot');
+    src: local('Aestetico Formal Thin'), local('AesteticoFormal-Thin'),
+        url('AesteticoFormal-Thin.eot?#iefix') format('embedded-opentype'),
+        url('AesteticoFormal-Thin.woff2') format('woff2'),
+        url('AesteticoFormal-Thin.woff') format('woff'),
+        url('AesteticoFormal-Thin.ttf') format('truetype');
+    font-weight: 100;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: 'Aestetico Formal Semi';
+    src: url('AesteticoFormal-SemiBold.eot');
+    src: local('Aestetico Formal Semi Bold'), local('AesteticoFormal-SemiBold'),
+        url('AesteticoFormal-SemiBold.eot?#iefix') format('embedded-opentype'),
+        url('AesteticoFormal-SemiBold.woff2') format('woff2'),
+        url('AesteticoFormal-SemiBold.woff') format('woff'),
+        url('AesteticoFormal-SemiBold.ttf') format('truetype');
+    font-weight: 600;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: 'Aestetico Formal';
+    src: url('AesteticoFormal-Regular.eot');
+    src: local('Aestetico Formal'), local('AesteticoFormal-Regular'),
+        url('AesteticoFormal-Regular.eot?#iefix') format('embedded-opentype'),
+        url('AesteticoFormal-Regular.woff2') format('woff2'),
+        url('AesteticoFormal-Regular.woff') format('woff'),
+        url('AesteticoFormal-Regular.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+}
+

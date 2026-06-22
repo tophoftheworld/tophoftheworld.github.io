@@ -1,0 +1,4466 @@
+{
+  "01 MATCHA LATTES": {
+    "MATCHANESE SEASALT LATTE": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 4,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 4,
+          "optionText": "ICED",
+          "price": 220
+        },
+        "1": {
+          "barcode": "1",
+          "i": 5,
+          "optionText": "HOT",
+          "price": 220
+        }
+      },
+      "title": "MATCHANESE SEASALT LATTE"
+    },
+    "SALTED CARAMEL MATCHANESE LATTE": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 6,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 6,
+          "optionText": "ICED",
+          "price": 220
+        },
+        "1": {
+          "barcode": "1",
+          "i": 7,
+          "optionText": "HOT",
+          "price": 220
+        }
+      },
+      "title": "SALTED CARAMEL MATCHANESE LATTE"
+    },
+    "SIGNATURE MATCHANESE LATTE": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 0,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 0,
+          "optionText": "ICED",
+          "price": 190
+        },
+        "1": {
+          "barcode": "1",
+          "i": 1,
+          "optionText": "HOT",
+          "price": 190
+        }
+      },
+      "title": "SIGNATURE MATCHANESE LATTE"
+    },
+    "SPANISH MATCHANESE LATTE": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 2,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 2,
+          "optionText": "ICED",
+          "price": 200
+        },
+        "1": {
+          "barcode": "1",
+          "i": 3,
+          "optionText": "HOT",
+          "price": 200
+        }
+      },
+      "title": "SPANISH MATCHANESE LATTE"
+    },
+    "STRAWBERRY MATCHANESE LATTE": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 10,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 10,
+          "optionText": "ICED",
+          "price": 230
+        },
+        "1": {
+          "barcode": "1",
+          "i": 11,
+          "optionText": "HOT",
+          "price": 230
+        }
+      },
+      "title": "STRAWBERRY MATCHANESE LATTE"
+    },
+    "WHITE CHOCOLATE MATCHANESE LATTE": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 8,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 8,
+          "optionText": "ICED",
+          "price": 230
+        },
+        "1": {
+          "barcode": "1",
+          "i": 9,
+          "optionText": "HOT",
+          "price": 230
+        }
+      },
+      "title": "WHITE CHOCOLATE MATCHANESE LATTE"
+    }
+  },
+  "02 MATCHA LITE": {
+    "MATCHA AMARETTO": {
+      "i": 15,
+      "options": {
+        "0": {
+          "i": 15,
+          "optionText": "ICED",
+          "price": 220
+        }
+      },
+      "title": "MATCHA AMARETTO"
+    },
+    "MATCHANESE COCONUT": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 14,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 14,
+          "optionText": "ICED",
+          "price": 180
+        }
+      },
+      "title": "MATCHANESE COCONUT"
+    },
+    "MATCHANESE DALANDAN": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 16,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 16,
+          "optionText": "ICED",
+          "price": 180
+        }
+      },
+      "title": "MATCHANESE DALANDAN"
+    },
+    "MATCHANESE TEA": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 12,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 12,
+          "optionText": "ICED",
+          "price": 170
+        },
+        "1": {
+          "barcode": "1",
+          "i": 13,
+          "optionText": "HOT",
+          "price": 170
+        }
+      },
+      "title": "MATCHANESE TEA"
+    },
+    "PEACH MANGO SOJU": {
+      "i": 18,
+      "options": {
+        "0": {
+          "i": 18,
+          "optionText": "ICED",
+          "price": 210
+        }
+      },
+      "title": "PEACH MANGO SOJU"
+    },
+    "SPARKLING DALANDAN MATCHA": {
+      "i": 19,
+      "options": {
+        "0": {
+          "i": 19,
+          "optionText": "ICED",
+          "price": 190
+        }
+      },
+      "title": "SPARKLING DALANDAN MATCHA"
+    },
+    "UBE MATCHA MARTINI": {
+      "i": 17,
+      "options": {
+        "0": {
+          "i": 17,
+          "optionText": "ICED",
+          "price": 250
+        }
+      },
+      "title": "UBE MATCHA MARTINI"
+    }
+  },
+  "03 BEYOND MATCHA": {
+    "GENMAICHA LATTE": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 22,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 22,
+          "optionText": "ICED",
+          "price": 160
+        },
+        "1": {
+          "barcode": "1",
+          "i": 23,
+          "optionText": "HOT",
+          "price": 160
+        }
+      },
+      "title": "GENMAICHA LATTE"
+    },
+    "GENMAICHA TEA": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 26,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 26,
+          "optionText": "ICED",
+          "price": 150
+        },
+        "1": {
+          "barcode": "1",
+          "i": 27,
+          "optionText": "HOT",
+          "price": 150
+        }
+      },
+      "title": "GENMAICHA TEA"
+    },
+    "HOJICHA LATTE": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 20,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 20,
+          "optionText": "ICED",
+          "price": 160
+        },
+        "1": {
+          "barcode": "1",
+          "i": 21,
+          "optionText": "HOT",
+          "price": 160
+        }
+      },
+      "title": "HOJICHA LATTE"
+    },
+    "HOJICHA TEA": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 24,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 24,
+          "optionText": "ICED",
+          "price": 150
+        },
+        "1": {
+          "barcode": "1",
+          "i": 25,
+          "optionText": "HOT",
+          "price": 150
+        }
+      },
+      "title": "HOJICHA TEA"
+    }
+  },
+  "04 MATCHA SPECIALS": {
+    "BANANA PUDDING MATCHA LATTE 12oz": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 32,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 32,
+          "optionText": "ICED",
+          "price": 250
+        }
+      },
+      "title": "BANANA PUDDING MATCHA LATTE 12oz"
+    },
+    "BANANA PUDDING MATCHA LATTE 16oz": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 33,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 33,
+          "optionText": "ICED",
+          "price": 270
+        }
+      },
+      "title": "BANANA PUDDING MATCHA LATTE 16oz"
+    },
+    "HOJICHA CLOUD": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 31,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 31,
+          "optionText": "ICED",
+          "price": 230
+        }
+      },
+      "title": "HOJICHA CLOUD"
+    },
+    "HOJICHA EINSPANNER": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 29,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 29,
+          "optionText": "ICED",
+          "price": 250
+        }
+      },
+      "title": "HOJICHA EINSPANNER"
+    },
+    "MATCHA BANOFFEE LATTE": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 39,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 39,
+          "optionText": "ICED",
+          "price": 270
+        }
+      },
+      "title": "MATCHA BANOFFEE LATTE"
+    },
+    "MATCHA FLOAT": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 34,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 34,
+          "optionText": "ICED",
+          "price": 270
+        }
+      },
+      "title": "MATCHA FLOAT"
+    },
+    "MATCHA TIRAMISU LATTE": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 40,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 40,
+          "optionText": "ICED",
+          "price": 270
+        }
+      },
+      "title": "MATCHA TIRAMISU LATTE"
+    },
+    "MATCHANESE CLOUD": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 30,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 30,
+          "optionText": "ICED",
+          "price": 250
+        }
+      },
+      "title": "MATCHANESE CLOUD"
+    },
+    "MATCHANESE EINSPANNER": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 28,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 28,
+          "optionText": "ICED",
+          "price": 270
+        }
+      },
+      "title": "MATCHANESE EINSPANNER"
+    },
+    "PEACH MANGO MATCHA LATTE": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 38,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 38,
+          "optionText": "ICED",
+          "price": 230
+        }
+      },
+      "title": "PEACH MANGO MATCHA LATTE"
+    },
+    "STRAWBERRY CREAM MATCHA": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 36,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 36,
+          "optionText": "ICED",
+          "price": 230
+        }
+      },
+      "title": "STRAWBERRY CREAM MATCHA"
+    },
+    "STRAWBERRY EINSPANNER": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 37,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 37,
+          "optionText": "ICED",
+          "price": 230
+        }
+      },
+      "title": "STRAWBERRY EINSPANNER"
+    },
+    "WARABI MATCHANESE LATTE": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 35,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 35,
+          "optionText": "ICED",
+          "price": 250
+        }
+      },
+      "title": "WARABI MATCHANESE LATTE"
+    }
+  },
+  "05 COFFEE": {
+    "AMERICANO": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 41,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 41,
+          "optionText": "ICED",
+          "price": 140
+        },
+        "1": {
+          "barcode": "1",
+          "i": 42,
+          "optionText": "HOT",
+          "price": 140
+        }
+      },
+      "title": "AMERICANO"
+    },
+    "KYOTO LATTE": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 43,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 43,
+          "optionText": "ICED",
+          "price": 160
+        },
+        "1": {
+          "barcode": "1",
+          "i": 44,
+          "optionText": "HOT",
+          "price": 160
+        }
+      },
+      "title": "KYOTO LATTE"
+    },
+    "MATCHANESE ESPRESSO": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 49,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 49,
+          "optionText": "ICED",
+          "price": 240
+        },
+        "1": {
+          "barcode": "1",
+          "i": 50,
+          "optionText": "HOT",
+          "price": 240
+        }
+      },
+      "title": "MATCHANESE ESPRESSO"
+    },
+    "SEASALT LATTE": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 47,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 47,
+          "optionText": "ICED",
+          "price": 210
+        },
+        "1": {
+          "barcode": "1",
+          "i": 48,
+          "optionText": "HOT",
+          "price": 210
+        }
+      },
+      "title": "SEASALT LATTE"
+    },
+    "SPANISH LATTE": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 45,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 45,
+          "optionText": "ICED",
+          "price": 180
+        },
+        "1": {
+          "barcode": "1",
+          "i": 46,
+          "optionText": "HOT",
+          "price": 180
+        }
+      },
+      "title": "SPANISH LATTE"
+    }
+  },
+  "06 SPECIALTY MATCHA": {
+    "AKI MATCHA - LATTE": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 51,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 51,
+          "optionText": "ICED",
+          "price": 190
+        }
+      },
+      "title": "AKI MATCHA - LATTE"
+    },
+    "Horii Shichimeien - Agata no Mukashi": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 91,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 91,
+          "optionText": "Usucha",
+          "price": 330
+        },
+        "1": {
+          "barcode": "1",
+          "i": 92,
+          "optionText": "Classic Latte",
+          "price": 380
+        },
+        "2": {
+          "barcode": "1",
+          "i": 93,
+          "optionText": "Cold Whisked",
+          "price": 390
+        }
+      },
+      "title": "Horii Shichimeien - Agata no Mukashi"
+    },
+    "Horii Shichimeien - Uji Mukashi": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 88,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 88,
+          "optionText": "Usucha",
+          "price": 305
+        },
+        "1": {
+          "barcode": "1",
+          "i": 89,
+          "optionText": "Classic Latte",
+          "price": 355
+        },
+        "2": {
+          "barcode": "1",
+          "i": 90,
+          "optionText": "Cold Whisked",
+          "price": 365
+        }
+      },
+      "title": "Horii Shichimeien - Uji Mukashi"
+    },
+    "Ippodo - Sayaka No Mukashi": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 55,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 55,
+          "optionText": "Usucha",
+          "price": 280
+        },
+        "1": {
+          "barcode": "1",
+          "i": 56,
+          "optionText": "Classic Latte",
+          "price": 330
+        },
+        "2": {
+          "barcode": "1",
+          "i": 57,
+          "optionText": "Cold Whisked",
+          "price": 340
+        }
+      },
+      "title": "Ippodo - Sayaka No Mukashi"
+    },
+    "Ippodo - Seiun": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 58,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 58,
+          "optionText": "Usucha",
+          "price": 290
+        },
+        "1": {
+          "barcode": "1",
+          "i": 59,
+          "optionText": "Classic Latte",
+          "price": 340
+        },
+        "2": {
+          "barcode": "1",
+          "i": 60,
+          "optionText": "Cold Whisked",
+          "price": 350
+        }
+      },
+      "title": "Ippodo - Seiun"
+    },
+    "Ippodo - Ummon": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 61,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 61,
+          "optionText": "Usucha",
+          "price": 360
+        },
+        "1": {
+          "barcode": "1",
+          "i": 62,
+          "optionText": "Classic Latte",
+          "price": 410
+        },
+        "2": {
+          "barcode": "1",
+          "i": 63,
+          "optionText": "Cold Whisked",
+          "price": 420
+        }
+      },
+      "title": "Ippodo - Ummon"
+    },
+    "Kanbayashi Shunsho - Biwa No Shiro": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 100,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 100,
+          "optionText": "Usucha",
+          "price": 225
+        },
+        "1": {
+          "barcode": "1",
+          "i": 101,
+          "optionText": "Classic Latte",
+          "price": 275
+        },
+        "2": {
+          "barcode": "1",
+          "i": 102,
+          "optionText": "Cold Whisked",
+          "price": 285
+        }
+      },
+      "title": "Kanbayashi Shunsho - Biwa No Shiro"
+    },
+    "Marukyu Koyamaen - Aoarashi": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 64,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 64,
+          "optionText": "Usucha",
+          "price": 265
+        },
+        "1": {
+          "barcode": "1",
+          "i": 65,
+          "optionText": "Classic Latte",
+          "price": 315
+        },
+        "2": {
+          "barcode": "1",
+          "i": 66,
+          "optionText": "Cold Whisked",
+          "price": 325
+        }
+      },
+      "title": "Marukyu Koyamaen - Aoarashi"
+    },
+    "Marukyu Koyamaen - Isuzu": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 67,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 67,
+          "optionText": "Usucha",
+          "price": 280
+        },
+        "1": {
+          "barcode": "1",
+          "i": 68,
+          "optionText": "Classic Latte",
+          "price": 325
+        },
+        "2": {
+          "barcode": "1",
+          "i": 69,
+          "optionText": "Cold Whisked",
+          "price": 330
+        }
+      },
+      "title": "Marukyu Koyamaen - Isuzu"
+    },
+    "Marukyu Koyamaen - Wako": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 70,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 70,
+          "optionText": "Usucha",
+          "price": 360
+        },
+        "1": {
+          "barcode": "1",
+          "i": 71,
+          "optionText": "Classic Latte",
+          "price": 410
+        },
+        "2": {
+          "barcode": "1",
+          "i": 72,
+          "optionText": "Cold Whisked",
+          "price": 420
+        }
+      },
+      "title": "Marukyu Koyamaen - Wako"
+    },
+    "Nakamura Tokichi - Fuji No Shiro": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 94,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 94,
+          "optionText": "Usucha",
+          "price": 250
+        },
+        "1": {
+          "barcode": "1",
+          "i": 95,
+          "optionText": "Classic Latte",
+          "price": 300
+        },
+        "2": {
+          "barcode": "1",
+          "i": 96,
+          "optionText": "Cold Whisked",
+          "price": 310
+        }
+      },
+      "title": "Nakamura Tokichi - Fuji No Shiro"
+    },
+    "Nakamura Tokichi - Seikan No Shiro": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 97,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 97,
+          "optionText": "Usucha",
+          "price": 305
+        },
+        "1": {
+          "barcode": "1",
+          "i": 98,
+          "optionText": "Classic Latte",
+          "price": 355
+        },
+        "2": {
+          "barcode": "1",
+          "i": 99,
+          "optionText": "Cold Whisked",
+          "price": 365
+        }
+      },
+      "title": "Nakamura Tokichi - Seikan No Shiro"
+    },
+    "Rocky s Matcha - Kogacha Blend": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 85,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 85,
+          "optionText": "Usucha",
+          "price": 580
+        },
+        "1": {
+          "barcode": "1",
+          "i": 86,
+          "optionText": "Classic Latte",
+          "price": 620
+        },
+        "2": {
+          "barcode": "1",
+          "i": 87,
+          "optionText": "Cold Whisked",
+          "price": 630
+        }
+      },
+      "title": "Rocky s Matcha - Kogacha Blend"
+    },
+    "Rocky s Matcha - Okumidori": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 82,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 82,
+          "optionText": "Usucha",
+          "price": 500
+        },
+        "1": {
+          "barcode": "1",
+          "i": 83,
+          "optionText": "Classic Latte",
+          "price": 590
+        },
+        "2": {
+          "barcode": "1",
+          "i": 84,
+          "optionText": "Cold Whisked",
+          "price": 600
+        }
+      },
+      "title": "Rocky s Matcha - Okumidori"
+    },
+    "Rocky s Matcha - Shiranami Blend": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 79,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 79,
+          "optionText": "Usucha",
+          "price": 490
+        },
+        "1": {
+          "barcode": "1",
+          "i": 80,
+          "optionText": "Classic Latte",
+          "price": 540
+        },
+        "2": {
+          "barcode": "1",
+          "i": 81,
+          "optionText": "Cold Whisked",
+          "price": 550
+        }
+      },
+      "title": "Rocky s Matcha - Shiranami Blend"
+    },
+    "Yamamasa Koyamaen - Ogurayama": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 52,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 52,
+          "optionText": "Usucha",
+          "price": 255
+        },
+        "1": {
+          "barcode": "1",
+          "i": 53,
+          "optionText": "Classic Latte",
+          "price": 295
+        },
+        "2": {
+          "barcode": "1",
+          "i": 54,
+          "optionText": "Cold Whisked",
+          "price": 305
+        }
+      },
+      "title": "Yamamasa Koyamaen - Ogurayama"
+    },
+    "Yugen - 0": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 73,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 73,
+          "optionText": "Usucha",
+          "price": 240
+        },
+        "1": {
+          "barcode": "1",
+          "i": 74,
+          "optionText": "Classic Latte",
+          "price": 290
+        },
+        "2": {
+          "barcode": "1",
+          "i": 75,
+          "optionText": "Cold Whisked",
+          "price": 300
+        }
+      },
+      "title": "Yugen - 0"
+    },
+    "Yugen - 1": {
+      "addOnOptions": {
+        "multiple": {
+          "ADD ONS": {
+            "0": {
+              "addPrice": 40,
+              "addTitle": "LVL 2"
+            },
+            "1": {
+              "addPrice": 80,
+              "addTitle": "LVL 3"
+            },
+            "2": {
+              "addTitle": "OAT"
+            },
+            "3": {
+              "addTitle": "COCONUT"
+            },
+            "4": {
+              "addTitle": "ICE CREAM SCOOP "
+            },
+            "5": {
+              "addPrice": 0,
+              "addTitle": "ICE"
+            },
+            "6": {
+              "addTitle": "ADD SEASALT"
+            }
+          }
+        },
+        "single": {
+          "SWEETNESS": {
+            "0": {
+              "addTitle": "0%"
+            },
+            "1": {
+              "addTitle": "50%"
+            },
+            "2": {
+              "addTitle": "100% "
+            },
+            "3": {
+              "addTitle": "200%"
+            }
+          },
+          "Serving": {
+            "0": {
+              "addTitle": "ICED"
+            },
+            "1": {
+              "addTitle": "HOT"
+            }
+          },
+          "Size": {
+            "0": {
+              "addTitle": "REG"
+            },
+            "1": {
+              "addPrice": 20,
+              "addTitle": "LRG"
+            }
+          }
+        }
+      },
+      "i": 76,
+      "modSet": 1,
+      "options": {
+        "0": {
+          "barcode": "1",
+          "i": 76,
+          "optionText": "Usucha",
+          "price": 250
+        },
+        "1": {
+          "barcode": "1",
+          "i": 77,
+          "optionText": "Classic Latte",
+          "price": 300
+        },
+        "2": {
+          "barcode": "1",
+          "i": 78,
+          "optionText": "Cold Whisked",
+          "price": 310
+        }
+      },
+      "title": "Yugen - 1"
+    }
+  },
+  "07 ADD-ONS": {
+    "COCONUT MILK": {
+      "i": 106,
+      "price": 50,
+      "title": "COCONUT MILK"
+    },
+    "ESPRESSO SHOT": {
+      "costPrice": 31.5,
+      "i": 110,
+      "price": 50,
+      "title": "ESPRESSO SHOT"
+    },
+    "ICE CREAM SCOOP": {
+      "i": 107,
+      "price": 100,
+      "title": "ICE CREAM SCOOP"
+    },
+    "LESS ICE": {
+      "i": 108,
+      "price": 0,
+      "title": "LESS ICE"
+    },
+    "MATCHA STRENGTH UPGRADE": {
+      "i": 103,
+      "options": {
+        "0": {
+          "i": 103,
+          "optionText": "LEVEL 2",
+          "price": 50
+        },
+        "1": {
+          "i": 104,
+          "optionText": "LEVEL 3",
+          "price": 90
+        }
+      },
+      "title": "MATCHA STRENGTH UPGRADE"
+    },
+    "OAT MILK": {
+      "i": 105,
+      "price": 50,
+      "title": "OAT MILK"
+    },
+    "PAPER BAG": {
+      "i": 111,
+      "options": {
+        "0": {
+          "costPrice": 7,
+          "i": 111,
+          "optionText": "PAPER BAG S",
+          "price": 0
+        },
+        "1": {
+          "costPrice": 8,
+          "i": 112,
+          "optionText": "PAPER BAG M",
+          "price": 0
+        }
+      },
+      "title": "PAPER BAG"
+    },
+    "SEASALT CREAM": {
+      "i": 109,
+      "price": 50,
+      "title": "SEASALT CREAM"
+    }
+  },
+  "08 DESSERTS": {
+    "ADD ON - UPGRADE MATCHA ICE CREAM": {
+      "i": 128,
+      "options": {
+        "0": {
+          "i": 128,
+          "optionText": "LEVEL 2",
+          "price": 20
+        },
+        "1": {
+          "i": 129,
+          "optionText": "LEVEL 3",
+          "price": 60
+        }
+      },
+      "title": "ADD ON - UPGRADE MATCHA ICE CREAM"
+    },
+    "ADD ON - WARABI MOCHI": {
+      "i": 130,
+      "options": {
+        "0": {
+          "i": 130,
+          "optionText": "MATCHA",
+          "price": 40
+        },
+        "1": {
+          "i": 131,
+          "optionText": "KINAKO",
+          "price": 40
+        }
+      },
+      "title": "ADD ON - WARABI MOCHI"
+    },
+    "BANOFFEE": {
+      "i": 122,
+      "options": {
+        "0": {
+          "i": 122,
+          "optionText": "180ML CUP",
+          "price": 190
+        },
+        "1": {
+          "i": 123,
+          "optionText": "450ML CONTAINER",
+          "price": 420
+        }
+      },
+      "title": "BANOFFEE"
+    },
+    "BASQUE BURNT CHEESECAKE": {
+      "i": 132,
+      "options": {
+        "0": {
+          "i": 132,
+          "optionText": "MATCHA",
+          "price": 350
+        }
+      },
+      "title": "BASQUE BURNT CHEESECAKE"
+    },
+    "COOKIE": {
+      "i": 133,
+      "options": {
+        "0": {
+          "i": 133,
+          "optionText": "MATCHA BOMB",
+          "price": 180
+        },
+        "1": {
+          "i": 134,
+          "optionText": "MATCHA OREO",
+          "price": 180
+        },
+        "2": {
+          "i": 135,
+          "optionText": "MATCHA WHITE CHOCOLATE",
+          "price": 180
+        },
+        "3": {
+          "i": 136,
+          "optionText": "MATCHA DARK CHOCOLATE",
+          "price": 180
+        },
+        "4": {
+          "i": 137,
+          "optionText": "MATCHA CHIP",
+          "price": 180
+        },
+        "5": {
+          "i": 138,
+          "optionText": "HOJICHA BOMB",
+          "price": 180
+        },
+        "6": {
+          "i": 139,
+          "optionText": "SMORES",
+          "price": 180
+        },
+        "7": {
+          "i": 140,
+          "optionText": "UBE MATCHA",
+          "price": 180
+        },
+        "8": {
+          "i": 141,
+          "optionText": "BISCOFF",
+          "price": 180
+        }
+      },
+      "title": "COOKIE"
+    },
+    "Discount: 3 Cookies": {
+      "i": 145,
+      "price": -25,
+      "title": "Discount: 3 Cookies"
+    },
+    "ICE CREAM": {
+      "addOnOptions": {
+        "single": {
+          "Ice Cream": {
+            "0": {
+              "addPrice": 0,
+              "addTitle": "Cup"
+            },
+            "1": {
+              "addPrice": 0,
+              "addTitle": "Cone"
+            }
+          }
+        }
+      },
+      "i": 124,
+      "modSet": 2,
+      "options": {
+        "0": {
+          "barcode": "2",
+          "i": 124,
+          "optionText": "MATCHA LVL 1",
+          "price": 140
+        },
+        "1": {
+          "barcode": "2",
+          "i": 125,
+          "optionText": "MATCHA LVL 2",
+          "price": 160
+        },
+        "2": {
+          "barcode": "2",
+          "i": 126,
+          "optionText": "HOJICHA",
+          "price": 150
+        },
+        "3": {
+          "barcode": "2",
+          "i": 142,
+          "optionText": "MATCHA LVL 3",
+          "price": 200
+        },
+        "4": {
+          "barcode": "2",
+          "i": 143,
+          "optionText": "HOKKAIDO MILK",
+          "price": 130
+        }
+      },
+      "title": "ICE CREAM"
+    },
+    "MATCHA AFFOGATO": {
+      "i": 127,
+      "price": 220,
+      "title": "MATCHA AFFOGATO"
+    },
+    "MATCHA MONTBLANC": {
+      "i": 144,
+      "price": 290,
+      "title": "MATCHA MONTBLANC"
+    },
+    "MATCHA TIRAMISU": {
+      "i": 146,
+      "options": {
+        "0": {
+          "i": 146,
+          "optionText": "180ML BOX",
+          "price": 240
+        },
+        "1": {
+          "i": 147,
+          "optionText": "450ML CONTAINER",
+          "price": 450
+        },
+        "2": {
+          "i": 148,
+          "optionText": "Small Box",
+          "price": 360
+        }
+      },
+      "title": "MATCHA TIRAMISU"
+    },
+    "MOCHI DONUT": {
+      "i": 149,
+      "options": {
+        "0": {
+          "i": 149,
+          "optionText": "1 PC",
+          "price": 95
+        },
+        "1": {
+          "i": 150,
+          "optionText": "HALF DOZEN",
+          "price": 540
+        }
+      },
+      "title": "MOCHI DONUT"
+    },
+    "PURIN": {
+      "i": 121,
+      "price": 120,
+      "title": "PURIN"
+    },
+    "WARABI MOCHI": {
+      "i": 113,
+      "options": {
+        "0": {
+          "i": 113,
+          "optionText": "MATCHA BOX (BIG - 4x6)",
+          "price": 350
+        },
+        "1": {
+          "i": 114,
+          "optionText": "KINAKO BOX  (BIG - 4x6)",
+          "price": 290
+        },
+        "2": {
+          "i": 115,
+          "optionText": "MATCHA-KINAKO BOX  (BIG - 4x6)",
+          "price": 320
+        },
+        "3": {
+          "i": 116,
+          "optionText": "MATCHA BOX (SMALL - 4x4)",
+          "price": 270
+        },
+        "4": {
+          "i": 117,
+          "optionText": "KINAKO BOX  (SMALL - 4x4)",
+          "price": 270
+        },
+        "5": {
+          "i": 118,
+          "optionText": "B1T1 BOX  (SMALL - 4x4)",
+          "price": 270
+        },
+        "6": {
+          "i": 119,
+          "optionText": "MATCHA CUP",
+          "price": 120
+        },
+        "7": {
+          "i": 120,
+          "optionText": "KINAKO CUP",
+          "price": 120
+        }
+      },
+      "title": "WARABI MOCHI"
+    }
+  },
+  "09 TOOLS": {
+    "CHASEN (BAMBOO WHISK)": {
+      "i": 151,
+      "price": 650,
+      "title": "CHASEN (BAMBOO WHISK)"
+    },
+    "CHAWAN (TEA BOWL)": {
+      "i": 153,
+      "price": 1250,
+      "title": "CHAWAN (TEA BOWL)"
+    },
+    "KATAKUCHI (TEA BOWL WITH SPOUT)": {
+      "i": 152,
+      "price": 1350,
+      "title": "KATAKUCHI (TEA BOWL WITH SPOUT)"
+    },
+    "MANILA MATCHA FEST STICKER": {
+      "i": 154,
+      "price": 110,
+      "title": "MANILA MATCHA FEST STICKER"
+    },
+    "MATCHANESE STICKER": {
+      "i": 155,
+      "price": 150,
+      "title": "MATCHANESE STICKER"
+    }
+  },
+  "10 MATCHA POWDER": {
+    "ASAHI": {
+      "i": 158,
+      "price": 1350,
+      "title": "ASAHI"
+    },
+    "GOKOU": {
+      "i": 157,
+      "price": 1250,
+      "title": "GOKOU"
+    },
+    "OKUMIDORI": {
+      "i": 156,
+      "price": 850,
+      "title": "OKUMIDORI"
+    }
+  },
+  "11 SECRET MENU": {
+    "HONEY CINNAMON MATCHA": {
+      "i": 159,
+      "price": 230,
+      "title": "HONEY CINNAMON MATCHA"
+    }
+  }
+}

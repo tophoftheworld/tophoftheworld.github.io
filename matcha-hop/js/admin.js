@@ -18,6 +18,7 @@ import {
   METRO_MANILA_NE,
 } from './data.js';
 import { fetchPlaceDetails } from './place-details.js';
+import { getStorage, initAuth } from './firebase.js';
 
 function getDefaultBounds() {
   return new google.maps.LatLngBounds(
@@ -314,10 +315,40 @@ async function init() {
   if (modeLocations) modeLocations.addEventListener('click', () => setAdminMode('locations'));
   if (modeBrands) modeBrands.addEventListener('click', () => setAdminMode('brands'));
 
+  // Brand form wiring
+  const brandAddBtn = document.getElementById('admin-brand-add-btn');
   const brandSaveBtn = document.getElementById('admin-brand-save');
   const brandCancelBtn = document.getElementById('admin-brand-cancel');
+  const brandFormClose = document.getElementById('admin-brand-form-close');
+  const logoZone = document.getElementById('admin-brand-logo-zone');
+  const logoFileInput = document.getElementById('admin-brand-logo-file');
+  const logoRemoveBtn = document.getElementById('admin-brand-logo-remove');
+
+  if (brandAddBtn) brandAddBtn.addEventListener('click', () => openBrandForm(null));
   if (brandSaveBtn) brandSaveBtn.addEventListener('click', saveBrandFromForm);
-  if (brandCancelBtn) brandCancelBtn.addEventListener('click', resetFormForNewBrand);
+  if (brandCancelBtn) brandCancelBtn.addEventListener('click', closeBrandForm);
+  if (brandFormClose) brandFormClose.addEventListener('click', closeBrandForm);
+
+  if (logoZone && logoFileInput) {
+    logoFileInput.addEventListener('click', (e) => e.stopPropagation());
+    logoZone.addEventListener('click', () => logoFileInput.click());
+    logoZone.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); logoFileInput.click(); } });
+    logoFileInput.addEventListener('change', () => {
+      const f = logoFileInput.files?.[0] || null;
+      if (!f) return;
+      pendingLogoFile = f;
+      pendingLogoRemoved = false;
+      setLogoPreview(URL.createObjectURL(f));
+    });
+  }
+  if (logoRemoveBtn) {
+    logoRemoveBtn.addEventListener('click', () => {
+      pendingLogoFile = null;
+      pendingLogoRemoved = true;
+      if (logoFileInput) logoFileInput.value = '';
+      setLogoPreview(null);
+    });
+  }
 
   // Load cafes automatically on page open (no button press needed)
   onLoad();
@@ -341,7 +372,7 @@ function setAdminMode(mode) {
   }
   if (mode === 'brands') {
     renderBrandsListAdmin();
-    resetFormForNewBrand();
+    closeBrandForm();
   }
 }
 
@@ -367,6 +398,57 @@ function getAvailableCafesForBrand(config, excludeBrandId) {
 }
 
 let editingBrandId = null;
+let pendingLogoFile = null;
+let pendingLogoRemoved = false;
+
+const SVG_ARROW_UP = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>';
+const SVG_ARROW_DOWN = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
+const SVG_EDIT = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>';
+const SVG_TRASH = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>';
+
+function chooseLogoExt(file) {
+  const t = String(file?.type || '').toLowerCase();
+  if (t.includes('png')) return 'png';
+  if (t.includes('webp')) return 'webp';
+  if (t.includes('jpeg') || t.includes('jpg')) return 'jpg';
+  const m = String(file?.name || '').match(/\.([a-z0-9]+)$/i);
+  const ext = m?.[1]?.toLowerCase();
+  return (ext && ['png', 'jpg', 'jpeg', 'webp'].includes(ext)) ? ext : 'png';
+}
+
+async function uploadBrandLogo(brandId, file) {
+  if (!brandId || !file) return null;
+  await initAuth().catch(() => null);
+  const st = getStorage();
+  if (!st) throw new Error('Storage not configured');
+  const ext = chooseLogoExt(file);
+  const ref = st.ref(`brandLogos/${brandId}.${ext}`);
+  await ref.put(file, { contentType: file.type || 'image/png' });
+  return ref.getDownloadURL();
+}
+
+function showFormPanel(show) {
+  const panel = document.getElementById('admin-brand-form-panel');
+  if (panel) panel.classList.toggle('hidden', !show);
+}
+
+function setLogoPreview(url) {
+  const preview = document.getElementById('admin-brand-logo-preview');
+  const placeholder = document.getElementById('admin-brand-logo-placeholder');
+  const removeBtn = document.getElementById('admin-brand-logo-remove');
+  if (!preview || !placeholder) return;
+  if (url) {
+    preview.src = url;
+    preview.style.display = 'block';
+    placeholder.style.display = 'none';
+    if (removeBtn) removeBtn.classList.remove('hidden');
+  } else {
+    preview.removeAttribute('src');
+    preview.style.display = 'none';
+    placeholder.style.display = '';
+    if (removeBtn) removeBtn.classList.add('hidden');
+  }
+}
 
 async function renderBrandsListAdmin() {
   const listEl = document.getElementById('admin-brands-list');
@@ -374,32 +456,48 @@ async function renderBrandsListAdmin() {
   const config = await getBrandsConfig();
   const brands = config.brands || [];
   listEl.innerHTML = '';
+
+  if (brands.length === 0) {
+    listEl.innerHTML = '<div style="text-align:center;padding:30px 10px;color:#aaa;font-size:0.85rem;">No brands yet. Click <b>+ Add Brand</b> to create one.</div>';
+    return;
+  }
+
   for (let i = 0; i < brands.length; i++) {
     const b = brands[i];
     const cafeIds = Array.isArray(b.cafeIds) ? b.cafeIds : [];
-    const locationLabel = cafeIds.length === 0 ? 'No locations' : `${cafeIds.length} location${cafeIds.length !== 1 ? 's' : ''}`;
     const names = cafeIds.map((id) => (getCafeById(id) || {}).name || id).filter(Boolean);
-    const li = document.createElement('li');
-    li.className = 'admin-brands-item';
-    li.innerHTML = `
-      <span class="brand-name">${escapeHtml(b.name || 'Unnamed')}</span>
-      <span class="brand-branches">${escapeHtml(locationLabel)}${names.length ? ': ' + escapeHtml(names.slice(0, 2).join(', ') + (names.length > 2 ? '…' : '')) : ''}</span>
-      <div class="brand-actions">
-        <button type="button" data-action="up" ${i === 0 ? 'disabled' : ''}>Up</button>
-        <button type="button" data-action="down" ${i === brands.length - 1 ? 'disabled' : ''}>Down</button>
-        <button type="button" data-action="edit">Edit</button>
-        <button type="button" data-action="remove">Remove</button>
+    const locText = cafeIds.length === 0
+      ? 'Pop-up / no location'
+      : names.slice(0, 3).join(', ') + (names.length > 3 ? ` +${names.length - 3}` : '');
+
+    const card = document.createElement('div');
+    card.className = 'ab-card';
+
+    const logoHtml = b.logoUrl
+      ? `<img class="ab-card-logo" src="${escapeAttr(b.logoUrl)}" alt="">`
+      : `<div class="ab-card-logo-placeholder">
+           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+         </div>`;
+
+    card.innerHTML = `
+      ${logoHtml}
+      <div class="ab-card-info">
+        <div class="ab-card-name">${escapeHtml(b.name || 'Unnamed')}</div>
+        <div class="ab-card-meta">${escapeHtml(locText)}</div>
+      </div>
+      <div class="ab-card-actions">
+        <button type="button" data-action="up" title="Move up" ${i === 0 ? 'disabled' : ''}>${SVG_ARROW_UP}</button>
+        <button type="button" data-action="down" title="Move down" ${i === brands.length - 1 ? 'disabled' : ''}>${SVG_ARROW_DOWN}</button>
+        <button type="button" data-action="edit" title="Edit" class="ab-act-edit">${SVG_EDIT}</button>
+        <button type="button" data-action="remove" title="Delete" class="ab-act-delete">${SVG_TRASH}</button>
       </div>
     `;
-    const upBtn = li.querySelector('[data-action="up"]');
-    const downBtn = li.querySelector('[data-action="down"]');
-    const editBtn = li.querySelector('[data-action="edit"]');
-    const removeBtn = li.querySelector('[data-action="remove"]');
-    if (upBtn) upBtn.addEventListener('click', () => moveBrand(i, -1));
-    if (downBtn) downBtn.addEventListener('click', () => moveBrand(i, 1));
-    if (editBtn) editBtn.addEventListener('click', () => openAddBrandForm(b.id));
-    if (removeBtn) removeBtn.addEventListener('click', () => removeBrand(i));
-    listEl.appendChild(li);
+
+    card.querySelector('[data-action="up"]').addEventListener('click', () => moveBrand(i, -1));
+    card.querySelector('[data-action="down"]').addEventListener('click', () => moveBrand(i, 1));
+    card.querySelector('[data-action="edit"]').addEventListener('click', () => openBrandForm(b.id));
+    card.querySelector('[data-action="remove"]').addEventListener('click', () => removeBrand(i));
+    listEl.appendChild(card);
   }
 }
 
@@ -420,21 +518,36 @@ async function removeBrand(index) {
   renderBrandsListAdmin();
 }
 
-async function openAddBrandForm(brandId) {
-  editingBrandId = brandId;
+async function openBrandForm(brandId) {
+  editingBrandId = brandId || null;
+  pendingLogoFile = null;
+  pendingLogoRemoved = false;
+
+  const heading = document.getElementById('admin-brand-form-heading');
   const nameInput = document.getElementById('admin-brand-name');
   const cafesList = document.getElementById('admin-brand-cafes-list');
+  const fileInput = document.getElementById('admin-brand-logo-file');
   if (!nameInput || !cafesList) return;
+
   const config = await getBrandsConfig();
   const available = getAvailableCafesForBrand(config, brandId || null);
   const currentBrand = brandId ? (config.brands || []).find((b) => b.id === brandId) : null;
+
+  if (heading) heading.textContent = currentBrand ? `Edit: ${currentBrand.name || 'Unnamed'}` : 'New Brand';
   nameInput.value = currentBrand ? (currentBrand.name || '') : '';
+  if (fileInput) fileInput.value = '';
   renderCafeCheckboxes(cafesList, available, currentBrand ? (currentBrand.cafeIds || []) : []);
+  setLogoPreview(currentBrand?.logoUrl || null);
+  showFormPanel(true);
 }
 
 function renderCafeCheckboxes(container, cafes, selectedIds) {
   const set = new Set((selectedIds || []).map(String));
   container.innerHTML = '';
+  if (cafes.length === 0) {
+    container.innerHTML = '<div style="padding:8px 4px;color:#aaa;font-size:0.8rem;">No available locations. Classify cafes in the Locations tab first.</div>';
+    return;
+  }
   cafes.forEach((cafe) => {
     const label = document.createElement('label');
     const input = document.createElement('input');
@@ -447,37 +560,71 @@ function renderCafeCheckboxes(container, cafes, selectedIds) {
   });
 }
 
-async function resetFormForNewBrand() {
+function closeBrandForm() {
   editingBrandId = null;
-  const nameInput = document.getElementById('admin-brand-name');
-  const cafesList = document.getElementById('admin-brand-cafes-list');
-  if (nameInput) nameInput.value = '';
-  if (cafesList) {
-    const config = await getBrandsConfig();
-    const available = getAvailableCafesForBrand(config, null);
-    renderCafeCheckboxes(cafesList, available, []);
-  }
+  pendingLogoFile = null;
+  pendingLogoRemoved = false;
+  showFormPanel(false);
+}
+
+function setFormStatus(msg, isError) {
+  const el = document.getElementById('admin-brand-form-status');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.style.color = isError ? '#c44' : '#888';
 }
 
 async function saveBrandFromForm() {
   const nameInput = document.getElementById('admin-brand-name');
   const cafesList = document.getElementById('admin-brand-cafes-list');
+  const saveBtn = document.getElementById('admin-brand-save');
   if (!nameInput || !cafesList) return;
+
   const name = (nameInput.value || '').trim() || 'Unnamed';
   const checked = Array.from(cafesList.querySelectorAll('input[type="checkbox"]:checked')).map((el) => el.value);
   const config = await getBrandsConfig();
   const brands = [...(config.brands || [])];
-  if (editingBrandId) {
-    const idx = brands.findIndex((b) => b.id === editingBrandId);
-    if (idx >= 0) {
-      brands[idx] = { ...brands[idx], name, cafeIds: checked };
+  const brandId = editingBrandId || uid();
+  const existingBrand = editingBrandId ? brands.find((b) => b.id === editingBrandId) : null;
+
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+  setFormStatus('');
+
+  let nextLogoUrl = existingBrand?.logoUrl || null;
+  if (pendingLogoRemoved) nextLogoUrl = null;
+  if (pendingLogoFile) {
+    setFormStatus('Uploading logo…', false);
+    try {
+      nextLogoUrl = await uploadBrandLogo(brandId, pendingLogoFile);
+    } catch (e) {
+      const msg = e?.message || String(e);
+      console.error('[Matcha Hop Admin] Brand logo upload failed:', msg);
+      setFormStatus('Logo upload failed: ' + msg, true);
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Brand'; }
+      return;
     }
-  } else {
-    brands.push({ id: uid(), name, cafeIds: checked });
   }
-  await setBrandsConfig(brands);
+
+  setFormStatus('Saving…', false);
+  try {
+    if (editingBrandId) {
+      const idx = brands.findIndex((b) => b.id === editingBrandId);
+      if (idx >= 0) brands[idx] = { ...brands[idx], name, cafeIds: checked, logoUrl: nextLogoUrl };
+    } else {
+      brands.push({ id: brandId, name, cafeIds: checked, logoUrl: nextLogoUrl });
+    }
+    await setBrandsConfig(brands);
+  } catch (e) {
+    const msg = e?.message || String(e);
+    console.error('[Matcha Hop Admin] Brand save failed:', msg);
+    setFormStatus('Save failed: ' + msg, true);
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Brand'; }
+    return;
+  }
+
+  if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Brand'; }
+  closeBrandForm();
   renderBrandsListAdmin();
-  await resetFormForNewBrand();
 }
 
 init();

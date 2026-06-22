@@ -180,44 +180,41 @@ export function openLogForm(cafe, onClose, options = {}) {
   ` : '';
 
   const todayStr = new Date().toISOString().slice(0, 10);
+  panel.classList.add('log-form-panel--prototype');
   panel.innerHTML = `
-    <h2>${hasInitialCafe ? `Add post at ${escapeHtml(cafeName)}` : 'Add post'}</h2>
+    <div class="log-compose-topbar">
+      <button type="button" class="log-compose-top-btn btn-cancel">Cancel</button>
+      <h2 class="log-compose-title">New post</h2>
+      <button type="submit" form="log-matcha-form" class="log-compose-post-btn btn-save">Post</button>
+    </div>
     <form id="log-matcha-form">
-      <label>Photos</label>
-      <div class="photo-upload">
+      <div class="log-compose-photo-block">
         <input type="file" id="log-photo-input" accept="image/*" multiple hidden>
         <div class="log-photo-strip" id="log-photo-strip" aria-label="Photo strip"></div>
         <p id="log-upload-status" class="log-upload-status hidden" aria-live="polite"></p>
       </div>
-      <label for="log-date-display">Date</label>
-      <div class="log-form-date-row">
-        <button type="button" id="log-date-display" class="log-form-date-display" aria-label="Choose date">${formatDateDisplay(todayStr)}</button>
-        <input type="date" id="log-date" value="${todayStr}" tabindex="-1" aria-hidden="true">
-      </div>
-      ${hasInitialCafe ? '' : `
-        <div class="form-section">
-          <label for="log-form-brand-input">Brand</label>
-          <input type="text" id="log-form-brand-input" class="log-form-select-input" list="log-form-brand-suggestions" placeholder="Type to search brands">
-          <datalist id="log-form-brand-suggestions"></datalist>
-          <label for="log-form-location-select">Location (optional)</label>
-          <select id="log-form-location-select" class="log-form-select-input">
-            <option value="">No location</option>
-          </select>
-          <div id="log-form-hearts" class="log-form-hearts"></div>
-        </div>
-      `}
+      <input type="date" id="log-date" value="${todayStr}" tabindex="-1" aria-hidden="true" class="hidden">
       <div class="form-section">
-        <label>Drinks</label>
+        <label for="log-form-brand-input" class="log-compose-label">CAFÉ / BRAND</label>
+        <input type="text" id="log-form-brand-input" class="log-form-select-input" list="log-form-brand-suggestions" placeholder="Search brand...">
+        <datalist id="log-form-brand-suggestions"></datalist>
+      </div>
+      <div class="rating-row">
+        <label class="log-compose-label">OVERALL <span class="log-compose-optional">optional</span></label>
+        <div id="log-overall-stars" class="stars"></div>
+      </div>
+      <input type="hidden" id="log-form-location-select" value="">
+      <div id="log-form-hearts" class="log-form-hearts hidden"></div>
+      <label for="log-notes" class="log-compose-label">CAPTION <span class="log-compose-optional">optional</span></label>
+      <textarea id="log-notes" placeholder="How was it?"></textarea>
+      <div class="form-section">
+        <div class="log-drinks-heading">
+          <label class="log-compose-label">DRINKS</label>
+          <button type="button" id="log-add-drink-btn" class="log-add-drink-btn">+ Add drink</button>
+        </div>
         <div id="log-drink-list"></div>
-        <button type="button" id="log-add-drink-btn" class="log-add-drink-btn">+ Add another drink</button>
       </div>
-      <label for="log-notes">Notes</label>
-      <textarea id="log-notes" placeholder="Write your notes or description..."></textarea>
       ${classificationSection}
-      <div class="form-actions">
-        <button type="button" class="btn-cancel">Cancel</button>
-        <button type="submit" class="btn-save">Save</button>
-      </div>
     </form>
   `;
 
@@ -239,20 +236,10 @@ export function openLogForm(cafe, onClose, options = {}) {
   const saveBtn = form?.querySelector('.btn-save');
   const MAX_PHOTOS = 10;
   let isSaving = false;
+  let overallRating = 0;
   let fileReadQueue = Promise.resolve();
 
-  function renderLikeButtons() {
-    const hearts = document.getElementById('log-form-hearts');
-    if (!hearts) return;
-    hearts.innerHTML = `
-      ${selectedBrand ? `<button type="button" id="log-heart-brand" class="log-form-heart-btn">${hasUserLikedBrand(selectedBrand.id) ? '♥' : '♡'} ${escapeHtml(selectedBrand.name || 'Brand')}</button>` : ''}
-      ${selectedCafe ? `<button type="button" id="log-heart-cafe" class="log-form-heart-btn">${hasUserLikedLocation(selectedCafe.id) ? '♥' : '♡'} ${escapeHtml(selectedCafe.name || 'Location')}</button>` : ''}
-    `;
-    const hb = document.getElementById('log-heart-brand');
-    const hc = document.getElementById('log-heart-cafe');
-    if (hb && selectedBrand) hb.addEventListener('click', () => { setBrandLike(selectedBrand.id, !hasUserLikedBrand(selectedBrand.id)); renderLikeButtons(); });
-    if (hc && selectedCafe) hc.addEventListener('click', () => { setLocationLike(selectedCafe.id, !hasUserLikedLocation(selectedCafe.id)); renderLikeButtons(); });
-  }
+  function renderLikeButtons() {}
 
   function renderDrinkRows() {
     if (!drinkList) return;
@@ -262,29 +249,33 @@ export function openLogForm(cafe, onClose, options = {}) {
       el.className = 'log-drink-row';
       el.innerHTML = `
         <div class="log-drink-row-top">
-          <button type="button" class="log-drink-recommend-heart ${row.details.recommended ? 'is-active' : ''}" data-idx="${idx}" aria-label="Recommend this drink">${row.details.recommended ? '♥' : '♡'}</button>
+          <span class="log-drink-index">${idx + 1}</span>
           <input type="text" class="log-drink-name-input" data-idx="${idx}" value="${escapeAttr(row.name)}" placeholder="Drink name (required)">
+          <div class="log-drink-stars" data-idx="${idx}">
+            ${[1,2,3,4,5].map((n) => `<button type="button" class="log-drink-star ${n <= row.rating ? 'filled' : ''}" data-idx="${idx}" data-rate="${n}" aria-label="Rate ${n} star">★</button>`).join('')}
+          </div>
           <button type="button" class="log-drink-expand-btn" data-idx="${idx}">${row.expanded ? 'Hide details' : 'Add details'}</button>
           ${drinkRows.length > 1 ? `<button type="button" class="log-drink-remove-btn" data-idx="${idx}">×</button>` : ''}
         </div>
         ${row.expanded ? `
         <div class="log-drink-details">
           <textarea class="log-drink-notes-input" data-idx="${idx}" placeholder="Drink notes...">${escapeHtml(row.notes)}</textarea>
-          <label>Sweetness (${row.details.sweetness})</label><input class="log-slider" data-idx="${idx}" data-kind="sweetness" type="range" min="1" max="5" value="${row.details.sweetness}">
-          <label>Bitterness (${row.details.bitterness})</label><input class="log-slider" data-idx="${idx}" data-kind="bitterness" type="range" min="1" max="5" value="${row.details.bitterness}">
-          <label>Umami (${row.details.umami})</label><input class="log-slider" data-idx="${idx}" data-kind="umami" type="range" min="1" max="5" value="${row.details.umami}">
+          <label>Sweetness (${row.details.sweet})</label><input class="log-slider" data-idx="${idx}" data-kind="sweet" type="range" min="0" max="5" value="${row.details.sweet}">
+          <label>Bitterness (${row.details.bitter})</label><input class="log-slider" data-idx="${idx}" data-kind="bitter" type="range" min="0" max="5" value="${row.details.bitter}">
+          <label>Umami (${row.details.umami})</label><input class="log-slider" data-idx="${idx}" data-kind="umami" type="range" min="0" max="5" value="${row.details.umami}">
           <div class="log-flavor-tags">${FLAVOR_TAGS.map((t) => `<button type="button" class="log-flavor-tag ${row.details.flavorTags.includes(t) ? 'is-active' : ''}" data-idx="${idx}" data-tag="${escapeAttr(t)}">${escapeHtml(t)}</button>`).join('')}</div>
           <input type="text" class="log-price-input" data-idx="${idx}" value="${escapeAttr(String(row.details.price || ''))}" placeholder="Price (optional)">
         </div>` : ''}
       `;
       drinkList.appendChild(el);
     });
-    drinkList.querySelectorAll('.log-drink-recommend-heart').forEach((node) => node.addEventListener('click', () => {
-      const row = drinkRows[Number(node.dataset.idx)];
-      row.details.recommended = !row.details.recommended;
+    drinkList.querySelectorAll('.log-drink-name-input').forEach((node) => node.addEventListener('input', () => { drinkRows[Number(node.dataset.idx)].name = node.value; }));
+    drinkList.querySelectorAll('.log-drink-star').forEach((node) => node.addEventListener('click', () => {
+      const idx = Number(node.dataset.idx);
+      const rate = Number(node.dataset.rate) || 0;
+      drinkRows[idx].rating = drinkRows[idx].rating === rate ? 0 : rate;
       renderDrinkRows();
     }));
-    drinkList.querySelectorAll('.log-drink-name-input').forEach((node) => node.addEventListener('input', () => { drinkRows[Number(node.dataset.idx)].name = node.value; }));
     drinkList.querySelectorAll('.log-drink-expand-btn').forEach((node) => node.addEventListener('click', () => { const row = drinkRows[Number(node.dataset.idx)]; row.expanded = !row.expanded; renderDrinkRows(); }));
     drinkList.querySelectorAll('.log-drink-remove-btn').forEach((node) => node.addEventListener('click', () => { drinkRows.splice(Number(node.dataset.idx), 1); if (!drinkRows.length) addDrink(); renderDrinkRows(); }));
     drinkList.querySelectorAll('.log-drink-notes-input').forEach((node) => node.addEventListener('input', () => { drinkRows[Number(node.dataset.idx)].notes = node.value; }));
@@ -301,14 +292,31 @@ export function openLogForm(cafe, onClose, options = {}) {
   function addDrink() {
     drinkRows.push({
       name: '',
+      rating: 0,
       notes: '',
       expanded: false,
-      details: { sweetness: 3, bitterness: 3, umami: 3, flavorTags: [], price: '', recommended: false },
+      details: { sweet: 0, bitter: 0, umami: 0, flavorTags: [], price: '', recommended: false },
     });
   }
 
+  function renderOverallStars() {
+    const starsEl = document.getElementById('log-overall-stars');
+    if (!starsEl) return;
+    starsEl.innerHTML = '';
+    for (let i = 1; i <= 5; i += 1) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = i <= overallRating ? 'filled' : '';
+      btn.textContent = '★';
+      btn.addEventListener('click', () => {
+        overallRating = i === overallRating ? 0 : i;
+        renderOverallStars();
+      });
+      starsEl.appendChild(btn);
+    }
+  }
+
   async function initBrandLocation() {
-    if (hasInitialCafe) return;
     const brandInput = document.getElementById('log-form-brand-input');
     const brandSuggestions = document.getElementById('log-form-brand-suggestions');
     const locationSelect = document.getElementById('log-form-location-select');
@@ -328,24 +336,21 @@ export function openLogForm(cafe, onClose, options = {}) {
       });
     };
     const populateLocationOptions = async () => {
-      locationSelect.innerHTML = '<option value="">No location</option>';
-      if (!selectedBrand) return;
+      if (!selectedBrand) {
+        if (locationSelect) locationSelect.value = '';
+        return;
+      }
       const popUps = await getPopUpsByBrandId(selectedBrand.id);
-      (selectedBrand.cafes || []).forEach((cafeOpt) => {
-        const opt = document.createElement('option');
-        opt.value = `cafe:${cafeOpt.id}`;
-        opt.textContent = cafeOpt.address || cafeOpt.name || 'Location';
-        locationSelect.appendChild(opt);
-      });
-      popUps.forEach((pop) => {
-        const opt = document.createElement('option');
-        opt.value = `popup:${pop.id}`;
-        opt.textContent = `Pop-up: ${pop.address || pop.name || 'Location'}`;
-        locationSelect.appendChild(opt);
-      });
-      if (selectedCafe) locationSelect.value = `cafe:${selectedCafe.id}`;
-      else if (selectedPopUp) locationSelect.value = `popup:${selectedPopUp.id}`;
-      else locationSelect.value = '';
+      if (!selectedCafe && !selectedPopUp) {
+        const firstCafe = (selectedBrand.cafes || [])[0];
+        if (firstCafe) selectedCafe = firstCafe;
+        else if (popUps[0]) selectedPopUp = popUps[0];
+      }
+      if (locationSelect) {
+        if (selectedCafe) locationSelect.value = `cafe:${selectedCafe.id}`;
+        else if (selectedPopUp) locationSelect.value = `popup:${selectedPopUp.id}`;
+        else locationSelect.value = '';
+      }
     };
     const syncFromBrandInput = async () => {
       const typed = (brandInput.value || '').trim().toLowerCase();
@@ -361,24 +366,9 @@ export function openLogForm(cafe, onClose, options = {}) {
     renderLikeButtons();
     brandInput.addEventListener('change', syncFromBrandInput);
     brandInput.addEventListener('blur', syncFromBrandInput);
-    locationSelect.addEventListener('change', async () => {
-      const value = locationSelect.value || '';
-      selectedCafe = null;
-      selectedPopUp = null;
-      if (!selectedBrand || !value) {
-        renderLikeButtons();
-        return;
-      }
-      if (value.startsWith('cafe:')) {
-        const id = value.slice(5);
-        selectedCafe = (selectedBrand.cafes || []).find((c) => String(c.id) === String(id)) || null;
-      } else if (value.startsWith('popup:')) {
-        const id = value.slice(6);
-        const popUps = await getPopUpsByBrandId(selectedBrand.id);
-        selectedPopUp = popUps.find((p) => String(p.id) === String(id)) || null;
-      }
-      renderLikeButtons();
-    });
+    if (locationSelect) {
+      locationSelect.addEventListener('change', async () => {});
+    }
   }
 
   async function resolveBrandForCafe() {
@@ -428,7 +418,7 @@ export function openLogForm(cafe, onClose, options = {}) {
     isSaving = saving;
     if (saveBtn) {
       saveBtn.disabled = saving;
-      saveBtn.textContent = saving ? 'Saving...' : 'Save';
+      saveBtn.textContent = saving ? 'Saving...' : 'Post';
     }
     updateUploadStatus(message, saving || !!message);
   }
@@ -479,6 +469,7 @@ export function openLogForm(cafe, onClose, options = {}) {
 
   addDrink();
   renderDrinkRows();
+  renderOverallStars();
   addDrinkBtn?.addEventListener('click', () => { addDrink(); renderDrinkRows(); });
   renderPreviewList();
   initBrandLocation();
@@ -491,16 +482,16 @@ export function openLogForm(cafe, onClose, options = {}) {
     const notes = (document.getElementById('log-notes')?.value || '').trim();
     const drinks = drinkRows.map((row) => ({
       name: String(row.name || '').trim(),
+      rating: Number(row.rating) || 0,
       notes: String(row.notes || '').trim(),
-      details: {
-        sweetness: Number(row.details.sweetness) || 0,
-        bitterness: Number(row.details.bitterness) || 0,
+      price: row.details.price || '',
+      flavorNotes: row.details.flavorTags || [],
+      profile: {
+        sweet: Number(row.details.sweet) || 0,
+        bitter: Number(row.details.bitter) || 0,
         umami: Number(row.details.umami) || 0,
-        flavorTags: row.details.flavorTags || [],
-        price: row.details.price || '',
-        recommended: !!row.details.recommended,
-        recommend: !!row.details.recommended,
       },
+      recommended: !!row.details.recommended,
     })).filter((d) => d.name);
     if (!drinks.length) {
       alert('Please add at least one drink.');
@@ -526,6 +517,14 @@ export function openLogForm(cafe, onClose, options = {}) {
       cafeForLog = { id: saved.id, name: saved.name, address: saved.address, lat: saved.lat, lng: saved.lng };
       savedCafeForCallback = saved;
     }
+    if (!selectedBrand?.id) {
+      alert('Please select a brand before posting.');
+      return;
+    }
+    if (!savedCafeId && !selectedPopUp?.id) {
+      alert('Please select a location before posting.');
+      return;
+    }
     const logId = makeLogId();
     let uploadedPhotoUrls = [];
     setSavingState(true, photosBase64.length ? 'Uploading photos...' : 'Saving post...');
@@ -543,11 +542,6 @@ export function openLogForm(cafe, onClose, options = {}) {
       await saveLog({
         id: logId,
         userId: currentProfile.ownerId,
-        cafeId: savedCafeId || undefined,
-        cafe: cafeForLog,
-        brandId: selectedBrand ? selectedBrand.id : undefined,
-        brandName: selectedBrand ? selectedBrand.name : undefined,
-        popupId: selectedPopUp ? selectedPopUp.id : undefined,
         visit: {
           brandId: selectedBrand?.id || null,
           brandName: selectedBrand?.name || null,
@@ -558,12 +552,14 @@ export function openLogForm(cafe, onClose, options = {}) {
             popupId: selectedPopUp?.id || null,
           },
         },
-        drinks,
-        postNotes: notes,
+        post: {
+          rating: overallRating,
+          caption: notes,
+          photos: uploadedPhotoUrls.length ? uploadedPhotoUrls : [],
+          drinks,
+        },
         userName: currentProfile.username,
         userDisplayName: currentProfile.name,
-        photos: uploadedPhotoUrls.length ? uploadedPhotoUrls : undefined,
-        photo: uploadedPhotoUrls[0] || null,
         createdAt,
       });
     } catch (err) {

@@ -48,6 +48,11 @@
             color: #2b9348 !important;
         }
 
+        .nav-item span {
+            font-size: 1.0625rem;
+            line-height: 1.375rem;
+        }
+
         /* Mobile Navigation Styles */
         @media (max-width: 768px) {
             #sidebar {
@@ -173,7 +178,7 @@
             display: flex;
             align-items: center;
             gap: 0.75rem;
-            padding: 1rem;
+            padding: 0.8125rem 1rem;
             border-bottom: 1px solid #f3f4f6;
             text-decoration: none;
             color: #374151;
@@ -296,13 +301,27 @@
                 </svg>
                 <span class="mobile-nav-text">Schedule</span>
             </a>
-            <a href="#" class="mobile-nav-item" data-app="Matcha supply">
-                <svg class="mobile-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                    <line x1="6" y1="18" x2="6" y2="12"></line>
-                    <line x1="12" y1="18" x2="12" y2="8"></line>
-                    <line x1="18" y1="18" x2="18" y2="4"></line>
+            <a href="#" class="mobile-nav-item" data-app="Inbox">
+                <svg class="mobile-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                    <polyline points="22,6 12,13 2,6"></polyline>
                 </svg>
-                <span class="mobile-nav-text">Matcha supply</span>
+                <span class="mobile-nav-text">Inbox</span>
+            </a>
+            <a href="#" class="mobile-nav-item" data-app="Shopify">
+                <svg class="mobile-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+                    <line x1="3" y1="6" x2="21" y2="6"></line>
+                    <path d="M16 10a4 4 0 0 1-8 0"></path>
+                </svg>
+                <span class="mobile-nav-text">Shopify</span>
+            </a>
+            <a href="#" class="mobile-nav-item" data-app="Workshops">
+                <svg class="mobile-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"></path>
+                    <path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"></path>
+                </svg>
+                <span class="mobile-nav-text">Workshops</span>
             </a>
             <a href="#" class="mobile-nav-item" data-app="Sales">
                 <svg class="mobile-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -337,14 +356,6 @@
                     <line x1="12" y1="17" x2="12" y2="21"></line>
                 </svg>
                 <span class="mobile-nav-text">Pop-ups</span>
-            </a>
-            <a href="#" class="mobile-nav-item" data-app="Reports">
-                <svg class="mobile-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="18" y1="20" x2="18" y2="10"></line>
-                    <line x1="12" y1="20" x2="12" y2="4"></line>
-                    <line x1="6" y1="20" x2="6" y2="14"></line>
-                </svg>
-                <span class="mobile-nav-text">Reports</span>
             </a>
             <div class="mobile-nav-divider"></div>
             <button 
@@ -390,9 +401,9 @@
             </div>
 
             <!-- Nav -->
-            <nav class="flex-1 px-2 space-y-3 mt-8">
+            <nav class="flex-1 px-2 space-y-2 mt-7">
                 <button
-                    class="nav-item active group flex items-center gap-3 rounded-lg transition font-medium w-full py-3 px-3 justify-start text-emerald-700"
+                    class="nav-item active group flex items-center gap-3 rounded-lg transition font-medium w-full py-2.5 px-3 justify-start text-emerald-700"
                     style="background-color: #f0fdf4; color: #2b9348"
                     data-app="Payroll"
                 >
@@ -403,11 +414,11 @@
                         <line x1="16" y1="17" x2="8" y2="17"></line>
                         <polyline points="10,9 9,9 8,9"></polyline>
                     </svg>
-                    <span class="truncate text-lg">Payroll</span>
+                    <span class="truncate">Payroll</span>
                 </button>
                 
                 <button
-                    class="nav-item group flex items-center gap-3 rounded-lg transition font-medium w-full py-3 px-3 justify-start text-gray-700 hover:text-emerald-600"
+                    class="nav-item group flex items-center gap-3 rounded-lg transition font-medium w-full py-2.5 px-3 justify-start text-gray-700 hover:text-emerald-600"
                     data-app="Requests"
                 >
                     <svg class="shrink-0" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -415,11 +426,11 @@
                         <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
                         <circle cx="18" cy="8" r="1"></circle>
                     </svg>
-                    <span class="truncate text-lg">Requests</span>
+                    <span class="truncate">Requests</span>
                 </button>
                 
                 <button
-                    class="nav-item group flex items-center gap-3 rounded-lg transition font-medium w-full py-3 px-3 justify-start text-gray-700 hover:text-emerald-600"
+                    class="nav-item group flex items-center gap-3 rounded-lg transition font-medium w-full py-2.5 px-3 justify-start text-gray-700 hover:text-emerald-600"
                     data-app="Staff"
                 >
                     <svg class="shrink-0" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -428,11 +439,11 @@
                         <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
                         <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
                     </svg>
-                    <span class="truncate text-lg">Staff</span>
+                    <span class="truncate">Staff</span>
                 </button>
                 
                 <button
-                    class="nav-item group flex items-center gap-3 rounded-lg transition font-medium w-full py-3 px-3 justify-start text-gray-700 hover:text-emerald-600"
+                    class="nav-item group flex items-center gap-3 rounded-lg transition font-medium w-full py-2.5 px-3 justify-start text-gray-700 hover:text-emerald-600"
                     data-app="Schedule"
                 >
                     <svg class="shrink-0" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -441,23 +452,45 @@
                         <line x1="8" y1="2" x2="8" y2="6"></line>
                         <line x1="3" y1="10" x2="21" y2="10"></line>
                     </svg>
-                    <span class="truncate text-lg">Schedule</span>
+                    <span class="truncate">Schedule</span>
                 </button>
                 
                 <button
-                    class="nav-item group flex items-center gap-3 rounded-lg transition font-medium w-full py-3 px-3 justify-start text-gray-700 hover:text-emerald-600"
-                    data-app="Matcha supply"
+                    class="nav-item group flex items-center gap-3 rounded-lg transition font-medium w-full py-2.5 px-3 justify-start text-gray-700 hover:text-emerald-600"
+                    data-app="Inbox"
                 >
-                    <svg class="shrink-0" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                        <line x1="6" y1="18" x2="6" y2="12"></line>
-                        <line x1="12" y1="18" x2="12" y2="8"></line>
-                        <line x1="18" y1="18" x2="18" y2="4"></line>
+                    <svg class="shrink-0" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                        <polyline points="22,6 12,13 2,6"></polyline>
                     </svg>
-                    <span class="truncate text-lg">Matcha supply</span>
+                    <span class="truncate">Inbox</span>
+                </button>
+
+                <button
+                    class="nav-item group flex items-center gap-3 rounded-lg transition font-medium w-full py-2.5 px-3 justify-start text-gray-700 hover:text-emerald-600"
+                    data-app="Shopify"
+                >
+                    <svg class="shrink-0" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+                        <line x1="3" y1="6" x2="21" y2="6"></line>
+                        <path d="M16 10a4 4 0 0 1-8 0"></path>
+                    </svg>
+                    <span class="truncate">Shopify</span>
+                </button>
+
+                <button
+                    class="nav-item group flex items-center gap-3 rounded-lg transition font-medium w-full py-2.5 px-3 justify-start text-gray-700 hover:text-emerald-600"
+                    data-app="Workshops"
+                >
+                    <svg class="shrink-0" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"></path>
+                        <path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"></path>
+                    </svg>
+                    <span class="truncate">Workshops</span>
                 </button>
                 
                 <button
-                    class="nav-item group flex items-center gap-3 rounded-lg transition font-medium w-full py-3 px-3 justify-start text-gray-700 hover:text-emerald-600"
+                    class="nav-item group flex items-center gap-3 rounded-lg transition font-medium w-full py-2.5 px-3 justify-start text-gray-700 hover:text-emerald-600"
                     data-app="Sales"
                 >
                     <svg class="shrink-0" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -465,11 +498,11 @@
                         <line x1="12" y1="20" x2="12" y2="4"></line>
                         <line x1="6" y1="20" x2="6" y2="14"></line>
                     </svg>
-                    <span class="truncate text-lg">Sales</span>
+                    <span class="truncate">Sales</span>
                 </button>
                 
                 <button
-                    class="nav-item group flex items-center gap-3 rounded-lg transition font-medium w-full py-3 px-3 justify-start text-gray-700 hover:text-emerald-600"
+                    class="nav-item group flex items-center gap-3 rounded-lg transition font-medium w-full py-2.5 px-3 justify-start text-gray-700 hover:text-emerald-600"
                     data-app="Expenses"
                 >
                     <svg class="shrink-0" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -479,11 +512,11 @@
                         <line x1="16" y1="17" x2="8" y2="17"></line>
                         <polyline points="10,9 9,9 8,9"></polyline>
                     </svg>
-                    <span class="truncate text-lg">Expenses</span>
+                    <span class="truncate">Expenses</span>
                 </button>
                 
                 <button
-                    class="nav-item group flex items-center gap-3 rounded-lg transition font-medium w-full py-3 px-3 justify-start text-gray-700 hover:text-emerald-600"
+                    class="nav-item group flex items-center gap-3 rounded-lg transition font-medium w-full py-2.5 px-3 justify-start text-gray-700 hover:text-emerald-600"
                     data-app="Inventory"
                 >
                     <svg class="shrink-0" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -491,11 +524,11 @@
                         <polyline points="3.27,6.96 12,12.01 20.73,6.96"></polyline>
                         <line x1="12" y1="22.08" x2="12" y2="12"></line>
                     </svg>
-                    <span class="truncate text-lg">Inventory</span>
+                    <span class="truncate">Inventory</span>
                 </button>
                 
                 <button
-                    class="nav-item group flex items-center gap-3 rounded-lg transition font-medium w-full py-3 px-3 justify-start text-gray-700 hover:text-emerald-600"
+                    class="nav-item group flex items-center gap-3 rounded-lg transition font-medium w-full py-2.5 px-3 justify-start text-gray-700 hover:text-emerald-600"
                     data-app="Pop-ups"
                 >
                     <svg class="shrink-0" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -503,20 +536,9 @@
                         <line x1="8" y1="21" x2="16" y2="21"></line>
                         <line x1="12" y1="17" x2="12" y2="21"></line>
                     </svg>
-                    <span class="truncate text-lg">Pop-ups</span>
+                    <span class="truncate">Pop-ups</span>
                 </button>
                 
-                <button
-                    class="nav-item group flex items-center gap-3 rounded-lg transition font-medium w-full py-3 px-3 justify-start text-gray-700 hover:text-emerald-600"
-                    data-app="Reports"
-                >
-                    <svg class="shrink-0" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="18" y1="20" x2="18" y2="10"></line>
-                        <line x1="12" y1="20" x2="12" y2="4"></line>
-                        <line x1="6" y1="20" x2="6" y2="14"></line>
-                    </svg>
-                    <span class="truncate text-lg">Reports</span>
-                </button>
             </nav>
 
             <!-- User Info - Moved to bottom -->
@@ -643,6 +665,32 @@
             }
         });
 
+        // Hub apps (Shopify, Workshops, Inbox) — static UI + /api on a separate host until co-deployed.
+        const ADMIN_HUB_ORIGIN = (() => {
+            const { hostname, origin, port } = window.location;
+            if (hostname === 'localhost' || hostname === '127.0.0.1') {
+                // Same host as admin portal (dev-server on :8080 serves /leads/ + /api).
+                if (port === '8080' || port === '8788' || port === '5000') {
+                    return origin;
+                }
+                return 'http://127.0.0.1:8080';
+            }
+            if (
+                hostname === 'admin.matchanese.com' ||
+                hostname === 'matchanese-attendance.web.app' ||
+                hostname === 'matchanese-attendance.firebaseapp.com'
+            ) {
+                return origin;
+            }
+            return 'https://matchanese-attendance.web.app';
+        })();
+
+        function hubUrl(path) {
+            const base = ADMIN_HUB_ORIGIN.replace(/\/+$/, '');
+            const normalized = path.startsWith('/') ? path : `/${path}`;
+            return `${base}${normalized}`;
+        }
+
         // App configurations
         const appConfigs = {
             'Payroll': {
@@ -657,9 +705,17 @@
                 url: 'schedule/index.html?v=46',
                 title: 'Staff Scheduling'
             },
-            'Matcha supply': {
-                url: 'matcha-supply/index.html',
-                title: 'Matcha Supply Planner'
+            'Shopify': {
+                url: hubUrl('/shopify/'),
+                title: 'Shopify Orders'
+            },
+            'Workshops': {
+                url: hubUrl('/shopify/workshops.html'),
+                title: 'Workshop Management'
+            },
+            'Inbox': {
+                url: hubUrl('/leads/'),
+                title: 'Leads & Inbox'
             },
             'Sales': {
                 url: 'sales/sales-dashboard.html',
@@ -676,10 +732,6 @@
             'Pop-ups': {
                 url: 'pos/dashboard.html',
                 title: 'POS & Pop-ups'
-            },
-            'Reports': {
-                url: 'reports/index.html',
-                title: 'Quarterly Reports'
             },
             'Requests': {
                 url: 'admin-requests/index.html',
@@ -865,7 +917,7 @@
         
         // Find the first app the user has access to
         function findFirstAccessibleApp() {
-            const appOrder = ['Payroll', 'Requests', 'Staff', 'Schedule', 'Matcha supply', 'Sales', 'Expenses', 'Inventory', 'Pop-ups', 'Reports'];
+            const appOrder = ['Payroll', 'Requests', 'Staff', 'Schedule', 'Inbox', 'Shopify', 'Workshops', 'Sales', 'Expenses', 'Inventory', 'Pop-ups'];
             
             for (const appName of appOrder) {
                 if (typeof checkTabPermission === 'function' && checkTabPermission(appName)) {

@@ -1,121 +1,276 @@
-# Chatbase Leads Dashboard (Firebase + Vanilla JS)
+# Matchanese AI Bot Manager
 
-Standalone lead-tracking dashboard for Chatbase booking conversations.
+Dashboard for Chatbase agent conversations (Instagram, Messenger, WhatsApp, widget, and other sources) plus **structured service leads** from a Chatbase custom action.
 
 ## Features
 
-- Webhook ingestion for `leads.submit` with HMAC-SHA1 signature verification ([Webhook API Guide](https://chatbase.co/docs/developer-guides/webhooks))
-- Scheduled sync from Chatbase `get-leads` + `get-conversations` ([REST overview](https://www.chatbase.co/docs/developer-guides/api-integration))
-- **Optional:** Chatbase **server-side custom action** → `POST /ingest/chatbase-action` with structured fields (date, venue, cups, pax) for higher accuracy than parsing alone
-- Booking field extraction:
-  - Mobile bar: target date, target venue, cups to serve
-  - Workshop: pax
-- Auto lead status transitions (`new`, `qualified`, `follow_up`, `proposal_sent`, `won`, `lost`)
-- Pipeline dashboard with filters, lead detail, and status timeline
+### Inbox
 
-## Project structure
+- Paginated **Refresh** loads conversations in the selected date range
+- Filter by source, date range, and client-side search
+- Two-pane layout: conversation list + message thread (agent messages on the **right**)
 
-- `public/index.html` pipeline dashboard
-- `public/lead.html` lead detail page
-- `public/css/style.css`
-- `public/js/*.js` vanilla frontend (`API_BASE_URL: ""` uses same-origin `/api` when hosted on Firebase Hosting)
-- `functions/index.js` — `api` (Express), `chatbaseWebhook`, schedulers
-- `functions/extractor.js`, `functions/status-engine.js`
-- `firestore.rules`, `firestore.indexes.json`
+### Service leads
+
+- **Quote ref** — 5-character code per quote (e.g. `K7M2P`); legacy `MQ-…` codes still work for updates
+- **Pipeline status** — inquiry, quoted, invoiced, deposit, completed (AI + staff)
+- **Profile incomplete** badge when core fields are still missing
+- **Notes** — internal notes (staff + optional AI via webhook)
+- Two-pane detail view; **Download invoice** PDF in-app (requires finalized pax/cups and single price)
+- Partial logging: API accepts any subset of fields and merges on update
 
 ## Setup
 
-1. Install [Firebase CLI](https://firebase.google.com/docs/cli) and log in: `firebase login`
-2. Set your Firebase project ID in [`.firebaserc`](./.firebaserc) (replace `your-firebase-project-id`).
-3. Install Cloud Functions dependencies:
-
-   ```bash
-   cd functions
-   npm install
-   ```
-
-4. **Secrets / env for functions** (local emulator):
-   - Copy [`functions/.env.example`](./functions/.env.example) to `functions/.env`
-   - Set `CHATBASE_API_KEY`, `CHATBASE_CHATBOT_ID`, `ADMIN_API_TOKEN`, and optionally `CHATBASE_WEBHOOK_SECRET`
-
-5. **Dashboard config** (browser):
-   - Copy [`public/js/config.example.js`](./public/js/config.example.js) to `public/js/config.js`
-   - Set `ADMIN_API_TOKEN` to the **same** value as the function env
-   - Leave `API_BASE_URL` as `""` when the site is served from Firebase Hosting (uses `/api` rewrite)
+1. Install [Firebase CLI](https://firebase.google.com/docs/cli) and log in.
+2. Set Firebase project in `[.firebaserc](./.firebaserc)`.
+3. Enable **Firestore** in the Firebase console.
+4. `cd functions && npm install`
+5. Copy `[functions/.env.example](./functions/.env.example)` → `functions/.env`
+6. Copy `[public/js/config.example.js](./public/js/config.example.js)` → `public/js/config.js` (same `ADMIN_API_TOKEN`)
 
 ## Local run
 
-From `chatbase-leads-dashboard`:
-
 ```bash
-firebase emulators:start --only functions,firestore,hosting
+firebase emulators:start --only functions,hosting
 ```
-
-- Open the Hosting URL (default `http://localhost:5000`)
-- If the UI is not served via Hosting (e.g. opening `file://` HTML), set `API_BASE_URL` in `public/js/config.js` to your emulated function URL (see emulator logs)
 
 ## Deploy
 
 ```bash
-firebase deploy --only functions,hosting,firestore:rules,firestore:indexes
+firebase deploy --only "functions:api,hosting"
 ```
 
-### Production environment variables (required)
+Set on Cloud Function `**api**`: `ADMIN_API_TOKEN`, `CHATBASE_API_KEY`, `CHATBASE_CHATBOT_ID`, `CHATBASE_ACTION_SECRET`, `SHOPIFY_SHOP`, `SHOPIFY_ACCESS_TOKEN` (or client id/secret).
 
-Cloud Functions **Gen 2** does not read `functions/.env` in production. After deploy, set runtime environment variables for **each** deployed function (`api`, `chatbaseWebhook`, `scheduledSync`, `scheduledStatusSweep`, `dailyReconciliation`) in [Google Cloud Console](https://console.cloud.google.com/) → **Cloud Functions** → select function → **Edit** → **Runtime, build, connections and security** → **Runtime environment variables**:
+**Webhooks:**
 
-| Variable | Purpose |
-|----------|---------|
-| `ADMIN_API_TOKEN` | Shared secret; dashboard sends it as header `x-admin-token` |
-| `CHATBASE_API_KEY` | Bearer token for `get-leads` / `get-conversations` |
-| `CHATBASE_CHATBOT_ID` | Chatbot ID (same as in Chatbase settings) |
-| `CHATBASE_WEBHOOK_SECRET` | Optional; if omitted, webhook HMAC uses `CHATBASE_API_KEY` |
+- Service leads: `https://matchanese-attendance.web.app/api/webhooks/service-lead`
+- Payment proof: `https://matchanese-attendance.web.app/api/webhooks/payment-proof`
 
-Optional tuning: `MAX_SYNC_PAGES`, `SYNC_LEADS_PAGE_SIZE`, `SYNC_CONVERSATION_PAGE_SIZE` (see `.env.example`).
+## API — PATCH `/service-leads/:id` (dashboard)
 
-## Chatbase configuration
+Requires `x-admin-token`. Body: `{ "pipelineStatus"?: "inquiry"|"quoted"|"invoiced"|"deposit"|"completed", "notes"?: "..." }`
 
-### A) Webhook (`leads.submit`)
+## API — POST `/service-leads/delete` (dashboard)
 
-1. In Chatbase, configure a webhook to your deployed **`chatbaseWebhook`** URL (Firebase console → Functions → `chatbaseWebhook` → URL).
-2. Verify signatures per [Webhook API Guide](https://chatbase.co/docs/developer-guides/webhooks) using the same secret you set in `CHATBASE_WEBHOOK_SECRET` (or API key).
+Requires `x-admin-token`. Body: `{ "ids": ["firestoreDocId1", "firestoreDocId2"] }` (max 100).
 
-### B) Custom action (structured booking fields)
+## API — POST `/webhooks/service-lead`
 
-Use a **server-side** custom action (see [Custom Action](https://chatbase.co/docs/user-guides/chatbot/actions/custom-action.md)):
 
-- **Method:** `POST`
-- **URL:** your **`api`** function base + `/ingest/chatbase-action`  
-  - With Hosting + rewrite: `https://YOUR_PROJECT.web.app/api/ingest/chatbase-action`
-  - Or direct function URL + path as configured in Express (strip `/api` prefix if you call the function URL directly — see rewrite in [`firebase.json`](./firebase.json))
-- **Headers:** `Content-Type: application/json`, `x-admin-token: <ADMIN_API_TOKEN>`
-- **Body (JSON):** map Chatbase data inputs, for example:
+| Field                                                                          | Required | Notes                                                                                                           |
+| ------------------------------------------------------------------------------ | -------- | --------------------------------------------------------------------------------------------------------------- |
+| `clientName`, `service`, `targetDate`, `targetPax`, `targetVenue`, `eventType` | No*      | Send when known; `service` must be bar or workshop if sent                                                      |
+| `quotedPrice`                                                                  | No       | e.g. `PHP 45000`, `₱45,000` (ranges OK for chat quotes)                                                         |
+| `pipelineStatus`                                                               | No       | `inquiry`, `quoted`, `invoiced`, `deposit`, `completed` — do **not** set `invoiced` unless staff issued invoice |
+| `notes`                                                                        | No       | Internal note; use for pax ranges, tiers, caveats                                                               |
+| `quoteReference`                                                               | No       | Empty = **new** quote. Set = **update** that quote                                                              |
+| `conversationId`                                                               | No       | Not available in Chatbase Add variable; dashboard infers inbox link (see below)                                 |
+
+
+New quote: at least **one** detail field required. Update: `quoteReference` alone is enough.
+
+**Success (201 / 200):**
 
 ```json
 {
-  "conversationId": "<variable from Chatbase if available>",
-  "name": "<name>",
-  "email": "<email>",
-  "phone": "<phone>",
-  "inquiry_type": "mobile_bar",
-  "target_date": "<date>",
-  "target_venue": "<venue>",
-  "cups_to_serve": 200
+  "ok": true,
+  "id": "firestore-doc-id",
+  "quoteReference": "K7M2P",
+  "created": true,
+  "profileStatus": "draft",
+  "pipelineStatus": "inquiry",
+  "status": "draft",
+  "messageForUser": "Thanks! Your quote reference is K7M2P..."
 }
 ```
 
-Workshop example: `inquiry_type: "workshop"`, `pax: 20`.
+`profileStatus` is `draft` until name, service, date, pax, venue, and event type are all stored. `status` in responses is an alias for `profileStatus` (legacy).
 
-**Response:** keep JSON under 20KB (Chatbase limit). This endpoint returns `{ "ok": true, "leadId": "...", "status": "...", "inquiryType": "..." }`.
+---
 
-## Tests (functions)
+## Chatbase setup (copy-paste)
+
+Configure **Actions → logServiceLead** (server / Call API).
+
+### General — When to use
+
+```
+Use logServiceLead for Private Mobile Matcha Bar or Private Matcha Workshop quote requests.
+
+Call this action EARLY and OFTEN:
+- As soon as the customer shows quote intent and you learn ANY one detail (name, service, date, pax, venue, event type, or price), call logServiceLead immediately with whatever you know. Do not wait until all fields are complete.
+- Call again EVERY TIME the customer adds or changes ANY detail (including price). Always pass the same quoteReference from your last successful response when updating the same quote.
+- New separate project in the same chat: call with quoteReference empty to get a new code.
+
+Never skip logging because information is incomplete.
+```
+
+### Data inputs (10 — all optional in Chatbase)
+
+
+| Name             | Description                                                                                                                            |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `quoteReference` | Empty for new quote. For updates, same 5-character code from last API response (e.g. K7M2P).                                           |
+| `clientName`     | Name when known                                                                                                                        |
+| `service`        | Private Mobile Matcha Bar OR Private Matcha Workshop when known                                                                        |
+| `targetDate`     | Event date when known                                                                                                                  |
+| `targetPax`      | Guests/cups — use a **single number** once the client confirms final count (e.g. `100`). While still a range, describe it in `notes`.  |
+| `targetVenue`    | Venue when known                                                                                                                       |
+| `eventType`      | Wedding, Corporate, etc. when known                                                                                                    |
+| `quotedPrice`    | Quoted amount when stated (ranges/tiers OK for verbal quotes)                                                                          |
+| `pipelineStatus` | `inquiry`, `quoted`, `invoiced`, `deposit`, `completed` — use `quoted` when you give a custom quote; never set `invoiced` (staff only) |
+| `notes`          | Short internal note (pax range, tiers, special requests)                                                                               |
+
+
+### API request
+
+
+| Setting    | Value                                                             |
+| ---------- | ----------------------------------------------------------------- |
+| **Method** | `POST`                                                            |
+| **URL**    | `https://matchanese-attendance.web.app/api/webhooks/service-lead` |
+
+
+**Headers:**
+
+
+| Key                        | Value                                        |
+| -------------------------- | -------------------------------------------- |
+| `Content-Type`             | `application/json`                           |
+| `x-chatbase-action-secret` | Same as `CHATBASE_ACTION_SECRET` in Firebase |
+
+
+**Body:**
+
+```json
+{
+  "quoteReference": "{{quoteReference}}",
+  "clientName": "{{clientName}}",
+  "service": "{{service}}",
+  "targetDate": "{{targetDate}}",
+  "targetPax": "{{targetPax}}",
+  "targetVenue": "{{targetVenue}}",
+  "eventType": "{{eventType}}",
+  "quotedPrice": "{{quotedPrice}}",
+  "pipelineStatus": "{{pipelineStatus}}",
+  "notes": "{{notes}}"
+}
+```
+
+The HTTPS URL must be plain text (no `{{` around the URL). Chatbase server actions do **not** expose `conversationId` in Add variable; `userId` / [identity verification](https://www.chatbase.co/docs/developer-guides/identity-verification) is **website widget only**, not Instagram/Messenger.
+
+**Linking Inbox ↔ Service leads:** Chatbase cannot pass `conversationId`. After each successful action, the **agent must say the `quoteReference` in chat**. The server searches inbox threads from **lead created date → webhook time** (up to 400 days) for that code. First inquiry may not link until the ref has been mentioned and a follow-up action runs.
+
+### Test response
+
+1. **Live response** — only `clientName` = `Test User`, **`quoteReference` empty** → expect **201**, 5-char `quoteReference`, `profileStatus: "draft"`, `pipelineStatus: "inquiry"`.
+2. Same test with that `quoteReference` + `targetPax` = `50` + `pipelineStatus` = `quoted` → **200**, `created: false`.
+
+**404 in Chatbase test?** Usually means `quoteReference` was filled with a code that does not exist yet. Clear it for a new-quote test, or use the code returned from step 1. Unknown refs sent with other quote details are treated as a new quote (server assigns a fresh code).
+
+### Data access
+
+**Full data access** (agent reads `quoteReference`, `profileStatus`, `pipelineStatus`, `messageForUser`).
+
+### Agent instructions (Deploy / AI)
+
+```
+logServiceLead rules:
+1. On first quote detail → call immediately with only known fields; quoteReference empty; pipelineStatus inquiry.
+2. After EVERY successful response, your reply MUST include the quoteReference in plain text (e.g. "Your quote reference is K7M2P"). This is required for inbox linking.
+3. On ANY later change → call again with same quoteReference + all fields you currently know (leave unknown fields empty).
+4. New separate event in same chat → quoteReference empty.
+5. Set pipelineStatus quoted when you give any custom quotation or price (including estimates for a pax/cup RANGE).
+6. Use notes for ranges, tiers, or caveats (e.g. "Quote assumes 50–100 cups; final price depends on confirmed count").
+7. When the customer confirms a FINAL number of guests/cups, call again with that exact number in targetPax and update quotedPrice if needed.
+8. Invoicing: You may quote freely while count is still a range. Do NOT say a formal invoice is ready until they confirm a final count. Do NOT set pipelineStatus to invoiced (staff only).
+9. Do not set deposit/completed unless the customer clearly confirmed payment or the event is done.
+```
+
+### Channels
+
+Enable **Instagram**, **Messenger** (and **Widget** if used). Save and enable the action.
+
+---
+
+## API — POST `/webhooks/payment-proof`
+
+Logs payment proof from chat, matches Shopify order (`M#XXXX` preferred), marks order paid, stores audit row in `paymentIntakes`.
+
+
+| Field                                                 | Required | Notes                      |
+| ----------------------------------------------------- | -------- | -------------------------- |
+| `orderNumber`                                         | Yes*     | e.g. `M#2053`              |
+| `clientName`                                          | Yes*     | Payer / customer name      |
+| `amount`, `paymentMethod`, `referenceNumber`, `notes` | No       | From screenshot            |
+| `conversationId`                                      | No       | Auto-resolved when `orderNumber` appears in recent inbox messages                          |
+
+
+At least one of `orderNumber` or `clientName`.
+
+**Success (201):** `{ ok, id, orderName, shopifyOrderId, status, messageForUser }`
+
+## Chatbase setup — logPaymentProof
+
+### When to use
+
+```
+Use logPaymentProof when the customer sends GCash/bank transfer payment proof for a Shopify order (products, delivery/pickup, or workshop registration).
+
+Before calling: the order number M#XXXX must already appear in this chat (customer said it, or you repeated it earlier).
+Call once you have order number OR payer name. `clientName` is for Shopify matching only (payer on receipt).
+After EVERY successful response, repeat the order number in your reply (e.g. "Payment recorded for M#2094"). Required for inbox linking.
+After success, use messageForUser in your reply.
+```
+
+### Data inputs
+
+
+| Name              | Description              |
+| ----------------- | ------------------------ |
+| `orderNumber`     | Order number e.g. M#2053 |
+| `clientName`      | Name on transfer         |
+| `amount`          | Amount on receipt        |
+| `paymentMethod`   | GCash, BDO, etc.         |
+| `referenceNumber` | Transaction ref          |
+| `notes`           | Internal note            |
+
+
+### API request
+
+
+| Setting    | Value                                                              |
+| ---------- | ------------------------------------------------------------------ |
+| **Method** | `POST`                                                             |
+| **URL**    | `https://matchanese-attendance.web.app/api/webhooks/payment-proof` |
+
+
+**Headers:** `Content-Type: application/json`, `x-chatbase-action-secret` (same as service-lead)
+
+**Body:**
+
+```json
+{
+  "orderNumber": "{{orderNumber}}",
+  "clientName": "{{clientName}}",
+  "amount": "{{amount}}",
+  "paymentMethod": "{{paymentMethod}}",
+  "referenceNumber": "{{referenceNumber}}",
+  "notes": "{{notes}}"
+}
+```
+
+**Data access:** Full — use `messageForUser`, `orderName`, `status` in replies.
+
+**Inbox link:** the server searches inbox threads whose dates fall around when the payment was logged, and (if older) back to the **Shopify order date** — up to 400 days. It looks for the **order number** in any message. No `conversationId` from Chatbase.
+
+---
+
+## Tests
 
 ```bash
 cd functions
 npm test
 ```
 
-## Notes
-
-- Keep Chatbase API keys **server-side** only; never put them in `public/js/config.js`.
-- Firestore rules lock client writes; the dashboard talks to your backend only (admin token), not directly to Firestore.

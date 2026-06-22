@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Workshop Management</title>
+    <link rel="icon" href="data:," />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/hub/hub-shell.css" />
+    <link rel="stylesheet" href="css/orders-dashboard.css?v=59" />
+    <link rel="stylesheet" href="/hub/hub.css" />
+</head>
+<body>
+    <div class="container">
+        <header class="admin-header app-chrome">
+            <div class="logo-section">
+                <div data-hub-nav-logo>
+                    <img src="img/matchanese-logo.png" class="logo" alt="Matchanese" />
+                </div>
+                <h1 class="app-title">Workshop Management</h1>
+            </div>
+            <div class="header-actions">
+                <a href="/shopify/workshops.html" class="workshop-nav-back" id="btnBackShopify">← Workshops</a>
+            </div>
+        </header>
+
+        <section class="workshop-info-banner app-chrome" id="workshopInfoBar" hidden>
+            <h2 class="workshop-info-title" id="infoWorkshop">—</h2>
+            <p class="workshop-info-date" id="infoDate">—</p>
+        </section>
+
+        <p class="status-bar app-chrome" id="statusBar" aria-live="polite" role="status"></p>
+
+        <div class="list-pane-scroll workshop-table-wrap">
+            <div class="entity-card-list" id="rosterCardList" aria-label="Participants"></div>
+            <div class="data-table-container list-table-wrap">
+                <table class="workshop-roster-table" id="rosterTable">
+                    <colgroup>
+                        <col class="col-num" />
+                        <col class="col-session" />
+                        <col class="col-order" />
+                        <col class="col-customer" />
+                        <col class="col-contact" />
+                        <col class="col-email" />
+                        <col class="col-items" />
+                        <col class="col-paid" />
+                        <col class="col-payment" />
+                    </colgroup>
+                    <thead>
+                        <tr>
+                            <th class="col-num" scope="col">#</th>
+                            <th data-sort="timeLabel" class="col-session">Session</th>
+                            <th data-sort="orderName" class="col-order">Order</th>
+                            <th data-sort="participant" class="col-customer">Participant</th>
+                            <th data-sort="contact" class="col-contact">Contact</th>
+                            <th data-sort="email" class="col-email">Email</th>
+                            <th data-sort="seatLabel" class="col-items">Seats</th>
+                            <th data-sort="financialStatus" class="col-paid">Paid</th>
+                            <th data-sort="paymentMethod" class="col-payment">Payment</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rosterBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div
+            class="detail-modal-backdrop hidden"
+            id="participantModalBackdrop"
+            aria-hidden="true"
+        ></div>
+        <aside
+            class="detail-pane detail-pane--modal hidden"
+            id="participantModal"
+            aria-label="Participant details"
+        >
+            <div class="detail-pane-inner">
+                <header class="detail-pane-header" id="participantModalHeader"></header>
+                <div class="detail-pane-body" id="participantModalBody"></div>
+            </div>
+        </aside>
+    </div>
+
+    <div id="confirmDialog" class="confirm-dialog" hidden aria-hidden="true" role="dialog" aria-labelledby="confirmDialogTitle" aria-modal="true">
+        <div class="confirm-dialog__backdrop"></div>
+        <div class="confirm-dialog__panel">
+            <h2 id="confirmDialogTitle" class="confirm-dialog__title">Confirm</h2>
+            <p id="confirmDialogMessage" class="confirm-dialog__message"></p>
+            <label id="confirmDialogOptionWrap" class="confirm-dialog__option" hidden>
+                <input type="checkbox" id="confirmDialogCheckbox" />
+                <span id="confirmDialogOptionLabel"></span>
+            </label>
+            <div class="confirm-dialog__actions">
+                <button type="button" id="confirmDialogCancel" class="action-btn secondary">Keep</button>
+                <button type="button" id="confirmDialogOk" class="action-btn confirm-dialog__ok--danger">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/hub/hub.js" defer></script>
+    <script type="module" src="js/workshop-roster.js?v=47"></script>
+</body>
+</html>

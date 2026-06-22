@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0c0e14" />
+  <title>Smile Green</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>Smile Green</h1>
+    <p class="hint">Smile to go green</p>
+    <span id="status" class="status-pill" data-state="loading">Loading…</span>
+  </header>
+
+  <main class="stage-wrap">
+    <div class="stage" id="stage">
+      <div class="loading-overlay" id="loading">
+        <div class="spinner"></div>
+        <span>Starting camera &amp; face model…</span>
+      </div>
+      <video id="webcam" playsinline muted hidden></video>
+      <canvas id="output" aria-label="Webcam preview with smile detection"></canvas>
+      <p id="error" class="error-msg" hidden role="alert"></p>
+    </div>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

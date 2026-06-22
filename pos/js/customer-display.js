@@ -18,6 +18,7 @@ const els = {
   emptyState: document.getElementById('displayEmptyState'),
   orderTotal: document.getElementById('displayOrderTotal'),
   qrOverlay: document.getElementById('displayQrOverlay'),
+  qrImage: document.getElementById('displayQrImage'),
   paymentMethod: document.getElementById('displayPaymentMethod'),
   qrAmount: document.getElementById('displayQrAmount'),
   settingsBtn: document.getElementById('displaySettingsBtn'),
@@ -129,6 +130,7 @@ function renderLiveSession(data) {
   if (showQr) {
     els.paymentMethod.textContent = method === 'card' ? 'CARD PAYMENT' : 'GCASH PAYMENT';
     els.qrAmount.textContent = `Amount Due: ${formatCurrency(data.total)}`;
+    els.qrImage.src = method === 'card' ? 'images/qr.png' : 'images/qr-toph.jpg';
   }
 
   updateLastUpdatedLabel(data.updatedAt);

@@ -12,7 +12,7 @@ export function safePlaceIdPath(placeId) {
 }
 
 /**
- * Read cached place details from Firestore. Returns { photoUrl, rating, userRatingCount, openStatus } or null.
+ * Read cached place details from Firestore.
  */
 export async function getCachedPlaceDetails(placeId) {
   if (!placeId) return null;
@@ -29,6 +29,8 @@ export async function getCachedPlaceDetails(placeId) {
       rating: data.rating ?? null,
       userRatingCount: data.userRatingCount ?? null,
       openStatus: data.openStatus ?? null,
+      weekdayText: Array.isArray(data.weekdayText) ? data.weekdayText : null,
+      placeTypes: Array.isArray(data.placeTypes) ? data.placeTypes : null,
     };
   } catch (e) {
     console.warn('[Matcha Hop] getCachedPlaceDetails failed:', e?.message || e);
@@ -37,7 +39,7 @@ export async function getCachedPlaceDetails(placeId) {
 }
 
 /**
- * Write place details to Firestore. details = { photoUrl, rating, userRatingCount, openStatus }.
+ * Write place details to Firestore.
  */
 export async function setCachedPlaceDetails(placeId, details) {
   if (!placeId) return;
@@ -52,6 +54,8 @@ export async function setCachedPlaceDetails(placeId, details) {
       rating: details.rating ?? null,
       userRatingCount: details.userRatingCount ?? null,
       openStatus: details.openStatus ?? null,
+      weekdayText: Array.isArray(details.weekdayText) ? details.weekdayText : null,
+      placeTypes: Array.isArray(details.placeTypes) ? details.placeTypes : null,
       fetchedAt: typeof window !== 'undefined' && window.firebase?.firestore?.FieldValue?.serverTimestamp
         ? window.firebase.firestore.FieldValue.serverTimestamp()
         : new Date(),

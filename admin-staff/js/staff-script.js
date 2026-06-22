@@ -447,15 +447,18 @@ async function handleEditEmployee(e) {
             photoUrl = await uploadEmployeePhoto(employeeId, photoFile);
         }
         
-        // Update in Firebase
-        const employeeRef = doc(db, "employees", employeeId);
-        await updateDoc(employeeRef, {
+        // Keep legacy + v2 employee collections in sync.
+        const employeePatch = {
             name: name,
             nickname: nickname,
             baseRate: baseRate,
             active: active,
             photoUrl: photoUrl
-        });
+        };
+        await Promise.all([
+            updateDoc(doc(db, "employees", employeeId), employeePatch),
+            setDoc(doc(db, "employees_v2", employeeId), employeePatch, { merge: true })
+        ]);
         
         // Update local data
         employees[employeeId] = {
@@ -550,9 +553,8 @@ async function handleAddEmployee(e) {
             photoUrl = await uploadEmployeePhoto(employeeId, photoFile);
         }
         
-        // Add to Firebase
-        const employeeRef = doc(db, "employees", employeeId);
-        await setDoc(employeeRef, {
+        // Add to Firebase (legacy + v2 collections)
+        const employeePayload = {
             name: name,
             nickname: nickname,
             baseRate: baseRate,
@@ -560,7 +562,11 @@ async function handleAddEmployee(e) {
             role: role,
             photoUrl: photoUrl,
             createdAt: new Date()
-        });
+        };
+        await Promise.all([
+            setDoc(doc(db, "employees", employeeId), employeePayload),
+            setDoc(doc(db, "employees_v2", employeeId), employeePayload, { merge: true })
+        ]);
         
         // Add to local data (manager permissions can be set later via Manage Role)
         employees[employeeId] = {
@@ -924,11 +930,11 @@ window.deletePhoto = async function(employeeId) {
             }
         }
         
-        // Update employee record
-        const employeeRef = doc(db, "employees", employeeId);
-        await updateDoc(employeeRef, {
-            photoUrl: null
-        });
+        // Keep legacy + v2 employee collections in sync.
+        await Promise.all([
+            updateDoc(doc(db, "employees", employeeId), { photoUrl: null }),
+            setDoc(doc(db, "employees_v2", employeeId), { photoUrl: null }, { merge: true })
+        ]);
         
         // Update local data
         employees[employeeId].photoUrl = null;
@@ -971,11 +977,14 @@ async function handlePhotoUpload(employeeId, file) {
         const snapshot = await uploadBytes(storageRef, data, metadata);
         const photoUrl = await getDownloadURL(snapshot.ref);
         
-        const employeeRef = doc(db, "employees", employeeId);
-        await updateDoc(employeeRef, {
+        const photoPatch = {
             photoUrl: photoUrl,
             photoUpdatedAt: new Date()
-        });
+        };
+        await Promise.all([
+            updateDoc(doc(db, "employees", employeeId), photoPatch),
+            setDoc(doc(db, "employees_v2", employeeId), photoPatch, { merge: true })
+        ]);
         
         if (employees[employeeId]) {
             employees[employeeId].photoUrl = photoUrl;

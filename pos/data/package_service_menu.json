@@ -1,0 +1,64 @@
+{
+  "categories": [
+    { "id": "matcha", "name": "MATCHA" },
+    { "id": "hojicha", "name": "HOJICHA" }
+  ],
+  "items": [
+    {
+      "categoryId": "matcha",
+      "name": "Signature Matchanese Latte",
+      "description": "Matcha Cold Whisked with Milk",
+      "price": 0,
+      "type": "",
+      "shorthand": "SML"
+    },
+    {
+      "categoryId": "matcha",
+      "name": "Matchanese Seasalt Latte",
+      "description": "Our Signature Matcha Latte topped with Seasalt Cream",
+      "price": 0,
+      "type": "",
+      "shorthand": "MSL"
+    },
+    {
+      "categoryId": "matcha",
+      "name": "Coco Oat Latte",
+      "description": "Matcha Cold Whisked with Oat Milk over Coconut Juice",
+      "price": 0,
+      "type": "",
+      "shorthand": "COL"
+    },
+    {
+      "categoryId": "matcha",
+      "name": "Strawberry Matchanese Latte",
+      "description": "Our Signature Matcha Latte with Strawberry Puree",
+      "price": 0,
+      "type": "",
+      "shorthand": "STML"
+    },
+    {
+      "categoryId": "matcha",
+      "name": "Earl Gray Latte",
+      "description": "Our Signature Matcha Latte with Homemade Earl Grey Syrup",
+      "price": 0,
+      "type": "",
+      "shorthand": "EGL"
+    },
+    {
+      "categoryId": "hojicha",
+      "name": "Hojicha Latte",
+      "description": "Hōjicha Cold Whisked with Milk",
+      "price": 0,
+      "type": "",
+      "shorthand": "HL"
+    },
+    {
+      "categoryId": "hojicha",
+      "name": "Hojicha Seasalt Latte",
+      "description": "Hōjicha Latte topped with Seasalt Cream",
+      "price": 0,
+      "type": "",
+      "shorthand": "HSL"
+    }
+  ]
+}

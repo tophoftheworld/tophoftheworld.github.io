@@ -67,5 +67,9 @@ node_modules/
 # dotenv environment variables file
 .env
 
+# Local secrets for tools/quick-drive-upload (see tools/quick-drive-upload/.gitignore)
+tools/quick-drive-upload/credentials.json
+tools/quick-drive-upload/config.json
+
 # dataconnect generated files
 .dataconnect

@@ -1,0 +1,208 @@
+:root {
+  --bg: #0f1419;
+  --surface: #151b24;
+  --border: #253041;
+  --text: #e8eef5;
+  --muted: #8b9aad;
+  --accent: #5b9fd4;
+  --accent-dim: #3d7cac;
+  --danger: #e07070;
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: radial-gradient(1200px 600px at 20% -10%, #1a2535 0%, var(--bg) 55%);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.wrap {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 3rem;
+}
+
+.header h1 {
+  font-size: 1.65rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+  letter-spacing: -0.02em;
+}
+
+.lede {
+  color: var(--muted);
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.panel {
+  margin-top: 1.75rem;
+  padding: 1.25rem 1.35rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 0.45rem;
+}
+
+textarea,
+select {
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #0c1016;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+textarea:focus,
+select:focus {
+  outline: 2px solid var(--accent-dim);
+  outline-offset: 1px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+@media (max-width: 560px) {
+  .row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.field {
+  min-width: 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 1.1rem;
+  align-items: center;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.55rem 1rem;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn.primary {
+  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-dim) 100%);
+  color: #0a0e14;
+}
+
+.btn.primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn.ghost {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--muted);
+}
+
+.status {
+  margin: 0.85rem 0 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+  min-height: 1.35em;
+}
+
+.status.error {
+  color: var(--danger);
+}
+
+.progress-wrap {
+  margin-top: 0.65rem;
+  height: 6px;
+  background: #0c1016;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.progress-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent-dim), var(--accent));
+  transition: width 0.15s ease-out;
+}
+
+.preview-panel h2 {
+  font-size: 1.05rem;
+  margin: 0 0 0.35rem;
+}
+
+.meta {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 0 0 0.75rem;
+}
+
+.pviewer-wrap {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: #0c1016;
+  height: min(48vh, 420px);
+  min-height: 260px;
+}
+
+.pviewer-host {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.viewer-inline-hint {
+  margin: 0.55rem 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* Pannellum fills the inline frame */
+.pviewer-host .pnlm-container {
+  height: 100%;
+}
+
+.footer {
+  margin-top: 2rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.footer code {
+  font-size: 0.85em;
+  background: #0c1016;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}

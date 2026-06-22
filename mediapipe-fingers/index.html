@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Finger Lab — MediaPipe Hands</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <main class="hub">
+    <header class="hub-header">
+      <h1>Finger Lab</h1>
+      <p>Five webcam mini-apps powered by MediaPipe hand tracking. Allow camera access, hold your hand in frame, and play.</p>
+    </header>
+
+    <div class="card-grid">
+      <a class="exp-card" href="./air-paint.html">
+        <span class="num">01</span>
+        <h2>Air Paint 3D</h2>
+        <p>Right-hand pinch draws in 3D — hand size in frame sets depth (small = far, large = near). Left hand rotates.</p>
+      </a>
+      <a class="exp-card" href="./bubble-pop.html">
+        <span class="num">02</span>
+        <h2>Bubble Pop</h2>
+        <p>Pop rising bubbles by touching them with any fingertip. Build a combo streak before time runs out.</p>
+      </a>
+      <a class="exp-card" href="./finger-piano.html">
+        <span class="num">03</span>
+        <h2>Finger Piano</h2>
+        <p>Play a one-octave keyboard by hovering your index finger over the keys. Web Audio synth tones.</p>
+      </a>
+      <a class="exp-card" href="./particle-magnet.html">
+        <span class="num">04</span>
+        <h2>Particle Magnet</h2>
+        <p>Thousands of particles swirl around your fingertips. Pinch to flip between attract and repel.</p>
+      </a>
+      <a class="exp-card" href="./gesture-match.html">
+        <span class="num">05</span>
+        <h2>Gesture Match</h2>
+        <p>Match the target gesture — fist, peace, open palm, or finger counts — before the timer expires.</p>
+      </a>
+    </div>
+
+    <p class="hub-note">
+      Requires a webcam and a modern browser (Chrome, Edge, or Firefox). Processing runs locally in your browser via
+      <a href="https://developers.google.com/mediapipe/solutions/vision/hand_landmarker" target="_blank" rel="noopener">MediaPipe Hands</a>.
+      Good lighting and a plain background help tracking stay stable. The webcam is mirrored so hand overlays line up with your movement. Most experiments track both hands.
+    </p>
+  </main>
+</body>
+</html>

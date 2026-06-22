@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Doodle Verse 3D</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="app">
+    <div id="game-root" aria-label="Game world"></div>
+
+    <p id="plane-hint" class="hidden" aria-live="polite">WASD move · Shift run · Space jump · drag on stroke plane to draw</p>
+
+    <div id="hud" class="hidden">
+      <div class="hud-section-label">Next doodle</div>
+      <p class="hud-help muted small">Drag on the vertical stroke plane (at hero depth), release to spawn.</p>
+      <div class="hud-row hud-controls">
+        <label class="hud-lbl">Brush <input type="range" id="next-brush" min="6" max="28" value="14" /></label>
+      </div>
+      <div class="hud-toggle-grid">
+        <label class="chk"><input type="checkbox" id="next-tog-gravity" checked /> Gravity</label>
+        <label class="chk"><input type="checkbox" id="next-tog-collision" checked /> Collision</label>
+        <label class="chk" title="Hull + AABB: green=doodle, cyan=hero"><input type="checkbox" id="tog-debug-physics" /> Show physics</label>
+        <label class="chk" title="Floor shadow, Y lift line, X/Z/Y labels"><input type="checkbox" id="tog-debug-coords" /> Show coords</label>
+        <label class="chk" title="Magenta ink quad"><input type="checkbox" id="tog-debug-ink" /> Ink bounds</label>
+        <label class="chk" title="XY sheet at stroke Z"><input type="checkbox" id="tog-debug-plane" /> Stroke plane</label>
+        <label class="chk" title="RGB axes at bodies"><input type="checkbox" id="tog-debug-axes" /> Body axes</label>
+        <label class="chk" title="White=raster, yellow=body, cyan=collider bottom"><input type="checkbox" id="tog-debug-anchors" /> Spawn anchors</label>
+        <label class="chk" title="Raw stroke vertices"><input type="checkbox" id="tog-debug-points" /> Stroke points</label>
+        <label class="chk" title="WASD fly, mouse look — disables hero move and drawing"><input type="checkbox" id="tog-debug-fly" /> Debug fly cam</label>
+      </div>
+    </div>
+
+    <div id="avatar-overlay" class="hidden">
+      <div class="avatar-card avatar-studio">
+        <header class="avatar-studio__header">
+          <h2>Avatar studio</h2>
+          <p class="muted small avatar-studio__tagline">Draw on the doll; your art is the in-world sprite.</p>
+        </header>
+        <div class="avatar-studio__layout">
+          <div class="avatar-doll-stack" aria-label="Character drawing area">
+            <canvas id="avatar-doll-guide" width="360" height="480" aria-hidden="true"></canvas>
+            <canvas id="avatar-canvas" width="360" height="480"></canvas>
+          </div>
+          <aside class="avatar-tool-rail" aria-label="Drawing tools">
+            <div class="avatar-tool-section">
+              <span class="avatar-tool-label">Color presets</span>
+              <div class="avatar-swatches" id="avatar-swatches" role="group" aria-label="Common ink colors">
+                <button type="button" class="avatar-swatch" data-color="#14213d" style="--swatch:#14213d;background-color:#14213d" title="Ink blue" aria-pressed="true"></button>
+                <button type="button" class="avatar-swatch" data-color="#0f172a" style="--swatch:#0f172a;background-color:#0f172a" title="Black" aria-pressed="false"></button>
+                <button type="button" class="avatar-swatch" data-color="#334155" style="--swatch:#334155;background-color:#334155" title="Slate" aria-pressed="false"></button>
+                <button type="button" class="avatar-swatch" data-color="#5c4033" style="--swatch:#5c4033;background-color:#5c4033" title="Brown" aria-pressed="false"></button>
+                <button type="button" class="avatar-swatch" data-color="#f5d0c5" style="--swatch:#f5d0c5;background-color:#f5d0c5" title="Skin light" aria-pressed="false"></button>
+                <button type="button" class="avatar-swatch" data-color="#c68642" style="--swatch:#c68642;background-color:#c68642" title="Skin medium" aria-pressed="false"></button>
+                <button type="button" class="avatar-swatch" data-color="#6b4423" style="--swatch:#6b4423;background-color:#6b4423" title="Skin deep" aria-pressed="false"></button>
+                <button type="button" class="avatar-swatch" data-color="#ffffff" style="--swatch:#ffffff;background-color:#ffffff" title="White" aria-pressed="false"></button>
+                <button type="button" class="avatar-swatch" data-color="#b91c1c" style="--swatch:#b91c1c;background-color:#b91c1c" title="Crimson" aria-pressed="false"></button>
+                <button type="button" class="avatar-swatch" data-color="#ea580c" style="--swatch:#ea580c;background-color:#ea580c" title="Orange" aria-pressed="false"></button>
+                <button type="button" class="avatar-swatch" data-color="#ca8a04" style="--swatch:#ca8a04;background-color:#ca8a04" title="Gold" aria-pressed="false"></button>
+                <button type="button" class="avatar-swatch" data-color="#16a34a" style="--swatch:#16a34a;background-color:#16a34a" title="Green" aria-pressed="false"></button>
+                <button type="button" class="avatar-swatch" data-color="#0d9488" style="--swatch:#0d9488;background-color:#0d9488" title="Teal" aria-pressed="false"></button>
+                <button type="button" class="avatar-swatch" data-color="#2563eb" style="--swatch:#2563eb;background-color:#2563eb" title="Blue" aria-pressed="false"></button>
+                <button type="button" class="avatar-swatch" data-color="#1e3a8a" style="--swatch:#1e3a8a;background-color:#1e3a8a" title="Navy" aria-pressed="false"></button>
+                <button type="button" class="avatar-swatch" data-color="#7c3aed" style="--swatch:#7c3aed;background-color:#7c3aed" title="Purple" aria-pressed="false"></button>
+                <button type="button" class="avatar-swatch" data-color="#db2777" style="--swatch:#db2777;background-color:#db2777" title="Pink" aria-pressed="false"></button>
+              </div>
+              <div class="avatar-color-picker-wrap">
+                <span class="avatar-tool-label">Custom color</span>
+                <input type="color" id="avatar-color" class="avatar-color-input" value="#14213d" title="Open color picker" aria-label="Pick any color" />
+              </div>
+            </div>
+            <div class="avatar-tool-section">
+              <span class="avatar-tool-label">Tools</span>
+              <div class="avatar-tool-toolbar" role="group" aria-label="Drawing tools">
+                <button type="button" class="avatar-tool-btn is-active" id="avatar-mode-draw" aria-pressed="true" aria-label="Draw" title="Draw">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 20h9" />
+                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                  </svg>
+                </button>
+                <button type="button" class="avatar-tool-btn" id="avatar-mode-erase" aria-pressed="false" aria-label="Eraser" title="Eraser">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.8-1 3.7 0l5.2 5.2c1 1 1 2.5 0 3.4L13 21" />
+                    <path d="M22 21H7" />
+                    <path d="m5 11 9 9" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="avatar-tool-section">
+              <label class="avatar-brush-row" for="avatar-brush-slider">
+                <span class="avatar-brush-row-head">
+                  <span>Brush</span>
+                  <span class="avatar-brush-readout" id="avatar-brush-readout" aria-live="polite">9 px</span>
+                </span>
+                <input type="range" id="avatar-brush-slider" min="2" max="40" step="1" value="9" list="avatar-brush-ticks" aria-valuemin="2" aria-valuemax="40" aria-valuetext="9 pixels" />
+                <datalist id="avatar-brush-ticks">
+                  <option value="2"></option>
+                  <option value="12"></option>
+                  <option value="21"></option>
+                  <option value="31"></option>
+                  <option value="40"></option>
+                </datalist>
+              </label>
+              <input type="hidden" id="avatar-brush" value="9" />
+            </div>
+            <div class="avatar-tool-section avatar-tool-actions">
+              <div class="avatar-undo-redo" role="group" aria-label="Undo and redo drawing">
+                <button type="button" id="avatar-undo" class="avatar-undo-redo__btn ghost" disabled aria-label="Undo">Undo</button>
+                <button type="button" id="avatar-redo" class="avatar-undo-redo__btn ghost" disabled aria-label="Redo">Redo</button>
+              </div>
+              <button type="button" id="avatar-clear" class="ghost danger-outline">Clear all</button>
+            </div>
+          </aside>
+        </div>
+        <footer class="avatar-studio__footer">
+          <button type="button" id="avatar-enter" class="primary avatar-enter-btn">Enter world</button>
+        </footer>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

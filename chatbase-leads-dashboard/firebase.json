@@ -2,6 +2,9 @@
   "functions": {
     "source": "functions"
   },
+  "firestore": {
+    "rules": "firestore.rules"
+  },
   "hosting": {
     "public": "public",
     "ignore": [
@@ -15,8 +18,16 @@
         "function": "api"
       },
       {
-        "source": "/lead",
-        "destination": "/lead.html"
+        "source": "/conversation",
+        "destination": "/conversation.html"
+      },
+      {
+        "source": "/workshops",
+        "destination": "/shopify/workshops.html"
+      },
+      {
+        "source": "/shopify",
+        "destination": "/shopify/index.html"
       },
       {
         "source": "**",
@@ -24,19 +35,15 @@
       }
     ]
   },
-  "firestore": {
-    "rules": "firestore.rules",
-    "indexes": "firestore.indexes.json"
-  },
   "emulators": {
     "functions": {
       "port": 5001
     },
-    "firestore": {
-      "port": 8080
-    },
     "hosting": {
       "port": 5000
+    },
+    "firestore": {
+      "port": 8080
     },
     "ui": {
       "enabled": true

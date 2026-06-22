@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Workshop booking widget — demo</title>
+    <link rel="stylesheet" href="booking-widget.css" />
+    <style>
+        body {
+            font-family: Inter, system-ui, sans-serif;
+            max-width: 32rem;
+            margin: 2rem auto;
+            padding: 0 1rem;
+            color: #1a2e1a;
+        }
+        h1 { font-size: 1.2rem; }
+        .demo-note {
+            font-size: 0.88rem;
+            color: #5c6b5c;
+            line-height: 1.5;
+            margin-bottom: 1.25rem;
+        }
+        .demo-config {
+            display: grid;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        .demo-config label { font-size: 0.75rem; color: #5c6b5c; }
+        .demo-config input {
+            width: 100%;
+            padding: 0.45rem 0.55rem;
+            border: 1px solid #dde5dd;
+            border-radius: 6px;
+            font: inherit;
+        }
+    </style>
+</head>
+<body>
+    <h1>Workshop booking widget (demo)</h1>
+    <p class="demo-note">
+        Loads live sessions from Firestore. Use <strong>demo mode</strong> locally (no Shopify).
+        On your test product, use the Liquid snippet in <code>shopify/booking-widget.liquid</code>.
+    </p>
+    <div class="demo-config">
+        <div>
+            <label for="cfgEventName">Event name (must match admin)</label>
+            <input type="text" id="cfgEventName" value="Matcha Workshop" />
+        </div>
+        <div>
+            <label for="cfgVariantId">Shopify variant ID (leave blank for demo preview)</label>
+            <input type="text" id="cfgVariantId" placeholder="e.g. 40123456789012" />
+        </div>
+    </div>
+    <div id="widget-mount" class="workshop-booking-widget" data-workshop-booking></div>
+    <script type="module">
+        import { mountWorkshopBookingWidget } from "./booking-widget.js";
+
+        function remount() {
+            const mount = document.getElementById("widget-mount");
+            const eventName = document.getElementById("cfgEventName").value.trim();
+            const variantId = document.getElementById("cfgVariantId").value.trim();
+            mount.dataset.wbMounted = "";
+            mount.dataset.eventName = eventName;
+            mount.dataset.variantId = variantId;
+            mount.dataset.demo = variantId ? "false" : "true";
+            mountWorkshopBookingWidget(mount);
+        }
+
+        document.getElementById("cfgEventName").addEventListener("change", remount);
+        document.getElementById("cfgVariantId").addEventListener("change", remount);
+        remount();
+    </script>
+</body>
+</html>

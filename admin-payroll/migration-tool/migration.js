@@ -52,6 +52,10 @@ const logEl = document.getElementById('log');
 let loadedPeriods = [];
 let statusByPeriod = {};
 let periodTableLoading = false;
+let employeeOptionsLoaded = false;
+/** @type {{ id: string, name: string }[]} */
+let employeeOptions = [];
+let expandedPeriodId = null;
 
 function log(msg) {
     const line = `[${new Date().toISOString()}] ${msg}\n`;
@@ -205,6 +209,28 @@ function escapeAttr(s) {
     return escapeHtml(s).replace(/"/g, '&quot;');
 }
 
+function employeeSelectOptionsHtml() {
+    if (!employeeOptions.length) {
+        return '<div class="note" style="margin:0.25rem;">No employees loaded yet.</div>';
+    }
+    const rows = employeeOptions
+        .map((o) => {
+            const label = o.name ? `${o.name} (${o.id})` : o.id;
+            return `<tr>
+                <td>${escapeHtml(o.name || '—')}</td>
+                <td><code>${escapeHtml(o.id)}</code></td>
+                <td><button type="button" class="btn-row" data-action="attendance_employee" data-employee-id="${escapeAttr(o.id)}">Migrate employee</button></td>
+            </tr>`;
+        })
+        .join('');
+    return `<table class="employee-table">
+        <thead>
+            <tr><th>Name</th><th>Employee ID</th><th>Action</th></tr>
+        </thead>
+        <tbody>${rows}</tbody>
+    </table>`;
+}
+
 function renderGlobalStatusCells() {
     const eEl = document.getElementById('globalStatusEmployees');
     const pEl = document.getElementById('globalStatusPayments');
@@ -236,15 +262,49 @@ function renderTable() {
             <td><span class="period-id">${escapeHtml(p.id)}</span>${rowError(p.id)}</td>
             <td>${statusLabel(att)}</td>
             <td>
-                <button type="button" class="btn-row btn-ok" data-action="attendance" data-period="${escapeAttr(p.id)}">Attendance</button>
+                <div class="row-actions">
+                    <button type="button" class="btn-row btn-ok" data-action="attendance" data-period="${escapeAttr(p.id)}">Attendance</button>
+                    <button type="button" class="btn-row" data-action="toggle_employees" data-period="${escapeAttr(p.id)}">${expandedPeriodId === p.id ? 'Hide employees' : 'Open employee table'}</button>
+                </div>
+                ${expandedPeriodId === p.id ? `<div class="employee-panel">${employeeSelectOptionsHtml().replaceAll('data-action="attendance_employee"', `data-action="attendance_employee" data-period="${escapeAttr(p.id)}"`)}</div>` : ''}
             </td>
         </tr>`;
         })
         .join('');
 
     tbody.querySelectorAll('button[data-action]').forEach((btn) => {
-        btn.addEventListener('click', () => runRowAction(btn.dataset.action, btn.dataset.period));
+        btn.addEventListener('click', () => runRowAction(btn.dataset.action, btn.dataset.period, btn.dataset.employeeId));
     });
+}
+
+async function loadEmployeeOptions() {
+    if (employeeOptionsLoaded) return;
+
+    const [v2Snap, legacySnap] = await Promise.all([
+        getDocs(collection(db, 'employees_v2')),
+        getDocs(collection(db, 'employees'))
+    ]);
+
+    /** @type {Map<string, {id: string, name: string}>} */
+    const byId = new Map();
+    legacySnap.docs.forEach((d) => {
+        const name = (d.data()?.name || '').toString().trim();
+        byId.set(d.id, {id: d.id, name});
+    });
+    v2Snap.docs.forEach((d) => {
+        const name = (d.data()?.name || '').toString().trim();
+        byId.set(d.id, {id: d.id, name});
+    });
+
+    employeeOptions = Array.from(byId.values()).sort((a, b) => {
+        if (a.name && b.name) return a.name.localeCompare(b.name, undefined, {sensitivity: 'base'});
+        if (a.name) return -1;
+        if (b.name) return 1;
+        return a.id.localeCompare(b.id);
+    });
+    employeeOptionsLoaded = true;
+    renderTable();
+    log(`Employee picker loaded: ${employeeOptions.length} option(s).`);
 }
 
 /**
@@ -354,17 +414,53 @@ async function scanFirestoreForGlobalEarliest() {
 /**
  * One-time copy of master employee docs. Per-period pay rates use rateHistory when present;
  * otherwise admin PayCalculator falls back to top-level baseRate / payType for any period.
+ * Also verifies parity so operators can trust latest-only (`employees_v2`) reads.
  */
 async function migrateEmployeesGlobalOnce() {
-    const snap = await getDocs(collection(db, 'employees'));
-    let n = 0;
-    for (const d of snap.docs) {
+    const legacySnap = await getDocs(collection(db, 'employees'));
+    let migrated = 0;
+    for (const d of legacySnap.docs) {
         const data = d.data();
         await setDoc(doc(db, 'employees_v2', d.id), {...data}, {merge: true});
-        n++;
-        if (n % 25 === 0) log(`employees → employees_v2 … ${n}`);
+        migrated++;
+        if (migrated % 25 === 0) log(`employees → employees_v2 … ${migrated}`);
     }
-    log(`Employees → employees_v2 (one-time): ${n} doc(s).`);
+
+    // Verification pass: every legacy employee id must exist in employees_v2.
+    const v2Snap = await getDocs(collection(db, 'employees_v2'));
+    const legacyIds = new Set(legacySnap.docs.map((d) => d.id));
+    const v2Ids = new Set(v2Snap.docs.map((d) => d.id));
+
+    const missingInV2 = [];
+    for (const id of legacyIds) {
+        if (!v2Ids.has(id)) missingInV2.push(id);
+    }
+    const v2Only = [];
+    for (const id of v2Ids) {
+        if (!legacyIds.has(id)) v2Only.push(id);
+    }
+
+    log(`Employees → employees_v2: migrated/merged ${migrated} legacy doc(s).`);
+    log(`Employee parity check: legacy=${legacyIds.size}, v2=${v2Ids.size}, missingInV2=${missingInV2.length}, v2Only=${v2Only.length}.`);
+
+    if (missingInV2.length) {
+        const sample = missingInV2.slice(0, 10).join(', ');
+        throw new Error(
+            `Employee parity FAILED: ${missingInV2.length} legacy id(s) still missing in employees_v2. Sample: ${sample}${missingInV2.length > 10 ? ', …' : ''}`
+        );
+    }
+
+    if (v2Only.length) {
+        log(`NOTE: ${v2Only.length} id(s) exist only in employees_v2 (not in legacy employees). This is allowed during transition.`);
+    }
+
+    return {
+        migrated,
+        legacyCount: legacyIds.size,
+        v2Count: v2Ids.size,
+        missingInV2,
+        v2Only
+    };
 }
 
 /** Doc id: {employeeId}_{yyyy-mm-dd}_{yyyy-mm-dd} — period id is the last two segments. */
@@ -507,6 +603,74 @@ function sanitizeDocForV2Write(data) {
     return m;
 }
 
+async function migrateAttendanceForEmployeeInRange(employeeId, startDate, endDate, periodId, options = {}) {
+    const smartMerge = options.smartMerge !== false;
+    const runId = options.runId || new Date().toISOString();
+    const backupCol = collection(db, MIG_ATT_BACKUP_COLLECTION);
+    const datesCol = collection(db, 'attendance', employeeId, 'dates');
+    const q = query(datesCol, where('__name__', '>=', startDate), where('__name__', '<=', endDate));
+    const snap = await getDocs(q);
+
+    let totalDates = 0;
+    let identical = 0;
+    let legacyOnly = 0;
+    let mergedDiff = 0;
+    let backedUp = 0;
+    let backupFailed = 0;
+
+    for (const dateDoc of snap.docs) {
+        totalDates++;
+        const dateKey = dateDoc.id;
+        const legacyData = dateDoc.data();
+        const v2DocRef = doc(db, 'attendance_v2', employeeId, 'dates', dateKey);
+
+        if (!smartMerge) {
+            await setDoc(v2DocRef, legacyData, {merge: true});
+            continue;
+        }
+
+        const v2Snap = await getDoc(v2DocRef);
+        const v2Data = v2Snap.exists() ? v2Snap.data() : null;
+
+        if (!v2Data) {
+            await setDoc(v2DocRef, sanitizeDocForV2Write(legacyData), {merge: true});
+            legacyOnly++;
+            continue;
+        }
+
+        if (attendanceComparableEqual(legacyData, v2Data)) {
+            identical++;
+            continue;
+        }
+
+        const {merged, notes} = mergeAttendanceDocuments(legacyData, v2Data);
+        const payload = sanitizeDocForV2Write(merged);
+
+        try {
+            await addDoc(backupCol, {
+                periodId,
+                employeeId,
+                dateKey,
+                runId,
+                legacySnapshot: legacyData,
+                v2Snapshot: v2Data,
+                merged: payload,
+                mergeNotes: notes,
+                createdAt: new Date().toISOString()
+            });
+            backedUp++;
+        } catch (be) {
+            backupFailed++;
+            log(`BACKUP FAILED ${employeeId} ${dateKey}: ${be.message || be} — writing merged doc to v2 anyway`);
+        }
+
+        await setDoc(v2DocRef, payload, {merge: true});
+        mergedDiff++;
+    }
+
+    return {totalDates, identical, legacyOnly, mergedDiff, backedUp, backupFailed};
+}
+
 async function migrateAttendanceForPeriodLegacyCopy(periodId, startDate, endDate) {
     const empSnap = await getDocs(collection(db, 'employees'));
     let totalDates = 0;
@@ -539,9 +703,8 @@ async function migrateAttendanceForPeriod(periodId) {
         return;
     }
 
-    const runId = new Date().toISOString();
     const empSnap = await getDocs(collection(db, 'employees'));
-    const backupCol = collection(db, MIG_ATT_BACKUP_COLLECTION);
+    const runId = new Date().toISOString();
 
     let totalDates = 0;
     let identical = 0;
@@ -551,60 +714,47 @@ async function migrateAttendanceForPeriod(periodId) {
     let backupFailed = 0;
 
     for (const empDoc of empSnap.docs) {
-        const eid = empDoc.id;
-        const datesCol = collection(db, 'attendance', eid, 'dates');
-        const q = query(datesCol, where('__name__', '>=', startDate), where('__name__', '<=', endDate));
-        const snap = await getDocs(q);
-
-        for (const dateDoc of snap.docs) {
-            totalDates++;
-            const dateKey = dateDoc.id;
-            const legacyData = dateDoc.data();
-            const v2DocRef = doc(db, 'attendance_v2', eid, 'dates', dateKey);
-            const v2Snap = await getDoc(v2DocRef);
-            const v2Data = v2Snap.exists() ? v2Snap.data() : null;
-
-            if (!v2Data) {
-                await setDoc(v2DocRef, sanitizeDocForV2Write(legacyData), {merge: true});
-                legacyOnly++;
-                continue;
-            }
-
-            if (attendanceComparableEqual(legacyData, v2Data)) {
-                identical++;
-                continue;
-            }
-
-            const {merged, notes} = mergeAttendanceDocuments(legacyData, v2Data);
-            const payload = sanitizeDocForV2Write(merged);
-
-            try {
-                await addDoc(backupCol, {
-                    periodId,
-                    employeeId: eid,
-                    dateKey,
-                    runId,
-                    legacySnapshot: legacyData,
-                    v2Snapshot: v2Data,
-                    merged: payload,
-                    mergeNotes: notes,
-                    createdAt: new Date().toISOString()
-                });
-                backedUp++;
-            } catch (be) {
-                backupFailed++;
-                log(`BACKUP FAILED ${eid} ${dateKey}: ${be.message || be} — writing merged doc to v2 anyway`);
-            }
-
-            await setDoc(v2DocRef, payload, {merge: true});
-            mergedDiff++;
-        }
+        const stats = await migrateAttendanceForEmployeeInRange(empDoc.id, startDate, endDate, periodId, {
+            smartMerge: true,
+            runId
+        });
+        totalDates += stats.totalDates;
+        identical += stats.identical;
+        legacyOnly += stats.legacyOnly;
+        mergedDiff += stats.mergedDiff;
+        backedUp += stats.backedUp;
+        backupFailed += stats.backupFailed;
     }
 
     log(
         `Attendance smart-merge ${periodId}: ${totalDates} legacy row(s) in range — ` +
             `identical(skip)=${identical}, legacy-only(copy)=${legacyOnly}, merged(diff)=${mergedDiff}, ` +
             `backup docs=${backedUp}${backupFailed ? `, backup errors=${backupFailed}` : ''} → ${MIG_ATT_BACKUP_COLLECTION}`
+    );
+}
+
+async function migrateAttendanceForSingleEmployee(periodId, employeeId) {
+    const bounds = getPeriodDatesFromId(periodId);
+    if (!bounds) throw new Error('Invalid periodId');
+    if (!employeeId) throw new Error('Employee ID is required');
+    const startDate = formatDate(bounds.startDate);
+    const endDate = formatDate(bounds.endDate);
+    const smartMerge = document.getElementById('chkSmartAttendanceMerge')?.checked !== false;
+
+    const stats = await migrateAttendanceForEmployeeInRange(employeeId, startDate, endDate, periodId, {
+        smartMerge,
+        runId: new Date().toISOString()
+    });
+
+    if (!smartMerge) {
+        log(`Attendance legacy copy ${periodId} / ${employeeId}: ${stats.totalDates} date doc(s).`);
+        return;
+    }
+
+    log(
+        `Attendance smart-merge ${periodId} / ${employeeId}: ${stats.totalDates} legacy row(s) in range — ` +
+            `identical(skip)=${stats.identical}, legacy-only(copy)=${stats.legacyOnly}, merged(diff)=${stats.mergedDiff}, ` +
+            `backup docs=${stats.backedUp}${stats.backupFailed ? `, backup errors=${stats.backupFailed}` : ''} → ${MIG_ATT_BACKUP_COLLECTION}`
     );
 }
 
@@ -647,11 +797,26 @@ async function runAttendanceSection(periodId) {
     renderTable();
 }
 
-async function runRowAction(action, periodId) {
-    if (!periodId || action !== 'attendance') return;
+async function runRowAction(action, periodId, employeeId) {
+    if (!periodId || (action !== 'attendance' && action !== 'attendance_employee' && action !== 'toggle_employees')) return;
+
+    if (action === 'toggle_employees') {
+        expandedPeriodId = expandedPeriodId === periodId ? null : periodId;
+        renderTable();
+        return;
+    }
+
     try {
         setBusy(true);
-        await runAttendanceSection(periodId);
+        if (action === 'attendance') {
+            await runAttendanceSection(periodId);
+        } else {
+            if (!employeeId) {
+                log(`Select an employee first for period ${periodId}.`);
+                return;
+            }
+            await migrateAttendanceForSingleEmployee(periodId, employeeId);
+        }
     } catch (e) {
         log(`ERROR: ${e.message || e}`);
     } finally {
@@ -705,7 +870,10 @@ async function runGlobalEmployeesMigration() {
         setBusy(true);
         await patchGlobalStatus({employeesStatus: ST.IN_PROGRESS, lastError: null});
         renderTable();
-        await migrateEmployeesGlobalOnce();
+        const stats = await migrateEmployeesGlobalOnce();
+        log(
+            `Employees migration complete: legacy=${stats.legacyCount}, v2=${stats.v2Count}, missingInV2=${stats.missingInV2.length}, v2Only=${stats.v2Only.length}.`
+        );
         await patchGlobalStatus({employeesStatus: ST.COMPLETE, lastError: null});
     } catch (e) {
         const msg = e.message || String(e);
@@ -794,6 +962,12 @@ async function loadAllPeriodRows() {
 
 /** First open: use cached earliest date if present so the table is usable immediately; otherwise full scan. */
 async function bootstrapPeriodTable() {
+    try {
+        await loadEmployeeOptions();
+    } catch (e) {
+        log(`Employee picker: ${e.message || e}`);
+    }
+
     const cached = readEarliestCache();
     if (cached) {
         log(

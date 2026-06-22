@@ -6,7 +6,7 @@
   <title>Matcha Hop – Cafe map</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle fill='%231d8a00' cx='16' cy='16' r='14'/%3E%3Ccircle fill='none' stroke='white' stroke-width='2' cx='16' cy='16' r='14'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="css/style.css">
 </head>
@@ -14,12 +14,19 @@
   <div class="app-shell">
     <main class="app-main" role="main">
       <!-- Map tab -->
-      <section id="panel-map" class="tab-panel tab-panel--map is-active" aria-labelledby="tab-map">
+      <section id="panel-map" class="tab-panel tab-panel--map map-parity-scope is-active" aria-labelledby="tab-map">
         <div id="map" class="map-full"></div>
         <div class="search-bar">
           <div class="search-bar-inner">
+            <span class="search-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="7"></circle>
+                <path d="M21 21l-4.3-4.3"></path>
+              </svg>
+            </span>
             <input type="text" id="search-input" placeholder="Find matcha nearby" autocomplete="off">
             <button type="button" id="search-clear" class="search-bar-clear hidden" aria-label="Clear search">×</button>
+            <span id="search-count-chip" class="search-count-chip" aria-hidden="true">0</span>
           </div>
           <span id="search-results-label" class="search-results-label hidden" aria-live="polite">Showing search results</span>
         </div>
@@ -57,6 +64,10 @@
       <!-- Brands tab -->
       <section id="panel-brands" class="tab-panel tab-panel--brands" aria-labelledby="tab-brands">
         <div class="brands-view">
+          <div class="brands-header">
+            <h2 class="brands-title">Brands</h2>
+            <span id="brands-total-count" class="brands-total-count"></span>
+          </div>
           <div class="brands-scroll">
             <div id="brands-gallery" class="brands-gallery"></div>
           </div>
@@ -64,6 +75,7 @@
             <button type="button" role="tab" id="brands-filter-all" class="brands-filter-btn is-active" data-filter="all" aria-selected="true">All</button>
             <button type="button" role="tab" id="brands-filter-cafe" class="brands-filter-btn" data-filter="cafe" aria-selected="false">Cafes</button>
             <button type="button" role="tab" id="brands-filter-popup" class="brands-filter-btn" data-filter="popup" aria-selected="false">Pop-ups</button>
+            <button type="button" role="tab" id="brands-filter-home" class="brands-filter-btn" data-filter="home" aria-selected="false">Home</button>
           </div>
         </div>
         <div id="brand-page" class="brand-page hidden" aria-hidden="true">
@@ -78,7 +90,6 @@
               <span id="brand-page-heart-count" class="brand-page-heart-count"></span>
             </div>
           </div>
-          <p id="brand-page-no-location" class="brand-page-no-location hidden">No physical location (e.g. pop-up)</p>
           <section class="brand-page-section brand-page-locations" aria-labelledby="brand-page-locations-heading">
             <h4 id="brand-page-locations-heading" class="brand-page-section-heading">Locations</h4>
             <ul id="brand-page-branches" class="brand-page-branches" aria-label="Branches"></ul>
@@ -86,43 +97,28 @@
           <section class="brand-page-section brand-page-popups" aria-labelledby="brand-page-popups-heading">
             <h4 id="brand-page-popups-heading" class="brand-page-section-heading">Pop-Ups</h4>
             <ul id="brand-page-popups" class="brand-page-popups-list" aria-label="Pop-ups"></ul>
-            <button type="button" id="brand-page-add-popup" class="brand-page-add-popup-btn">Add pop-up</button>
           </section>
           <section class="brand-page-section brand-page-feed" aria-labelledby="brand-page-feed-heading">
-            <h4 id="brand-page-feed-heading" class="brand-page-section-heading">Your logs</h4>
+            <h4 id="brand-page-feed-heading" class="brand-page-section-heading">Recent logs</h4>
             <div id="brand-page-feed" class="brand-page-feed-list"></div>
+            <button type="button" id="brand-page-open-feed" class="brand-page-post-matcha-btn">Open full feed</button>
           </section>
           <button type="button" id="brand-page-post-matcha" class="brand-page-post-matcha-btn">Add post</button>
         </div>
-        <div id="add-popup-modal" class="add-popup-modal hidden" aria-hidden="true" role="dialog" aria-labelledby="add-popup-modal-title">
-          <div class="add-popup-modal-backdrop"></div>
-          <div class="add-popup-modal-box">
-            <h3 id="add-popup-modal-title" class="add-popup-modal-title">Add pop-up</h3>
-            <div class="add-popup-form">
-              <label for="add-popup-location">Location</label>
-              <input type="text" id="add-popup-location" placeholder="Search for a place..." autocomplete="off">
-              <div id="add-popup-results" class="add-popup-results hidden"></div>
-              <label id="add-popup-daterange-label">Date range</label>
-              <div id="add-popup-daterange" class="add-popup-daterange" role="application" aria-labelledby="add-popup-daterange-label"></div>
-            </div>
-            <div class="add-popup-modal-actions add-popup-modal-actions-main">
-              <button type="button" id="add-popup-delete" class="add-popup-btn add-popup-btn--danger hidden" aria-hidden="true">Delete</button>
-              <button type="button" id="add-popup-cancel" class="add-popup-btn add-popup-btn--secondary">Cancel</button>
-              <button type="button" id="add-popup-submit" class="add-popup-btn add-popup-btn--primary">Submit</button>
-            </div>
-            <div id="add-popup-delete-confirm" class="add-popup-delete-confirm hidden" aria-hidden="true">
-              <p class="add-popup-delete-confirm-text">Delete this pop-up?</p>
-              <div class="add-popup-modal-actions">
-                <button type="button" id="add-popup-delete-cancel" class="add-popup-btn add-popup-btn--secondary">Cancel</button>
-                <button type="button" id="add-popup-delete-confirm-btn" class="add-popup-btn add-popup-btn--danger">Delete</button>
-              </div>
-            </div>
+        <div id="brand-feed-page" class="brand-page hidden" aria-hidden="true">
+          <button type="button" id="brand-feed-page-back" class="brand-page-back" aria-label="Back to brand">← Back</button>
+          <div class="brand-page-name-row">
+            <h3 id="brand-feed-page-name" class="brand-page-name"></h3>
           </div>
+          <section class="brand-page-section" aria-labelledby="brand-feed-page-heading">
+            <h4 id="brand-feed-page-heading" class="brand-page-section-heading">All logs</h4>
+            <div id="brand-feed-page-list" class="brand-page-feed-list"></div>
+          </section>
         </div>
       </section>
 
       <!-- Feed tab -->
-      <section id="panel-feed" class="tab-panel tab-panel--feed" aria-labelledby="tab-feed">
+      <section id="panel-feed" class="tab-panel tab-panel--feed feed-parity-scope" aria-labelledby="tab-feed">
         <div id="feed-list" class="scroll-list photo-feed-list"></div>
       </section>
 
@@ -134,7 +130,7 @@
         <div id="mylogs-list" class="scroll-list photo-feed-list"></div>
       </section>
 
-      <section id="post-page" class="post-page hidden" aria-hidden="true">
+      <section id="post-page" class="post-page post-parity-scope hidden" aria-hidden="true">
         <div id="post-page-content" class="post-page-content"></div>
       </section>
     </main>

@@ -1,0 +1,275 @@
+:root {
+  --bg: #0c0e14;
+  --surface: #151922;
+  --surface-2: #1e2433;
+  --border: #2a3348;
+  --text: #e8ecf4;
+  --muted: #8b95ab;
+  --accent: #6ee7b7;
+  --accent-2: #818cf8;
+  --warn: #fbbf24;
+  --danger: #f87171;
+  --radius: 14px;
+  --font: "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* Hub */
+.hub {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 4rem;
+}
+
+.hub-header {
+  text-align: center;
+  margin-bottom: 2.5rem;
+}
+
+.hub-header h1 {
+  font-size: clamp(1.8rem, 4vw, 2.6rem);
+  font-weight: 700;
+  margin: 0 0 0.5rem;
+  background: linear-gradient(120deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.hub-header p {
+  color: var(--muted);
+  max-width: 520px;
+  margin: 0 auto;
+  line-height: 1.55;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.25rem;
+}
+
+.exp-card {
+  display: block;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.35rem 1.4rem;
+  transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+  text-decoration: none;
+  color: inherit;
+}
+
+.exp-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-3px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  text-decoration: none;
+}
+
+.exp-card .num {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 0.5rem;
+}
+
+.exp-card h2 {
+  font-size: 1.15rem;
+  margin: 0 0 0.4rem;
+}
+
+.exp-card p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.hub-note {
+  margin-top: 2rem;
+  padding: 1rem 1.2rem;
+  background: var(--surface);
+  border-radius: var(--radius);
+  border: 1px dashed var(--border);
+  font-size: 0.88rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* Experiment layout */
+.exp-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.exp-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.exp-topbar h1 {
+  font-size: 1.05rem;
+  margin: 0;
+  font-weight: 600;
+}
+
+.exp-topbar .back {
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.exp-topbar .back:hover {
+  color: var(--accent);
+}
+
+.exp-hud {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.exp-hud strong {
+  color: var(--text);
+}
+
+.stage-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.stage {
+  position: relative;
+  width: min(960px, 100%);
+  aspect-ratio: 16 / 10;
+  max-height: calc(100vh - 120px);
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: #000;
+}
+
+/* Mirror webcam so it matches overlay (selfie-style); MediaPipe coords are mirrored in JS */
+.stage video {
+  transform: scaleX(-1);
+}
+
+.stage video,
+.stage canvas.overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.stage canvas.webgl-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.stage canvas.overlay {
+  pointer-events: none;
+}
+
+.stage canvas.interactive {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.hint-bar {
+  padding: 0.6rem 1.25rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+  text-align: center;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.hint-bar kbd {
+  display: inline-block;
+  padding: 0.1em 0.45em;
+  border-radius: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 0.78em;
+  font-family: inherit;
+}
+
+.loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(12, 14, 20, 0.85);
+  z-index: 10;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.loading-overlay.hidden {
+  display: none;
+}
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

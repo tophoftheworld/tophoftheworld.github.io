@@ -1,0 +1,275 @@
+{
+  "version": 1,
+  "savedAt": "2026-03-03T09:28:06.538Z",
+  "state": {
+    "orientation": "portrait",
+    "unit": "cm",
+    "margin": 0.5,
+    "width": 21.59,
+    "height": 27.94,
+    "columnCount": 2,
+    "columnWidths": [
+      58,
+      42
+    ],
+    "columnWidthLocks": [
+      true,
+      false
+    ],
+    "columnRows": [
+      {
+        "rowCount": 4,
+        "rowHeights": [
+          12.5,
+          45.5,
+          21,
+          21
+        ],
+        "lockHeights": false
+      },
+      {
+        "rowCount": 3,
+        "rowHeights": [
+          12.5,
+          70,
+          17.5
+        ]
+      }
+    ],
+    "columnRowUnits": [
+      [
+        "%",
+        "%",
+        "%",
+        "%"
+      ],
+      [
+        "%",
+        "%",
+        "%"
+      ],
+      [
+        "%",
+        "%"
+      ],
+      [
+        "%",
+        "%"
+      ],
+      [
+        "%",
+        "%"
+      ],
+      [
+        "%",
+        "%"
+      ],
+      [
+        "%",
+        "%"
+      ],
+      [
+        "%",
+        "%"
+      ],
+      [
+        "%",
+        "%"
+      ],
+      [
+        "%",
+        "%"
+      ],
+      [
+        "%",
+        "%"
+      ],
+      [
+        "%",
+        "%"
+      ]
+    ],
+    "columnRowLocks": [
+      [
+        true,
+        false,
+        false,
+        true
+      ],
+      [
+        true,
+        null,
+        false
+      ]
+    ],
+    "tileTemplate": [
+      [
+        "branch-name",
+        "menu",
+        "menu",
+        "menu"
+      ],
+      [
+        "logo",
+        "customization",
+        "white"
+      ]
+    ],
+    "tileTemplateProps": [
+      [
+        {
+          "line1": "MATCHA BAR",
+          "line2": "MALL OF ASIA",
+          "line1FontScale": 2,
+          "line2FontScale": 2,
+          "line1FontSize": 35,
+          "line2FontSize": 20
+        },
+        {
+          "line1": "",
+          "line2": "",
+          "category": "Matcha Lattes",
+          "categoryTag": "",
+          "drinkIds": [
+            "3j3EsPggI6p9wfDG9FEV",
+            "XsG6FN49wB58ePjlQKsO",
+            "4sfr5qbp34XtzH0Af54R",
+            "nUz23H4QW2RZGn8ALkQi",
+            "BlqflKPYfak2zY3bDBrK",
+            "ZWrNVa1pSfxuzr7hv3Nd"
+          ],
+          "drinkTags": {},
+          "drinkTagColors": {}
+        },
+        {
+          "line1": "",
+          "line2": "",
+          "category": "Matcha Specials",
+          "categoryTag": "",
+          "drinkIds": [
+            "pTvSd7Zqm8Bg3G1KmuyF",
+            "vLRTWCUAGYaup1aIfZg1"
+          ],
+          "drinkTags": {},
+          "drinkTagColors": {}
+        },
+        {
+          "line1": "",
+          "line2": "",
+          "category": "Hōjicha Lattes",
+          "categoryTag": "",
+          "drinkIds": [
+            "5qWJ8DjyilhuCqetA8Ir",
+            "5Cde0xbIbAcvqHgdlbD5"
+          ],
+          "drinkTags": {},
+          "drinkTagColors": {}
+        }
+      ],
+      [
+        {
+          "line1": "",
+          "line2": ""
+        },
+        {
+          "line1": "",
+          "line2": ""
+        },
+        {
+          "line1": "",
+          "line2": ""
+        }
+      ]
+    ],
+    "gap": 0.5,
+    "tileBg": [
+      [
+        "green",
+        "white"
+      ],
+      [
+        "white",
+        "white"
+      ],
+      [
+        "white",
+        "white"
+      ]
+    ],
+    "gapX": 2,
+    "gapY": 5,
+    "columnWidthsLocked": false
+  },
+  "drinksSnapshot": [
+    {
+      "id": "3j3EsPggI6p9wfDG9FEV",
+      "name": "Signature Matchanese Latte",
+      "description": "Matcha Cold Whisked with Milk",
+      "price": "P220",
+      "category": "Matcha Lattes"
+    },
+    {
+      "id": "XsG6FN49wB58ePjlQKsO",
+      "name": "Matchanese Seasalt Latte",
+      "description": "Our Signature Matcha Latte topped with Seasalt Cream",
+      "price": "P250",
+      "category": "Matcha Lattes"
+    },
+    {
+      "id": "4sfr5qbp34XtzH0Af54R",
+      "name": "Coco Oat Matchanese Latte",
+      "description": "Matcha Cold Whisked with Oat Milk over Coconut Juice",
+      "price": "230",
+      "category": "Matcha Lattes"
+    },
+    {
+      "id": "nUz23H4QW2RZGn8ALkQi",
+      "name": "Earl Grey Matchanese Latte",
+      "description": "Our Signature Matcha Latte with Homemade Earl Grey Syrup",
+      "price": "P250",
+      "category": "Matcha Lattes"
+    },
+    {
+      "id": "BlqflKPYfak2zY3bDBrK",
+      "name": "Strawberry Matchanese Latte",
+      "description": "Our Signature Matcha Latte with Strawberry Puree",
+      "price": "P250",
+      "category": "Matcha Lattes"
+    },
+    {
+      "id": "ZWrNVa1pSfxuzr7hv3Nd",
+      "name": "Peach Mango Matchanese Latte",
+      "description": "Our Signature Matcha Latte with Peach Syrup and Mango Puree",
+      "price": "250",
+      "category": "Matcha Lattes"
+    },
+    {
+      "id": "pTvSd7Zqm8Bg3G1KmuyF",
+      "name": "Polvoron Matchanese Latte",
+      "description": "Our Signature Matcha Latte with Toasted Milk and Rice Krispies",
+      "price": "270",
+      "category": "Matcha Specials"
+    },
+    {
+      "id": "vLRTWCUAGYaup1aIfZg1",
+      "name": "Banoffee Matcha Latte",
+      "description": "Our Signature Matcha Latte topped with our Banoffee",
+      "price": "250",
+      "category": "Matcha Specials"
+    },
+    {
+      "id": "5qWJ8DjyilhuCqetA8Ir",
+      "name": "Hōjicha Latte",
+      "description": "Hōjicha Cold Whisked with Milk",
+      "price": "P190",
+      "category": "Hōjicha Lattes"
+    },
+    {
+      "id": "5Cde0xbIbAcvqHgdlbD5",
+      "name": "Hōjicha Seasalt Latte",
+      "description": "Hōjicha Latte topped with Seasalt Cream",
+      "price": "P220",
+      "category": "Hōjicha Lattes"
+    }
+  ]
+}

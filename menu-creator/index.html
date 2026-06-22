@@ -17,7 +17,7 @@
 
             <div class="panel-tabs" role="tablist">
                 <button type="button" class="panel-tab active" data-tab="layout" role="tab" aria-selected="true">Layout</button>
-                <button type="button" class="panel-tab" data-tab="drinks" role="tab" aria-selected="false">Drinks</button>
+                <button type="button" class="panel-tab" data-tab="drinks" role="tab" aria-selected="false">Menu Items</button>
             </div>
 
             <div id="layoutPanel" class="panel-content active" role="tabpanel">
@@ -84,7 +84,7 @@
 
             <div class="form-section">
                 <button type="button" id="fullscreenPreviewBtn" class="btn btn-secondary">Full screen preview</button>
-                <p class="form-hint">View the menu full screen (same size/ratio). Press Esc to return.</p>
+                <p class="form-hint">View the menu full screen (same size/ratio). Press Esc to return. Press R to rotate the preview only (not saved with the menu).</p>
             </div>
             <div class="form-section">
                 <button type="button" id="exportPhotoBtn" class="btn btn-primary">Export as PNG</button>
@@ -108,8 +108,11 @@
             <div id="drinksPanel" class="panel-content" role="tabpanel" hidden>
                 <section class="form-section">
                     <div class="drinks-header">
-                        <h2>Drinks</h2>
-                        <button type="button" id="addDrinkBtn" class="btn btn-primary">Add drink</button>
+                        <h2>Menu Items</h2>
+                        <div class="drinks-header-actions">
+                            <button type="button" id="addDrinkBtn" class="btn btn-primary">Add item</button>
+                            <button type="button" id="manageCategoriesBtn" class="btn btn-secondary">Manage categories</button>
+                        </div>
                     </div>
                     <div id="drinksList" class="drinks-list">
                         <!-- Filled by JS -->
@@ -122,7 +125,7 @@
         <!-- Add/Edit drink modal -->
         <div id="drinkModalBackdrop" class="modal-backdrop" hidden aria-hidden="true">
             <div class="modal-dialog" role="dialog" aria-labelledby="drinkModalTitle" aria-modal="true">
-                <h2 id="drinkModalTitle" class="modal-title">Add drink</h2>
+                <h2 id="drinkModalTitle" class="modal-title">Add item</h2>
                 <div class="form-group">
                     <label for="drinkName">Item name</label>
                     <input type="text" id="drinkName" placeholder="e.g. Signature Matchanese Latte">
@@ -138,13 +141,34 @@
                     </div>
                     <div class="form-group">
                         <label for="drinkCategory">Category</label>
-                        <input type="text" id="drinkCategory" placeholder="e.g. Matcha Lattes">
+                        <select id="drinkCategory">
+                            <option value="">Uncategorized</option>
+                        </select>
                     </div>
                 </div>
                 <input type="hidden" id="drinkEditId" value="">
                 <div class="modal-actions">
-                    <button type="button" id="saveDrinkBtn" class="btn btn-primary">Save drink</button>
+                    <button type="button" id="saveDrinkBtn" class="btn btn-primary">Save item</button>
                     <button type="button" id="cancelDrinkBtn" class="btn btn-secondary">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Manage categories modal -->
+        <div id="categoryModalBackdrop" class="modal-backdrop" hidden aria-hidden="true">
+            <div class="modal-dialog" role="dialog" aria-labelledby="categoryModalTitle" aria-modal="true">
+                <h2 id="categoryModalTitle" class="modal-title">Manage categories</h2>
+                <div class="form-group">
+                    <label for="newCategoryName">Add category</label>
+                    <input type="text" id="newCategoryName" placeholder="e.g. Matcha Lattes">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" id="addCategoryBtn" class="btn btn-primary">Add category</button>
+                </div>
+                <div id="categoryList" class="menu-load-list" aria-live="polite"></div>
+                <p class="form-hint" id="categoryStatus"></p>
+                <div class="modal-actions">
+                    <button type="button" id="closeCategoryBtn" class="btn btn-secondary">Close</button>
                 </div>
             </div>
         </div>

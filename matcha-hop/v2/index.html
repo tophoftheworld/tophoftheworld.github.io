@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Chakaiki</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23239c02'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/matcha-hop/v2/styles/map-overlays.css?v=20260613k" />
+<style>
+  html, body { margin: 0; padding: 0; background: #FFFFFF; -webkit-font-smoothing: antialiased; width: 100%; height: 100%; overflow: hidden; touch-action: manipulation; }
+  * { box-sizing: border-box; }
+  button, input, textarea { font-family: inherit; }
+  @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: none; opacity: 1; } }
+  @keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .stage { height: 100vh; min-height: 100vh; background: #FFFFFF; overflow: hidden; }
+  #root { height: 100vh; min-height: 100vh; overflow: hidden; }
+  .viewport-shell { position: relative; width: 100%; height: 100vh; min-height: 100vh; max-width: 540px; margin: 0 auto; overflow: hidden; }
+  @supports (height: 100dvh) {
+    .stage, #root, .viewport-shell { height: 100dvh; min-height: 100dvh; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="../js/config.js"></script>
+<script>
+  (function () {
+    var MAX = 120;
+    function ts() {
+      try {
+        return new Date().toISOString().split('T')[1].replace('Z', '');
+      } catch (_) {
+        return '';
+      }
+    }
+    function line(level, msg) {
+      return '[' + ts() + '] ' + level + ' ' + msg;
+    }
+    var store = {
+      lines: [],
+      push: function push(level, msg) {
+        var text = line(level, String(msg || ''));
+        this.lines.push(text);
+        if (this.lines.length > MAX) this.lines.splice(0, this.lines.length - MAX);
+        try { window.dispatchEvent(new Event('v2:debug-updated')); } catch (_) {}
+      },
+      read: function read() { return this.lines.slice(); },
+    };
+    window.__V2_DEBUG__ = store;
+    store.push('INFO', 'v2 page boot start');
+    window.addEventListener('unhandledrejection', function (event) {
+      var reason = event && event.reason ? (event.reason.message || String(event.reason)) : 'Unknown promise rejection';
+      store.push('REJECT', reason);
+    });
+  })();
+</script>
+<script>
+  (function() {
+    window.__V2_DEBUG__ && window.__V2_DEBUG__.push('INFO', 'checking maps key');
+    var key = window.GOOGLE_MAPS_API_KEY;
+    if (!key || key === 'YOUR_API_KEY') {
+      window.__V2_FATAL__ = {
+        code: 'maps_key',
+        message: 'Set a valid GOOGLE_MAPS_API_KEY in matcha-hop/js/config.js (Maps JavaScript API + Places).',
+      };
+      window.__V2_DEBUG__ && window.__V2_DEBUG__.push('ERROR', 'maps key missing or placeholder');
+      return;
+    }
+    var script = document.createElement('script');
+    script.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(key) + '&libraries=places';
+    script.async = false;
+    script.onload = function () {
+      window.__V2_DEBUG__ && window.__V2_DEBUG__.push('INFO', 'maps script loaded');
+    };
+    script.onerror = function () {
+      window.__V2_DEBUG__ && window.__V2_DEBUG__.push('ERROR', 'maps script failed to load');
+    };
+    document.head.appendChild(script);
+  })();
+</script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+
+<script src="vendor/react.production.min.js"></script>
+<script src="vendor/react-dom.production.min.js"></script>
+<script>
+  (function () {
+    function showFatal(message) {
+      var root = document.getElementById('root');
+      if (!root) return;
+      root.innerHTML =
+        '<div style="height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;font-family:system-ui,sans-serif;background:#fff;color:#0a0a0a;">' +
+          '<div style="max-width:340px;text-align:center;">' +
+            '<div style="font-size:18px;font-weight:700;margin-bottom:8px;">Matcha Map cannot load</div>' +
+            '<div style="font-size:14px;line-height:1.5;color:#737373;">' + message + '</div>' +
+          '</div>' +
+        '</div>';
+    }
+    function runtimeReady() {
+      return Boolean(window.React && window.ReactDOM);
+    }
+    function appRendered() {
+      var root = document.getElementById('root');
+      return Boolean(root && root.firstChild);
+    }
+    window.addEventListener('error', function (event) {
+      window.__V2_DEBUG__ && window.__V2_DEBUG__.push('ERROR', (event && event.message) ? event.message : 'window error');
+      if (runtimeReady() && appRendered()) return;
+      var msg = event && event.message ? String(event.message) : 'Required scripts failed to load.';
+      showFatal(msg);
+    });
+    window.__V2_DEBUG__ && window.__V2_DEBUG__.push('INFO', 'runtime guard installed');
+    window.setTimeout(function () {
+      if (runtimeReady() && appRendered()) return;
+      window.__V2_DEBUG__ && window.__V2_DEBUG__.push('ERROR', 'required scripts did not finish loading in 12s');
+      showFatal('Required scripts did not finish loading. Please reload the page and check your network.');
+    }, 12000);
+  })();
+</script>
+<script type="module" src="bootstrap.js?v=20260614g"></script>
+<script src="app.bundle.js?v=20260614e"></script>
+</body>
+</html>

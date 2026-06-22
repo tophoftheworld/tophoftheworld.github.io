@@ -25,6 +25,68 @@ async function getFirebaseDb() {
     return _firebaseDb;
 }
 
+// Event type constants
+const EVENT_TYPES = {
+    mobile_bar: 'mobile_bar',
+    matcha_workshop: 'matcha_workshop',
+    mochi_workshop: 'mochi_workshop'
+};
+
+const WORKSHOP_TITLES = {
+    matcha_workshop: 'Private Matcha Workshop',
+    mochi_workshop: 'Private Mochi Making Workshop'
+};
+
+const MATCHA_WORKSHOP_INCLUSIONS = [
+    'Guided matcha workshop',
+    'Use of all matcha tools during the session',
+    'Two rounds of hands-on matcha making\n(one cup + one bottled drink to take home)',
+    'Printed reference guides',
+    'Sticker pack',
+    'Mini tote bag',
+    'Transportation within Metro Manila'
+];
+
+function getWorkshopInclusions(eventType) {
+    if (eventType === EVENT_TYPES.matcha_workshop) {
+        return [...MATCHA_WORKSHOP_INCLUSIONS];
+    }
+    return [];
+}
+
+function isWorkshopEventType(eventType) {
+    return eventType === EVENT_TYPES.matcha_workshop || eventType === EVENT_TYPES.mochi_workshop;
+}
+
+function getEventType() {
+    if (invoiceItems.length > 0) {
+        return invoiceItems[0].eventType || EVENT_TYPES.mobile_bar;
+    }
+    return EVENT_TYPES.mobile_bar;
+}
+
+function migrateLoadedPackageItem(item, data) {
+    const migrated = {
+        ...item,
+        eventVenue: item.eventVenue || data.eventVenue || '',
+        eventDate: item.eventDate || data.eventDate || ''
+    };
+    if (!migrated.numberOfPax && migrated.cups) {
+        const cupsMatch = String(migrated.cups).match(/\d+/);
+        if (cupsMatch) migrated.numberOfPax = cupsMatch[0];
+    }
+    if (!migrated.packageType && migrated.eventType === EVENT_TYPES.mobile_bar && migrated.description) {
+        for (const [key, pkg] of Object.entries(packages)) {
+            if (pkg.name === migrated.description) {
+                migrated.packageType = key;
+                break;
+            }
+        }
+    }
+    syncPackageItem(migrated);
+    return migrated;
+}
+
 // ─── LocalStorage Functions ───────────────────────────────────────────────────
 function saveToLocalStorage() {
     const data = {
@@ -33,10 +95,6 @@ function saveToLocalStorage() {
         clientName: document.getElementById('clientName').value,
         clientAddress: document.getElementById('clientAddress').value,
         clientTIN: document.getElementById('clientTIN').value,
-        eventVenue: document.getElementById('eventVenue').value,
-        eventDate: document.getElementById('eventDate').value,
-        packageType: document.getElementById('packageType').value,
-        numberOfPax: document.getElementById('numberOfPax').value,
         notes: document.getElementById('notes').value,
         invoiceItems: invoiceItems,
         customLineItems: customLineItems,
@@ -58,13 +116,11 @@ function loadFromLocalStorage() {
         if (data.clientName) document.getElementById('clientName').value = data.clientName;
         if (data.clientAddress) document.getElementById('clientAddress').value = data.clientAddress;
         if (data.clientTIN) document.getElementById('clientTIN').value = data.clientTIN;
-        if (data.eventVenue) document.getElementById('eventVenue').value = data.eventVenue;
-        if (data.eventDate) document.getElementById('eventDate').value = data.eventDate;
-        if (data.packageType) document.getElementById('packageType').value = data.packageType;
-        if (data.numberOfPax) document.getElementById('numberOfPax').value = data.numberOfPax;
         if (data.notes) document.getElementById('notes').value = data.notes;
         
-        if (data.invoiceItems) invoiceItems = data.invoiceItems;
+        if (data.invoiceItems) {
+            invoiceItems = data.invoiceItems.map(item => migrateLoadedPackageItem(item, data));
+        }
         if (data.customLineItems) customLineItems = data.customLineItems;
         if (data.paymentMilestones) paymentMilestones = data.paymentMilestones;
         if (data._cloudDocId) _currentCloudDocId = data._cloudDocId;
@@ -93,7 +149,6 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!loaded) {
         // Set defaults if no saved data
         document.getElementById('invoiceDate').valueAsDate = today;
-        document.getElementById('eventDate').valueAsDate = today;
 
         // Generate default invoice number
         const year = today.getFullYear();
@@ -101,34 +156,20 @@ document.addEventListener('DOMContentLoaded', function() {
         const day = String(today.getDate()).padStart(2, '0');
         document.getElementById('invoiceNumber').value = `INV-${year}-${month}${day}-001`;
 
-        // Set default package and pax
-        document.getElementById('packageType').value = 'signature';
-        document.getElementById('numberOfPax').value = '100';
-
         // Add default payment milestones
         addDefaultPaymentMilestones();
-    }
-    
-    // Render custom line items if loaded
-    if (customLineItems.length > 0) {
-        renderCustomLineItems();
     }
 
     // Set up event listeners
     setupEventListeners();
+    setupPackageListListeners();
+    document.getElementById('addPackageBtn').addEventListener('click', addPackage);
+
+    if (customLineItems.length > 0) {
+        renderCustomLineItems();
+    }
     
-    // Set up package dropdown listeners
-    document.getElementById('packageType').addEventListener('change', function() {
-        updatePackageFromDropdowns();
-        saveToLocalStorage();
-    });
-    document.getElementById('numberOfPax').addEventListener('change', function() {
-        updatePackageFromDropdowns();
-        saveToLocalStorage();
-    });
-    
-    // Initialize package details
-    updatePackageFromDropdowns();
+    renderInvoiceItems();
     
     // Calculate initial milestone dates based on event date
     const total = calculateTotal();
@@ -181,40 +222,107 @@ let invoiceItems = [];
 let paymentMilestones = [];
 let customLineItems = [];
 
-// Update package when dropdowns change
-function updatePackageFromDropdowns() {
-    const packageType = document.getElementById('packageType').value;
-    const numberOfPax = document.getElementById('numberOfPax').value;
-    
-    if (!packageType || !numberOfPax) {
-        invoiceItems = [];
-        renderInvoiceItems();
-        updatePreview();
+function isWorkshopItem(item) {
+    return item.isWorkshop || isWorkshopEventType(item.eventType);
+}
+
+function getDefaultPackageDate() {
+    const invoiceDate = document.getElementById('invoiceDate').value;
+    if (invoiceDate) return invoiceDate;
+    return formatDateToLocal(new Date());
+}
+
+function createEmptyPackageItem() {
+    const eventType = EVENT_TYPES.matcha_workshop;
+    return {
+        id: Date.now() + invoiceItems.length,
+        eventType: eventType,
+        eventVenue: '',
+        eventDate: getDefaultPackageDate(),
+        description: WORKSHOP_TITLES[eventType],
+        cups: '',
+        countLabel: 'participants',
+        isWorkshop: true,
+        workshopInclusions: getWorkshopInclusions(eventType),
+        workshopDetails: '',
+        quantity: 0,
+        unitCost: '',
+        menuItems: [],
+        additionalOptions: [],
+        otherInclusions: [],
+        duration: '',
+        baristas: '',
+        unitPrice: 0,
+        packageType: '',
+        numberOfPax: ''
+    };
+}
+
+function syncWorkshopItem(item) {
+    item.isWorkshop = true;
+    item.countLabel = 'participants';
+    item.description = WORKSHOP_TITLES[item.eventType] || '';
+    item.workshopInclusions = getWorkshopInclusions(item.eventType);
+    const pax = parseInt(item.cups, 10) || 0;
+    item.quantity = pax;
+    const unitCost = parseFloat(item.unitCost) || 0;
+    item.unitPrice = pax > 0 && unitCost > 0 ? pax * unitCost : 0;
+}
+
+function syncMobileItem(item) {
+    item.isWorkshop = false;
+    item.countLabel = 'cups';
+    if (!item.packageType || item.packageType === 'custom' || !item.numberOfPax) {
+        item.description = '';
+        item.unitPrice = 0;
         return;
     }
-    
-    const packageData = packages[packageType];
-    const price = packageData.rates[numberOfPax] || 0;
-    
-    // Clear existing items and add new one
-    invoiceItems = [{
-        id: Date.now(),
-        description: packageData.name,
-        cups: `${numberOfPax} Cups`,
-        menuItems: [...packageData.menuItems],
-        additionalOptions: [...packageData.additionalOptions],
-        otherInclusions: [...packageData.otherInclusions],
-        duration: 'Maximum 3 Hours Total Duration',
-        baristas: '4 On-Site Baristas',
-        unitPrice: price
-    }];
-    
+    const packageData = packages[item.packageType];
+    if (!packageData) return;
+    const price = packageData.rates[item.numberOfPax] || 0;
+    item.description = packageData.name;
+    item.cups = `${item.numberOfPax} Cups`;
+    item.menuItems = [...packageData.menuItems];
+    item.additionalOptions = [...packageData.additionalOptions];
+    item.otherInclusions = [...packageData.otherInclusions];
+    item.duration = 'Maximum 3 Hours Total Duration';
+    item.baristas = '4 On-Site Baristas';
+    item.unitPrice = price;
+}
+
+function syncPackageItem(item) {
+    if (isWorkshopItem(item)) {
+        syncWorkshopItem(item);
+    } else {
+        syncMobileItem(item);
+    }
+}
+
+function getInvoiceEventDate() {
+    const dates = invoiceItems.map(item => item.eventDate).filter(Boolean).sort();
+    return dates.length ? dates[dates.length - 1] : '';
+}
+
+function isPackageVisibleInPreview(item) {
+    if (isWorkshopItem(item)) {
+        const pax = parseInt(item.cups, 10) || 0;
+        const unitCost = parseFloat(item.unitCost) || 0;
+        return pax > 0 && unitCost > 0;
+    }
+    return !!(item.packageType && item.packageType !== 'custom' && item.numberOfPax);
+}
+
+function addPackage() {
+    invoiceItems.push(createEmptyPackageItem());
     renderInvoiceItems();
     updatePreview();
     saveToLocalStorage();
+    const forms = document.querySelectorAll('.package-form');
+    if (forms.length) {
+        forms[forms.length - 1].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
 }
 
-// Remove invoice item
 function removeInvoiceItem(itemId) {
     invoiceItems = invoiceItems.filter(item => item.id !== itemId);
     renderInvoiceItems();
@@ -222,181 +330,144 @@ function removeInvoiceItem(itemId) {
     saveToLocalStorage();
 }
 
-// Render invoice items in form (for manual editing if needed)
+function renderPackageFormFields(item, index) {
+    const isWorkshop = isWorkshopEventType(item.eventType);
+    const cupsVal = item.numberOfPax || (String(item.cups || '').match(/\d+/) || [])[0] || '';
+    const paxVal = isWorkshop ? (item.cups || '') : '';
+    const perPaxVal = item.unitCost != null && item.unitCost !== '' ? item.unitCost : '';
+
+    return `
+        <div class="package-form" data-id="${item.id}">
+            <div class="package-form-header">
+                <h3>Package ${index + 1}</h3>
+                <button type="button" class="package-form-remove" onclick="removeInvoiceItem(${item.id})">Remove</button>
+            </div>
+            <div class="form-group">
+                <label>Type of Event</label>
+                <select class="pkg-event-type" data-id="${item.id}">
+                    <option value="mobile_bar" ${item.eventType === EVENT_TYPES.mobile_bar ? 'selected' : ''}>Mobile Matcha Bar</option>
+                    <option value="matcha_workshop" ${item.eventType === EVENT_TYPES.matcha_workshop ? 'selected' : ''}>Private Matcha Workshop</option>
+                    <option value="mochi_workshop" ${item.eventType === EVENT_TYPES.mochi_workshop ? 'selected' : ''}>Private Mochi Making Workshop</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Venue</label>
+                <input type="text" class="pkg-venue" data-id="${item.id}" placeholder="e.g., Sunken Garden, Greenbelt 5" value="${escapeHtml(item.eventVenue || '')}">
+            </div>
+            <div class="form-group">
+                <label>Event Date</label>
+                <input type="date" class="pkg-date" data-id="${item.id}" value="${item.eventDate || ''}">
+            </div>
+            <div class="pkg-mobile-fields ${isWorkshop ? 'is-hidden' : ''}">
+                <div class="form-group">
+                    <label>Package</label>
+                    <select class="pkg-package-type" data-id="${item.id}">
+                        <option value="">Select Package</option>
+                        <option value="starter" ${item.packageType === 'starter' ? 'selected' : ''}>Starter Package</option>
+                        <option value="signature" ${item.packageType === 'signature' ? 'selected' : ''}>Signature Package</option>
+                        <option value="special" ${item.packageType === 'special' ? 'selected' : ''}>Special Package</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Number of Cups</label>
+                    <select class="pkg-number-of-pax" data-id="${item.id}">
+                        <option value="">Select Number of Cups</option>
+                        <option value="50" ${cupsVal === '50' ? 'selected' : ''}>50 cups</option>
+                        <option value="100" ${cupsVal === '100' ? 'selected' : ''}>100 cups</option>
+                        <option value="150" ${cupsVal === '150' ? 'selected' : ''}>150 cups</option>
+                    </select>
+                </div>
+            </div>
+            <div class="pkg-workshop-fields ${isWorkshop ? '' : 'is-hidden'}">
+                <div class="form-group">
+                    <label>Number of Participants</label>
+                    <input type="number" class="pkg-workshop-pax" data-id="${item.id}" min="1" step="1" placeholder="e.g., 10" value="${escapeHtml(String(paxVal))}">
+                </div>
+                <div class="form-group">
+                    <label>Per Pax Cost (₱)</label>
+                    <input type="number" class="pkg-per-pax-cost" data-id="${item.id}" min="0" step="0.01" placeholder="e.g., 2150" value="${escapeHtml(String(perPaxVal))}">
+                </div>
+                <div class="form-group">
+                    <label>Additional Details (optional, markdown)</label>
+                    <textarea class="pkg-workshop-details" data-id="${item.id}" rows="3" placeholder="Extra notes only — matcha workshop inclusions are added automatically"></textarea>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
 function renderInvoiceItems() {
     const container = document.getElementById('invoiceItems');
     container.innerHTML = '';
 
     if (invoiceItems.length === 0) {
-        container.innerHTML = '<p style="color: #666; font-size: 0.875rem; margin-top: 1rem;">Select a package and number of cups above</p>';
+        container.innerHTML = '<p class="invoice-items-empty">No packages yet. Click <strong>+ Add Package</strong> below.</p>';
         return;
     }
 
-    invoiceItems.forEach((item, index) => {
-        const itemDiv = document.createElement('div');
-        itemDiv.className = 'invoice-item';
-        
-        // Build menu items HTML
-        const menuItemsHtml = (item.menuItems || []).map((menuItem, idx) => `
-            <div class="menu-item-row" style="display: flex; gap: 0.5rem; margin-bottom: 0.25rem;">
-                <input type="text" class="menu-item-input" data-id="${item.id}" data-index="${idx}" 
-                    placeholder="Menu item" value="${menuItem}" style="flex: 1;">
-                <button type="button" class="remove-menu-item-btn" onclick="removeMenuItem(${item.id}, ${idx})" 
-                    style="background: #e63946; color: white; border: none; padding: 0.25rem 0.5rem; border-radius: 4px; cursor: pointer;">×</button>
-            </div>
-        `).join('');
-        
-        // Build additional options HTML
-        const optionsHtml = (item.additionalOptions || []).map((option, idx) => `
-            <div class="option-item-row" style="display: flex; gap: 0.5rem; margin-bottom: 0.25rem;">
-                <input type="text" class="option-item-input" data-id="${item.id}" data-index="${idx}" 
-                    placeholder="Option" value="${option}" style="flex: 1;">
-                <button type="button" class="remove-option-btn" onclick="removeOption(${item.id}, ${idx})" 
-                    style="background: #e63946; color: white; border: none; padding: 0.25rem 0.5rem; border-radius: 4px; cursor: pointer;">×</button>
-            </div>
-        `).join('');
-        
-        // Build other inclusions HTML
-        const inclusionsHtml = (item.otherInclusions || []).map((inclusion, idx) => `
-            <div class="inclusion-item-row" style="display: flex; gap: 0.5rem; margin-bottom: 0.25rem;">
-                <input type="text" class="inclusion-item-input" data-id="${item.id}" data-index="${idx}" 
-                    placeholder="Inclusion" value="${inclusion}" style="flex: 1;">
-                <button type="button" class="remove-inclusion-btn" onclick="removeInclusion(${item.id}, ${idx})" 
-                    style="background: #e63946; color: white; border: none; padding: 0.25rem 0.5rem; border-radius: 4px; cursor: pointer;">×</button>
-            </div>
-        `).join('');
-        
-        itemDiv.innerHTML = `
-            <div class="invoice-item-header">
-                <h3>Item ${index + 1}</h3>
-                <button type="button" class="remove-item-btn" onclick="removeInvoiceItem(${item.id})">Remove</button>
-            </div>
-            <div class="item-row full-width">
-                <label>Package Name / Description:</label>
-                <input type="text" class="item-description" data-id="${item.id}" 
-                    placeholder="e.g., Mobile Matcha Bar - STARTER PACKAGE" value="${item.description}">
-            </div>
-            <div class="item-row">
-                <div>
-                    <label>Number of Cups:</label>
-                    <input type="text" class="item-cups" data-id="${item.id}" 
-                        placeholder="e.g., 150 Cups" value="${item.cups || ''}">
-                </div>
-                <div>
-                    <label>Duration:</label>
-                    <input type="text" class="item-duration" data-id="${item.id}" 
-                        placeholder="e.g., Maximum 3 Hours" value="${item.duration || ''}">
-                </div>
-            </div>
-            <div class="item-row">
-                <div>
-                    <label>Number of Baristas:</label>
-                    <input type="text" class="item-baristas" data-id="${item.id}" 
-                        placeholder="e.g., 4 On-Site Baristas" value="${item.baristas || ''}">
-                </div>
-                <div>
-                    <label>Total Price (₱):</label>
-                    <input type="number" class="item-price" data-id="${item.id}" 
-                        min="0" step="0.01" value="${item.unitPrice}">
-                </div>
-            </div>
-            <div class="item-row full-width">
-                <label>Menu Items:</label>
-                <div class="menu-items-container" data-id="${item.id}">
-                    ${menuItemsHtml}
-                    <button type="button" class="add-menu-item-btn" onclick="addMenuItem(${item.id})" 
-                        style="background: #2b9348; color: white; border: none; padding: 0.5rem; border-radius: 4px; cursor: pointer; margin-top: 0.5rem;">+ Add Menu Item</button>
-                </div>
-            </div>
-            <div class="item-row full-width">
-                <label>Additional Options:</label>
-                <div class="options-container" data-id="${item.id}">
-                    ${optionsHtml}
-                    <button type="button" class="add-option-btn" onclick="addOption(${item.id})" 
-                        style="background: #2b9348; color: white; border: none; padding: 0.5rem; border-radius: 4px; cursor: pointer; margin-top: 0.5rem;">+ Add Option</button>
-                </div>
-            </div>
-            <div class="item-row full-width">
-                <label>Other Inclusions:</label>
-                <div class="inclusions-container" data-id="${item.id}">
-                    ${inclusionsHtml}
-                    <button type="button" class="add-inclusion-btn" onclick="addInclusion(${item.id})" 
-                        style="background: #2b9348; color: white; border: none; padding: 0.5rem; border-radius: 4px; cursor: pointer; margin-top: 0.5rem;">+ Add Inclusion</button>
-                </div>
-            </div>
-        `;
-        container.appendChild(itemDiv);
-    });
+    container.innerHTML = invoiceItems.map((item, index) => renderPackageFormFields(item, index)).join('');
 
-    // Add event listeners
-    setupItemEventListeners();
+    invoiceItems.forEach((item) => {
+        if (!isWorkshopItem(item)) return;
+        const textarea = container.querySelector(`.pkg-workshop-details[data-id="${item.id}"]`);
+        if (textarea) textarea.value = item.workshopDetails || '';
+    });
 }
 
-// Setup event listeners for all item inputs
-function setupItemEventListeners() {
+function setupPackageListListeners() {
     const container = document.getElementById('invoiceItems');
-    
-    container.querySelectorAll('.item-description, .item-price, .item-cups, .item-duration, .item-baristas').forEach(input => {
-        input.addEventListener('input', function() {
-            const id = parseInt(this.dataset.id);
-            const item = invoiceItems.find(i => i.id === id);
-            if (item) {
-                if (this.classList.contains('item-description')) {
-                    item.description = this.value;
-                } else if (this.classList.contains('item-price')) {
-                    item.unitPrice = parseFloat(this.value) || 0;
-                } else if (this.classList.contains('item-cups')) {
-                    item.cups = this.value;
-                } else if (this.classList.contains('item-duration')) {
-                    item.duration = this.value;
-                } else if (this.classList.contains('item-baristas')) {
-                    item.baristas = this.value;
-                }
-                updatePreview();
-            }
-        });
+    if (container._packageListenersReady) return;
+    container._packageListenersReady = true;
+
+    container.addEventListener('change', function(e) {
+        const el = e.target;
+        const id = parseInt(el.dataset.id, 10);
+        if (!id) return;
+        const item = invoiceItems.find(i => i.id === id);
+        if (!item) return;
+
+        if (el.classList.contains('pkg-event-type')) {
+            item.eventType = el.value;
+            const form = el.closest('.package-form');
+            const isWorkshop = isWorkshopEventType(el.value);
+            form.querySelector('.pkg-mobile-fields').classList.toggle('is-hidden', isWorkshop);
+            form.querySelector('.pkg-workshop-fields').classList.toggle('is-hidden', !isWorkshop);
+            syncPackageItem(item);
+        } else if (el.classList.contains('pkg-package-type')) {
+            item.packageType = el.value;
+            syncMobileItem(item);
+        } else if (el.classList.contains('pkg-number-of-pax')) {
+            item.numberOfPax = el.value;
+            syncMobileItem(item);
+        } else if (el.classList.contains('pkg-date')) {
+            item.eventDate = el.value;
+        }
+
+        updatePreview();
+        saveToLocalStorage();
     });
-    
-    // Menu items
-    container.querySelectorAll('.menu-item-input').forEach(input => {
-        input.addEventListener('input', function() {
-            const id = parseInt(this.dataset.id);
-            const index = parseInt(this.dataset.index);
-            const item = invoiceItems.find(i => i.id === id);
-            if (item) {
-                if (!item.menuItems) item.menuItems = [];
-                item.menuItems[index] = this.value;
-                updatePreview();
-            }
-        });
-    });
-    
-    // Options
-    container.querySelectorAll('.option-item-input').forEach(input => {
-        input.addEventListener('input', function() {
-            const id = parseInt(this.dataset.id);
-            const index = parseInt(this.dataset.index);
-            const item = invoiceItems.find(i => i.id === id);
-            if (item) {
-                if (!item.additionalOptions) item.additionalOptions = [];
-                item.additionalOptions[index] = this.value;
-                updatePreview();
-            }
-        });
-    });
-    
-    // Inclusions
-    container.querySelectorAll('.inclusion-item-input').forEach(input => {
-        input.addEventListener('input', function() {
-            const id = parseInt(this.dataset.id);
-            const index = parseInt(this.dataset.index);
-            const item = invoiceItems.find(i => i.id === id);
-            if (item) {
-                if (!item.otherInclusions) item.otherInclusions = [];
-                item.otherInclusions[index] = this.value;
-                updatePreview();
-            }
-        });
+
+    container.addEventListener('input', function(e) {
+        const el = e.target;
+        const id = parseInt(el.dataset.id, 10);
+        if (!id) return;
+        const item = invoiceItems.find(i => i.id === id);
+        if (!item) return;
+
+        if (el.classList.contains('pkg-venue')) {
+            item.eventVenue = el.value;
+        } else if (el.classList.contains('pkg-workshop-pax')) {
+            item.cups = el.value;
+            syncWorkshopItem(item);
+        } else if (el.classList.contains('pkg-per-pax-cost')) {
+            item.unitCost = el.value;
+            syncWorkshopItem(item);
+        } else if (el.classList.contains('pkg-workshop-details')) {
+            item.workshopDetails = el.value;
+        }
+
+        updatePreview();
+        saveToLocalStorage();
     });
 }
 
@@ -564,7 +635,7 @@ function renderPaymentMilestones() {
 
 // Calculate total
 function calculateTotal() {
-    const packageTotal = invoiceItems.reduce((sum, item) => sum + (item.unitPrice || 0), 0);
+    const packageTotal = invoiceItems.reduce((sum, item) => sum + getInvoiceItemPricing(item).subtotal, 0);
     const customTotal = customLineItems.reduce((sum, item) => sum + ((item.quantity || 0) * (item.price || 0)), 0);
     return packageTotal + customTotal;
 }
@@ -709,8 +780,79 @@ function renderCustomLineItems() {
     });
 }
 
+function formatParticipantCountText(count) {
+    const num = parseInt(count, 10);
+    if (!num || num < 0) return '';
+    return `${num} pax`;
+}
+
+function resolveWorkshopEventType(item) {
+    if (item.eventType && isWorkshopEventType(item.eventType)) return item.eventType;
+    if (item.description === WORKSHOP_TITLES.mochi_workshop) return EVENT_TYPES.mochi_workshop;
+    if (item.description === WORKSHOP_TITLES.matcha_workshop) return EVENT_TYPES.matcha_workshop;
+    return EVENT_TYPES.matcha_workshop;
+}
+
+function renderWorkshopInclusionsSection(item) {
+    const inclusions = item.workshopInclusions && item.workshopInclusions.length
+        ? item.workshopInclusions
+        : getWorkshopInclusions(resolveWorkshopEventType(item));
+    if (!inclusions.length) return '';
+
+    let html = '<div class="package-section">';
+    html += '<div class="package-section-label">Inclusions:</div>';
+    html += '<div class="package-section-list">';
+    inclusions.forEach((entry) => {
+        const lines = String(entry).split('\n').map((line) => line.trim()).filter(Boolean);
+        if (!lines.length) return;
+        const body = lines.map((line) => escapeHtml(line)).join('<br>');
+        html += `<div class="package-list-item">${body}</div>`;
+    });
+    html += '</div></div>';
+    return html;
+}
+
+function renderCountSection(item) {
+    if (!item.cups && item.cups !== '0') return '';
+    const isParticipants =
+        item.countLabel === 'participants' || item.countLabel === 'pax';
+
+    if (isParticipants) {
+        const numMatch = String(item.cups).match(/\d+/);
+        const displayValue = numMatch ? formatParticipantCountText(numMatch[0]) : item.cups;
+        if (!displayValue) return '';
+        return `<div class="package-section package-section-count package-section-participants">
+            <div class="package-section-label">Number of Participants:</div>
+            <div class="package-participant-count">${escapeHtml(displayValue)}</div>
+        </div>`;
+    }
+
+    return `<div class="package-section package-section-count">
+        <span class="package-section-label">Cups:</span>
+        <span class="package-section-value">${escapeHtml(item.cups)}</span>
+    </div>`;
+}
+
 // Format package details in organized, easy-to-read format
 function formatPackageDetails(item) {
+    const isWorkshopItem = item.isWorkshop ||
+        ((item.countLabel === 'participants' || item.countLabel === 'pax') &&
+            !(item.menuItems && item.menuItems.some(m => String(m).trim())));
+
+    if (isWorkshopItem) {
+        let html = '<div class="package-details-visual package-details-stacked">';
+        html += renderCountSection(item);
+        html += renderWorkshopInclusionsSection(item);
+        if (item.workshopDetails && item.workshopDetails.trim()) {
+            html += '<div class="package-section">';
+            html += '<div class="package-section-label">Additional Details:</div>';
+            html += `<div class="custom-line-item-description">${renderBasicMarkdown(item.workshopDetails)}</div>`;
+            html += '</div>';
+        }
+        html += '</div>';
+        return html;
+    }
+
     let html = '<div class="package-details-visual">';
     
     // Two-column layout
@@ -734,13 +876,7 @@ function formatPackageDetails(item) {
     // Right column: Cups and Additional Details
     html += '<div class="package-column-right">';
     
-    // Cups
-    if (item.cups) {
-        html += `<div class="package-section">
-            <span class="package-section-label">Cups:</span>
-            <span class="package-section-value">${escapeHtml(item.cups)}</span>
-        </div>`;
-    }
+    html += renderCountSection(item);
     
     // Additional Options - separate section
     if (item.additionalOptions && item.additionalOptions.length > 0 && item.additionalOptions.some(o => o.trim())) {
@@ -758,7 +894,6 @@ function formatPackageDetails(item) {
     // Additional Details section (includes duration, baristas, and other inclusions)
     const allInclusions = [];
     
-    // Add duration and baristas to inclusions
     if (item.duration) {
         allInclusions.push(item.duration);
     }
@@ -766,7 +901,6 @@ function formatPackageDetails(item) {
         allInclusions.push(item.baristas);
     }
     
-    // Add other inclusions
     if (item.otherInclusions && item.otherInclusions.length > 0) {
         item.otherInclusions.forEach(inclusion => {
             if (inclusion.trim()) {
@@ -775,7 +909,6 @@ function formatPackageDetails(item) {
         });
     }
     
-    // Additional Details section
     if (allInclusions.length > 0) {
         html += '<div class="package-section">';
         html += '<div class="package-section-label">Additional Details:</div>';
@@ -790,6 +923,36 @@ function formatPackageDetails(item) {
     html += '</div>'; // end columns container
     html += '</div>'; // end package-details-visual
     return html;
+}
+
+function getInvoiceItemPricing(item) {
+    const isWorkshopItem = item.isWorkshop ||
+        ((item.countLabel === 'participants' || item.countLabel === 'pax') &&
+            !(item.menuItems && item.menuItems.some(m => String(m).trim())));
+
+    if (isWorkshopItem) {
+        const paxMatch = String(item.cups || '').match(/\d+/);
+        const qty = item.quantity || (paxMatch ? parseInt(paxMatch[0], 10) : 0);
+        const unitCost = item.unitCost != null
+            ? parseFloat(item.unitCost)
+            : (qty > 0 ? (item.unitPrice || 0) / qty : 0);
+        const subtotal = item.unitPrice != null ? item.unitPrice : unitCost * qty;
+        return { unitCost, qty, subtotal };
+    }
+
+    return {
+        unitCost: item.unitPrice || 0,
+        qty: 1,
+        subtotal: item.unitPrice || 0
+    };
+}
+
+function renderPricingCells(unitCost, qty, subtotal) {
+    return `
+        <td class="col-unit-cost text-right">Php ${formatCurrency(unitCost)}</td>
+        <td class="col-qty text-right">${escapeHtml(String(qty))}</td>
+        <td class="col-line-subtotal text-right">Php ${formatCurrency(subtotal)}</td>
+    `;
 }
 
 // Update preview
@@ -814,18 +977,17 @@ function updatePreview() {
     itemsContainer.innerHTML = '';
 
     let total = 0;
-    const venue = document.getElementById('eventVenue').value;
-    const eventDate = document.getElementById('eventDate').value;
 
     // Add package items
-    if (invoiceItems.length > 0 && !invoiceItems.every(item => !item.description)) {
-        invoiceItems.forEach(item => {
-            if (!item.description) return;
+    invoiceItems.forEach(item => {
+        if (!isPackageVisibleInPreview(item)) return;
 
-            const unitPrice = item.unitPrice || 0;
-            total += unitPrice;
+            const { unitCost, qty, subtotal } = getInvoiceItemPricing(item);
+            total += subtotal;
 
             const packageDetails = formatPackageDetails(item);
+            const venue = item.eventVenue || '';
+            const eventDate = item.eventDate || '';
             const venueInfo = venue ? `<div class="event-details"><strong>Venue:</strong> ${escapeHtml(venue)}</div>` : '';
             const dateInfo = eventDate ? `<div class="event-details"><strong>Date:</strong> ${formatDate(eventDate)}</div>` : '';
             
@@ -837,11 +999,10 @@ function updatePreview() {
                     ${venueInfo}
                     ${dateInfo}
                 </td>
-                <td class="col-subtotal text-right">Php ${formatCurrency(unitPrice)}</td>
+                ${renderPricingCells(unitCost, qty, subtotal)}
             `;
             itemsContainer.appendChild(row);
-        });
-    }
+    });
 
     // Add custom line items (name = title; description = optional detail below, with bullet/plain format)
     customLineItems.forEach(item => {
@@ -860,15 +1021,14 @@ function updatePreview() {
             <td class="col-description">
                 <div class="package-name">${escapeHtml(name)}</div>
                 ${descHtml ? `<div class="custom-line-item-description">${descHtml}</div>` : ''}
-                ${quantity > 1 ? `<div class="event-details"><strong>Quantity:</strong> ${quantity}</div>` : ''}
             </td>
-            <td class="col-subtotal text-right">Php ${formatCurrency(subtotal)}</td>
+            ${renderPricingCells(price, quantity, subtotal)}
         `;
         itemsContainer.appendChild(row);
     });
 
     if (itemsContainer.children.length === 0) {
-        itemsContainer.innerHTML = '<tr><td colspan="2" class="empty-state">No items added yet</td></tr>';
+        itemsContainer.innerHTML = '<tr><td colspan="4" class="empty-state">No items added yet</td></tr>';
     }
 
     document.getElementById('displayTotal').textContent = `Php ${formatCurrency(total)}`;
@@ -938,7 +1098,7 @@ function updatePaymentMilestones(total) {
     container.innerHTML = '';
 
     // Auto-calculate dates and amounts
-    const eventDate = document.getElementById('eventDate').value;
+    const eventDate = getInvoiceEventDate();
     const milestoneDates = calculateMilestoneDates(eventDate);
     
     // Find reservation and pre-event milestones
@@ -1056,7 +1216,7 @@ function setupEventListeners() {
     const formInputs = [
         'invoiceNumber', 'invoiceDate',
         'clientName', 'clientAddress', 'clientTIN',
-        'eventVenue', 'eventDate', 'notes'
+        'notes'
     ];
 
     formInputs.forEach(id => {
@@ -1075,21 +1235,8 @@ function setupEventListeners() {
     
     // Invoice date change should recalculate payment milestone dates
     document.getElementById('invoiceDate').addEventListener('change', function() {
-        // Recalculate all milestone dates based on new invoice date
         const total = calculateTotal();
         updatePaymentMilestones(total);
-        // Re-render the form to show updated dates
-        renderPaymentMilestones();
-        updatePreview();
-        saveToLocalStorage();
-    });
-    
-    // Event date change should recalculate payment milestone dates
-    document.getElementById('eventDate').addEventListener('change', function() {
-        // Recalculate all milestone dates based on new event date
-        const total = calculateTotal();
-        updatePaymentMilestones(total);
-        // Re-render the form to show updated dates
         renderPaymentMilestones();
         updatePreview();
         saveToLocalStorage();
@@ -1136,6 +1283,51 @@ function escapeHtml(text) {
 }
 
 // Download PDF
+function prepareElementForPdfCapture(element) {
+    element.classList.add('pdf-capture');
+    return function restoreElementAfterPdfCapture() {
+        element.classList.remove('pdf-capture');
+    };
+}
+
+async function captureElementCanvas(element) {
+    return html2canvas(element, {
+        scale: 1.5,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        scrollX: 0,
+        scrollY: -window.scrollY,
+        width: element.scrollWidth,
+        height: element.scrollHeight,
+        windowWidth: element.scrollWidth,
+        windowHeight: element.scrollHeight
+    });
+}
+
+function appendCanvasToPdf(pdf, canvas, { startNewPage = false } = {}) {
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const imgData = canvas.toDataURL('image/jpeg', 0.85);
+    const imgWidth = pageWidth;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+    let heightLeft = imgHeight;
+    let position = 0;
+    let sliceIndex = 0;
+
+    while (heightLeft > 0.5) {
+        if (startNewPage || sliceIndex > 0) {
+            pdf.addPage();
+        }
+        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+        position -= pageHeight;
+        sliceIndex += 1;
+        startNewPage = false;
+    }
+}
+
 async function downloadPDF() {
     const invoiceElement = document.getElementById('invoice');
     const paymentTermsElement = document.getElementById('paymentTermsPage');
@@ -1146,6 +1338,11 @@ async function downloadPDF() {
     downloadBtn.textContent = 'Generating PDF...';
     downloadBtn.disabled = true;
 
+    const restoreInvoice = prepareElementForPdfCapture(invoiceElement);
+    const restorePaymentTerms = paymentTermsElement
+        ? prepareElementForPdfCapture(paymentTermsElement)
+        : null;
+
     try {
         const { jsPDF } = window.jspdf;
         const pdf = new jsPDF({
@@ -1154,59 +1351,12 @@ async function downloadPDF() {
             format: 'a4'
         });
 
-        const pageWidth = pdf.internal.pageSize.getWidth();
-        const pageHeight = pdf.internal.pageSize.getHeight();
+        const canvas1 = await captureElementCanvas(invoiceElement);
+        appendCanvasToPdf(pdf, canvas1, { startNewPage: false });
 
-        // Generate first page (Invoice) - reduced scale and JPEG compression
-        const canvas1 = await html2canvas(invoiceElement, {
-            scale: 1.5, // Reduced from 2 for smaller file size
-            useCORS: true,
-            backgroundColor: '#ffffff',
-            logging: false,
-            width: 210 * 3.779527559, // Convert mm to pixels (210mm * 3.779527559 px/mm)
-            height: 297 * 3.779527559  // Convert mm to pixels
-        });
-
-        // Use JPEG with compression instead of PNG
-        const imgData1 = canvas1.toDataURL('image/jpeg', 0.85); // 85% quality for good balance
-        const imgWidth1 = pageWidth;
-        const imgHeight1 = (canvas1.height * imgWidth1) / canvas1.width;
-
-        // Add first page - fit to page
-        if (imgHeight1 > pageHeight) {
-            // If content is taller than page, scale it down
-            const scale = pageHeight / imgHeight1;
-            pdf.addImage(imgData1, 'JPEG', 0, 0, imgWidth1 * scale, imgHeight1 * scale);
-        } else {
-            pdf.addImage(imgData1, 'JPEG', 0, 0, imgWidth1, imgHeight1);
-        }
-
-        // Generate second page (Payment Terms) - always on new page
         if (paymentTermsElement) {
-            const canvas2 = await html2canvas(paymentTermsElement, {
-                scale: 1.5, // Reduced from 2 for smaller file size
-                useCORS: true,
-                backgroundColor: '#ffffff',
-                logging: false,
-                width: 210 * 3.779527559,
-                height: 297 * 3.779527559
-            });
-
-            // Use JPEG with compression instead of PNG
-            const imgData2 = canvas2.toDataURL('image/jpeg', 0.85); // 85% quality for good balance
-            const imgWidth2 = pageWidth;
-            const imgHeight2 = (canvas2.height * imgWidth2) / canvas2.width;
-
-            // Add new page for payment terms
-            pdf.addPage();
-            
-            // Fit to page
-            if (imgHeight2 > pageHeight) {
-                const scale = pageHeight / imgHeight2;
-                pdf.addImage(imgData2, 'JPEG', 0, 0, imgWidth2 * scale, imgHeight2 * scale);
-            } else {
-                pdf.addImage(imgData2, 'JPEG', 0, 0, imgWidth2, imgHeight2);
-            }
+            const canvas2 = await captureElementCanvas(paymentTermsElement);
+            appendCanvasToPdf(pdf, canvas2, { startNewPage: true });
         }
 
         // Generate filename
@@ -1214,13 +1364,13 @@ async function downloadPDF() {
         const clientName = document.getElementById('clientName').value || 'client';
         const filename = `${invoiceNumber}_${clientName.replace(/\s+/g, '_')}.pdf`;
 
-        // Save PDF
         pdf.save(filename);
     } catch (error) {
         console.error('Error generating PDF:', error);
         alert('Error generating PDF. Please try again.');
     } finally {
-        // Restore button state
+        restoreInvoice();
+        if (restorePaymentTerms) restorePaymentTerms();
         downloadBtn.textContent = originalText;
         downloadBtn.disabled = false;
     }
@@ -1235,7 +1385,6 @@ function clearForm() {
     // Reset invoice details
     const today = new Date();
     document.getElementById('invoiceDate').valueAsDate = today;
-    document.getElementById('eventDate').valueAsDate = today;
 
     const year = today.getFullYear();
     const month = String(today.getMonth() + 1).padStart(2, '0');
@@ -1247,12 +1396,6 @@ function clearForm() {
     document.getElementById('clientAddress').value = '';
     document.getElementById('clientTIN').value = '';
 
-    // Clear event details
-    document.getElementById('eventVenue').value = '';
-
-    // Reset package selection
-    document.getElementById('packageType').value = '';
-    document.getElementById('numberOfPax').value = '';
     invoiceItems = [];
     customLineItems = [];
 
@@ -1297,10 +1440,7 @@ function buildSavePayload() {
         clientName: document.getElementById('clientName').value,
         clientAddress: document.getElementById('clientAddress').value,
         clientTIN: document.getElementById('clientTIN').value,
-        eventVenue: document.getElementById('eventVenue').value,
-        eventDate: document.getElementById('eventDate').value,
-        packageType: document.getElementById('packageType').value,
-        numberOfPax: document.getElementById('numberOfPax').value,
+        eventDate: getInvoiceEventDate(),
         notes: document.getElementById('notes').value,
         invoiceItems: invoiceItems,
         customLineItems: customLineItems,
@@ -1318,13 +1458,11 @@ function restoreFromPayload(data, docId) {
     document.getElementById('clientName').value = data.clientName || '';
     document.getElementById('clientAddress').value = data.clientAddress || '';
     document.getElementById('clientTIN').value = data.clientTIN || '';
-    document.getElementById('eventVenue').value = data.eventVenue || '';
-    if (data.eventDate) document.getElementById('eventDate').value = data.eventDate;
-    if (data.packageType) document.getElementById('packageType').value = data.packageType;
-    if (data.numberOfPax) document.getElementById('numberOfPax').value = data.numberOfPax;
     document.getElementById('notes').value = data.notes || '';
 
-    if (data.invoiceItems) invoiceItems = data.invoiceItems;
+    if (data.invoiceItems) {
+        invoiceItems = data.invoiceItems.map(item => migrateLoadedPackageItem(item, data));
+    }
     if (data.customLineItems) customLineItems = data.customLineItems;
     if (data.paymentMilestones) paymentMilestones = data.paymentMilestones;
 
@@ -1332,7 +1470,6 @@ function restoreFromPayload(data, docId) {
     renderCustomLineItems();
     renderPaymentMilestones();
     updatePreview();
-    saveToLocalStorage();
     updateSaveButtonLabel();
 }
 
@@ -1402,8 +1539,49 @@ async function handleSave() {
 
 let _allCloudInvoices = [];
 
-function formatPackageName(packageType, numberOfPax) {
-    const names = { starter: 'Starter', signature: 'Signature', special: 'Special' };
+function formatPackageName(data) {
+    if (data.invoiceItems && data.invoiceItems.length > 1) {
+        const labels = data.invoiceItems
+            .map(item => item.description)
+            .filter(Boolean)
+            .slice(0, 2);
+        const suffix = data.invoiceItems.length > 2 ? ` +${data.invoiceItems.length - 2} more` : '';
+        return labels.join(' + ') + suffix;
+    }
+
+    if (data.invoiceItems && data.invoiceItems.length === 1) {
+        const item = data.invoiceItems[0];
+        if (item.isWorkshop || isWorkshopEventType(item.eventType)) {
+            const title = item.description || WORKSHOP_TITLES[item.eventType] || 'Workshop';
+            const pax = item.cups;
+            if (pax) {
+                const paxNum = String(pax).match(/\d+/) ? String(pax).match(/\d+/)[0] : pax;
+                return `${title} · ${paxNum} pax`;
+            }
+            return title;
+        }
+        if (item.cups) {
+            const cupsNum = String(item.cups).match(/\d+/) ? String(item.cups).match(/\d+/)[0] : item.cups;
+            return `${item.description || 'Package'} · ${cupsNum} cups`;
+        }
+        return item.description || null;
+    }
+
+    const eventType = data.eventType || EVENT_TYPES.mobile_bar;
+
+    if (isWorkshopEventType(eventType)) {
+        const title = WORKSHOP_TITLES[eventType] || eventType;
+        const pax = data.workshopPax || (data.invoiceItems && data.invoiceItems[0] && data.invoiceItems[0].cups);
+        if (pax) {
+            const paxNum = String(pax).match(/\d+/) ? String(pax).match(/\d+/)[0] : pax;
+            return `${title} · ${paxNum} pax`;
+        }
+        return title;
+    }
+
+    const packageType = data.packageType;
+    const numberOfPax = data.numberOfPax;
+    const names = { starter: 'Starter', signature: 'Signature', special: 'Special', custom: 'Custom' };
     if (!packageType) return null;
     const name = names[packageType] || packageType;
     return numberOfPax ? `${name} · ${numberOfPax} cups` : name;
@@ -1425,8 +1603,10 @@ function renderInvoiceCards(invoices) {
     list.innerHTML = invoices.map(inv => {
         const client = escapeHtml(inv.clientName || 'No client name');
         const invNum = escapeHtml(inv.invoiceNumber || '');
-        const eventDate = inv.eventDate ? formatDate(inv.eventDate) : '';
-        const pkg = formatPackageName(inv.packageType, inv.numberOfPax);
+        const eventDateStr = (inv.invoiceItems || []).map(i => i.eventDate).filter(Boolean).sort().pop()
+            || inv.eventDate || '';
+        const eventDate = eventDateStr ? formatDate(eventDateStr) : '';
+        const pkg = formatPackageName(inv);
         const total = inv.totalAmount != null ? `Php ${formatCurrency(inv.totalAmount)}` : '';
 
         return `
@@ -1484,7 +1664,10 @@ function filterInvoices(searchQuery) {
     return _allCloudInvoices.filter(inv =>
         (inv.clientName || '').toLowerCase().includes(q) ||
         (inv.invoiceNumber || '').toLowerCase().includes(q) ||
-        (inv.packageType || '').toLowerCase().includes(q)
+        (inv.packageType || '').toLowerCase().includes(q) ||
+        (inv.eventType || '').toLowerCase().includes(q) ||
+        (WORKSHOP_TITLES[inv.eventType] || '').toLowerCase().includes(q) ||
+        (inv.invoiceItems || []).some(item => (item.description || '').toLowerCase().includes(q))
     );
 }
 

@@ -1,0 +1,118 @@
+{
+  "menuName": "Uptown",
+  "oatUpgradePrice": 0,
+  "strengthLevelPrices": {
+    "1": 0,
+    "2": 40,
+    "3": 80
+  },
+  "categories": [
+    { "id": "matcha-lattes", "name": "Matcha Lattes (Iced)" },
+    { "id": "matcha-specials", "name": "Matcha Specials (Iced)" },
+    { "id": "hojicha-lattes", "name": "Hōjicha Lattes (Iced)" }
+  ],
+  "items": [
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Signature Matchanese Latte",
+      "description": "Matcha cold whisked with milk",
+      "price": 230,
+      "type": "Iced",
+      "shorthand": "SML",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Matchanese Seasalt Latte",
+      "description": "Our signature matcha latte topped with seasalt cream",
+      "price": 260,
+      "tags": ["Best Seller"],
+      "type": "Iced",
+      "shorthand": "MSL",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Quattro Spanish Matchanese Latte",
+      "description": "Our signature matcha latte with four types of milk",
+      "price": 240,
+      "type": "Iced",
+      "shorthand": "QSML",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Strawberry Matchanese Latte",
+      "description": "Our signature matcha latte with strawberry puree",
+      "price": 250,
+      "type": "Iced",
+      "shorthand": "STML",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Earl Grey Matchanese Latte",
+      "description": "Our signature matcha latte with homemade Earl Grey syrup",
+      "price": 240,
+      "type": "Iced",
+      "shorthand": "EGML",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Coco Oat Matchanese Latte",
+      "description": "Matcha cold whisked with oat milk over coconut water",
+      "price": 230,
+      "tags": ["Must Try"],
+      "type": "Iced",
+      "shorthand": "COML",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "matcha-specials",
+      "name": "Polvoron Matchanese Latte",
+      "description": "Our signature matcha latte with toasted milk and rice krispies",
+      "price": 270,
+      "type": "Iced",
+      "shorthand": "PML",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "matcha-specials",
+      "name": "Ube Tiramisu Matchanese Latte",
+      "description": "Our signature matcha with special ube tiramisu",
+      "price": 290,
+      "tags": ["Exclusive"],
+      "type": "Iced",
+      "shorthand": "UTML",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "hojicha-lattes",
+      "name": "Hōjicha Latte",
+      "description": "Hōjicha cold whisked with milk",
+      "price": 190,
+      "type": "Iced",
+      "shorthand": "HL",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "hojicha-lattes",
+      "name": "Hōjicha Seasalt Latte",
+      "description": "Hōjicha latte with seasalt cream",
+      "price": 220,
+      "type": "Iced",
+      "shorthand": "HSL",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "hojicha-lattes",
+      "name": "Quattro Spanish Hōjicha Latte",
+      "description": "Hōjicha latte with four types of milk",
+      "price": 200,
+      "type": "Iced",
+      "shorthand": "QSHL",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    }
+  ]
+}

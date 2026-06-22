@@ -1,0 +1,8 @@
+{
+  "name": "matcha-hop-scripts",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "firebase": "^11.6.0"
+  }
+}

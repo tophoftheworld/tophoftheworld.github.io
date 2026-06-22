@@ -1,0 +1,10 @@
+{
+  "name": "matchanese-hub",
+  "private": true,
+  "type": "module",
+  "description": "Local Matchanese dashboards (Shopify, workshops, Chatbase leads)",
+  "scripts": {
+    "dev": "node matchanese-hub/dev-server.mjs",
+    "start": "node matchanese-hub/dev-server.mjs"
+  }
+}

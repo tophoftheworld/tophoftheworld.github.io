@@ -51,13 +51,24 @@ export const PLACE_DETAILS_COLLECTION = 'placeDetails';
 export const BRAND_POPUPS_COLLECTION = 'brandPopUps';
 export const BRAND_LIKES_COLLECTION = 'brandLikes';
 export const LOCATION_LIKES_COLLECTION = 'locationLikes';
+export const LOG_POST_LIKES_COLLECTION = 'logPostLikes';
+export const EVENTS_COLLECTION = 'events';
+export const LISTS_COLLECTION = 'lists';
+export const USER_PROFILES_COLLECTION = 'userProfiles';
 
 let _currentUserId = null;
 let _authInitPromise = null;
 let _authDisabled = false;
 
+function skipAnonymousAuthByConfig() {
+  return typeof window !== 'undefined' && window.MATCHA_HOP_SKIP_ANONYMOUS_AUTH === true;
+}
+
 /** Initialize anonymous auth so we have a stable userId for likes. Call after initFirebase. */
 export function initAuth() {
+  if (skipAnonymousAuthByConfig()) {
+    return Promise.resolve(null);
+  }
   if (_authDisabled) return Promise.resolve(null);
   if (_authInitPromise) return _authInitPromise;
   const firebase = typeof window !== 'undefined' ? window.firebase : null;

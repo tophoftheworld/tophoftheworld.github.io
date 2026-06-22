@@ -3,93 +3,480 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Chatbase Leads Dashboard</title>
+  <title>Leads &amp; Inbox</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/hub-shell.css">
   <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/invoice-pdf.css">
+  <link rel="stylesheet" href="css/hub.css">
 </head>
-<body>
-  <header class="topbar">
-    <div>
-      <h1>Chatbase Leads Dashboard</h1>
-      <p class="subtle">Mobile matcha bar and workshop leads</p>
-    </div>
-    <button id="sync-now-btn" class="btn btn-primary" type="button">Sync now</button>
-  </header>
-
-  <section class="kpi-grid" id="kpi-grid">
-    <article class="kpi-card"><h2>Total</h2><p id="kpi-total">0</p></article>
-    <article class="kpi-card"><h2>New</h2><p id="kpi-new">0</p></article>
-    <article class="kpi-card"><h2>Qualified</h2><p id="kpi-qualified">0</p></article>
-    <article class="kpi-card"><h2>Needs Attention</h2><p id="kpi-needs-attention">0</p></article>
-  </section>
-
-  <section class="panel">
-    <h2>Filters</h2>
-    <form id="filters-form" class="filters">
-      <label>Status
-        <select id="filter-status" name="status">
-          <option value="">All</option>
-          <option value="new">New</option>
-          <option value="qualified">Qualified</option>
-          <option value="follow_up">Follow up</option>
-          <option value="proposal_sent">Proposal sent</option>
-          <option value="won">Won</option>
-          <option value="lost">Lost</option>
-        </select>
-      </label>
-      <label>Inquiry type
-        <select id="filter-inquiry-type" name="inquiryType">
-          <option value="">All</option>
-          <option value="mobile_bar">Mobile bar</option>
-          <option value="workshop">Workshop</option>
-          <option value="unknown">Unknown</option>
-        </select>
-      </label>
-      <label>Missing required fields
-        <select id="filter-missing-required" name="missingRequired">
-          <option value="">All</option>
-          <option value="true">Yes</option>
-          <option value="false">No</option>
-        </select>
-      </label>
-      <label>Search
-        <input type="text" id="filter-search" name="search" placeholder="Name, email, phone, venue">
-      </label>
-      <label>Start date
-        <input type="date" id="filter-start-date" name="startDate">
-      </label>
-      <label>End date
-        <input type="date" id="filter-end-date" name="endDate">
-      </label>
-      <div class="filter-actions">
-        <button class="btn" type="submit">Apply</button>
-        <button class="btn btn-secondary" type="button" id="reset-filters-btn">Reset</button>
+<body class="leads-app">
+  <div class="container">
+    <header class="admin-header app-chrome">
+      <div class="logo-section">
+        <div data-hub-nav-logo>
+          <img src="img/matchanese-logo.png" class="logo" alt="Matchanese">
+        </div>
+        <h1 class="app-title">Leads &amp; Inbox</h1>
       </div>
+      <div class="type-selector" role="tablist" aria-label="Main sections">
+        <button type="button" class="app-tab type-btn active" role="tab" id="tab-inbox" aria-selected="true" aria-controls="panel-inbox" data-tab="inbox">Inbox</button>
+        <button type="button" class="app-tab type-btn" role="tab" id="tab-leads" aria-selected="false" aria-controls="panel-leads" data-tab="leads">Service leads</button>
+        <button type="button" class="app-tab type-btn" role="tab" id="tab-payments" aria-selected="false" aria-controls="panel-payments" data-tab="payments">Payments</button>
+      </div>
+    </header>
+
+  <div id="panel-inbox" role="tabpanel" aria-labelledby="tab-inbox">
+    <section class="main-controls app-chrome">
+      <form id="filters-form" class="filters filters--inbox">
+        <label class="filter-source">Source
+          <select id="filter-source" name="filteredSources">
+            <option value="">All</option>
+            <option value="Instagram">Instagram</option>
+            <option value="Messenger">Messenger</option>
+          </select>
+        </label>
+        <label class="filter-search">Search
+          <span class="search-field-wrap">
+            <input type="text" id="filter-search" name="search" placeholder="Preview or message text" autocomplete="off">
+            <button type="button" id="filter-search-clear" class="search-clear-btn" hidden aria-label="Clear search" title="Clear search">×</button>
+          </span>
+        </label>
+        <label class="filter-date-range">Date range
+          <span class="date-range-field">
+            <input type="date" id="filter-start-date" name="startDate" aria-label="Start date">
+            <span class="date-range-sep" aria-hidden="true">–</span>
+            <input type="date" id="filter-end-date" name="endDate" aria-label="End date">
+          </span>
+        </label>
+        <div class="filter-actions">
+          <button class="btn btn-primary" type="submit">Apply</button>
+          <button class="btn btn-secondary" type="button" id="reset-filters-btn">Reset</button>
+          <button id="load-btn" class="btn" type="button">Refresh</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel split-panel">
+      <div class="split-view">
+        <div class="split-list">
+          <div class="panel-loading-overlay" hidden>
+            <div class="panel-loading-inner">
+              <div class="panel-loading-spinner" aria-hidden="true"></div>
+              <p class="panel-loading-label">Loading…</p>
+            </div>
+          </div>
+          <div class="panel-title-row">
+            <div class="panel-title-leading">
+              <h2>Inbox</h2>
+              <button type="button" id="inbox-summary-btn" class="inbox-summary-btn">Summary</button>
+              <label class="inbox-summary-date-wrap" title="Debug: pick summary date">
+                <input type="date" id="inbox-summary-date" class="inbox-summary-date" aria-label="Summary date">
+              </label>
+            </div>
+            <div class="panel-status-line">
+              <span class="panel-sync-indicator" hidden aria-hidden="true" role="status"></span>
+              <p id="conversations-count" class="subtle" role="status" aria-live="polite">—</p>
+            </div>
+          </div>
+
+          <div class="inbox-list-wrap">
+            <div id="conversations-list" class="inbox-thread-list" role="list">
+              <p class="inbox-thread-empty empty">No conversations loaded.</p>
+            </div>
+          </div>
+
+          <nav class="pagination inbox-pagination" aria-label="Conversation pages">
+            <button type="button" class="btn btn-secondary page-prev" disabled>Previous</button>
+            <span class="page-info subtle">Page 1</span>
+            <button type="button" class="btn btn-secondary page-next" disabled>Next</button>
+          </nav>
+        </div>
+
+        <div class="split-detail" id="conversation-detail">
+          <p id="detail-empty" class="detail-empty">Select a conversation to read messages.</p>
+          <div id="detail-content" class="detail-content" hidden>
+            <h2 id="conversation-title" class="conversation-heading"></h2>
+            <div id="conversation-meta" class="conversation-meta"></div>
+            <div id="messages" class="messages"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="panel-leads" class="panel-leads-wrap" role="tabpanel" aria-labelledby="tab-leads" hidden>
+    <section class="main-controls app-chrome">
+      <form id="leads-filters-form" class="filters filters--leads">
+        <label class="filter-service">Service
+          <select id="leads-filter-service" name="service">
+            <option value="">All services</option>
+            <option value="private_mobile_matcha_bar">Private Mobile Matcha Bar</option>
+            <option value="private_matcha_workshop">Private Matcha Workshop</option>
+          </select>
+        </label>
+        <label class="filter-event-type">Event type
+          <input type="text" id="leads-filter-event-type" name="eventType" placeholder="Wedding, Expo…">
+        </label>
+        <label class="filter-status">Status
+          <select id="leads-filter-pipeline" name="pipelineStatus">
+            <option value="">All statuses</option>
+            <option value="inquiry">Inquiry</option>
+            <option value="quoted">Quoted</option>
+            <option value="invoiced">Invoiced</option>
+            <option value="deposit">Deposit</option>
+            <option value="completed">Completed</option>
+          </select>
+        </label>
+        <label class="filter-date-range">Date range
+          <span class="date-range-field">
+            <input type="date" id="leads-filter-start-date" name="startDate" aria-label="Start date">
+            <span class="date-range-sep" aria-hidden="true">–</span>
+            <input type="date" id="leads-filter-end-date" name="endDate" aria-label="End date">
+          </span>
+        </label>
+        <div class="filter-actions">
+          <button class="btn btn-primary" type="submit">Apply</button>
+          <button class="btn btn-secondary" type="button" id="leads-reset-filters-btn">Reset</button>
+          <button id="leads-load-btn" class="btn" type="button">Refresh</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel split-panel">
+      <div id="leads-split-view" class="split-view leads-split-view">
+        <div class="split-list">
+          <div class="panel-loading-overlay" hidden>
+            <div class="panel-loading-inner">
+              <div class="panel-loading-spinner" aria-hidden="true"></div>
+              <p class="panel-loading-label">Loading…</p>
+            </div>
+          </div>
+          <div class="panel-title-row">
+            <h2>Service leads</h2>
+            <div class="panel-status-line">
+              <span class="panel-sync-indicator" hidden aria-hidden="true" role="status"></span>
+              <p id="leads-count" class="subtle" role="status" aria-live="polite">—</p>
+              <button type="button" id="leads-add-btn" class="btn btn-primary btn-sm" aria-label="Add lead">Add</button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table id="leads-table" class="leads-table leads-table--compact">
+              <thead id="leads-thead">
+                <tr>
+                  <th>Name</th>
+                  <th>Status</th>
+                  <th>Service</th>
+                  <th>Last updated</th>
+                </tr>
+              </thead>
+              <tbody id="service-leads-tbody">
+                <tr><td colspan="4" class="empty">No service leads loaded.</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <nav class="pagination leads-pagination" aria-label="Service lead pages">
+            <button type="button" class="btn leads-page-prev" disabled>Previous</button>
+            <span class="leads-page-info subtle">Page 1 of 1</span>
+            <button type="button" class="btn leads-page-next" disabled>Next</button>
+          </nav>
+        </div>
+
+        <div class="split-detail" id="leads-detail-panel">
+          <p id="leads-detail-empty" class="detail-empty">Select a lead to view details.</p>
+          <div id="leads-detail-content" class="lead-detail-content" hidden>
+            <div class="lead-detail-header">
+              <div class="lead-detail-header-main">
+                <code id="lead-detail-quote-ref" class="quote-ref quote-ref-lg"></code>
+                <span id="lead-detail-status-badge"></span>
+              </div>
+              <div class="lead-detail-header-actions">
+                <button type="button" id="leads-detail-edit" class="btn btn-secondary btn-sm">Edit</button>
+                <button type="button" id="leads-detail-close" class="btn btn-secondary btn-sm">Close</button>
+              </div>
+            </div>
+            <div class="lead-detail-meta-row">
+              <span class="lead-detail-pipeline-label">Status</span>
+              <div id="lead-detail-status-wrap"></div>
+            </div>
+            <dl id="lead-detail-fields" class="lead-detail-dl"></dl>
+            <section class="lead-detail-notes">
+              <h3 class="lead-detail-section-title">Notes</h3>
+              <p id="lead-detail-notes-view" class="lead-detail-notes-view subtle"></p>
+              <textarea id="lead-detail-notes" class="lead-detail-notes-input lead-detail-edit-only" rows="3" placeholder="Internal notes…" hidden></textarea>
+              <div id="lead-detail-edit-actions" class="lead-detail-edit-actions" hidden>
+                <button type="button" id="lead-detail-save" class="btn btn-primary btn-sm">Save</button>
+                <button type="button" id="lead-detail-cancel" class="btn btn-secondary btn-sm">Cancel</button>
+              </div>
+              <p id="lead-detail-save-error" class="lead-detail-save-error count-error" hidden role="alert"></p>
+            </section>
+            <section class="lead-detail-activity">
+              <h3 class="lead-detail-section-title">Edit history</h3>
+              <ul id="lead-detail-activity" class="lead-detail-activity-list edit-history-list"></ul>
+            </section>
+            <p id="lead-detail-doc-id" class="lead-detail-doc-id subtle"></p>
+            <div class="lead-detail-actions">
+              <button type="button" id="lead-detail-download-invoice" class="btn btn-primary" disabled>Download invoice</button>
+              <button type="button" id="lead-detail-view-conversation" class="btn btn-secondary">View conversation</button>
+              <button type="button" id="lead-detail-delete" class="btn btn-danger">Delete lead</button>
+            </div>
+          </div>
+          <div id="leads-conversation-content" class="lead-conversation-content" hidden>
+            <div class="lead-conversation-toolbar">
+              <button type="button" id="leads-conversation-back" class="btn btn-secondary btn-sm">Back to lead</button>
+            </div>
+            <h2 id="leads-conversation-title" class="conversation-heading"></h2>
+            <div id="leads-conversation-meta" class="conversation-meta"></div>
+            <div id="leads-conversation-messages" class="messages"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="panel-payments" class="panel-payments-wrap" role="tabpanel" aria-labelledby="tab-payments" hidden>
+    <section class="main-controls app-chrome">
+      <form id="payments-filters-form" class="filters">
+        <label>Status
+          <select id="payments-filter-status" name="status">
+            <option value="">All statuses</option>
+            <option value="marked_paid">Marked as paid</option>
+            <option value="already_paid">Already paid</option>
+            <option value="mark_failed">Mark failed</option>
+          </select>
+        </label>
+        <label>Search
+          <input type="text" id="payments-filter-search" name="search" placeholder="Order #, name, ref…">
+        </label>
+        <label>Start date
+          <input type="date" id="payments-filter-start-date" name="startDate">
+        </label>
+        <label>End date
+          <input type="date" id="payments-filter-end-date" name="endDate">
+        </label>
+        <div class="filter-actions">
+          <button class="btn btn-primary" type="submit">Apply</button>
+          <button class="btn btn-secondary" type="button" id="payments-reset-filters-btn">Reset</button>
+          <button id="payments-load-btn" class="btn" type="button">Refresh</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel split-panel">
+      <div id="payments-split-view" class="split-view leads-split-view">
+        <div class="split-list">
+          <div class="panel-loading-overlay" hidden>
+            <div class="panel-loading-inner">
+              <div class="panel-loading-spinner" aria-hidden="true"></div>
+              <p class="panel-loading-label">Loading…</p>
+            </div>
+          </div>
+          <div class="panel-title-row">
+            <h2>Payments</h2>
+            <div class="panel-status-line">
+              <span class="panel-sync-indicator" hidden aria-hidden="true" role="status"></span>
+              <p id="payments-count" class="subtle" role="status" aria-live="polite">—</p>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table id="payments-table" class="leads-table payments-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Order</th>
+                  <th>Customer</th>
+                  <th>Amount</th>
+                  <th>Method</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="payments-tbody">
+                <tr><td colspan="6" class="empty">No payments loaded.</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <nav class="pagination payments-pagination" aria-label="Payment pages">
+            <button type="button" class="btn payments-page-prev" disabled>Previous</button>
+            <span class="payments-page-info subtle">Page 1 of 1</span>
+            <button type="button" class="btn payments-page-next" disabled>Next</button>
+          </nav>
+        </div>
+
+        <div class="split-detail" id="payments-detail-panel">
+          <p id="payments-detail-empty" class="detail-empty">Select a payment to view details.</p>
+          <div id="payments-detail-content" class="payment-detail-content" hidden>
+            <div class="payment-detail-header">
+              <div class="payment-detail-header-main">
+                <div class="payment-detail-title-row">
+                  <h2 id="payments-detail-order" class="conversation-heading"></h2>
+                  <span id="payments-detail-status-badge" class="payment-status-badge"></span>
+                </div>
+              </div>
+              <button type="button" id="payments-detail-close" class="btn btn-secondary">Close</button>
+            </div>
+            <dl id="payments-detail-fields" class="lead-detail-dl payment-detail-dl"></dl>
+            <div class="payment-detail-actions">
+              <button type="button" id="payments-view-shopify" class="btn" hidden>Open order</button>
+              <button type="button" id="payments-view-conversation" class="btn btn-secondary">View conversation</button>
+              <button type="button" id="payments-delete" class="btn btn-danger" hidden>Delete payment</button>
+            </div>
+          </div>
+          <div id="payments-conversation-content" class="lead-conversation-content" hidden>
+            <div class="lead-conversation-toolbar">
+              <button type="button" id="payments-conversation-back" class="btn btn-secondary btn-sm">Back to payment</button>
+            </div>
+            <h2 id="payments-conversation-title" class="conversation-heading"></h2>
+            <div id="payments-conversation-meta" class="conversation-meta"></div>
+            <div id="payments-conversation-messages" class="messages"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+  </div>
+
+  <div id="lead-invoice-root" class="invoice-pdf-root" aria-hidden="true">
+    <div id="li-invoice" class="invoice">
+      <div class="invoice-header-logo">
+        <img src="invoice/img/logo.png" alt="Matchanese Logo" class="company-logo">
+      </div>
+      <div class="company-info">
+        <div class="company-name">MATCHANESE, INC.</div>
+        <div class="company-address">Unit 4506, Edades Tower, Amorsolo Drive, Rockwell, Makati City, Philippines</div>
+        <div class="company-tin">TIN: 010-757-989-000</div>
+      </div>
+      <div class="invoice-title-section">
+        <div class="invoice-title-row">
+          <div class="invoice-title-left"><h1 class="invoice-title">BILLING INVOICE</h1></div>
+          <div class="invoice-title-right">
+            <div class="invoice-date"><span class="date-label">Date:</span> <span id="li-displayInvoiceDate" class="date-value"></span></div>
+          </div>
+        </div>
+        <div class="client-details">
+          <div class="client-line"><span class="client-label">Billed to:</span> <span id="li-displayClientName" class="client-value"></span></div>
+          <div class="client-line"><span class="client-label">Address:</span> <span id="li-displayClientAddress" class="client-value"></span></div>
+          <div class="client-line"><span class="client-label">TIN:</span> <span id="li-displayClientTIN" class="client-value"></span></div>
+        </div>
+      </div>
+      <div class="items-section">
+        <table class="items-table">
+          <thead><tr><th class="col-description">DESCRIPTION</th><th class="col-subtotal">Subtotal</th></tr></thead>
+          <tbody id="li-displayItems"></tbody>
+          <tfoot>
+            <tr class="total-row">
+              <td class="total-label"><strong>TOTAL AMOUNT DUE:</strong></td>
+              <td class="total-amount text-right"><strong id="li-displayTotal"></strong></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <div class="invoice-footer">
+        <div class="footer-content">
+          <div class="footer-company">Matchanese, Inc.</div>
+          <div class="footer-address">Unit 4506, Edades Tower,<br>Amorsolo Drive, Rockwell,<br>Makati City, Philippines</div>
+        </div>
+      </div>
+    </div>
+    <div id="li-paymentTermsPage" class="invoice payment-terms-page">
+      <div class="invoice-header-logo">
+        <img src="invoice/img/logo.png" alt="Matchanese Logo" class="company-logo">
+      </div>
+      <div class="payment-terms-section">
+        <h2 class="section-title">PAYMENT TERMS</h2>
+        <table class="payment-table">
+          <thead>
+            <tr>
+              <th>MILESTONE</th>
+              <th>DATE</th>
+              <th>PERCENTAGE</th>
+              <th>AMOUNT</th>
+            </tr>
+          </thead>
+          <tbody id="li-displayPaymentMilestones">
+            <tr>
+              <td colspan="4" class="empty-state">No payment milestones added</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="payment-details-section">
+        <h2 class="section-title">PAYMENT DETAILS</h2>
+        <p class="payment-subtitle">Cash/check/bank deposit payable to:</p>
+        <div class="bank-details">
+          <div class="bank-column">
+            <div class="bank-item">
+              <strong>BDO</strong><br>
+              Account Name: MATCHANESE INC<br>
+              Account Number: 000251640035
+            </div>
+            <div class="bank-item">
+              <strong>Unionbank</strong><br>
+              Account Name: Cristopher David<br>
+              Account Number: 109420972821
+            </div>
+          </div>
+          <div class="bank-column">
+            <div class="bank-item">
+              <strong>BPI</strong><br>
+              Account Name: Beatrice Grace Boldo<br>
+              Account Number: 0779138739
+            </div>
+            <div class="bank-item">
+              <strong>GCash</strong><br>
+              Account Name: Cristopher David<br>
+              GCash Number: 09496471857
+            </div>
+          </div>
+        </div>
+        <p class="paypal-note"><em>Online Card Payment option via PayPal is also available via request.</em></p>
+      </div>
+      <div class="prepared-by-section">
+        <div class="prepared-by-content">
+          <p class="prepared-by-label">Prepared by:</p>
+          <div class="signature-space">
+            <img src="invoice/img/sign.png" alt="Signature" class="signature-image">
+          </div>
+          <p class="prepared-by-name"><strong>Cristopher David</strong></p>
+          <p class="prepared-by-company">Matchanese, Inc.</p>
+        </div>
+      </div>
+      <div class="invoice-footer">
+        <div class="footer-content">
+          <div class="footer-company">Matchanese, Inc.</div>
+          <div class="footer-address">Unit 4506, Edades Tower,<br>Amorsolo Drive, Rockwell,<br>Makati City, Philippines</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <dialog id="lead-create-dialog" class="lead-create-dialog" aria-labelledby="lead-create-title">
+    <form id="lead-create-form" class="lead-create-form" method="dialog">
+      <header class="lead-create-header">
+        <h2 id="lead-create-title">Add service lead</h2>
+        <p class="subtle lead-create-subtitle">Creates a manual lead with a new quote reference.</p>
+      </header>
+      <div class="lead-detail-meta-row">
+        <span class="lead-detail-pipeline-label">Status</span>
+        <div id="lead-create-status-wrap"></div>
+      </div>
+      <dl id="lead-create-fields" class="lead-detail-dl"></dl>
+      <label class="lead-create-notes-label" for="lead-create-notes">Notes</label>
+      <textarea id="lead-create-notes" class="lead-detail-notes-input" rows="3" placeholder="Internal notes…"></textarea>
+      <p id="lead-create-error" class="lead-detail-save-error count-error" hidden role="alert"></p>
+      <footer class="lead-create-actions">
+        <button type="submit" id="lead-create-submit" class="btn btn-primary">Create lead</button>
+        <button type="button" id="lead-create-cancel" class="btn btn-secondary">Cancel</button>
+      </footer>
     </form>
-  </section>
+  </dialog>
 
-  <section class="panel">
-    <div class="panel-title-row">
-      <h2>Leads</h2>
-      <p id="leads-count" class="subtle">0 records</p>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Lead</th>
-            <th>Type</th>
-            <th>Status</th>
-            <th>Booking details</th>
-            <th>Last activity</th>
-          </tr>
-        </thead>
-        <tbody id="leads-tbody">
-          <tr><td colspan="5" class="empty">No leads yet.</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
-
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="js/hub.js" defer></script>
   <script src="js/config.js"></script>
   <script type="module" src="js/app.js"></script>
 </body>

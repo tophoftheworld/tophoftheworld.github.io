@@ -47,35 +47,10 @@
             <!-- Invoice Items -->
             <div class="form-section">
                 <h2>Package & Services</h2>
-                <div class="form-group">
-                    <label for="eventVenue">Venue:</label>
-                    <input type="text" id="eventVenue" placeholder="e.g., Sunken Garden, Greenbelt 5">
-                </div>
-                <div class="form-group">
-                    <label for="eventDate">Event Date:</label>
-                    <input type="date" id="eventDate">
-                </div>
-                <div class="form-group">
-                    <label for="packageType">Package:</label>
-                    <select id="packageType">
-                        <option value="">Select Package</option>
-                        <option value="starter">Starter Package</option>
-                        <option value="signature">Signature Package</option>
-                        <option value="special">Special Package</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="numberOfPax">Number of Cups:</label>
-                    <select id="numberOfPax">
-                        <option value="">Select Number of Cups</option>
-                        <option value="50">50 cups</option>
-                        <option value="100">100 cups</option>
-                        <option value="150">150 cups</option>
-                    </select>
-                </div>
                 <div id="invoiceItems">
-                    <!-- Items will be added dynamically -->
+                    <!-- Package forms rendered here -->
                 </div>
+                <button type="button" id="addPackageBtn" class="btn btn-secondary add-package-btn">+ Add Package</button>
             </div>
 
             <!-- Additional Line Items -->
@@ -167,17 +142,19 @@
                         <thead>
                             <tr>
                                 <th class="col-description">DESCRIPTION</th>
-                                <th class="col-subtotal">Subtotal</th>
+                                <th class="col-unit-cost">Unit Cost</th>
+                                <th class="col-qty">Qty</th>
+                                <th class="col-line-subtotal">Subtotal</th>
                             </tr>
                         </thead>
                         <tbody id="displayItems">
                             <tr>
-                                <td colspan="2" class="empty-state">No items added yet</td>
+                                <td colspan="4" class="empty-state">No items added yet</td>
                             </tr>
                         </tbody>
                         <tfoot>
                             <tr class="total-row">
-                                <td class="total-label"><strong>TOTAL AMOUNT DUE:</strong></td>
+                                <td colspan="3" class="total-label"><strong>TOTAL AMOUNT DUE:</strong></td>
                                 <td class="total-amount text-right"><strong id="displayTotal">Php 0.00</strong></td>
                             </tr>
                         </tfoot>

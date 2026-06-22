@@ -4,13 +4,14 @@
 
 import { initMap, getMap, onMoveEnd, clearSearchPins, clearCuratedPins, addCuratedPins, setSelectedCafeId, flyTo, fitBounds, DEFAULT_CENTER, DEFAULT_ZOOM } from './map.js';
 import { searchQuery, searchPlaceByText } from './search.js';
-import { initData, getMyCafes, getLogsByCafeId, getLogsByBrandId, getLogsByPopupId, getLogsForBrand, getLogs, getLogsForCurrentUser, getCafeById, getCafeByPlaceId, saveCafe, deleteLog, getCafesInBounds, getGalleryBrands, getPopUpsByBrandId, addPopUp, updatePopUp, deletePopUp, getBrandTotalLikeCount, getLocationLikeCount, hasUserLikedBrand, hasUserLikedLocation, setBrandLike, setLocationLike } from './data.js';
+import { initData, getMyCafes, getLogsByCafeId, getLogsByBrandId, getLogsByPopupId, getLogsForBrand, getLogs, getLogsForCurrentUser, getCafeById, getCafeByPlaceId, saveCafe, deleteLog, getCafesInBounds, getGalleryBrands, getPopUpsByBrandId, getBrandTotalLikeCount, getLocationLikeCount, hasUserLikedBrand, hasUserLikedLocation, setBrandLike, setLocationLike } from './data.js';
 import { openLogForm } from './log-form.js';
 import { fetchPlaceDetails } from './place-details.js';
 
 let currentSearchResults = [];
 let selectedCafe = null;
 let postPageReturnState = null;
+let lastBottomSheetOpenAt = 0;
 const TAB_IDS = ['tab-map', 'tab-brands', 'tab-feed', 'tab-mylogs'];
 const PANEL_IDS = ['panel-map', 'panel-brands', 'panel-feed', 'panel-mylogs'];
 const uiPostState = new Map();
@@ -30,6 +31,34 @@ function getHeartIconSvg(filled) {
 function renderHeartIcon(element, filled) {
   if (!element) return;
   element.innerHTML = getHeartIconSvg(filled);
+}
+
+function getUiHeartIconSvg(filled, size = 18, className = '') {
+  const cls = className ? ` class="${className}"` : '';
+  if (filled) {
+    return `<svg${cls} viewBox="0 0 24 24" width="${size}" height="${size}" fill="${HEART_COLOR}" aria-hidden="true"><path d="${HEART_PATH}"/></svg>`;
+  }
+  return `<svg${cls} viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="${HEART_PATH}"/></svg>`;
+}
+
+function getPinIconSvg(className = '') {
+  const cls = className ? ` class="${className}"` : '';
+  return `<svg${cls} viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="2.5"/></svg>`;
+}
+
+function getSparkIconSvg(className = '') {
+  const cls = className ? ` class="${className}"` : '';
+  return `<svg${cls} viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/></svg>`;
+}
+
+function getChevronLeftIconSvg(className = '') {
+  const cls = className ? ` class="${className}"` : '';
+  return `<svg${cls} viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>`;
+}
+
+function getCloseIconSvg(className = '') {
+  const cls = className ? ` class="${className}"` : '';
+  return `<svg${cls} viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>`;
 }
 
 function recenterMapToCurrentLocation() {
@@ -74,13 +103,14 @@ function showBottomSheet(cafe, isMyCafe = false) {
         <div class="place-details-google" aria-live="polite"></div>
       </div>
     </div>
+    <button type="button" class="place-details-view-btn">View location →</button>
     ${hasLogs ? `
       <div class="my-logs-strip">
         <h3>${logs.length} ${logs.length === 1 ? 'post' : 'posts'}</h3>
         <div class="my-logs-strip-row">
           ${previewLogs.map(log => `
             <button type="button" class="log-thumb-btn" data-log-id="${escapeAttr(log.id)}" aria-label="Open post">
-              ${(log.photo || (log.photos && log.photos[0])) ? `<img src="${escapeAttr(log.photo || log.photos[0])}" alt="">` : '<div class="log-thumb-placeholder"></div>'}
+              ${(log.post?.photo || (log.post?.photos && log.post.photos[0])) ? `<img src="${escapeAttr(log.post?.photo || log.post?.photos[0])}" alt="">` : '<div class="log-thumb-placeholder"></div>'}
             </button>
           `).join('')}
         </div>
@@ -155,6 +185,14 @@ function showBottomSheet(cafe, isMyCafe = false) {
     });
   }
 
+  const viewLocationBtn = content.querySelector('.place-details-view-btn');
+  if (viewLocationBtn) {
+    viewLocationBtn.addEventListener('click', () => {
+      hideBottomSheet();
+      openLocationPage(cafe);
+    });
+  }
+
   const placeLikeBtn = content.querySelector('#place-details-heart');
   const placeLikeCountEl = content.querySelector('#place-details-heart-count');
   async function updatePlaceLikeUI() {
@@ -186,6 +224,7 @@ function showBottomSheet(cafe, isMyCafe = false) {
 
   sheet.classList.remove('closed');
   sheet.setAttribute('aria-hidden', 'false');
+  lastBottomSheetOpenAt = Date.now();
 }
 
 function hideBottomSheet() {
@@ -237,7 +276,7 @@ function showPopUpSheet(pop, brand) {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'brand-page-feed-item log-item log-item-btn';
-        const photo = log.photo || (log.photos && log.photos[0]);
+        const photo = log.post?.photo || (log.post?.photos && log.post.photos[0]);
         const thumb = photo ? `<img src="${escapeAttr(photo)}" alt="">` : '<div class="log-item-placeholder"></div>';
         btn.innerHTML = `${thumb}<div class="log-info"><span class="drink">${escapeHtml(getDrinkSummary(log))}</span><span class="meta">${formatDate(log.createdAt)}</span></div>`;
         btn.addEventListener('click', () => {
@@ -271,6 +310,7 @@ function showPopUpSheet(pop, brand) {
 
   sheet.classList.remove('closed');
   sheet.setAttribute('aria-hidden', 'false');
+  lastBottomSheetOpenAt = Date.now();
 }
 
 function openLogDetail(log) {
@@ -293,26 +333,56 @@ function openLogDetail(log) {
   if (brandVisible) brandPage.classList.add('hidden');
 
   const drinks = getLogDrinks(log);
-  const brand = escapeHtml(log.visit?.brandName || log.brandName || log.cafe?.name || 'Unknown place');
-  const place = escapeHtml(log.visit?.location?.address || log.cafe?.address || 'No address');
+  const state = getPostUiState(log);
+  const brand = escapeHtml(log.visit?.brandName || 'Unknown place');
+  const place = escapeHtml(log.visit?.location?.address || 'No address');
   const date = escapeHtml(formatDate(log.createdAt));
-  const caption = escapeHtml(getPostNotes(log) || 'No notes yet.');
-  const photo = log.photo || (log.photos && log.photos[0]) || '';
+  const captionRaw = getPostNotes(log);
+  const caption = escapeHtml(captionRaw || '');
+  const photo = log.post?.photo || (Array.isArray(log.post?.photos) ? log.post.photos[0] : '') || '';
+  const ratingValue = Number(log.post?.rating) || 0;
+  const ratingText = ratingValue > 0 ? `${ratingValue.toFixed(1).replace('.0', '')}` : '';
+  const detailLikeIcon = getUiHeartIconSvg(state.liked, 18, 'post-page-icon');
   const drinksHtml = drinks.length
     ? drinks.map((d, idx) => {
-      const details = d.details || {};
-      const isRecommended = details.recommended === true || details.recommend === true;
-      const hasDeep = details.sweetness || details.bitterness || details.umami || (details.flavorTags && details.flavorTags.length) || details.price || isRecommended || d.notes;
+      const profile = d.profile || {};
+      const sweet = Number(profile.sweet) || 0;
+      const bitter = Number(profile.bitter) || 0;
+      const umami = Number(profile.umami) || 0;
+      const flavorTags = Array.isArray(d.flavorNotes) ? d.flavorNotes : [];
+      const isRecommended = d.recommended === true;
+      const hasProfile = sweet > 0 || bitter > 0 || umami > 0;
+      const hasReview = !!d.notes || flavorTags.length > 0 || hasProfile || !!d.price || isRecommended;
+      const profileRows = [
+        { label: 'Sweetness', value: sweet, className: 'sweet' },
+        { label: 'Bitterness', value: bitter, className: 'bitter' },
+        { label: 'Umami', value: umami, className: 'umami' },
+      ].filter((row) => row.value > 0)
+        .map((row) => `
+          <div class="post-page-profile-row">
+            <span class="post-page-profile-label">${row.label}</span>
+            <div class="post-page-profile-track">
+              <span class="post-page-profile-fill ${row.className}" style="width:${Math.max(0, Math.min(100, (row.value / 5) * 100))}%"></span>
+            </div>
+            <span class="post-page-profile-value">${row.value}</span>
+          </div>
+        `).join('');
       return `
         <article class="post-page-drink-item">
-          <h3 class="post-page-drink-name">${isRecommended ? '♥ ' : ''}${escapeHtml(d.name || `Drink ${idx + 1}`)}</h3>
+          <div class="post-page-drink-head">
+            <h3 class="post-page-drink-name">${escapeHtml(d.name || `Drink ${idx + 1}`)}</h3>
+            ${d.price ? `<span class="post-page-drink-price">${escapeHtml(String(d.price))}</span>` : ''}
+          </div>
           ${d.notes ? `<p class="post-page-drink-note">${escapeHtml(d.notes)}</p>` : ''}
-          ${hasDeep ? `
-            <div class="post-page-drink-meta">
-              ${(details.sweetness || details.bitterness || details.umami) ? `<span>S ${Number(details.sweetness) || 0} · B ${Number(details.bitterness) || 0} · U ${Number(details.umami) || 0}</span>` : ''}
-              ${(details.flavorTags && details.flavorTags.length) ? `<span>${escapeHtml(details.flavorTags.join(', '))}</span>` : ''}
-              ${details.price ? `<span>${escapeHtml(String(details.price))}</span>` : ''}
-              ${isRecommended ? `<span>Recommended</span>` : ''}
+          ${hasReview ? `
+            <div class="post-page-drink-review">
+              ${isRecommended ? `<div class="post-page-recommended">${getUiHeartIconSvg(true, 13, 'post-page-recommended-icon')} Recommended</div>` : ''}
+              ${profileRows ? `<div class="post-page-profile">${profileRows}</div>` : ''}
+              ${flavorTags.length ? `
+                <div class="post-page-flavor-tags">
+                  ${flavorTags.map((tag) => `<span class="post-page-flavor-tag">${escapeHtml(tag)}</span>`).join('')}
+                </div>
+              ` : ''}
             </div>
           ` : ''}
         </article>
@@ -322,32 +392,45 @@ function openLogDetail(log) {
 
   content.innerHTML = `
     <article class="post-page-article">
-      <div class="post-page-top-actions">
-        <button type="button" class="post-page-round-btn" id="post-page-back-btn" aria-label="Back">‹</button>
-        <button type="button" class="post-page-round-btn" id="post-page-close-btn" aria-label="Close">×</button>
-      </div>
+      <header class="post-page-header">
+        <button type="button" class="post-page-round-btn post-page-round-btn--ghost" id="post-page-back-btn" aria-label="Back">${getChevronLeftIconSvg('post-page-icon')}</button>
+        <div class="post-page-header-meta">
+          <h1 class="post-page-header-title">${brand}</h1>
+          ${place && place !== 'No address' ? `<p class="post-page-header-subtitle">${place}</p>` : ''}
+        </div>
+        <button type="button" class="post-page-round-btn post-page-round-btn--ghost" id="post-page-like-btn" aria-label="Like post">${detailLikeIcon}</button>
+        <button type="button" class="post-page-round-btn post-page-round-btn--ghost post-page-close-btn-alt" id="post-page-close-btn" aria-label="Close">${getCloseIconSvg('post-page-icon')}</button>
+      </header>
       <div class="post-page-media-wrap">
         <div class="post-page-media">
           ${photo ? `<img src="${escapeAttr(photo)}" alt="">` : '<div class="photo-feed-card__media photo-feed-card__media--empty"></div>'}
         </div>
       </div>
       <div class="post-page-body">
-        <div class="post-page-meta">
+        <div class="post-page-meta post-page-meta--topline">
           <p class="post-page-date">${date || 'Unknown date'}</p>
-          ${place ? `<p class="post-page-address">${place}</p>` : ''}
+          ${ratingText ? `<p class="post-page-rating">${ratingText} / 5</p>` : ''}
         </div>
-        <h1 class="post-page-title">${brand}</h1>
-        <p class="post-page-quote">${caption}</p>
+        ${caption ? `<p class="post-page-quote">${caption}</p>` : ''}
         <div class="post-page-drinks">
-          <h2 class="post-page-drinks-title">Drinks</h2>
+          <h2 class="post-page-drinks-title">${drinks.length <= 1 ? 'Drink' : `${drinks.length} Drinks`}</h2>
           ${drinksHtml}
         </div>
       </div>
     </article>
   `;
 
+  const likeBtn = document.getElementById('post-page-like-btn');
   document.getElementById('post-page-back-btn')?.addEventListener('click', closeLogDetail);
   document.getElementById('post-page-close-btn')?.addEventListener('click', closeLogDetail);
+  if (likeBtn) {
+    likeBtn.addEventListener('click', () => {
+      state.liked = !state.liked;
+      state.likeCount = Math.max(0, state.likeCount + (state.liked ? 1 : -1));
+      likeBtn.innerHTML = getUiHeartIconSvg(state.liked, 18, 'post-page-icon');
+      refreshPhotoFeedsIfVisible();
+    });
+  }
   page.classList.remove('hidden');
   page.setAttribute('aria-hidden', 'false');
 }
@@ -493,20 +576,18 @@ const PHOTO_FEED_EMPTY_HTML_MY =
   '<p class="panel-placeholder" style="margin:0;padding:20px;">No posts yet. Tap + to share. Only posts you add from this app (with your account) show here—older posts may be missing a saved author.</p>';
 
 function placeLabelFromLog(log) {
-  const name = log.visit?.brandName || log.brandName || log.cafe?.name;
-  const addr = log.visit?.location?.address || log.cafe?.address;
+  const name = log.visit?.brandName;
+  const addr = log.visit?.location?.address;
   if (name && addr) return `${name} · ${addr}`;
   if (name) return name;
-  if (log.visit?.brandName || log.brandName) return log.visit?.brandName || log.brandName;
   return 'Unknown place';
 }
 
 function getLogDrinks(log) {
-  if (Array.isArray(log.drinks) && log.drinks.length > 0) {
-    return log.drinks.filter((d) => String(d?.name || '').trim());
+  if (Array.isArray(log.post?.drinks) && log.post.drinks.length > 0) {
+    return log.post.drinks.filter((d) => String(d?.name || '').trim());
   }
-  const fallback = String(log.drinkName || '').trim();
-  return fallback ? [{ name: fallback, notes: '', details: undefined }] : [];
+  return [];
 }
 
 function getPrimaryDrinkName(log) {
@@ -521,7 +602,7 @@ function getDrinkSummary(log) {
 }
 
 function getPostNotes(log) {
-  return String(log.postNotes || log.notes || '').trim();
+  return String(log.post?.caption || '').trim();
 }
 
 function placeLineForLocationPage(log, cafe) {
@@ -531,10 +612,25 @@ function placeLineForLocationPage(log, cafe) {
   return bits.join(' · ') || cafe.name || 'Unknown place';
 }
 
+function inferBrandKind(brand) {
+  const name = String(brand?.name || '').toLowerCase();
+  if (!brand?.cafes?.length) {
+    if (name.includes('kamo') || name.includes('kokorobi') || name.includes('home')) return 'home';
+    return 'popup';
+  }
+  return 'cafe';
+}
+
+function brandMetaText(brand) {
+  const logs = getLogsByBrandId(brand.id);
+  if (logs.length > 0) return logs.length === 1 ? '1 post' : `${logs.length} posts`;
+  return 'Not visited';
+}
+
 function feedCardHeadingFromLog(log) {
-  const brand = String(log.visit?.brandName || log.brandName || '').trim();
-  const cafeName = String(log.visit?.location?.cafeName || log.cafe?.name || '').trim();
-  const address = String(log.visit?.location?.address || log.cafe?.address || '').trim();
+  const brand = String(log.visit?.brandName || '').trim();
+  const cafeName = String(log.visit?.location?.cafeName || '').trim();
+  const address = String(log.visit?.location?.address || '').trim();
   const title = brand || cafeName || 'Place not set';
   return { title, subtitle: address || null };
 }
@@ -554,8 +650,7 @@ function feedCardHeadings(log, options) {
 
 function feedRatingsSnippet(log) {
   const parts = [];
-  if (log.orderRating > 0) parts.push(`Drink ${log.orderRating}/5`);
-  if (log.cafeRating > 0) parts.push(`Spot ${log.cafeRating}/5`);
+  if (log.post?.rating > 0) parts.push(`Overall ${log.post.rating}/5`);
   return parts.join(' · ');
 }
 
@@ -567,7 +662,7 @@ function getPostUiState(log) {
   if (getPostNotes(log)) {
     comments.push({ id: `${id}-seed`, author: 'matcha_friend', text: getPostNotes(log) });
   }
-  comments.push({ id: `${id}-sample`, author: 'greenwhisk', text: `Looks good at ${log.visit?.brandName || log.brandName || log.cafe?.name || 'this spot'}!` });
+  comments.push({ id: `${id}-sample`, author: 'greenwhisk', text: `Looks good at ${log.visit?.brandName || 'this spot'}!` });
   const state = {
     username: (log.userName || 'you').trim() || 'you',
     liked: false,
@@ -601,7 +696,7 @@ function openCommentsDrawer(log) {
         <article class="feed-comment-item">
           <div class="feed-comment-item__head">
             <span class="feed-comment-item__author">${escapeHtml(c.author)}</span>
-            <button type="button" class="feed-comment-like-btn" aria-label="Like comment">♡</button>
+            <button type="button" class="feed-comment-like-btn" aria-label="Like comment">${getUiHeartIconSvg(false, 14, 'feed-comment-like-icon')}</button>
           </div>
           <p class="feed-comment-item__text">${escapeHtml(c.text)}</p>
         </article>
@@ -671,7 +766,7 @@ function createPhotoFeedCard(log, options = {}) {
   const { title, subtitle } = feedCardHeadings(log, options);
   const disableOpenDetail = options.disableOpenDetail === true;
   const drink = getDrinkSummary(log);
-  const photo = log.photo || (log.photos && log.photos[0]);
+  const photo = log.post?.photo || (Array.isArray(log.post?.photos) ? log.post.photos[0] : '');
   const media = photo
     ? `<img class="photo-feed-card__media" src="${escapeAttr(photo)}" alt="" loading="lazy" data-role="feed-media">`
     : '<div class="photo-feed-card__media photo-feed-card__media--empty" aria-hidden="true"></div>';
@@ -682,8 +777,12 @@ function createPhotoFeedCard(log, options = {}) {
   const timeText = formatPostTime(log.createdAt);
   const iso = log.createdAt ? new Date(log.createdAt).toISOString() : '';
   const timeHtml = timeText ? `<time class="feed-card__time" datetime="${escapeAttr(iso)}">${escapeHtml(timeText)}</time>` : '';
-  const likeIcon = state.liked ? '♥' : '♡';
+  const likeIcon = getUiHeartIconSvg(state.liked, 18, 'feed-card__action-icon');
   const commentsCount = state.comments.length;
+  const drinks = getLogDrinks(log);
+  const drinksPill = drinks.length > 1
+    ? `<span class="feed-card__drinks-pill">${drinks.length} drinks</span>`
+    : '';
 
   const root = document.createElement('article');
   root.className = 'photo-feed-card';
@@ -692,7 +791,11 @@ function createPhotoFeedCard(log, options = {}) {
     <header class="feed-card__header">
       <div class="feed-card__avatar" aria-hidden="true"></div>
       <div class="feed-card__meta-top">
-        <span class="feed-card__username">${escapeHtml(username)} <span class="feed-card__at">at</span> <span class="feed-card__place-name">${escapeHtml(title || 'Unknown store')}</span></span>
+        <span class="feed-card__username">${escapeHtml(username)}</span>
+        <button type="button" class="feed-card__place-btn" aria-label="Open brand">
+          <span class="feed-card__place-pin" aria-hidden="true">${getPinIconSvg('feed-card__place-icon')}</span>
+          <span class="feed-card__place-line"><span class="feed-card__place-name">${escapeHtml(title || 'Unknown store')}</span></span>
+        </button>
         ${subtitle ? `<span class="feed-card__address">${escapeHtml(subtitle)}</span>` : ''}
       </div>
       ${timeHtml}
@@ -703,7 +806,9 @@ function createPhotoFeedCard(log, options = {}) {
     <div class="feed-card__body">
       <div class="feed-card__actions">
         <button type="button" class="feed-card__action-btn feed-card__like-btn" aria-label="Like post">${likeIcon} <span>${state.likeCount}</span></button>
-        <button type="button" class="feed-card__action-btn feed-card__comments-btn" aria-label="View comments">💬 <span>${commentsCount}</span></button>
+        <button type="button" class="feed-card__action-btn feed-card__comments-btn" aria-label="View comments">${getSparkIconSvg('feed-card__action-icon')} <span>${commentsCount}</span></button>
+        <span class="feed-card__actions-spacer" aria-hidden="true"></span>
+        ${drinksPill}
       </div>
       <p class="feed-card__ordered"><span class="feed-card__label">Ordered:</span> ${escapeHtml(drink)}</p>
       <p class="feed-card__caption-line ${notesRaw ? '' : 'feed-card__caption-line--placeholder'}"><span class="feed-card__caption-user">${escapeHtml(username)}:</span> ${escapeHtml(captionText)}</p>
@@ -724,6 +829,7 @@ function createPhotoFeedCard(log, options = {}) {
 
   const likeBtn = root.querySelector('.feed-card__like-btn');
   const commentsBtn = root.querySelector('.feed-card__comments-btn');
+  const placeBtn = root.querySelector('.feed-card__place-btn');
   if (likeBtn) {
     likeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -736,6 +842,12 @@ function createPhotoFeedCard(log, options = {}) {
     e.stopPropagation();
     openCommentsDrawer(log);
   });
+  if (placeBtn) {
+    placeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (typeof options.onPlaceClick === 'function') options.onPlaceClick(log);
+    });
+  }
   if (!disableOpenDetail) {
     root.addEventListener('click', () => openLogDetail(log));
   }
@@ -755,7 +867,18 @@ function renderPhotoFeedList(containerId, mode = 'feed') {
     return;
   }
   logs.forEach((log) => {
-    el.appendChild(createPhotoFeedCard(log));
+    const card = createPhotoFeedCard(log, {
+      onPlaceClick: (targetLog) => {
+        const placeId = targetLog.visit?.location?.cafeId;
+        const cafe = placeId ? getCafeById(placeId) : null;
+        if (cafe) {
+          setActiveTab('panel-map');
+          flyTo(cafe.lat, cafe.lng);
+          showBottomSheet(cafe, false);
+        }
+      },
+    });
+    el.appendChild(card);
   });
   requestAnimationFrame(() => resizeVisibleFeedMedia());
 }
@@ -801,11 +924,14 @@ let brandsFilter = 'all';
 
 async function renderBrandsGallery() {
   const el = document.getElementById('brands-gallery');
+  const countEl = document.getElementById('brands-total-count');
   if (!el) return;
   el.innerHTML = '<p class="panel-placeholder" style="margin:20px;">Loading…</p>';
   let brands = await getGalleryBrands();
+  if (countEl) countEl.textContent = `${brands.length} total`;
   if (brandsFilter === 'cafe') brands = brands.filter((b) => (b.cafes || []).length > 0);
-  else if (brandsFilter === 'popup') brands = brands.filter((b) => !(b.cafes || []).length);
+  else if (brandsFilter === 'popup') brands = brands.filter((b) => inferBrandKind(b) === 'popup');
+  else if (brandsFilter === 'home') brands = brands.filter((b) => inferBrandKind(b) === 'home');
   el.innerHTML = '';
   if (brands.length === 0) {
     el.innerHTML = '<p class="panel-placeholder" style="margin:0;padding:20px;">No brands in gallery. Add and order brands in Admin (Brands).</p>';
@@ -813,15 +939,21 @@ async function renderBrandsGallery() {
   }
   for (const brand of brands) {
     const firstCafe = brand.cafes && brand.cafes[0];
-    const hasLocations = firstCafe != null;
+    const kind = inferBrandKind(brand);
+    const meta = brandMetaText(brand);
+    const badge = kind !== 'cafe'
+      ? `<span class="brand-kind-badge brand-kind-badge--${kind}">${kind === 'popup' ? 'POP-UP' : 'HOME'}</span>`
+      : '';
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'brands-gallery-card';
     btn.innerHTML = `
       <div class="card-image-wrap">
+        ${badge}
         <img class="card-image" alt="" data-place-id="${firstCafe?.placeId ? escapeAttr(firstCafe.placeId) : ''}">
       </div>
       <span class="card-name">${escapeHtml(brand.name || 'Unnamed')}</span>
+      <span class="card-meta">${escapeHtml(meta)}</span>
     `;
     btn.addEventListener('click', () => openBrandPage(brand));
     el.appendChild(btn);
@@ -841,11 +973,16 @@ function closeBrandPage() {
   const gallery = document.getElementById('brands-gallery');
   const filterBar = document.getElementById('brands-filter-bar');
   const page = document.getElementById('brand-page');
+  const feedPage = document.getElementById('brand-feed-page');
   if (gallery) gallery.classList.remove('hidden');
   if (filterBar) filterBar.classList.remove('hidden');
   if (page) {
     page.classList.add('hidden');
     page.setAttribute('aria-hidden', 'true');
+  }
+  if (feedPage) {
+    feedPage.classList.add('hidden');
+    feedPage.setAttribute('aria-hidden', 'true');
   }
 }
 
@@ -998,7 +1135,7 @@ function sortPopUpsByDisplayOrder(popUps) {
   return [...ongoing.sort(bySoonestEnd), ...notStarted.sort(bySoonestStart), ...ended.sort(byEndDateDesc)];
 }
 
-function renderBrandPagePopUps(popupsEl, popUps, onPopUpClick, onEditClick, onPostMatcha) {
+function renderBrandPagePopUps(popupsEl, popUps, onPopUpClick, onPostMatcha) {
   if (!popupsEl) return;
   popupsEl.innerHTML = '';
   popUps.forEach((pop) => {
@@ -1016,19 +1153,6 @@ function renderBrandPagePopUps(popupsEl, popUps, onPopUpClick, onEditClick, onPo
       : escapeHtml(label);
     btn.addEventListener('click', () => onPopUpClick(pop));
     wrap.appendChild(btn);
-    if (onEditClick) {
-      const editBtn = document.createElement('button');
-      editBtn.type = 'button';
-      editBtn.className = 'brand-page-popup-edit-btn';
-      editBtn.setAttribute('aria-label', 'Edit pop-up');
-      editBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>';
-      editBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        onEditClick(pop);
-      });
-      wrap.appendChild(editBtn);
-    }
     if (onPostMatcha) {
       const postBtn = document.createElement('button');
       postBtn.type = 'button';
@@ -1053,11 +1177,12 @@ function openBrandPage(brand) {
   const backBtn = document.getElementById('brand-page-back');
   const nameEl = document.getElementById('brand-page-name');
   const imageEl = document.getElementById('brand-page-image');
-  const noLocationEl = document.getElementById('brand-page-no-location');
   const branchesEl = document.getElementById('brand-page-branches');
   const popupsEl = document.getElementById('brand-page-popups');
-  const addPopupBtn = document.getElementById('brand-page-add-popup');
+  const branchesSection = document.querySelector('.brand-page-locations');
+  const popupsSection = document.querySelector('.brand-page-popups');
   const postMatchaBtn = document.getElementById('brand-page-post-matcha');
+  const openFeedBtn = document.getElementById('brand-page-open-feed');
   if (!page || !nameEl || !branchesEl) return;
   const filterBar = document.getElementById('brands-filter-bar');
   if (gallery) gallery.classList.add('hidden');
@@ -1067,9 +1192,6 @@ function openBrandPage(brand) {
   const cafes = brand.cafes || [];
   const hasLocations = cafes.length > 0;
   nameEl.textContent = brand.name || 'Unnamed';
-  if (noLocationEl) {
-    noLocationEl.classList.toggle('hidden', hasLocations);
-  }
   if (imageEl) {
     const firstCafe = cafes[0];
     if (firstCafe?.photoUrl) {
@@ -1132,24 +1254,18 @@ function openBrandPage(brand) {
       li.appendChild(wrap);
       branchesEl.appendChild(li);
     });
-  } else {
-    const li = document.createElement('li');
-    li.className = 'brand-page-empty-state';
-    li.textContent = 'No permanent locations';
-    branchesEl.appendChild(li);
   }
+  if (branchesSection) branchesSection.classList.toggle('hidden', !hasLocations);
   const onPopUpClick = (pop) => {
     showPopUpSheet(pop, brand);
   };
-  const refreshPopUps = () => getPopUpsByBrandId(brand.id).then((p) => renderBrandPagePopUps(popupsEl, sortPopUpsByDisplayOrder(p), onPopUpClick, (pop) => openEditPopUpModal(pop, brand.id, refreshPopUps), (pop) => {
-    openLogForm(null, onCloseBrandAndRefresh, { brand, brandId: brand.id, brandName: brand.name, popUp: pop, popupId: pop.id });
-  }));
-  getPopUpsByBrandId(brand.id).then((popUps) => renderBrandPagePopUps(popupsEl, sortPopUpsByDisplayOrder(popUps), onPopUpClick, (pop) => openEditPopUpModal(pop, brand.id, refreshPopUps), (pop) => {
-    openLogForm(null, onCloseBrandAndRefresh, { brand, brandId: brand.id, brandName: brand.name, popUp: pop, popupId: pop.id });
-  }));
-  if (addPopupBtn) {
-    addPopupBtn.onclick = () => openAddPopUpModal(brand.id, refreshPopUps);
-  }
+  getPopUpsByBrandId(brand.id).then((popUps) => {
+    const ordered = sortPopUpsByDisplayOrder(popUps);
+    renderBrandPagePopUps(popupsEl, ordered, onPopUpClick, (pop) => {
+      openLogForm(null, onCloseBrandAndRefresh, { brand, brandId: brand.id, brandName: brand.name, popUp: pop, popupId: pop.id });
+    });
+    if (popupsSection) popupsSection.classList.toggle('hidden', ordered.length === 0);
+  });
   if (postMatchaBtn) {
     postMatchaBtn.onclick = () => openLogForm(null, onCloseBrandAndRefresh, { brand, brandId: brand.id, brandName: brand.name });
   }
@@ -1160,7 +1276,7 @@ function openBrandPage(brand) {
   const feedEl = document.getElementById('brand-page-feed');
   const likeBtn = document.getElementById('brand-page-heart');
   const likeCountEl = document.getElementById('brand-page-heart-count');
-  async function renderBrandFeed() {
+  async function renderBrandFeedPreview() {
     if (!feedEl) return;
     const logs = await getLogsForBrand(brand);
     feedEl.innerHTML = '';
@@ -1168,11 +1284,11 @@ function openBrandPage(brand) {
       feedEl.innerHTML = '<p class="brand-page-empty-state">No posts yet.</p>';
       return;
     }
-    logs.forEach((log) => {
+    logs.slice(0, 3).forEach((log) => {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'brand-page-feed-item log-item log-item-btn';
-      const photo = log.photo || (log.photos && log.photos[0]);
+      const photo = log.post?.photo || (log.post?.photos && log.post.photos[0]);
       const thumb = photo ? `<img src="${escapeAttr(photo)}" alt="">` : '<div class="log-item-placeholder"></div>';
       const drink = escapeHtml(getDrinkSummary(log));
       const meta = formatDate(log.createdAt);
@@ -1184,6 +1300,9 @@ function openBrandPage(brand) {
       });
       feedEl.appendChild(btn);
     });
+  }
+  if (openFeedBtn) {
+    openFeedBtn.onclick = () => openBrandFeedPage(brand);
   }
   async function updateBrandLikeUI() {
     if (!likeBtn || !likeCountEl) return;
@@ -1201,8 +1320,44 @@ function openBrandPage(brand) {
       updateBrandLikeUI();
     });
   }
-  renderBrandFeed();
+  renderBrandFeedPreview();
   updateBrandLikeUI();
+}
+
+function closeBrandFeedPage() {
+  const feedPage = document.getElementById('brand-feed-page');
+  if (!feedPage) return;
+  feedPage.classList.add('hidden');
+  feedPage.setAttribute('aria-hidden', 'true');
+}
+
+async function openBrandFeedPage(brand) {
+  const feedPage = document.getElementById('brand-feed-page');
+  const listEl = document.getElementById('brand-feed-page-list');
+  const nameEl = document.getElementById('brand-feed-page-name');
+  const backBtn = document.getElementById('brand-feed-page-back');
+  const brandPage = document.getElementById('brand-page');
+  if (!feedPage || !listEl || !nameEl || !brandPage) return;
+  brandPage.classList.add('hidden');
+  feedPage.classList.remove('hidden');
+  feedPage.setAttribute('aria-hidden', 'false');
+  nameEl.textContent = brand.name || 'Brand';
+  listEl.innerHTML = '<p class="brand-page-empty-state">Loading…</p>';
+  const logs = await getLogsForBrand(brand);
+  listEl.innerHTML = '';
+  if (logs.length === 0) {
+    listEl.innerHTML = '<p class="brand-page-empty-state">No posts yet.</p>';
+  } else {
+    logs.forEach((log) => listEl.appendChild(createPhotoFeedCard(log)));
+  }
+  if (backBtn) {
+    backBtn.onclick = () => {
+      feedPage.classList.add('hidden');
+      feedPage.setAttribute('aria-hidden', 'true');
+      brandPage.classList.remove('hidden');
+      brandPage.setAttribute('aria-hidden', 'false');
+    };
+  }
 }
 
 let addPopUpModalBrandId = null;
@@ -1658,6 +1813,13 @@ function updateSearchResultsLabel(visible) {
   if (clearBtn) clearBtn.classList.toggle('hidden', !visible);
 }
 
+function updateSearchCountChip(count) {
+  const chip = document.getElementById('search-count-chip');
+  if (!chip) return;
+  const safeCount = Number.isFinite(count) && count >= 0 ? Math.floor(count) : 0;
+  chip.textContent = String(safeCount);
+}
+
 /** Clear search state and show Firestore-saved cafes again. */
 function clearSearchAndShowCurated() {
   const input = document.getElementById('search-input');
@@ -1667,6 +1829,7 @@ function clearSearchAndShowCurated() {
   clearCuratedPins();
   updateCuratedPins();
   updateSearchResultsLabel(false);
+  updateSearchCountChip(getMyCafes().length);
 }
 
 /** Text search: show results as white pills; dedupe with Firestore; single/multiple behavior. */
@@ -1681,6 +1844,7 @@ async function doSearch(query) {
   }
   const merged = mergeSearchResultsWithFirestore(results);
   currentSearchResults = merged;
+  updateSearchCountChip(merged.length);
   if (merged.length > 0) {
     updateSearchResultsLabel(true);
     clearCuratedPins();
@@ -1744,11 +1908,11 @@ async function init() {
     });
   });
 
-  initAddPopUpModal();
-
   if (map) {
     map.addListener('click', () => {
       const sheet = document.getElementById('bottom-sheet');
+      // Clicking a marker can also trigger a map click; ignore close right after opening.
+      if (Date.now() - lastBottomSheetOpenAt < 220) return;
       if (sheet && !sheet.classList.contains('closed')) hideBottomSheet();
     });
   }
@@ -1758,6 +1922,7 @@ async function init() {
   } catch (e) {
     console.warn('[Matcha Hop] initData failed:', e?.message || e);
   }
+  updateSearchCountChip(getMyCafes().length);
   if (map) {
     const bounds = map.getBounds();
     const zoom = map.getZoom();

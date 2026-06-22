@@ -681,9 +681,9 @@
                 <div class="card-subtitle">in this period</div>
             </div>
             <div class="summary-card">
-                <div class="card-title">Total Payroll</div>
+                <div class="card-title" id="totalPayrollTitle">Total Payroll</div>
                 <div class="card-value" id="totalPayroll">₱0.00</div>
-                <div class="card-subtitle">For this period</div>
+                <div class="card-subtitle" id="totalPayrollSubtitle">All branches · this period</div>
             </div>
         </div>
 
@@ -724,7 +724,7 @@
             <div class="mobile-summary-card mobile-summary-card--clickable" id="mobileSummaryCard" role="button" tabindex="0" aria-label="Period summary, tap to change period">
                 <div class="mobile-summary-card__title">Period summary</div>
                 <div class="mobile-summary-card__hero">
-                    <span class="mobile-summary-card__hero-label">Total Payroll</span>
+                    <span class="mobile-summary-card__hero-label" id="mobileSummaryPayrollLabel">Total Payroll</span>
                     <span class="mobile-summary-card__hero-value" id="mobileSummaryTotalPayroll">₱0.00</span>
                 </div>
                 <div class="mobile-summary-card__meta">
@@ -800,7 +800,7 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="../shared/js/PayCalculator.js?v=2.0.4"></script>
-    <script type="module" src="js/admin-script.js?v=2.0.18"></script>
+    <script type="module" src="js/admin-script.js?v=2.0.23"></script>
 </body>
 
 </html>
