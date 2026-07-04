@@ -3,6 +3,7 @@ import {
     buildFulfillmentContext,
     deliveryMethodDisplayText,
     inferDeliveryFromOrder,
+    normalizeDeliveryDisplayLabel,
 } from "./fulfillment-context.js";
 import {
     paidIconHtml,
@@ -11,13 +12,19 @@ import {
     paymentMethodDisplay,
 } from "./payment-method.js";
 import {
+    collectOrderRegistrations,
     collectOrderRegistrationsForOrder,
+    formatWorkshopDisplayName,
     lineItemPropertiesFromShopify,
     parseRegistrationFromLineItem,
     workshopManagementUrl,
 } from "./registration.js";
 import { isMobileViewport, onViewportChange } from "./viewport.js";
 import { fetchPaymentIntakesByOrders } from "./hub-api.js";
+import {
+    formatBundleTitle,
+    mergeLineItemBundleMeta,
+} from "./bundle-line-items.mjs";
 import {
     canCancelOrder,
     canRefundPayment,
@@ -30,6 +37,33 @@ import {
 
 const WORKSHOP_PRODUCT_TYPE = "Matcha Workshop";
 const REFRESH_STALE_MS = 60_000;
+const ORDERS_PAGE_SIZE = 50;
+const MAX_FILTER_SCAN_PAGES = 20;
+const FILTER_SEARCH_DEBOUNCE_MS = 300;
+
+const ORDER_STATUS_LABEL = {
+    cancelled: "Cancelled",
+    unpaid: "Unpaid",
+    paid: "Paid",
+    for_pickup: "For Pick Up",
+    to_ship: "To Ship",
+    picked_up: "Picked Up",
+    shipped: "Shipped",
+    done: "Done",
+};
+
+const ORDER_STATUS_SORT = [
+    "unpaid",
+    "paid",
+    "to_ship",
+    "for_pickup",
+    "shipped",
+    "picked_up",
+    "done",
+    "cancelled",
+];
+
+const autoFulfillInFlight = new Set();
 
 const els = {
     status: document.getElementById("statusBar"),
@@ -41,24 +75,104 @@ const els = {
     tbody: document.querySelector("#ordersTable tbody"),
     ordersCardList: document.getElementById("ordersCardList"),
     detailModalBackdrop: document.getElementById("detailModalBackdrop"),
-    btnRefresh: document.getElementById("btnRefresh"),
+    btnProductQueue: document.getElementById("btnProductQueue"),
     btnPrev: document.getElementById("btnPrev"),
     btnNext: document.getElementById("btnNext"),
     pageIndicator: document.getElementById("pageIndicator"),
     syncIndicator: document.getElementById("ordersSyncIndicator"),
     search: document.getElementById("searchInput"),
-    finStatus: document.getElementById("filterFinancial"),
-    fulStatus: document.getElementById("filterFulfillment"),
+    finStatus: document.getElementById("filterStatus"),
     filterProduct: document.getElementById("filterProduct"),
     filterProductType: document.getElementById("filterProductType"),
     filterTag: document.getElementById("filterTag"),
     typeSelector: document.getElementById("typeSelector"),
+    filtersBar: document.getElementById("ordersFiltersBar"),
+    btnFiltersToggle: document.getElementById("btnFiltersToggle"),
+    filtersExtraPanel: document.getElementById("filtersExtraPanel"),
+    filtersActiveBadge: document.getElementById("filtersActiveBadge"),
+    ordersTable: document.getElementById("ordersTable"),
+    btnSelectMode: document.getElementById("btnSelectMode"),
+    batchActionBar: document.getElementById("batchActionBar"),
+    batchSelectedCount: document.getElementById("batchSelectedCount"),
+    batchActionButtons: document.getElementById("batchActionButtons"),
+    btnBatchClear: document.getElementById("btnBatchClear"),
+    batchSelectAll: document.getElementById("batchSelectAll"),
 };
+
+const BATCH_ACTION_DEFS = [
+    {
+        id: "mark-paid",
+        label: "Mark as paid",
+        action: "mark-paid",
+        intent: null,
+        matches(r) {
+            return paymentActions(r).some((a) => a.id === "mark-paid");
+        },
+    },
+    {
+        id: "ready_for_pickup",
+        label: "Mark as ready for pickup",
+        action: "fulfill",
+        intent: "ready_for_pickup",
+        matches(r) {
+            if (r.cancelled_at || r.type === "workshop" || !isOrderPaid(r)) return false;
+            if (r.deliveryMethod !== "pickup") return false;
+            if (r.orderStatus === "for_pickup" || r.orderStatus === "picked_up") {
+                return false;
+            }
+            if (r.canMarkReadyForPickup) return true;
+            if (r.supportsLocalPickup && r.fulfillable) return true;
+            return r.orderStatus === "paid" && r.fulfillable;
+        },
+    },
+    {
+        id: "picked_up",
+        label: "Mark as picked up",
+        action: "fulfill",
+        intent: "picked_up",
+        matches(r) {
+            if (r.cancelled_at || r.type === "workshop" || !isOrderPaid(r)) return false;
+            if (r.deliveryMethod !== "pickup") return false;
+            if (r.canMarkPickedUp) return true;
+            if (r.orderStatus === "for_pickup") return true;
+            const df = (r.displayFulfillment || "").toLowerCase();
+            if (df.includes("ready for pickup")) return true;
+            if (r.supportsLocalPickup === false && r.fulfillable) return true;
+            return false;
+        },
+    },
+    {
+        id: "shipped",
+        label: "Mark as shipped",
+        action: "fulfill",
+        intent: "shipped",
+        matches(r) {
+            if (r.cancelled_at || r.type === "workshop" || !isOrderPaid(r)) return false;
+            if (!r.fulfillable) return false;
+            return (
+                r.orderStatus === "to_ship" ||
+                (r.deliveryMethod === "shipping" && r.orderStatus !== "shipped")
+            );
+        },
+    },
+    {
+        id: "fulfilled",
+        label: "Mark as fulfilled",
+        action: "fulfill",
+        intent: "fulfilled",
+        matches(r) {
+            if (r.cancelled_at || r.type === "workshop" || !isOrderPaid(r)) return false;
+            if (!r.fulfillable) return false;
+            return r.deliveryMethod === "none";
+        },
+    },
+];
 
 const state = {
     rows: [],
     productMap: {},
     typeFilter: "",
+    productQueueFilter: false,
     nextPageInfo: null,
     previousPageInfo: null,
     pageCursor: null,
@@ -71,11 +185,20 @@ const state = {
     detailLoading: false,
     detailOrder: null,
     botPayments: {},
+    selectionMode: false,
+    selectedOrderIds: new Set(),
+    batchActionInProgress: false,
+    filterPageStack: [],
+    filterOverflow: [],
+    filterFetchCursor: null,
+    filterHasMore: false,
+    filterPageStartOverflow: [],
 };
 
 let ordersFetchInProgress = false;
 let ordersFetchComplete = false;
 let lastOrdersFetchAt = 0;
+let filterSearchDebounceTimer = null;
 
 function isLiveHost() {
     return hasOrdersApi();
@@ -84,6 +207,183 @@ function isLiveHost() {
 function setStatus(msg, isError = false) {
     els.status.textContent = msg || "";
     els.status.classList.toggle("error", Boolean(isError));
+}
+
+function actionPendingLabel(action, intent = null) {
+    if (action === "mark-paid") return "Marking as paid…";
+    if (action === "mark-pending") return "Marking as pending…";
+    if (action === "void") return "Voiding…";
+    if (action === "fulfill") {
+        if (intent === "shipped") return "Marking as shipped…";
+        if (intent === "picked_up") return "Marking as picked up…";
+        if (intent === "ready_for_pickup") return "Marking ready for pickup…";
+        return "Marking as fulfilled…";
+    }
+    return "Working…";
+}
+
+function setActionButtonPending(btn, label) {
+    if (!btn) return;
+    if (!btn.dataset.origLabel) btn.dataset.origLabel = btn.textContent;
+    btn.disabled = true;
+    btn.classList.add("detail-action-btn--pending");
+    btn.textContent = label;
+}
+
+function resetActionButton(btn) {
+    if (!btn) return;
+    btn.disabled = false;
+    btn.classList.remove("detail-action-btn--pending");
+    if (btn.dataset.origLabel) {
+        btn.textContent = btn.dataset.origLabel;
+        delete btn.dataset.origLabel;
+    }
+}
+
+function isOrderSelected(orderId) {
+    return state.selectedOrderIds.has(String(orderId));
+}
+
+function toggleOrderSelected(orderId, selected = null) {
+    const key = String(orderId);
+    const next =
+        selected == null ? !state.selectedOrderIds.has(key) : Boolean(selected);
+    if (next) state.selectedOrderIds.add(key);
+    else state.selectedOrderIds.delete(key);
+    updateBatchSelectionUi();
+}
+
+function clearOrderSelection() {
+    state.selectedOrderIds.clear();
+    updateBatchSelectionUi();
+}
+
+function setSelectionMode(active) {
+    state.selectionMode = Boolean(active);
+    if (!state.selectionMode) clearOrderSelection();
+    els.btnSelectMode?.setAttribute(
+        "aria-pressed",
+        state.selectionMode ? "true" : "false"
+    );
+    if (els.btnSelectMode) {
+        els.btnSelectMode.textContent = state.selectionMode ? "Done" : "Select";
+    }
+    els.ordersTable?.classList.toggle(
+        "orders-table--select-mode",
+        state.selectionMode
+    );
+    els.batchActionBar?.classList.toggle("hidden", !state.selectionMode);
+    if (!state.selectionMode && els.batchSelectAll) {
+        els.batchSelectAll.checked = false;
+        els.batchSelectAll.indeterminate = false;
+    }
+    renderTable();
+}
+
+function orderSupportsBatchAction(r, def) {
+    return Boolean(r && def?.matches(r));
+}
+
+function orderHasAnyBatchAction(r) {
+    return BATCH_ACTION_DEFS.some((def) => orderSupportsBatchAction(r, def));
+}
+
+function batchSelectableRows() {
+    return getFilteredRows().filter((r) => orderHasAnyBatchAction(r));
+}
+
+function selectedRowsForBatchAction(def) {
+    return [...state.selectedOrderIds]
+        .map((id) => state.rows.find((r) => String(r.id) === String(id)))
+        .filter((r) => orderSupportsBatchAction(r, def));
+}
+
+function batchActionButtonLabel(def, count) {
+    if (!count) return def.label;
+    if (count === 1) return def.label;
+    return `${def.label} (${count})`;
+}
+
+function renderBatchActionButtons() {
+    if (!els.batchActionButtons) return;
+    const selected = [...state.selectedOrderIds];
+    const counts = BATCH_ACTION_DEFS.map((def) => ({
+        def,
+        count: selected.filter((id) => {
+            const row = state.rows.find((r) => String(r.id) === String(id));
+            return orderSupportsBatchAction(row, def);
+        }).length,
+    })).filter((x) => x.count > 0);
+
+    if (!counts.length) {
+        els.batchActionButtons.innerHTML =
+            '<span class="batch-action-bar__hint">No batch actions apply to the current selection.</span>';
+        return;
+    }
+
+    els.batchActionButtons.innerHTML = counts
+        .map(
+            ({ def, count }) =>
+                `<button type="button" class="action-btn primary" data-batch-action="${escapeHtml(def.id)}" ${state.batchActionInProgress ? "disabled" : ""}>${escapeHtml(batchActionButtonLabel(def, count))}</button>`
+        )
+        .join("");
+}
+
+function updateBatchSelectionUi() {
+    const selected = [...state.selectedOrderIds];
+    if (els.batchSelectedCount) {
+        const n = selected.length;
+        els.batchSelectedCount.textContent =
+            n === 1 ? "1 order selected" : `${n} orders selected`;
+    }
+    renderBatchActionButtons();
+    const visible = batchSelectableRows();
+    if (els.batchSelectAll && state.selectionMode) {
+        const visibleIds = visible.map((r) => String(r.id));
+        const selectedVisible = visibleIds.filter((id) =>
+            state.selectedOrderIds.has(id)
+        );
+        els.batchSelectAll.checked =
+            visibleIds.length > 0 &&
+            selectedVisible.length === visibleIds.length;
+        els.batchSelectAll.indeterminate =
+            selectedVisible.length > 0 &&
+            selectedVisible.length < visibleIds.length;
+    }
+    renderTable();
+}
+
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRateLimitError(message) {
+    const s = String(message || "").toLowerCase();
+    return (
+        s.includes("2 calls per second") ||
+        s.includes("rate limit") ||
+        s.includes("throttle") ||
+        s.includes("too many requests")
+    );
+}
+
+async function fetchJsonWithRetry(url, options = {}, { retries = 4 } = {}) {
+    let lastRes = null;
+    let lastData = {};
+    for (let attempt = 0; attempt <= retries; attempt++) {
+        const res = await fetch(url, options);
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) return { res, data };
+        lastRes = res;
+        lastData = data;
+        const msg = data.error || res.statusText;
+        if (isRateLimitError(msg) && attempt < retries) {
+            await sleep(Math.min(1200 * 2 ** attempt, 8000));
+            continue;
+        }
+        break;
+    }
+    return { res: lastRes, data: lastData };
 }
 
 function displayFinancialStatus(raw) {
@@ -117,6 +417,136 @@ function orderTypeFromLineItems(lineItems, productMap) {
 
 function typeLabel(type) {
     return type === "workshop" ? "Workshop" : "Order";
+}
+
+function deliveryTypeLabel(r) {
+    if (r.type === "workshop") return "";
+    return normalizeDeliveryDisplayLabel(r.deliveryMethod, r.deliveryLabel);
+}
+
+function deliveryTypePillClass(deliveryMethod) {
+    if (deliveryMethod === "pickup") return "context-pill--pickup";
+    if (deliveryMethod === "shipping") return "context-pill--shipping";
+    return "context-pill--none";
+}
+
+function isOrderPaid(r) {
+    return (r.financial_status || "").toLowerCase() === "paid";
+}
+
+function todayDateIso() {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, "0");
+    const d = String(now.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+}
+
+function workshopSessionDatesFromLineItems(lineItems) {
+    return collectOrderRegistrations(lineItems)
+        .map((reg) => reg.sessionDateIso)
+        .filter(Boolean);
+}
+
+function isWorkshopSessionOver(r) {
+    const dates = r.workshopSessionDates || [];
+    if (!dates.length) return false;
+    const latest = dates.slice().sort().pop();
+    return latest < todayDateIso();
+}
+
+function resolveOrderStatus(r) {
+    if (r.cancelled_at) return "cancelled";
+    if (!isOrderPaid(r)) return "unpaid";
+
+    if (r.type === "workshop") {
+        if (isWorkshopSessionOver(r)) return "done";
+        return "paid";
+    }
+
+    const dm = r.deliveryMethod;
+    const raw = (r.displayFulfillment || "").toLowerCase();
+
+    if (dm === "none") {
+        if (raw.includes("fulfilled") && !raw.includes("un")) return "done";
+        return "paid";
+    }
+
+    if (dm === "pickup") {
+        if (
+            r.pickupStage === "ready_for_pickup" ||
+            raw.includes("ready for pickup")
+        ) {
+            return "for_pickup";
+        }
+        if (r.pickupStage === "picked_up" || raw === "picked up") {
+            return "picked_up";
+        }
+        if (raw.includes("picked up") && !raw.includes("ready for pickup")) {
+            return "picked_up";
+        }
+        if (
+            r.pickupStage === "fulfilled" ||
+            raw === "fulfilled" ||
+            (raw.includes("fulfilled") && !raw.includes("un"))
+        ) {
+            return "picked_up";
+        }
+        return "paid";
+    }
+
+    if (dm === "shipping" || dm === "unknown") {
+        if (
+            raw.includes("shipped") ||
+            raw.includes("transit") ||
+            raw.includes("delivered") ||
+            (raw.includes("fulfilled") && !raw.includes("un"))
+        ) {
+            return "shipped";
+        }
+        return "to_ship";
+    }
+
+    return "paid";
+}
+
+function withOrderStatus(row) {
+    const orderStatus = resolveOrderStatus(row);
+    return {
+        ...row,
+        orderStatus,
+        orderStatusLabel: orderStatus ? ORDER_STATUS_LABEL[orderStatus] : "",
+    };
+}
+
+async function maybeAutoFulfillWorkshopOrder(r) {
+    if (r.type !== "workshop" || !isOrderPaid(r) || r.cancelled_at) return false;
+    if (!isWorkshopSessionOver(r)) return false;
+    const fs = (r.fulfillment_status || "").toLowerCase();
+    if (fs === "fulfilled") return false;
+    if (autoFulfillInFlight.has(r.id)) return false;
+    autoFulfillInFlight.add(r.id);
+    try {
+        await sleep(700);
+        const { res } = await fetchJsonWithRetry(`/api/orders/${r.id}/fulfill`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ intent: "fulfilled" }),
+        });
+        return res.ok;
+    } catch (_) {
+        return false;
+    } finally {
+        autoFulfillInFlight.delete(r.id);
+    }
+}
+
+async function autoFulfillCompletedWorkshops(rows) {
+    let any = false;
+    for (const r of rows) {
+        if (await maybeAutoFulfillWorkshopOrder(r)) any = true;
+    }
+    return any;
 }
 
 function displayFulfillmentFromOrder(o) {
@@ -214,9 +644,11 @@ function renderRegistrationSection(r) {
     return cards;
 }
 
-function buildLineItems(o, productMap) {
+function buildLineItems(o, productMap, bundleByLineId = {}) {
     return (o.line_items || []).map((li) => {
         const p = productMap[li.product_id];
+        const properties = lineItemPropertiesFromShopify(li.properties);
+        const bundle = bundleByLineId[String(li.id)];
         return {
             id: li.id,
             product_id: li.product_id,
@@ -227,7 +659,12 @@ function buildLineItems(o, productMap) {
             product_type: p?.product_type || "",
             variant_title: li.variant_title || "",
             image_url: p?.image_url || null,
-            properties: lineItemPropertiesFromShopify(li.properties),
+            properties,
+            bundleGroupId: bundle?.groupId || null,
+            bundleTitle: bundle?.bundleTitle
+                ? formatBundleTitle(bundle.bundleTitle)
+                : null,
+            bundleQuantity: bundle?.bundleQuantity || null,
         };
     });
 }
@@ -256,11 +693,25 @@ function normalizeApiOrder(o, productMap = {}) {
         .filter(Boolean);
     const allTags = [...new Set([...orderTags, ...productTags])];
     const itemCount = lineItems.reduce((n, li) => n + (li.quantity || 0), 0);
-    const displayFulfillment = displayFulfillmentFromOrder(o);
+    const listFx = o.list_fulfillment || null;
+    const displayFulfillment =
+        listFx?.displayFulfillment ?? displayFulfillmentFromOrder(o);
     const type = orderTypeFromLineItems(lineItems, productMap);
+    const workshopSessionDates =
+        type === "workshop"
+            ? workshopSessionDatesFromLineItems(lineItems)
+            : [];
+    const workshopSessionLabel =
+        type === "workshop"
+            ? workshopSessionLabelFromLineItems(lineItems)
+            : "";
     const delivery = inferDeliveryFromOrder(o);
     let deliveryMethod = delivery.deliveryMethod;
     let deliveryLabel = delivery.deliveryLabel;
+    if (listFx?.deliveryMethod && type !== "workshop") {
+        deliveryMethod = listFx.deliveryMethod;
+        deliveryLabel = listFx.deliveryLabel || deliveryLabel;
+    }
     let deliveryMethodDisplay = deliveryMethodDisplayText(
         deliveryMethod,
         deliveryLabel
@@ -271,7 +722,20 @@ function normalizeApiOrder(o, productMap = {}) {
         deliveryMethodDisplay = "Shipping not required";
     }
 
-    return {
+    const fulfillable =
+        listFx && deliveryMethod === "pickup"
+            ? Boolean(
+                  listFx.canMarkReadyForPickup ||
+                      listFx.canMarkPickedUp ||
+                      (!listFx.supportsLocalPickup &&
+                          (o.line_items || []).some(
+                              (li) => li.fulfillable_quantity > 0
+                          ))
+              )
+            : (o.line_items || []).some((li) => li.fulfillable_quantity > 0) &&
+              displayFulfillment !== "Fulfilled";
+
+    return withOrderStatus({
         id: o.id,
         name: o.name || "",
         type,
@@ -279,6 +743,11 @@ function normalizeApiOrder(o, productMap = {}) {
         deliveryMethod,
         deliveryLabel,
         deliveryMethodDisplay,
+        deliveryTypeLabel: deliveryTypeLabel({
+            type,
+            deliveryMethod,
+            deliveryLabel,
+        }),
         created_at: o.created_at || "",
         customer: custName || o.email || "—",
         email: o.email || "",
@@ -290,14 +759,18 @@ function normalizeApiOrder(o, productMap = {}) {
         payment_method: paymentMethodDisplay(o),
         fulfillment_status: o.fulfillment_status || null,
         displayFulfillment,
+        pickupStage: listFx?.pickupStage || null,
+        canMarkReadyForPickup: Boolean(listFx?.canMarkReadyForPickup),
+        canMarkPickedUp: Boolean(listFx?.canMarkPickedUp),
+        supportsLocalPickup: Boolean(listFx?.supportsLocalPickup),
+        workshopSessionDates,
+        workshopSessionLabel,
         lineItems,
         productTypes: [...productTypes],
         tags: allTags,
         item_count: itemCount,
-        fulfillable:
-            (o.line_items || []).some((li) => li.fulfillable_quantity > 0) &&
-            displayFulfillment !== "Fulfilled",
-    };
+        fulfillable,
+    });
 }
 
 function resolveOrderPricing(o, lineItems) {
@@ -348,8 +821,15 @@ async function loadFulfillmentContextForOrder(
     return buildFulfillmentContext(order, [], options);
 }
 
-function normalizeDetailOrder(o, productMap = {}, fulfillmentContext = null) {
+function normalizeDetailOrder(
+    o,
+    productMap = {},
+    fulfillmentContext = null,
+    inferredRegs = [],
+    bundleByLineId = {}
+) {
     const base = normalizeApiOrder(o, productMap);
+    const lineItems = buildLineItems(o, productMap, bundleByLineId);
     const pricing = resolveOrderPricing(o, base.lineItems);
     const phone =
         o.phone ||
@@ -378,12 +858,43 @@ function normalizeDetailOrder(o, productMap = {}, fulfillmentContext = null) {
         ctx.displayFulfillment || displayFulfillmentFromOrder(o);
     const fulfillable =
         delivery.method === "pickup"
-            ? Boolean(ctx.canMarkReadyForPickup || ctx.canMarkPickedUp)
+            ? Boolean(
+                  ctx.canMarkReadyForPickup ||
+                      ctx.canMarkPickedUp ||
+                      (!ctx.supportsLocalPickup && base.fulfillable)
+              )
             : base.fulfillable;
-    return {
+    const workshopSessionDates =
+        base.type === "workshop"
+            ? [
+                  ...new Set([
+                      ...workshopSessionDatesFromLineItems(base.lineItems),
+                      ...workshopRegistrationsFromRow({
+                          lineItems: base.lineItems,
+                          inferred_registrations: inferredRegs,
+                      })
+                          .map((reg) => reg.sessionDateIso)
+                          .filter(Boolean),
+                  ]),
+              ]
+            : base.workshopSessionDates;
+    const workshopSessionLabel =
+        base.type === "workshop"
+            ? workshopSessionLabelFromLineItems(base.lineItems) ||
+              formatWorkshopDisplayName(
+                  workshopRegistrationsFromRow({
+                      lineItems: base.lineItems,
+                      inferred_registrations: inferredRegs,
+                  })[0]?.workshopDisplay || ""
+              )
+            : "";
+    return withOrderStatus({
         ...base,
+        lineItems,
         displayFulfillment,
         fulfillable,
+        workshopSessionDates,
+        workshopSessionLabel,
         note: o.note || "",
         phone,
         source_name: formatSourceName(o.source_name),
@@ -403,10 +914,16 @@ function normalizeDetailOrder(o, productMap = {}, fulfillmentContext = null) {
         deliveryMethodDisplay:
             ctx.deliveryMethodDisplay ||
             deliveryMethodDisplayText(delivery.method, delivery.label),
+        deliveryTypeLabel: deliveryTypeLabel({
+            type: base.type,
+            deliveryMethod: delivery.method,
+            deliveryLabel: delivery.label,
+        }),
         pickupStage: ctx.pickupStage || null,
         canMarkReadyForPickup: Boolean(ctx.canMarkReadyForPickup),
         canMarkPickedUp: Boolean(ctx.canMarkPickedUp),
-    };
+        supportsLocalPickup: Boolean(ctx.supportsLocalPickup),
+    });
 }
 
 function fulfillmentLocationHint(o) {
@@ -422,61 +939,22 @@ function inferDeliveryMethod(o) {
 
 function renderDeliveryDescription(r) {
     if (r.type === "workshop") {
-        return r.deliveryMethodDisplay || "Shipping not required";
-    }
-    if (r.deliveryMethod === "pickup") {
-        const loc = (r.deliveryLabel || "").trim();
-        return loc ? `Pickup in store at ${loc}` : "Pickup in store";
-    }
-    if (r.deliveryMethod === "shipping") {
-        return r.deliveryLabel || "Shipping";
-    }
-    if (r.deliveryMethod === "none") {
         return "Shipping not required";
     }
-    return r.deliveryMethodDisplay || r.deliveryLabel || "—";
+    const label = deliveryTypeLabel(r);
+    return label || "—";
 }
 
 function renderDetailStatusPills(r) {
     const pills = [];
-    if (r.cancelled_at) {
-        pills.push(
-            `<span class="status-pill status-pill--cancelled">Cancelled</span>`
-        );
+    if (r.orderStatusLabel) {
+        pills.push(orderStatusPillHtml(r));
     }
-    const payPillClass = r.cancelled_at
-        ? `${paymentStatusClass(r.financial_status)} status-pill--struck`
-        : paymentStatusClass(r.financial_status);
+    const delivery = deliveryPillHtml(r);
+    if (delivery) pills.push(delivery);
     pills.push(
-        `<span class="status-pill ${payPillClass}">${escapeHtml(r.financial_label)}</span>`
+        `<span class="type-pill ${typePillClass(r.type)}">${escapeHtml(r.type_label)}</span>`
     );
-
-    if (r.type === "workshop") {
-        pills.push(
-            `<span class="type-pill ${typePillClass("workshop")}">${escapeHtml(r.type_label)}</span>`
-        );
-    } else {
-        const fs = r.displayFulfillment;
-        if (fs) {
-            pills.push(
-                `<span class="status-pill ${fulfillmentStatusClass(fs)}">${escapeHtml(fs)}</span>`
-            );
-        }
-        if (r.deliveryMethod === "pickup") {
-            pills.push(
-                `<span class="context-pill context-pill--pickup">Pickup in store</span>`
-            );
-        } else if (r.deliveryMethod === "shipping") {
-            const label = (r.deliveryLabel || "Shipping").trim();
-            pills.push(
-                `<span class="context-pill context-pill--shipping">${escapeHtml(label)}</span>`
-            );
-        }
-        pills.push(
-            `<span class="type-pill ${typePillClass("product")}">${escapeHtml(r.type_label)}</span>`
-        );
-    }
-
     return pills.join("");
 }
 
@@ -689,13 +1167,165 @@ function paymentStatusClass(financialStatus) {
     return `status-pill--payment-${s}`;
 }
 
+function orderStatusClass(statusKey) {
+    switch (statusKey) {
+        case "cancelled":
+            return "status-pill--cancelled";
+        case "unpaid":
+            return "status-pill--unpaid";
+        case "paid":
+            return "status-pill--paid";
+        case "for_pickup":
+        case "to_ship":
+            return "status-pill--action";
+        case "shipped":
+        case "picked_up":
+        case "done":
+            return "status-pill--complete";
+        default:
+            return "status-pill--neutral";
+    }
+}
+
+function orderStatusIconSvg(statusKey) {
+    const stroke = "currentColor";
+    const common = `xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"`;
+    switch (statusKey) {
+        case "cancelled":
+            return `<svg ${common}><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></svg>`;
+        case "unpaid":
+            return `<svg ${common}><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>`;
+        case "paid":
+            return `<svg ${common}><path d="M20 6 9 17l-5-5"/></svg>`;
+        case "to_ship":
+            return `<svg ${common}><path d="M10 17h4"/><path d="M3 17h2"/><path d="M19 17h2"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/><path d="M5 17H3V8l2-3h9v12"/><path d="M14 17h3l3-4V9h-6v8"/></svg>`;
+        case "for_pickup":
+            return `<svg ${common}><path d="M3 9 12 2l9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>`;
+        case "shipped":
+        case "picked_up":
+            return `<svg ${common}><path d="M20 6 9 17l-5-5"/></svg>`;
+        case "done":
+            return `<svg ${common}><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>`;
+        default:
+            return `<svg ${common}><circle cx="12" cy="12" r="10"/></svg>`;
+    }
+}
+
+function orderStatusPillHtml(r) {
+    if (!r.orderStatusLabel) return "";
+    const cls = orderStatusClass(r.orderStatus);
+    const icon = orderStatusIconSvg(r.orderStatus);
+    return `<span class="status-pill ${cls}"><span class="status-pill__icon" aria-hidden="true">${icon}</span><span class="status-pill__label">${escapeHtml(r.orderStatusLabel)}</span></span>`;
+}
+
+function lineItemShortName(li) {
+    return (li.title || "").trim();
+}
+
+function orderLineItemsPreviewLines(r, maxLines = 3) {
+    const lines = (r.lineItems || []).map((li) => {
+        const name = lineItemShortName(li);
+        const qty = li.quantity || 1;
+        return `${qty}× ${name}`;
+    });
+    if (!lines.length) return [];
+    const shown = lines.slice(0, maxLines);
+    if (lines.length > maxLines) {
+        shown.push(`+${lines.length - maxLines} more`);
+    }
+    return shown;
+}
+
+function orderLineItemsPreviewHtml(r) {
+    const lines = orderLineItemsPreviewLines(r);
+    if (!lines.length) return '<span class="muted">—</span>';
+    return `<ul class="order-items-preview">${lines
+        .map((line) => `<li>${escapeHtml(line)}</li>`)
+        .join("")}</ul>`;
+}
+
+function workshopRegistrationsFromRow(r) {
+    return collectOrderRegistrationsForOrder(
+        r.lineItems,
+        r.inferred_registrations || []
+    );
+}
+
+function workshopSlotCount(r) {
+    const regs = workshopRegistrationsFromRow(r);
+    if (regs.length) {
+        return regs.reduce((n, reg) => n + (reg.quantity || 1), 0);
+    }
+    return r.item_count || 0;
+}
+
+function workshopSessionLabelFromLineItems(lineItems) {
+    const regs = collectOrderRegistrations(lineItems);
+    if (!regs.length) {
+        const li = lineItems?.[0];
+        if (!li) return "";
+        return formatWorkshopDisplayName(li.title || "");
+    }
+    const reg = regs[0];
+    return formatWorkshopDisplayName(reg.workshopDisplay || reg.workshop || "");
+}
+
+function workshopSessionWhenFromRow(r) {
+    const regs = workshopRegistrationsFromRow(r);
+    if (!regs.length) return "";
+    const reg = regs[0];
+    return [reg.date, reg.time].filter(Boolean).join(" · ");
+}
+
+function workshopSessionCellHtml(r) {
+    if (r.type !== "workshop") return "";
+    const name =
+        r.workshopSessionLabel ||
+        workshopSessionLabelFromLineItems(r.lineItems);
+    if (!name) return '<span class="muted">—</span>';
+    const when = workshopSessionWhenFromRow(r);
+    return `<div class="workshop-session-cell">
+        <span class="workshop-session-cell__name">${escapeHtml(name)}</span>
+        ${when ? `<span class="workshop-session-cell__when">${escapeHtml(when)}</span>` : ""}
+    </div>`;
+}
+
+function orderItemsCellHtml(r) {
+    const mode = state.typeFilter || "all";
+    if (mode === "workshop") {
+        const slots = workshopSlotCount(r);
+        const label = slots === 1 ? "1 slot" : `${slots} slots`;
+        return `<span class="order-slots-count">${escapeHtml(label)}</span>`;
+    }
+    if (mode === "product") {
+        return orderLineItemsPreviewHtml(r);
+    }
+    const n = r.item_count || 0;
+    return escapeHtml(n === 1 ? "1 item" : `${n} items`);
+}
+
+function deliveryPillVariant(r) {
+    const label = deliveryTypeLabel(r);
+    if (label === "Pickup") return "pickup";
+    if (label === "Nationwide") return "nationwide";
+    if (label === "Metro Manila") return "metro";
+    return r.deliveryMethod || "unknown";
+}
+
+function deliveryPillHtml(r) {
+    const label = deliveryTypeLabel(r);
+    if (!label) return "";
+    const variant = deliveryPillVariant(r);
+    return `<span class="delivery-pill delivery-pill--${escapeHtml(variant)}">${escapeHtml(label)}</span>`;
+}
+
 function fulfillmentStatusClass(label) {
     const raw = (label || "unfulfilled").toLowerCase();
     if (raw.includes("ready") && raw.includes("pickup")) {
         return "status-pill--fulfillment-ready_for_pickup";
     }
     if (raw.includes("partial")) return "status-pill--fulfillment-partial";
-    if (raw.includes("picked up")) {
+    if (raw.includes("picked up") && !raw.includes("ready for pickup")) {
         return "status-pill--fulfillment-fulfilled";
     }
     if (raw.includes("fulfilled") && !raw.includes("un")) {
@@ -712,6 +1342,13 @@ function typePillClass(type) {
     return type === "workshop" ? "type-pill--workshop" : "type-pill--product";
 }
 
+function needsShipOrPackToday(r) {
+    if (r.type !== "product" || r.cancelled_at) return false;
+    if (!isOrderPaid(r)) return false;
+    const status = r.orderStatus || resolveOrderStatus(r);
+    return status === "paid" || status === "to_ship" || status === "for_pickup";
+}
+
 function escapeHtml(s) {
     return String(s)
         .replace(/&/g, "&amp;")
@@ -720,46 +1357,135 @@ function escapeHtml(s) {
         .replace(/"/g, "&quot;");
 }
 
-function getFilteredRows() {
-    const q = (els.search.value || "").trim().toLowerCase();
-    const fin = els.finStatus.value;
-    const ful = els.fulStatus.value;
-    const product = els.filterProduct.value;
-    const ptype = els.filterProductType.value;
-    const tag = els.filterTag.value;
-    const typeF = state.typeFilter;
+function getFilterCriteria() {
+    return {
+        q: (els.search.value || "").trim().toLowerCase(),
+        statusFilter: els.finStatus.value,
+        product: els.filterProduct.value,
+        ptype: els.filterProductType.value,
+        tag: els.filterTag.value,
+        typeF: state.typeFilter,
+        productQueueFilter: state.productQueueFilter,
+    };
+}
 
-    return state.rows.filter((r) => {
-        if (typeF && r.type !== typeF) return false;
-        if (fin && r.financial_status !== fin) return false;
-        if (ful && r.displayFulfillment !== ful) return false;
-        if (product) {
-            const hit = r.lineItems.some(
-                (li) =>
-                    li.title === product ||
-                    (li.sku && li.sku === product)
-            );
-            if (!hit) return false;
-        }
-        if (ptype && !r.productTypes.includes(ptype)) return false;
-        if (tag && !r.tags.includes(tag)) return false;
-        if (!q) return true;
-        const blob = [
-            r.name,
-            r.customer,
-            r.email,
-            r.financial_label,
-            r.payment_method,
-            r.displayFulfillment,
-            r.type_label,
-            ...r.lineItems.map((li) => `${li.title} ${li.sku} ${li.product_type}`),
-            ...r.tags,
-            ...r.productTypes,
-        ]
-            .join(" ")
-            .toLowerCase();
-        return blob.includes(q);
-    });
+function needsServerOrderScan(criteria = getFilterCriteria()) {
+    return Boolean(
+        criteria.productQueueFilter ||
+            criteria.statusFilter ||
+            criteria.product ||
+            criteria.ptype ||
+            criteria.tag ||
+            criteria.q
+    );
+}
+
+function hasActiveListFilters(criteria = getFilterCriteria()) {
+    return Boolean(
+        criteria.typeF ||
+            criteria.productQueueFilter ||
+            criteria.statusFilter ||
+            criteria.product ||
+            criteria.ptype ||
+            criteria.tag ||
+            criteria.q
+    );
+}
+
+function rowMatchesFilters(r, criteria = getFilterCriteria()) {
+    if (criteria.typeF && r.type !== criteria.typeF) return false;
+    if (criteria.statusFilter && r.orderStatus !== criteria.statusFilter) {
+        return false;
+    }
+    if (criteria.product) {
+        const hit = r.lineItems.some(
+            (li) =>
+                li.title === criteria.product ||
+                (li.sku && li.sku === criteria.product)
+        );
+        if (!hit) return false;
+    }
+    if (criteria.ptype && !r.productTypes.includes(criteria.ptype)) return false;
+    if (criteria.tag && !r.tags.includes(criteria.tag)) return false;
+    if (criteria.productQueueFilter && !needsShipOrPackToday(r)) return false;
+    if (!criteria.q) return true;
+    const blob = [
+        r.name,
+        r.customer,
+        r.email,
+        r.financial_label,
+        r.payment_method,
+        r.orderStatusLabel,
+        r.workshopSessionLabel,
+        ...orderLineItemsPreviewLines(r, 5),
+        r.displayFulfillment,
+        r.deliveryTypeLabel,
+        r.deliveryLabel,
+        r.type_label,
+        ...r.lineItems.map((li) => `${li.title} ${li.sku} ${li.product_type}`),
+        ...r.tags,
+        ...r.productTypes,
+    ]
+        .join(" ")
+        .toLowerCase();
+    return blob.includes(criteria.q);
+}
+
+function getFilteredRows() {
+    if (!hasActiveListFilters()) return state.rows;
+    return state.rows.filter((r) => rowMatchesFilters(r));
+}
+
+function refetchOrdersForFilters({ background } = {}) {
+    setSelectionMode(false);
+    const bg = background ?? state.rows.length > 0;
+    void fetchOrders(null, "replace", { background: bg });
+}
+
+function applyClientListFilters() {
+    updateProductQueueUi();
+    updateFiltersUi();
+    renderTable();
+    updatePaginationUi();
+}
+
+function wasServerFiltered() {
+    return (
+        state.filterPageStack.length > 0 ||
+        state.filterFetchCursor != null ||
+        state.filterOverflow.length > 0
+    );
+}
+
+function clearServerFilterModeIfNeeded() {
+    if (!needsServerOrderScan() && wasServerFiltered()) {
+        resetFilterPaginationState();
+        return true;
+    }
+    return false;
+}
+
+function handleListFilterChange() {
+    updateFiltersUi();
+    if (needsServerOrderScan()) {
+        refetchOrdersForFilters();
+        return;
+    }
+    if (clearServerFilterModeIfNeeded()) {
+        void fetchOrders(null, "replace", {
+            background: state.rows.length > 0,
+        });
+        return;
+    }
+    applyClientListFilters();
+}
+
+function resetFilterPaginationState() {
+    state.filterPageStack = [];
+    state.filterOverflow = [];
+    state.filterFetchCursor = null;
+    state.filterHasMore = false;
+    state.filterPageStartOverflow = [];
 }
 
 function sortHeaderArrow(dir) {
@@ -843,29 +1569,39 @@ function fulfillmentActions(r) {
     if (r.cancelled_at) return [];
     if (r.type === "workshop") return [];
     if (r.deliveryMethod === "pickup") {
-        const ready =
-            r.canMarkPickedUp ||
-            r.pickupStage === "ready_for_pickup" ||
-            r.displayFulfillment === "Ready for pickup";
-        if (ready) {
-            return [
-                {
-                    id: "picked_up",
-                    label: "Mark as picked up",
-                    primary: true,
-                },
-            ];
+        if (r.supportsLocalPickup) {
+            const ready =
+                r.canMarkPickedUp ||
+                r.pickupStage === "ready_for_pickup" ||
+                r.displayFulfillment === "Ready for pickup";
+            if (ready) {
+                return [
+                    {
+                        id: "picked_up",
+                        label: "Mark as picked up",
+                        primary: true,
+                    },
+                ];
+            }
+            if (r.canMarkReadyForPickup) {
+                return [
+                    {
+                        id: "ready_for_pickup",
+                        label: "Mark as ready for pickup",
+                        primary: true,
+                    },
+                ];
+            }
+            return [];
         }
-        if (r.canMarkReadyForPickup) {
-            return [
-                {
-                    id: "ready_for_pickup",
-                    label: "Mark as ready for pickup",
-                    primary: true,
-                },
-            ];
-        }
-        return [];
+        if (!r.fulfillable) return [];
+        return [
+            {
+                id: "picked_up",
+                label: "Mark as picked up",
+                primary: true,
+            },
+        ];
     }
     if (!r.fulfillable) return [];
     if (r.deliveryMethod === "shipping") {
@@ -876,7 +1612,15 @@ function fulfillmentActions(r) {
 
 function renderOrderCard(r) {
     const tClass = typePillClass(r.type);
-    const itemsLabel = r.item_count === 1 ? "1 item" : `${r.item_count} items`;
+    const itemsPreview = orderLineItemsPreviewLines(r, 2).join(", ");
+    const itemsLabel =
+        r.type === "workshop"
+            ? workshopSlotCount(r) === 1
+                ? "1 slot"
+                : `${workshopSlotCount(r)} slots`
+            : itemsPreview || "—";
+    const sessionLine =
+        r.type === "workshop" ? r.workshopSessionLabel || "" : "";
     const selected =
         String(r.id) === String(state.selectedOrderId)
             ? " entity-card--selected"
@@ -891,7 +1635,15 @@ function renderOrderCard(r) {
         </div>`;
 
     const cancelledClass = r.cancelled_at ? " order-card--cancelled" : "";
-    return `<article class="entity-card order-card${r.type === "workshop" ? " order-card--workshop" : ""}${cancelledClass}${selected}" data-order-id="${r.id}" tabindex="0" role="button" aria-label="Open order ${escapeHtml(r.name)}">
+    const batchSelected = isOrderSelected(r.id) ? " order-card--batch-selected" : "";
+    const batchSelectable = state.selectionMode
+        ? " order-card--batch-selectable"
+        : "";
+    const batchCheck = state.selectionMode
+        ? `<input type="checkbox" class="order-card__batch-check" data-batch-select="${r.id}" ${isOrderSelected(r.id) ? "checked" : ""} aria-label="Select order ${escapeHtml(r.name)}" />`
+        : "";
+    return `<article class="entity-card order-card${r.type === "workshop" ? " order-card--workshop" : ""}${cancelledClass}${selected}${batchSelectable}${batchSelected}" data-order-id="${r.id}" tabindex="0" role="button" aria-label="Open order ${escapeHtml(r.name)}">
+        ${batchCheck}
         <div class="entity-card__head order-card__head">
             <span class="entity-card__title order-card__order-num">${escapeHtml(r.name)}</span>
             <span class="type-pill ${tClass}">${escapeHtml(r.type_label)}</span>
@@ -900,47 +1652,232 @@ function renderOrderCard(r) {
             <div class="order-card__left">
                 <p class="entity-card__primary">${escapeHtml(r.customer)}</p>
                 <p class="entity-card__sub">${escapeHtml(formatShopifyDate(r.created_at))}</p>
+                ${sessionLine ? `<p class="entity-card__sub entity-card__session">${escapeHtml(sessionLine)}</p>` : ""}
                 <p class="entity-card__sub entity-card__items">${escapeHtml(itemsLabel)}</p>
             </div>
             <div class="order-card__right">
                 <div class="entity-card__amount">${escapeHtml(formatMoney(r.total, r.currency))}</div>
-                <div class="entity-card__payment">
-                    ${paymentCellHtml(r.financial_status, escapeHtml(r.payment_method))}
-                </div>
+                ${r.orderStatusLabel ? `<div class="entity-card__payment">${orderStatusPillHtml(r)}</div>` : ""}
             </div>
         </div>
         ${deliveryFooter}
     </article>`;
 }
 
+function renderOrderTableRow(r) {
+    const tClass = typePillClass(r.type);
+    const selected =
+        String(r.id) === String(state.selectedOrderId)
+            ? " orders-row--selected"
+            : "";
+    const cancelledClass = r.cancelled_at ? " orders-row--cancelled" : "";
+    const batchSelected = isOrderSelected(r.id)
+        ? " orders-row--batch-selected"
+        : "";
+    const canBatch = orderHasAnyBatchAction(r);
+    const batchCell = state.selectionMode
+        ? `<td class="col-select"><input type="checkbox" class="batch-row-select" data-batch-select="${r.id}" ${isOrderSelected(r.id) ? "checked" : ""} ${canBatch ? "" : "disabled"} aria-label="Select order ${escapeHtml(r.name)}" title="${canBatch ? "" : "No batch actions apply to this order"}" /></td>`
+        : `<td class="col-select" hidden></td>`;
+    return `<tr class="orders-row${selected}${cancelledClass}${batchSelected}" data-order-id="${r.id}" tabindex="0">
+        ${batchCell}
+        <td class="col-order">${escapeHtml(r.name)}</td>
+        <td class="col-type"><span class="type-pill ${tClass}">${escapeHtml(r.type_label)}</span></td>
+        <td class="col-date">${escapeHtml(formatShopifyDate(r.created_at))}</td>
+        <td class="col-customer">${escapeHtml(r.customer)}</td>
+        <td class="col-session">${workshopSessionCellHtml(r)}</td>
+        <td class="col-items">${orderItemsCellHtml(r)}</td>
+        <td class="col-total num">${escapeHtml(formatMoney(r.total, r.currency))}</td>
+        <td class="col-delivery">${deliveryPillHtml(r)}</td>
+        <td class="col-status">${orderStatusPillHtml(r)}</td>
+    </tr>`;
+}
+
 function renderOrdersTableRows(list) {
-    els.tbody.innerHTML = list
-        .map((r) => {
-            const fulClass = fulfillmentStatusClass(r.displayFulfillment);
-            const tClass = typePillClass(r.type);
-            const itemsLabel =
-                r.item_count === 1 ? "1 item" : `${r.item_count} items`;
-            const selected =
-                String(r.id) === String(state.selectedOrderId)
-                    ? " orders-row--selected"
-                    : "";
-            const cancelledClass = r.cancelled_at ? " orders-row--cancelled" : "";
-            return `<tr class="orders-row${selected}${cancelledClass}" data-order-id="${r.id}" tabindex="0">
-                <td class="col-order">${escapeHtml(r.name)}</td>
-                <td class="col-type"><span class="type-pill ${tClass}">${escapeHtml(r.type_label)}</span></td>
-                <td class="col-date">${escapeHtml(formatShopifyDate(r.created_at))}</td>
-                <td class="col-customer">${escapeHtml(r.customer)}</td>
-                <td class="col-items">${escapeHtml(itemsLabel)}</td>
-                <td class="col-total num">${escapeHtml(formatMoney(r.total, r.currency))}</td>
-                <td class="col-paid">${paidIconHtml(r.financial_status)}</td>
-                <td class="col-payment">${escapeHtml(r.payment_method)}</td>
-                <td class="col-fulfillment"><span class="status-pill ${fulClass}">${escapeHtml(r.displayFulfillment)}</span></td>
-            </tr>`;
-        })
-        .join("");
+    els.tbody.innerHTML = list.map((r) => renderOrderTableRow(r)).join("");
+}
+
+function patchListRowDom(r) {
+    const id = String(r.id);
+    const list = getFilteredRows();
+    if (!list.some((row) => String(row.id) === id)) return;
+    const tr = els.tbody?.querySelector(
+        `tr[data-order-id="${CSS.escape(id)}"]`
+    );
+    if (tr) tr.outerHTML = renderOrderTableRow(r);
+    const card = els.ordersCardList?.querySelector(
+        `[data-order-id="${CSS.escape(id)}"]`
+    );
+    if (card) card.outerHTML = renderOrderCard(r);
+}
+
+function upsertListRowFromOrder(o, productMap) {
+    const row = withOrderStatus(normalizeApiOrder(o, productMap));
+    const idx = state.rows.findIndex(
+        (x) => String(x.id) === String(row.id)
+    );
+    if (idx >= 0) state.rows[idx] = row;
+    patchListRowDom(row);
+    return row;
+}
+
+function syncListRowFromDetail(detailOrder) {
+    const idx = state.rows.findIndex(
+        (x) => String(x.id) === String(detailOrder.id)
+    );
+    if (idx < 0) return;
+    const row = withOrderStatus({
+        ...state.rows[idx],
+        displayFulfillment: detailOrder.displayFulfillment,
+        deliveryMethod: detailOrder.deliveryMethod,
+        deliveryLabel: detailOrder.deliveryLabel,
+        deliveryMethodDisplay: detailOrder.deliveryMethodDisplay,
+        deliveryTypeLabel: detailOrder.deliveryTypeLabel,
+        fulfillable: detailOrder.fulfillable,
+        pickupStage: detailOrder.pickupStage,
+        canMarkReadyForPickup: detailOrder.canMarkReadyForPickup,
+        canMarkPickedUp: detailOrder.canMarkPickedUp,
+        supportsLocalPickup: detailOrder.supportsLocalPickup,
+        fulfillment_status: detailOrder.fulfillment_status,
+        financial_status: detailOrder.financial_status,
+        financial_label: detailOrder.financial_label,
+        cancelled_at: detailOrder.cancelled_at,
+    });
+    state.rows[idx] = row;
+    patchListRowDom(row);
+}
+
+async function applyOrderDetailFromApi(data) {
+    const productMap = await productMapFromOrdersResponse(
+        [data.order],
+        data.products
+    );
+    state.productMap = { ...state.productMap, ...productMap };
+
+    const orderId = data.order.id;
+    const isWorkshop =
+        orderTypeFromLineItems(
+            buildLineItems(data.order, state.productMap),
+            state.productMap
+        ) === "workshop";
+    const fulfillmentContext = await loadFulfillmentContextForOrder(
+        orderId,
+        data.order,
+        data.fulfillment_context,
+        { isWorkshop }
+    );
+    const bundleByLineId = mergeLineItemBundleMeta(
+        data.order.line_items || [],
+        data.line_item_bundles || {}
+    );
+    state.detailOrder = withOrderStatus({
+        ...normalizeDetailOrder(
+            data.order,
+            state.productMap,
+            fulfillmentContext,
+            data.inferred_registrations || [],
+            bundleByLineId
+        ),
+        inferred_registrations: data.inferred_registrations || [],
+    });
+    syncListRowFromDetail(state.detailOrder);
+    renderDetailPane(state.detailOrder);
+    return state.detailOrder;
+}
+
+async function refreshOrderAfterAction(orderId) {
+    els.detailPaneBody?.setAttribute("aria-busy", "true");
+    try {
+        const { res, data } = await fetchJsonWithRetry(
+            `/api/orders/${orderId}`
+        );
+        if (!res.ok) {
+            throw new Error(data.error || res.statusText || "Request failed");
+        }
+        await applyOrderDetailFromApi(data);
+    } finally {
+        els.detailPaneBody?.removeAttribute("aria-busy");
+    }
+}
+
+function updateProductQueueUi() {
+    const show = state.typeFilter === "product";
+    if (!els.btnProductQueue) return;
+    els.btnProductQueue.hidden = !show;
+    if (!show) state.productQueueFilter = false;
+    els.btnProductQueue.classList.toggle(
+        "product-queue-btn--active",
+        Boolean(state.productQueueFilter)
+    );
+    els.btnProductQueue.setAttribute(
+        "aria-pressed",
+        state.productQueueFilter ? "true" : "false"
+    );
+}
+
+function updateTableHeaders() {
+    const mode = state.typeFilter || "all";
+    const itemsTh = document.querySelector("#ordersTable th.col-items");
+    if (!itemsTh) return;
+    const label = mode === "workshop" ? "Slots" : "Items";
+    itemsTh.dataset.sortLabel = label;
+    if (itemsTh.getAttribute("data-sort") !== state.sortKey) {
+        itemsTh.textContent = label;
+    }
+}
+
+function updateOrdersViewMode() {
+    const table = els.ordersTable;
+    if (!table) return;
+    table.classList.remove(
+        "orders-view--all",
+        "orders-view--workshop",
+        "orders-view--product"
+    );
+    const mode = state.typeFilter || "all";
+    table.classList.add(`orders-view--${mode}`);
+    updateTableHeaders();
+    updateProductQueueUi();
+}
+
+function renderTableSkeleton() {
+    const skeletonRow = `<tr class="orders-row orders-row--skeleton" aria-hidden="true">
+        <td class="col-select" hidden><span class="table-skeleton-bar table-skeleton-bar--short"></span></td>
+        <td class="col-order"><span class="table-skeleton-bar"></span></td>
+        <td class="col-type"><span class="table-skeleton-bar table-skeleton-bar--short"></span></td>
+        <td class="col-date"><span class="table-skeleton-bar table-skeleton-bar--short"></span></td>
+        <td class="col-customer"><span class="table-skeleton-bar"></span></td>
+        <td class="col-session"><span class="table-skeleton-bar table-skeleton-bar--short"></span></td>
+        <td class="col-items"><span class="table-skeleton-bar"></span></td>
+        <td class="col-total"><span class="table-skeleton-bar table-skeleton-bar--short"></span></td>
+        <td class="col-delivery"><span class="table-skeleton-bar table-skeleton-bar--short"></span></td>
+        <td class="col-status"><span class="table-skeleton-bar table-skeleton-bar--short"></span></td>
+    </tr>`;
+    els.tbody.innerHTML = skeletonRow.repeat(8);
+    if (els.ordersCardList) {
+        els.ordersCardList.innerHTML = Array.from(
+            { length: 5 },
+            () =>
+                `<article class="entity-card entity-card--skeleton" aria-hidden="true">
+                    <span class="table-skeleton-bar"></span>
+                    <span class="table-skeleton-bar table-skeleton-bar--short"></span>
+                </article>`
+        ).join("");
+    }
+}
+
+function setTableLoading(loading) {
+    state.loading = loading;
+    els.listPane?.classList.toggle("list-pane--loading", Boolean(loading));
+    if (loading) {
+        setStatus("Loading orders…");
+        renderTableSkeleton();
+        els.btnPrev.disabled = true;
+        els.btnNext.disabled = true;
+    }
 }
 
 function renderTable() {
+    updateOrdersViewMode();
     const list = getFilteredRows();
     sortRowsInPlace(list);
     updateSortHeaderIndicators();
@@ -954,22 +1891,56 @@ function renderTable() {
 }
 
 function updatePaginationUi() {
-    els.btnPrev.disabled = state.loading || !state.previousPageInfo;
-    els.btnNext.disabled = state.loading || !state.nextPageInfo;
-    const count = state.rows.length;
+    const filteredMode = needsServerOrderScan();
+    els.btnPrev.disabled =
+        state.loading ||
+        (filteredMode
+            ? state.filterPageStack.length === 0
+            : !state.previousPageInfo);
+    els.btnNext.disabled =
+        state.loading ||
+        (filteredMode ? !state.filterHasMore : !state.nextPageInfo);
+    const count = getFilteredRows().length;
     let label = `Page ${state.pageNumber}`;
-    if (count) label += ` · ${count} orders`;
+    if (count) {
+        label += ` · ${count} order${count === 1 ? "" : "s"}`;
+        if (filteredMode && state.filterHasMore) label += "+";
+    }
     els.pageIndicator.textContent = label;
 }
 
-function setDetailLoading(loading) {
-    const overlay = document.getElementById("detailLoadingOverlay");
-    if (overlay) {
-        overlay.classList.toggle("hidden", !loading);
-        overlay.setAttribute("aria-hidden", loading ? "false" : "true");
+function findListRowById(orderId) {
+    return (
+        state.rows.find((r) => String(r.id) === String(orderId)) || null
+    );
+}
+
+function listRowToDetailPreview(row) {
+    return {
+        ...row,
+        order_tags: row.tags || [],
+        billing_address: null,
+        shipping_address: null,
+        phone: "",
+        note: "",
+        subtotal: null,
+        shipping: 0,
+        inferred_registrations: [],
+    };
+}
+
+function setDetailLoading(loading, { overlay = true } = {}) {
+    const overlayEl = document.getElementById("detailLoadingOverlay");
+    if (overlayEl) {
+        overlayEl.classList.toggle("hidden", !loading || !overlay);
+        overlayEl.setAttribute(
+            "aria-hidden",
+            loading && overlay ? "false" : "true"
+        );
     }
-    els.detailPaneHeader.classList.toggle("hidden", loading);
-    if (loading) {
+    els.detailPane?.classList.toggle("detail-pane--loading", Boolean(loading));
+    if (loading && overlay) {
+        els.detailPaneHeader.classList.add("hidden");
         els.detailPaneHeader.innerHTML = "";
         els.detailPaneBody.innerHTML = "";
     }
@@ -1031,50 +2002,34 @@ function setOrdersSyncing(active) {
     els.listPane?.classList.toggle("list-pane--syncing", Boolean(active));
 }
 
-async function openOrderDetail(orderId, { background = false } = {}) {
+async function openOrderDetail(orderId, { background = false, skipListRender = false } = {}) {
     if (!isLiveHost()) return;
     state.selectedOrderId = orderId;
     setSplitMode(true);
-    renderTable();
+    if (!skipListRender) renderTable();
+    const listRowData = findListRowById(orderId);
     const listRow = els.tbody?.querySelector(
         `tr[data-order-id="${CSS.escape(String(orderId))}"]`
     );
     if (!background) {
         listRow?.scrollIntoView({ block: "nearest" });
         state.detailLoading = true;
-        setDetailLoading(true);
+        if (listRowData) {
+            renderDetailPane(listRowToDetailPreview(listRowData), {
+                preview: true,
+            });
+            setDetailLoading(true, { overlay: false });
+        } else {
+            setDetailLoading(true, { overlay: true });
+        }
     }
 
     try {
-        const res = await fetch(`/api/orders/${orderId}`);
-        const data = await res.json().catch(() => ({}));
+        const { res, data } = await fetchJsonWithRetry(`/api/orders/${orderId}`);
         if (!res.ok) {
             throw new Error(data.error || res.statusText);
         }
-        const productMap = {};
-        for (const p of data.products || []) {
-            productMap[p.id] = p;
-        }
-        const isWorkshop =
-            orderTypeFromLineItems(
-                buildLineItems(data.order, productMap),
-                productMap
-            ) === "workshop";
-        const fulfillmentContext = await loadFulfillmentContextForOrder(
-            orderId,
-            data.order,
-            data.fulfillment_context,
-            { isWorkshop }
-        );
-        state.detailOrder = {
-            ...normalizeDetailOrder(
-                data.order,
-                productMap,
-                fulfillmentContext
-            ),
-            inferred_registrations: data.inferred_registrations || [],
-        };
-        renderDetailPane(state.detailOrder);
+        await applyOrderDetailFromApi(data);
     } catch (e) {
         if (!background) {
             setDetailLoading(false);
@@ -1083,6 +2038,93 @@ async function openOrderDetail(orderId, { background = false } = {}) {
     } finally {
         state.detailLoading = false;
     }
+}
+
+function groupDetailLineItems(lineItems) {
+    const bundleMap = new Map();
+    const blocks = [];
+    const emitted = new Set();
+
+    for (const li of lineItems || []) {
+        if (!li.bundleGroupId) continue;
+        if (!bundleMap.has(li.bundleGroupId)) {
+            bundleMap.set(li.bundleGroupId, {
+                id: li.bundleGroupId,
+                title: li.bundleTitle || "Bundle",
+                quantity: li.bundleQuantity || 1,
+                items: [],
+            });
+        }
+        bundleMap.get(li.bundleGroupId).items.push(li);
+    }
+
+    for (const li of lineItems || []) {
+        if (!li.bundleGroupId) {
+            blocks.push({ type: "item", item: li });
+            continue;
+        }
+        if (emitted.has(li.bundleGroupId)) continue;
+        emitted.add(li.bundleGroupId);
+        blocks.push({ type: "bundle", ...bundleMap.get(li.bundleGroupId) });
+    }
+    return blocks;
+}
+
+function renderDetailLineItemHtml(li, r, { component = false } = {}) {
+    const lineTotal = Number(li.price) * (li.quantity || 1);
+    const thumb = li.image_url
+        ? `<img class="detail-line-thumb" src="${escapeHtml(li.image_url)}" alt="" />`
+        : `<span class="detail-line-thumb detail-line-thumb--empty" aria-hidden="true"></span>`;
+    const variant = li.variant_title
+        ? `<div class="detail-line-variant">${escapeHtml(li.variant_title)}</div>`
+        : "";
+    const qtyLine = component
+        ? `<div class="detail-line-variant detail-line-variant--bundle-component">${escapeHtml(formatMoney(li.price, r.currency))} × ${li.quantity}</div>`
+        : `<div class="detail-line-variant">${escapeHtml(formatMoney(li.price, r.currency))} × ${li.quantity}</div>`;
+    const itemClass = component ? " detail-line-item--component" : "";
+    const priceHtml = component
+        ? `<div class="detail-line-price detail-line-price--component">${escapeHtml(formatMoney(lineTotal, r.currency))}</div>`
+        : `<div class="detail-line-price">${escapeHtml(formatMoney(lineTotal, r.currency))}</div>`;
+    return `<li class="detail-line-item${itemClass}">
+        ${thumb}
+        <div class="detail-line-info">
+            <div class="detail-line-title">${escapeHtml(li.title)}</div>
+            ${variant}
+            ${qtyLine}
+        </div>
+        ${priceHtml}
+    </li>`;
+}
+
+function renderDetailLineItemsHtml(r) {
+  return groupDetailLineItems(r.lineItems)
+        .map((block) => {
+            if (block.type === "item") {
+                return renderDetailLineItemHtml(block.item, r);
+            }
+            const bundleQty =
+                block.quantity > 1 ? ` × ${block.quantity}` : "";
+            const components = block.items
+                .map((li) => renderDetailLineItemHtml(li, r, { component: true }))
+                .join("");
+            const bundleTotal = block.items.reduce(
+                (sum, li) => sum + Number(li.price) * (li.quantity || 1),
+                0
+            );
+            return `<li class="detail-line-bundle">
+                <div class="detail-line-bundle__head">
+                    <div class="detail-line-bundle__identity">
+                        <span class="detail-line-bundle__title">${escapeHtml(block.title)}${escapeHtml(bundleQty)}</span>
+                        <span class="detail-line-bundle__badge">Bundle</span>
+                    </div>
+                    <span class="detail-line-bundle__total">${escapeHtml(formatMoney(bundleTotal, r.currency))}</span>
+                </div>
+                <ul class="detail-line-bundle__items" aria-label="Bundle contents">
+                    ${components}
+                </ul>
+            </li>`;
+        })
+        .join("");
 }
 
 function buildDetailActionButtons(r) {
@@ -1101,42 +2143,29 @@ function buildDetailActionButtons(r) {
     return html;
 }
 
-function renderDetailPane(r) {
-    setDetailLoading(false);
+function renderDetailPane(r, { preview = false } = {}) {
+    if (!preview) {
+        setDetailLoading(false);
+        els.detailPane?.classList.remove("detail-pane--preview");
+    } else {
+        els.detailPane?.classList.add("detail-pane--preview");
+    }
     els.detailPaneHeader.classList.remove("hidden");
     els.detailPaneHeader.innerHTML = renderDetailHeader(r);
 
-    const lineItemsHtml = r.lineItems
-        .map((li) => {
-            const thumb = li.image_url
-                ? `<img class="detail-line-thumb" src="${escapeHtml(li.image_url)}" alt="" />`
-                : `<span class="detail-line-thumb detail-line-thumb--empty" aria-hidden="true"></span>`;
-            const variant = li.variant_title
-                ? `<div class="detail-line-variant">${escapeHtml(li.variant_title)}</div>`
-                : "";
-            const lineTotal =
-                Number(li.price) * (li.quantity || 1);
-            return `<li class="detail-line-item">
-                ${thumb}
-                <div class="detail-line-info">
-                    <div class="detail-line-title">${escapeHtml(li.title)}</div>
-                    ${variant}
-                    <div class="detail-line-variant">${escapeHtml(formatMoney(li.price, r.currency))} × ${li.quantity}</div>
-                </div>
-                <div class="detail-line-price">${escapeHtml(formatMoney(lineTotal, r.currency))}</div>
-            </li>`;
-        })
-        .join("");
+    const lineItemsHtml = renderDetailLineItemsHtml(r);
 
     const itemLabel =
         r.item_count === 1 ? "1 item" : `${r.item_count} items`;
-    const bill = formatAddress(r.billing_address);
-    const ship = formatAddress(r.shipping_address);
-    const tagsHtml = r.order_tags.length
+    const bill = preview ? "" : formatAddress(r.billing_address);
+    const ship = preview ? "" : formatAddress(r.shipping_address);
+    const tagsHtml = (r.order_tags || []).length
         ? r.order_tags
               .map((t) => `<span class="detail-tag">${escapeHtml(t)}</span>`)
               .join("")
-        : '<span class="muted">No tags</span>';
+        : preview
+          ? '<span class="detail-skeleton detail-skeleton--inline" aria-hidden="true"></span>'
+          : '<span class="muted">No tags</span>';
 
     const contactBits = [
         r.email
@@ -1145,23 +2174,20 @@ function renderDetailPane(r) {
         r.phone ? `<span>${escapeHtml(r.phone)}</span>` : "",
     ].filter(Boolean);
 
-    els.detailPaneBody.innerHTML = `
-        <section class="detail-card detail-card--order">
-            <div class="detail-card-head">
-                <h3 class="detail-card-title">Fulfillment${r.type !== "workshop" ? ` · ${escapeHtml(r.displayFulfillment)}` : ""}</h3>
-                <p class="detail-meta detail-card-subtitle">${escapeHtml(itemLabel)}</p>
-            </div>
-            <ul class="detail-line-items">${lineItemsHtml || '<li class="muted">No line items</li>'}</ul>
-            ${renderOrderTotalsFooter(r)}
-            ${renderOrderFooterBar(r)}
-            ${renderPaymentCancelActions(r)}
-        </section>
-        ${renderRegistrationSection(r)}
-        <section class="detail-card">
-            <h3 class="detail-card-title">Customer</h3>
-            <p><strong>${escapeHtml(r.customer)}</strong></p>
-            ${contactBits.length ? `<div class="detail-contact-row">${contactBits.join("")}</div>` : ""}
-            <div class="detail-customer-grid">
+    const customerAddressesHtml = preview
+        ? `<div class="detail-customer-grid detail-customer-grid--loading" aria-busy="true">
+                <div class="detail-customer-block">
+                    <h4>Billing address</h4>
+                    <p class="detail-skeleton" aria-hidden="true"></p>
+                    <p class="detail-skeleton detail-skeleton--short" aria-hidden="true"></p>
+                </div>
+                <div class="detail-customer-block">
+                    <h4>Shipping address</h4>
+                    <p class="detail-skeleton" aria-hidden="true"></p>
+                    <p class="detail-skeleton detail-skeleton--short" aria-hidden="true"></p>
+                </div>
+            </div>`
+        : `<div class="detail-customer-grid">
                 <div class="detail-customer-block">
                     <h4>Billing address</h4>
                     <p class="detail-address">${bill ? escapeHtml(bill) : "—"}</p>
@@ -1170,11 +2196,33 @@ function renderDetailPane(r) {
                     <h4>Shipping address</h4>
                     <p class="detail-address">${ship ? escapeHtml(ship) : "No shipping address provided"}</p>
                 </div>
+            </div>`;
+
+    const notesHtml = preview
+        ? '<p class="detail-skeleton detail-skeleton--note" aria-hidden="true"></p>'
+        : `<p>${r.note ? escapeHtml(r.note) : '<span class="muted">No notes from customer</span>'}</p>`;
+
+    els.detailPaneBody.innerHTML = `
+        <section class="detail-card detail-card--order">
+            <div class="detail-card-head">
+                <h3 class="detail-card-title">Order${r.type !== "workshop" && r.orderStatusLabel ? ` · ${escapeHtml(r.orderStatusLabel)}` : ""}</h3>
+                <p class="detail-meta detail-card-subtitle">${escapeHtml(itemLabel)}</p>
             </div>
+            <ul class="detail-line-items">${lineItemsHtml || '<li class="muted">No line items</li>'}</ul>
+            ${renderOrderTotalsFooter(r)}
+            ${preview ? "" : renderOrderFooterBar(r)}
+            ${preview ? "" : renderPaymentCancelActions(r)}
+        </section>
+        ${renderRegistrationSection(r)}
+        <section class="detail-card">
+            <h3 class="detail-card-title">Customer</h3>
+            <p><strong>${escapeHtml(r.customer)}</strong></p>
+            ${contactBits.length ? `<div class="detail-contact-row">${contactBits.join("")}</div>` : ""}
+            ${customerAddressesHtml}
         </section>
         <section class="detail-card">
             <h3 class="detail-card-title">Notes</h3>
-            <p>${r.note ? escapeHtml(r.note) : '<span class="muted">No notes from customer</span>'}</p>
+            ${notesHtml}
         </section>
         <section class="detail-card">
             <h3 class="detail-card-title">Tags</h3>
@@ -1204,7 +2252,10 @@ function renderDetailPane(r) {
             const action = btn.getAttribute("data-detail-action");
             const intent = btn.getAttribute("data-intent");
             const orderId = btn.getAttribute("data-order-id");
-            runOrderAction(orderId, action, intent);
+            if (btn.disabled || btn.classList.contains("detail-action-btn--pending")) {
+                return;
+            }
+            runOrderAction(orderId, action, intent, btn);
         });
     });
 }
@@ -1218,6 +2269,30 @@ async function fetchConfig() {
         if (cfg.shop) state.shopHandle = cfg.shop;
     } catch {
         /* ignore */
+    }
+}
+
+async function productMapFromOrdersResponse(orders, embeddedProducts) {
+    if (Array.isArray(embeddedProducts) && embeddedProducts.length) {
+        const map = {};
+        for (const p of embeddedProducts) {
+            map[p.id] = p;
+        }
+        return map;
+    }
+    return fetchProductsForOrders(orders);
+}
+
+async function runOrdersPostLoadTasks(batch) {
+    try {
+        await sleep(3000);
+        await refreshBotPaymentMap(batch.map((r) => r.id));
+        const autoFulfilled = await autoFulfillCompletedWorkshops(batch);
+        if (autoFulfilled) {
+            await fetchOrders(state.pageCursor, "stay", { background: true });
+        }
+    } catch (e) {
+        console.warn("Post-load order tasks failed:", e);
     }
 }
 
@@ -1245,6 +2320,73 @@ async function fetchProductsForOrders(orders) {
     }
 }
 
+async function fetchOrdersApiBatch(pageInfo = null) {
+    const qs = new URLSearchParams();
+    qs.set("limit", String(ORDERS_PAGE_SIZE));
+    if (pageInfo) qs.set("page_info", pageInfo);
+
+    const { res, data } = await fetchJsonWithRetry(`/api/orders?${qs}`);
+    if (!res.ok) {
+        throw new Error(data.error || res.statusText || "Request failed");
+    }
+    return data;
+}
+
+async function normalizeOrdersBatch(orders, embeddedProducts) {
+    const productMap = await productMapFromOrdersResponse(
+        orders || [],
+        embeddedProducts
+    );
+    state.productMap = { ...state.productMap, ...productMap };
+    return (orders || []).map((o) => normalizeApiOrder(o, state.productMap));
+}
+
+async function fillFilteredOrdersPage({
+    startCursor = null,
+    initialOverflow = [],
+} = {}) {
+    const criteria = getFilterCriteria();
+    const matches = [];
+    let overflow = [...initialOverflow];
+    let apiCursor = startCursor;
+    let scanPages = 0;
+
+    while (matches.length < ORDERS_PAGE_SIZE) {
+        while (overflow.length && matches.length < ORDERS_PAGE_SIZE) {
+            matches.push(overflow.shift());
+        }
+        if (matches.length >= ORDERS_PAGE_SIZE) break;
+        if (apiCursor === false) break;
+
+        scanPages += 1;
+        if (scanPages > MAX_FILTER_SCAN_PAGES) break;
+
+        const data = await fetchOrdersApiBatch(apiCursor);
+        const batch = await normalizeOrdersBatch(
+            data.orders || [],
+            data.products
+        );
+
+        for (const row of batch) {
+            if (!rowMatchesFilters(row, criteria)) continue;
+            if (matches.length < ORDERS_PAGE_SIZE) matches.push(row);
+            else overflow.push(row);
+        }
+
+        apiCursor = data.nextPageInfo || false;
+        if (!data.nextPageInfo) break;
+    }
+
+    return {
+        rows: matches,
+        overflow,
+        fetchCursor: apiCursor === false ? null : apiCursor,
+        hasMore:
+            overflow.length > 0 ||
+            (apiCursor !== false && apiCursor != null),
+    };
+}
+
 async function fetchOrders(
     pageInfo = null,
     direction = "replace",
@@ -1256,54 +2398,90 @@ async function fetchOrders(
     }
     if (ordersFetchInProgress) return;
 
-    const qs = new URLSearchParams();
-    qs.set("limit", "50");
-    if (pageInfo) qs.set("page_info", pageInfo);
+    const filteredMode = needsServerOrderScan();
+    const useBackground =
+        background ||
+        (direction === "replace" && !pageInfo && state.rows.length > 0);
 
     ordersFetchInProgress = true;
-    if (background) {
+    if (useBackground) {
         setOrdersSyncing(true);
     } else {
-        state.loading = true;
-        els.btnRefresh.disabled = true;
-        els.btnPrev.disabled = true;
-        els.btnNext.disabled = true;
-        setStatus("");
+        setTableLoading(true);
     }
 
     try {
-        const res = await fetch(`/api/orders?${qs}`);
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-            throw new Error(data.error || res.statusText || "Request failed");
+        if (filteredMode) {
+            let startCursor = null;
+            let initialOverflow = [];
+
+            if (direction === "replace") {
+                resetFilterPaginationState();
+                state.pageNumber = 1;
+            } else if (direction === "next") {
+                state.filterPageStack.push({
+                    startCursor: state.pageCursor,
+                    overflow: [...state.filterPageStartOverflow],
+                });
+                startCursor = state.filterFetchCursor;
+                initialOverflow = [...state.filterOverflow];
+                state.pageNumber += 1;
+            } else if (direction === "prev") {
+                const prev = state.filterPageStack.pop();
+                if (!prev) return;
+                startCursor = prev.startCursor;
+                initialOverflow = [...prev.overflow];
+                state.pageNumber = Math.max(1, state.pageNumber - 1);
+            } else if (direction === "stay") {
+                startCursor = state.pageCursor;
+                initialOverflow = [...state.filterPageStartOverflow];
+            }
+
+            const result = await fillFilteredOrdersPage({
+                startCursor,
+                initialOverflow,
+            });
+
+            state.rows = result.rows;
+            state.filterOverflow = result.overflow;
+            state.filterFetchCursor = result.fetchCursor;
+            state.filterHasMore = result.hasMore;
+            state.pageCursor = startCursor;
+            state.filterPageStartOverflow = initialOverflow;
+            state.nextPageInfo = result.hasMore ? "filtered" : null;
+            state.previousPageInfo =
+                state.filterPageStack.length > 0 ? "filtered" : null;
+        } else {
+            resetFilterPaginationState();
+
+            const data = await fetchOrdersApiBatch(pageInfo);
+            const batch = await normalizeOrdersBatch(
+                data.orders || [],
+                data.products
+            );
+
+            state.rows = batch;
+            state.nextPageInfo = data.nextPageInfo || null;
+            state.previousPageInfo = data.previousPageInfo || null;
+            state.pageCursor = pageInfo;
+
+            if (direction === "next") state.pageNumber += 1;
+            else if (direction === "prev") {
+                state.pageNumber = Math.max(1, state.pageNumber - 1);
+            } else if (!pageInfo) state.pageNumber = 1;
         }
 
-        const productMap = await fetchProductsForOrders(data.orders || []);
-        state.productMap = { ...state.productMap, ...productMap };
-        const batch = (data.orders || []).map((o) =>
-            normalizeApiOrder(o, state.productMap)
-        );
-
-        state.rows = batch;
-        state.nextPageInfo = data.nextPageInfo || null;
-        state.previousPageInfo = data.previousPageInfo || null;
-        state.pageCursor = pageInfo;
-
-        if (direction === "next") state.pageNumber += 1;
-        else if (direction === "prev") {
-            state.pageNumber = Math.max(1, state.pageNumber - 1);
-        } else if (!pageInfo) state.pageNumber = 1;
-
-        if (!background) setStatus("");
         populateFilterOptions();
-        await refreshBotPaymentMap(batch.map((r) => r.id));
         renderTable();
 
         lastOrdersFetchAt = Date.now();
         ordersFetchComplete = true;
 
+        if (!useBackground) setStatus("");
+        void runOrdersPostLoadTasks(state.rows);
+
         if (state.selectedOrderId) {
-            const still = batch.some(
+            const still = state.rows.some(
                 (r) => String(r.id) === String(state.selectedOrderId)
             );
             if (still || !state.detailOrder) {
@@ -1311,25 +2489,24 @@ async function fetchOrders(
             }
         }
     } catch (e) {
-        if (!background) setStatus(e.message || String(e), true);
+        if (!useBackground) setStatus(e.message || String(e), true);
     } finally {
         ordersFetchInProgress = false;
-        if (background) {
+        if (useBackground) {
             setOrdersSyncing(false);
         } else {
             state.loading = false;
-            els.btnRefresh.disabled = false;
+            els.listPane?.classList.remove("list-pane--loading");
         }
         updatePaginationUi();
     }
 }
 
 function populateFilterOptions() {
-    const fins = [...new Set(state.rows.map((r) => r.financial_status))].filter(
-        Boolean
-    );
-    const fuls = [...new Set(state.rows.map((r) => r.displayFulfillment))].filter(
-        Boolean
+    const statuses = [
+        ...new Set(state.rows.map((r) => r.orderStatus).filter(Boolean)),
+    ].sort(
+        (a, b) => ORDER_STATUS_SORT.indexOf(a) - ORDER_STATUS_SORT.indexOf(b)
     );
     const products = [
         ...new Set(
@@ -1344,8 +2521,7 @@ function populateFilterOptions() {
     const tags = [...new Set(state.rows.flatMap((r) => r.tags))].sort();
 
     const keep = {
-        fin: els.finStatus.value,
-        ful: els.fulStatus.value,
+        status: els.finStatus.value,
         product: els.filterProduct.value,
         ptype: els.filterProductType.value,
         tag: els.filterTag.value,
@@ -1353,15 +2529,12 @@ function populateFilterOptions() {
 
     els.finStatus.innerHTML =
         '<option value="">All</option>' +
-        fins
+        statuses
             .map(
-                (x) =>
-                    `<option value="${escapeHtml(x)}">${escapeHtml(displayFinancialStatus(x))}</option>`
+                (key) =>
+                    `<option value="${escapeHtml(key)}">${escapeHtml(ORDER_STATUS_LABEL[key] || key)}</option>`
             )
             .join("");
-    els.fulStatus.innerHTML =
-        '<option value="">All</option>' +
-        fuls.map((x) => `<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join("");
     els.filterProduct.innerHTML =
         '<option value="">All</option>' +
         products.map((x) => `<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join("");
@@ -1372,47 +2545,13 @@ function populateFilterOptions() {
         '<option value="">All</option>' +
         tags.map((x) => `<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join("");
 
-    if (fins.includes(keep.fin)) els.finStatus.value = keep.fin;
-    if (fuls.includes(keep.ful)) els.fulStatus.value = keep.ful;
+    if (statuses.includes(keep.status)) els.finStatus.value = keep.status;
     if (products.includes(keep.product)) els.filterProduct.value = keep.product;
     if (types.includes(keep.ptype)) els.filterProductType.value = keep.ptype;
     if (tags.includes(keep.tag)) els.filterTag.value = keep.tag;
 }
 
-async function runOrderAction(orderId, action, intent = null) {
-    setStatus("");
-    if (action === "cancel") {
-        const order =
-            state.detailOrder ||
-            state.rows.find((r) => String(r.id) === String(orderId));
-        const choice = await confirmCancelOrder(order || {});
-        if (!choice) return;
-        try {
-            await postCancelOrder(orderId, { refund: choice.refund });
-            setStatus("");
-            closeOrderDetail();
-            await fetchOrders(state.pageCursor, "stay");
-        } catch (e) {
-            setStatus(e.message || String(e), true);
-        }
-        return;
-    }
-
-    if (action === "refund") {
-        if (!(await confirmRefundPayment())) return;
-        try {
-            await postRefundOrder(orderId);
-            setStatus("");
-            if (state.selectedOrderId) {
-                await openOrderDetail(orderId);
-            }
-            await fetchOrders(state.pageCursor, "stay");
-        } catch (e) {
-            setStatus(e.message || String(e), true);
-        }
-        return;
-    }
-
+async function postOrderAction(orderId, action, intent = null) {
     const url =
         action === "fulfill"
             ? `/api/orders/${orderId}/fulfill`
@@ -1424,19 +2563,109 @@ async function runOrderAction(orderId, action, intent = null) {
     if (action === "fulfill") {
         opts.body = JSON.stringify({ intent });
     }
+    const { res, data } = await fetchJsonWithRetry(url, opts);
+    if (!res.ok) {
+        const msg =
+            data.error ||
+            (res.status === 406
+                ? "This action is not supported for this order."
+                : res.statusText) ||
+            "Request failed";
+        throw new Error(data.hint ? `${msg} ${data.hint}` : msg);
+    }
+    return data;
+}
+
+async function runBatchAction(def) {
+    if (state.batchActionInProgress || !def) return;
+    const targets = selectedRowsForBatchAction(def);
+    if (!targets.length) return;
+
+    state.batchActionInProgress = true;
+    updateBatchSelectionUi();
+    let done = 0;
+    let failed = 0;
+    const pendingLabel = actionPendingLabel(def.action, def.intent);
     try {
-        const res = await fetch(url, opts);
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-            const msg = data.error || res.statusText || "Request failed";
-            throw new Error(data.hint ? `${msg} ${data.hint}` : msg);
+        for (const row of targets) {
+            setStatus(`${pendingLabel.replace(/…$/, "")} ${done + 1} of ${targets.length}…`);
+            try {
+                await postOrderAction(row.id, def.action, def.intent);
+                await refreshOrderAfterAction(row.id);
+                state.selectedOrderIds.delete(String(row.id));
+                done += 1;
+            } catch (e) {
+                failed += 1;
+                setStatus(
+                    `${row.name}: ${e.message || String(e)}`,
+                    true
+                );
+                break;
+            }
+            if (done < targets.length) await sleep(650);
         }
+        if (!failed) {
+            const doneLabel =
+                def.action === "mark-paid"
+                    ? done === 1
+                        ? "1 order marked as paid."
+                        : `${done} orders marked as paid.`
+                    : done === 1
+                      ? `1 order updated.`
+                      : `${done} orders updated.`;
+            setStatus(doneLabel);
+        }
+    } finally {
+        state.batchActionInProgress = false;
+        updateBatchSelectionUi();
+    }
+}
+
+async function runOrderAction(orderId, action, intent = null, triggerBtn = null) {
+    setStatus("");
+    if (action === "cancel") {
+        const order =
+            state.detailOrder ||
+            state.rows.find((r) => String(r.id) === String(orderId));
+        const choice = await confirmCancelOrder(order || {});
+        if (!choice) return;
+        setActionButtonPending(triggerBtn, "Cancelling…");
+        try {
+            await postCancelOrder(orderId, { refund: choice.refund });
+            setStatus("");
+            closeOrderDetail();
+            await fetchOrders(state.pageCursor, "stay", { background: true });
+        } catch (e) {
+            resetActionButton(triggerBtn);
+            setStatus(e.message || String(e), true);
+        }
+        return;
+    }
+
+    if (action === "refund") {
+        if (!(await confirmRefundPayment())) return;
+        setActionButtonPending(triggerBtn, "Refunding…");
+        try {
+            await postRefundOrder(orderId);
+            setStatus("");
+            await refreshOrderAfterAction(orderId);
+        } catch (e) {
+            resetActionButton(triggerBtn);
+            setStatus(e.message || String(e), true);
+        }
+        return;
+    }
+
+    setActionButtonPending(
+        triggerBtn,
+        actionPendingLabel(action, intent)
+    );
+    try {
+        await postOrderAction(orderId, action, intent);
         setStatus("");
-        await fetchOrders(state.pageCursor, "stay");
-        if (state.selectedOrderId === orderId) {
-            await openOrderDetail(orderId);
-        }
+        await refreshOrderAfterAction(orderId);
     } catch (e) {
+        resetActionButton(triggerBtn);
         setStatus(e.message || String(e), true);
     }
 }
@@ -1458,18 +2687,45 @@ function setupSortHeaders() {
 }
 
 function openOrderFromListTarget(target) {
+    if (state.selectionMode) return;
     const el = target.closest("[data-order-id]");
     if (!el) return;
     const orderId = el.getAttribute("data-order-id");
     if (orderId) openOrderDetail(orderId);
 }
 
+function handleBatchSelectTarget(target) {
+    const input = target.closest("[data-batch-select]");
+    if (!input) return false;
+    const orderId = input.getAttribute("data-batch-select");
+    if (!orderId) return false;
+    toggleOrderSelected(orderId, input.checked);
+    return true;
+}
+
 function setupTableRowClicks() {
     els.tbody.addEventListener("click", (ev) => {
+        if (handleBatchSelectTarget(ev.target)) {
+            ev.stopPropagation();
+            return;
+        }
+        if (state.selectionMode) {
+            const row = ev.target.closest("tr[data-order-id]");
+            if (!row) return;
+            const id = row.getAttribute("data-order-id");
+            const dataRow = state.rows.find(
+                (r) => String(r.id) === String(id)
+            );
+            if (!orderHasAnyBatchAction(dataRow)) return;
+            toggleOrderSelected(id);
+            ev.preventDefault();
+            return;
+        }
         openOrderFromListTarget(ev.target);
     });
     els.tbody.addEventListener("keydown", (ev) => {
         if (ev.key !== "Enter") return;
+        if (state.selectionMode) return;
         openOrderFromListTarget(ev.target);
     });
 }
@@ -1477,10 +2733,27 @@ function setupTableRowClicks() {
 function setupCardListClicks() {
     if (!els.ordersCardList) return;
     els.ordersCardList.addEventListener("click", (ev) => {
+        if (handleBatchSelectTarget(ev.target)) {
+            ev.stopPropagation();
+            return;
+        }
+        if (state.selectionMode) {
+            const card = ev.target.closest("[data-order-id]");
+            if (!card) return;
+            const id = card.getAttribute("data-order-id");
+            const dataRow = state.rows.find(
+                (r) => String(r.id) === String(id)
+            );
+            if (!orderHasAnyBatchAction(dataRow)) return;
+            toggleOrderSelected(id);
+            ev.preventDefault();
+            return;
+        }
         openOrderFromListTarget(ev.target);
     });
     els.ordersCardList.addEventListener("keydown", (ev) => {
         if (ev.key !== "Enter") return;
+        if (state.selectionMode) return;
         openOrderFromListTarget(ev.target);
     });
 }
@@ -1494,31 +2767,122 @@ function setupDetailModalBackdrop() {
     });
 }
 
+function activeFilterCount() {
+    let count = 0;
+    if (els.search?.value.trim()) count += 1;
+    if (els.finStatus?.value) count += 1;
+    if (state.productQueueFilter) count += 1;
+    if (els.filterProduct?.value) count += 1;
+    if (els.filterProductType?.value) count += 1;
+    if (els.filterTag?.value) count += 1;
+    return count;
+}
+
+function setFiltersExpanded(expanded) {
+    if (!els.filtersBar || !els.btnFiltersToggle) return;
+    const open = Boolean(expanded) && isMobileViewport();
+    els.filtersBar.classList.toggle("filters-expanded", open);
+    els.btnFiltersToggle.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+function updateFiltersUi() {
+    const count = activeFilterCount();
+    if (els.filtersActiveBadge) {
+        els.filtersActiveBadge.textContent = count > 0 ? String(count) : "";
+        els.filtersActiveBadge.classList.toggle("hidden", count === 0);
+        els.filtersActiveBadge.setAttribute(
+            "aria-hidden",
+            count > 0 ? "false" : "true"
+        );
+    }
+    els.btnFiltersToggle?.classList.toggle(
+        "filters-toggle-btn--active",
+        count > 0
+    );
+    if (!isMobileViewport()) {
+        setFiltersExpanded(false);
+    }
+}
+
 function initUi() {
     if (!isLiveHost()) {
         setStatus("Orders API is not available on this site.", true);
-        els.btnRefresh.disabled = true;
         els.btnPrev.disabled = true;
         els.btnNext.disabled = true;
     }
 
-    els.btnRefresh.addEventListener("click", () => fetchOrders(null, "replace"));
     els.btnPrev.addEventListener("click", () => {
+        if (needsServerOrderScan()) {
+            if (state.filterPageStack.length === 0) return;
+            setSelectionMode(false);
+            fetchOrders(null, "prev");
+            return;
+        }
         if (state.previousPageInfo) {
+            setSelectionMode(false);
             fetchOrders(state.previousPageInfo, "prev");
         }
     });
     els.btnNext.addEventListener("click", () => {
+        if (needsServerOrderScan()) {
+            if (!state.filterHasMore) return;
+            setSelectionMode(false);
+            fetchOrders(null, "next");
+            return;
+        }
         if (state.nextPageInfo) {
+            setSelectionMode(false);
             fetchOrders(state.nextPageInfo, "next");
         }
     });
-    els.search.addEventListener("input", () => renderTable());
-    els.finStatus.addEventListener("change", () => renderTable());
-    els.fulStatus.addEventListener("change", () => renderTable());
-    els.filterProduct.addEventListener("change", () => renderTable());
-    els.filterProductType.addEventListener("change", () => renderTable());
-    els.filterTag.addEventListener("change", () => renderTable());
+    els.search.addEventListener("input", () => {
+        updateFiltersUi();
+        clearTimeout(filterSearchDebounceTimer);
+        filterSearchDebounceTimer = setTimeout(() => {
+            handleListFilterChange();
+        }, FILTER_SEARCH_DEBOUNCE_MS);
+    });
+    const onFilterChange = () => {
+        handleListFilterChange();
+    };
+    els.finStatus.addEventListener("change", onFilterChange);
+    els.filterProduct.addEventListener("change", onFilterChange);
+    els.filterProductType.addEventListener("change", onFilterChange);
+    els.filterTag.addEventListener("change", onFilterChange);
+
+    els.btnFiltersToggle?.addEventListener("click", () => {
+        const open = !els.filtersBar?.classList.contains("filters-expanded");
+        setFiltersExpanded(open);
+    });
+
+    els.btnProductQueue?.addEventListener("click", () => {
+        state.productQueueFilter = !state.productQueueFilter;
+        updateProductQueueUi();
+        handleListFilterChange();
+    });
+
+    els.btnSelectMode?.addEventListener("click", () => {
+        setSelectionMode(!state.selectionMode);
+    });
+    els.btnBatchClear?.addEventListener("click", () => {
+        clearOrderSelection();
+    });
+    els.batchActionButtons?.addEventListener("click", (ev) => {
+        const btn = ev.target.closest("[data-batch-action]");
+        if (!btn || btn.disabled) return;
+        const id = btn.getAttribute("data-batch-action");
+        const def = BATCH_ACTION_DEFS.find((d) => d.id === id);
+        if (def) void runBatchAction(def);
+    });
+    els.batchSelectAll?.addEventListener("change", (ev) => {
+        const checked = ev.target.checked;
+        for (const r of batchSelectableRows()) {
+            const key = String(r.id);
+            if (checked) state.selectedOrderIds.add(key);
+            else state.selectedOrderIds.delete(key);
+        }
+        updateBatchSelectionUi();
+    });
 
     if (els.typeSelector) {
         els.typeSelector.querySelectorAll(".type-btn").forEach((btn) => {
@@ -1530,12 +2894,17 @@ function initUi() {
                         b.getAttribute("data-type") === state.typeFilter
                     )
                 );
-                renderTable();
+                if (needsServerOrderScan()) refetchOrdersForFilters();
+                else applyClientListFilters();
             });
         });
     }
 
     document.addEventListener("keydown", (ev) => {
+        if (ev.key === "Escape" && state.selectionMode) {
+            setSelectionMode(false);
+            return;
+        }
         if (ev.key === "Escape" && state.selectedOrderId) {
             closeOrderDetail();
         }
@@ -1551,8 +2920,11 @@ function initUi() {
         } else {
             setSplitMode(false);
         }
+        updateFiltersUi();
         renderTable();
     });
+    updateFiltersUi();
+    updateProductQueueUi();
 }
 
 function resolveDeepLinkOrderId(raw) {
@@ -1582,10 +2954,9 @@ function initAutoRefresh() {
 
 async function boot() {
     initUi();
-    await fetchConfig();
     const deepLinkRaw = new URLSearchParams(window.location.search).get("order");
     if (isLiveHost()) {
-        await fetchOrders(null, "replace");
+        await Promise.all([fetchConfig(), fetchOrders(null, "replace")]);
         initAutoRefresh();
         if (deepLinkRaw) {
             const orderId = resolveDeepLinkOrderId(deepLinkRaw);

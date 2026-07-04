@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chatbase widget test</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+      margin: 0;
+      min-height: 100vh;
+      background: #f4f6f4;
+      color: #1a2e1a;
+    }
+    main {
+      max-width: 36rem;
+      margin: 0 auto;
+      padding: 2.5rem 1.25rem 6rem;
+    }
+    h1 {
+      font-size: 1.35rem;
+      font-weight: 600;
+      margin: 0 0 0.5rem;
+    }
+    p {
+      margin: 0 0 1rem;
+      line-height: 1.55;
+      color: #4a5d4a;
+      font-size: 0.95rem;
+    }
+    .card {
+      background: #fff;
+      border: 1px solid #dde5dd;
+      border-radius: 12px;
+      padding: 1.25rem;
+      margin-top: 1.25rem;
+    }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      font-size: 0.85rem;
+      font-weight: 500;
+      padding: 0.35rem 0.65rem;
+      border-radius: 999px;
+      background: #eef2ee;
+      color: #4a5d4a;
+    }
+    .status::before {
+      content: "";
+      width: 0.5rem;
+      height: 0.5rem;
+      border-radius: 50%;
+      background: #9aa89a;
+    }
+    .status.ready::before { background: #2d8a4e; }
+    .status.warn::before { background: #c9a227; }
+    .status.error::before { background: #c0392b; }
+    code {
+      font-size: 0.85em;
+      background: #eef2ee;
+      padding: 0.1em 0.35em;
+      border-radius: 4px;
+    }
+    ul {
+      margin: 0;
+      padding-left: 1.2rem;
+      color: #4a5d4a;
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+    .hint {
+      font-size: 0.85rem;
+      color: #6b7a6b;
+      margin-top: 0.75rem;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Chatbase widget test</h1>
+    <p>
+      The chat bubble should appear bottom-right. If your agent has
+      <strong>identity verification</strong> enabled, this page calls
+      <code>chatbase('identify')</code> with a JWT from the local test server.
+    </p>
+
+    <div class="card">
+      <span id="status" class="status">Starting…</span>
+      <p style="margin-top: 1rem; margin-bottom: 0;">
+        Bot ID: <code>5I59oL2kgMUyVVWSETY1R</code>
+      </p>
+      <p id="identity-status" class="hint"></p>
+    </div>
+
+    <div class="card">
+      <p style="margin-bottom: 0.5rem;"><strong>Run locally</strong></p>
+      <ul>
+        <li><code>set CHATBOT_IDENTITY_SECRET=your_secret</code> (PowerShell: <code>$env:CHATBOT_IDENTITY_SECRET="..."</code>)</li>
+        <li><code>node chatbase-test-server.mjs</code></li>
+        <li>Open <code>/chatbase-test.html</code> on that server (not plain <code>npx serve</code>)</li>
+      </ul>
+    </div>
+  </main>
+
+  <script>
+    (function () {
+      const statusEl = document.getElementById("status");
+      const identityEl = document.getElementById("identity-status");
+
+      function setStatus(text, kind) {
+        statusEl.textContent = text;
+        statusEl.classList.remove("ready", "warn", "error");
+        if (kind) statusEl.classList.add(kind);
+      }
+
+      if (!window.chatbase || window.chatbase("getState") !== "initialized") {
+        window.chatbase = (...arguments) => {
+          if (!window.chatbase.q) window.chatbase.q = [];
+          window.chatbase.q.push(arguments);
+        };
+        window.chatbase = new Proxy(window.chatbase, {
+          get(target, prop) {
+            if (prop === "q") return target.q;
+            return (...args) => target(prop, ...args);
+          },
+        });
+      }
+
+      async function identifyUser() {
+        try {
+          const res = await fetch("/api/token");
+          const data = await res.json();
+          if (!res.ok) {
+            identityEl.textContent =
+              "No identity token — run chatbase-test-server.mjs with CHATBOT_IDENTITY_SECRET set. " +
+              (data.error || "");
+            setStatus("Embed loaded (identity skipped)", "warn");
+            return;
+          }
+          window.chatbase("identify", {
+            token: data.token,
+            name: data.name,
+          });
+          identityEl.textContent =
+            "Identified as " + data.name + " (" + data.email + ")";
+          setStatus("Widget ready — try the chat bubble", "ready");
+        } catch (err) {
+          identityEl.textContent =
+            "Identity fetch failed — use chatbase-test-server.mjs, not npx serve. " +
+            err.message;
+          setStatus("Embed loaded (identity failed)", "warn");
+        }
+      }
+
+      const onLoad = function () {
+        const script = document.createElement("script");
+        script.src = "https://www.chatbase.co/embed.min.js";
+        script.id = "5I59oL2kgMUyVVWSETY1R";
+        script.domain = "www.chatbase.co";
+        script.onload = () => {
+          setStatus("Embed loaded — identifying…", null);
+          identifyUser();
+        };
+        script.onerror = () => setStatus("Failed to load embed script", "error");
+        document.body.appendChild(script);
+      };
+
+      if (document.readyState === "complete") onLoad();
+      else window.addEventListener("load", onLoad);
+    })();
+  </script>
+</body>
+</html>

@@ -9,8 +9,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DASHBOARD_ROOT = path.resolve(__dirname, "..");
 const REPO_ROOT = path.resolve(DASHBOARD_ROOT, "..");
 const SHOPIFY_SRC = path.join(REPO_ROOT, "shopify-orders");
-const PUBLIC_SHOPIFY = path.join(DASHBOARD_ROOT, "public", "shopify");
+const PUBLIC_ROOT = path.join(DASHBOARD_ROOT, "public");
+const PUBLIC_SHOPIFY = path.join(PUBLIC_ROOT, "shopify");
+const PUBLIC_LEADS = path.join(PUBLIC_ROOT, "leads");
+const PUBLIC_WORKSHOPS = path.join(PUBLIC_ROOT, "workshops");
 const FUNCTIONS_SHOPIFY = path.join(DASHBOARD_ROOT, "functions", "shopify-orders");
+
+const LEADS_HOSTING_SKIP = new Set(["shopify", "leads", "workshops"]);
 
 const SKIP_NAMES = new Set([
   ".env",
@@ -69,12 +74,50 @@ function ensureSharedAssets(targetRoot) {
   }
 }
 
+function patchWorkshopsHtml(filePath) {
+  if (!fs.existsSync(filePath)) return;
+  patchShopifyHtml(filePath);
+  let html = fs.readFileSync(filePath, "utf8");
+  html = html
+    .replaceAll('href="css/', 'href="/workshops/css/')
+    .replaceAll('src="js/', 'src="/workshops/js/')
+    .replaceAll('src="img/', 'src="/workshops/img/');
+  fs.writeFileSync(filePath, html);
+}
+
+function copyWorkshopsHosting() {
+  rmDir(PUBLIC_WORKSHOPS);
+  copyTree(SHOPIFY_SRC, PUBLIC_WORKSHOPS, { skipServer: true });
+  // Orders dashboard lives at /shopify/ only; /workshops/ is workshop management.
+  const workshopsIndex = path.join(PUBLIC_WORKSHOPS, "index.html");
+  if (fs.existsSync(workshopsIndex)) fs.rmSync(workshopsIndex);
+  ensureSharedAssets(PUBLIC_WORKSHOPS);
+  for (const file of ["workshop.html", "workshops.html"]) {
+    patchWorkshopsHtml(path.join(PUBLIC_WORKSHOPS, file));
+  }
+}
+
+function copyLeadsHosting() {
+  rmDir(PUBLIC_LEADS);
+  fs.mkdirSync(PUBLIC_LEADS, { recursive: true });
+  for (const name of fs.readdirSync(PUBLIC_ROOT)) {
+    if (LEADS_HOSTING_SKIP.has(name)) continue;
+    const from = path.join(PUBLIC_ROOT, name);
+    const to = path.join(PUBLIC_LEADS, name);
+    const st = fs.statSync(from);
+    if (st.isDirectory()) copyTree(from, to);
+    else fs.copyFileSync(from, to);
+  }
+}
+
 if (!fs.existsSync(SHOPIFY_SRC)) {
   console.error("Missing shopify-orders at", SHOPIFY_SRC);
   process.exit(1);
 }
 
 rmDir(PUBLIC_SHOPIFY);
+rmDir(PUBLIC_LEADS);
+rmDir(PUBLIC_WORKSHOPS);
 rmDir(FUNCTIONS_SHOPIFY);
 
 copyTree(SHOPIFY_SRC, PUBLIC_SHOPIFY, { skipServer: true });
@@ -86,5 +129,10 @@ for (const file of ["index.html", "workshop.html", "workshops.html"]) {
   patchShopifyHtml(path.join(PUBLIC_SHOPIFY, file));
 }
 
+copyWorkshopsHosting();
+copyLeadsHosting();
+
 console.log("Prepared Shopify hosting at public/shopify");
+console.log("Prepared Workshops hosting at public/workshops");
+console.log("Prepared Leads hosting at public/leads");
 console.log("Prepared Shopify API bundle at functions/shopify-orders");

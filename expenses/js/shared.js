@@ -59,6 +59,95 @@ const DELETION_TRACKING_TTL = 5 * 60 * 1000; // 5 minutes - short-lived client h
 let deletionTimestamps = new Map(); // Track when each supplier was deleted (supplierId -> timestamp)
 let expenseDeletionTimestamps = new Map(); // Track when each expense was deleted (expenseId -> timestamp)
 
+const PENDING_SYNC_EXPENSE_STORAGE_KEY = 'expenseTracker_pendingSyncIds';
+/** Expense ids written locally but not yet confirmed on Firebase. */
+let pendingSyncExpenseIds = new Set();
+
+function persistPendingSyncExpenseIds() {
+    try {
+        localStorage.setItem(
+            PENDING_SYNC_EXPENSE_STORAGE_KEY,
+            JSON.stringify({ ids: Array.from(pendingSyncExpenseIds) })
+        );
+    } catch (error) {
+        console.warn('Failed to persist pending sync expense ids:', error);
+    }
+}
+
+function loadPendingSyncExpenseIdsFromStorage() {
+    try {
+        const raw = localStorage.getItem(PENDING_SYNC_EXPENSE_STORAGE_KEY);
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        (data.ids || []).forEach((id) => {
+            if (id) pendingSyncExpenseIds.add(id);
+        });
+    } catch (error) {
+        console.warn('Failed to load pending sync expense ids:', error);
+    }
+}
+
+function markExpensePendingSync(expenseId) {
+    if (!expenseId) return;
+    pendingSyncExpenseIds.add(expenseId);
+    persistPendingSyncExpenseIds();
+}
+
+function clearExpensesPendingSync(expenseIds) {
+    let changed = false;
+    for (const id of expenseIds) {
+        if (pendingSyncExpenseIds.delete(id)) changed = true;
+    }
+    if (changed) persistPendingSyncExpenseIds();
+}
+
+export function isExpensePendingSync(expenseId) {
+    return pendingSyncExpenseIds.has(expenseId);
+}
+
+export function isSyncInProgress() {
+    return syncInProgress;
+}
+
+export async function refreshExpensesFromRemote() {
+    if (!db) return false;
+    return fetchFromFirebase();
+}
+
+let firebasePollIntervalId = null;
+const FIREBASE_POLL_VISIBLE_MS = 60 * 1000;
+const FIREBASE_POLL_HIDDEN_MS = 5 * 60 * 1000;
+
+function scheduleFirebasePoll() {
+    if (firebasePollIntervalId) {
+        clearInterval(firebasePollIntervalId);
+        firebasePollIntervalId = null;
+    }
+    if (!db) return;
+    const intervalMs =
+        typeof document !== 'undefined' && document.visibilityState === 'hidden'
+            ? FIREBASE_POLL_HIDDEN_MS
+            : FIREBASE_POLL_VISIBLE_MS;
+    firebasePollIntervalId = setInterval(() => {
+        fetchFromFirebase()
+            .then(() => {
+                if (typeof window !== 'undefined') {
+                    window.dispatchEvent(new CustomEvent('expense-remote-updated'));
+                }
+            })
+            .catch((err) => {
+                console.warn('Periodic Firebase fetch failed:', err);
+            });
+    }, intervalMs);
+}
+
+function setupFirebasePollVisibilityHandler() {
+    if (typeof document === 'undefined') return;
+    document.addEventListener('visibilitychange', () => {
+        scheduleFirebasePoll();
+    });
+}
+
 /** Supplier ids with a server tombstone (or local delete) — never re-merge from Firebase. Persisted. */
 const PERMANENT_SUPPLIER_TOMBSTONE_STORAGE_KEY = 'expenseTracker_permanentSupplierTombstones';
 let supplierTombstoneIds = new Set();
@@ -213,34 +302,73 @@ export function getExpenses() {
     return [...expenses];
 }
 
-// Compress image before upload to reduce file size
-export async function compressImage(file, maxWidth = 1920, maxHeight = 1920, quality = 0.8) {
+// Approximate byte size of a base64 data URL.
+function dataUrlByteSize(dataUrl) {
+    if (typeof dataUrl !== 'string') return 0;
+    const commaIdx = dataUrl.indexOf(',');
+    const base64 = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
+    // Each base64 char encodes 6 bits; 4 chars = 3 bytes.
+    return Math.floor((base64.length * 3) / 4);
+}
+
+// Compress image before upload. Targets ~400-800KB at a readable resolution
+// (up to ~1600px) so receipt text stays legible while uploads stay fast.
+export async function compressImage(
+    file,
+    maxWidth = 1600,
+    maxHeight = 1600,
+    quality = 0.85,
+    targetBytes = 800 * 1024
+) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = function(e) {
+        reader.onload = function (e) {
             const img = new Image();
-            img.onload = function() {
-                // Calculate new dimensions
+            img.onload = function () {
                 let width = img.width;
                 let height = img.height;
-                
+
                 if (width > maxWidth || height > maxHeight) {
                     const ratio = Math.min(maxWidth / width, maxHeight / height);
-                    width = width * ratio;
-                    height = height * ratio;
+                    width = Math.round(width * ratio);
+                    height = Math.round(height * ratio);
                 }
-                
-                // Create canvas and compress
+
                 const canvas = document.createElement('canvas');
-                canvas.width = width;
-                canvas.height = height;
-                
                 const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, width, height);
-                
-                // Convert to base64 with compression
-                const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
-                resolve(compressedDataUrl);
+                const qualityFloor = 0.5;
+                const maxDimensionSteps = 3;
+
+                let dataUrl = '';
+                let q = quality;
+                let dimensionStep = 0;
+
+                while (dimensionStep <= maxDimensionSteps) {
+                    canvas.width = width;
+                    canvas.height = height;
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    q = quality;
+                    dataUrl = canvas.toDataURL('image/jpeg', q);
+                    while (dataUrlByteSize(dataUrl) > targetBytes && q > qualityFloor) {
+                        q = Math.max(qualityFloor, q - 0.1);
+                        dataUrl = canvas.toDataURL('image/jpeg', q);
+                    }
+
+                    if (dataUrlByteSize(dataUrl) <= targetBytes || dimensionStep === maxDimensionSteps) {
+                        break;
+                    }
+
+                    // Still over target at quality floor — step dimensions down and retry.
+                    width = Math.max(1, Math.round(width * 0.85));
+                    height = Math.max(1, Math.round(height * 0.85));
+                    dimensionStep += 1;
+                }
+
+                const finalKb = Math.round(dataUrlByteSize(dataUrl) / 1024);
+                console.log(`[Receipt] compressed to ${finalKb}KB at ${width}x${height} q=${q.toFixed(2)}`);
+
+                resolve(dataUrl);
             };
             img.onerror = reject;
             img.src = e.target.result;
@@ -332,7 +460,7 @@ export async function fetchReceiptImageFromFirebase(expenseId) {
         
         if (expenseSnap.exists()) {
             const expenseData = expenseSnap.data();
-            const receiptImage = expenseData.receiptImage || null;
+            const receiptImage = await resolveReceiptUrlForExpense(expenseId, expenseData.receiptImage || null);
             if (receiptImage) {
                 const updatedExpenses = expenses.map((expense) =>
                     expense.id === expenseId
@@ -379,11 +507,134 @@ export async function uploadReceiptImageToStorage(expenseId, receiptDataUrl) {
         await uploadBytesFn(fileRef, blob, { contentType });
         const downloadUrl = await getDownloadURLFn(fileRef);
 
+        cacheReceiptUrlForExpense(expenseId, downloadUrl);
         return downloadUrl;
     } catch (error) {
         console.warn('[ReceiptUpload] Failed to upload receipt image:', error);
         return null;
     }
+}
+
+const RECEIPT_URL_CACHE_KEY = 'expenseTracker_receiptUrls';
+
+function readReceiptUrlCache() {
+    try {
+        const raw = localStorage.getItem(RECEIPT_URL_CACHE_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+        return {};
+    }
+}
+
+function getCachedReceiptUrl(expenseId) {
+    if (!expenseId) return null;
+    const url = readReceiptUrlCache()[expenseId];
+    return hasReceiptUrlValue(url) && !isReceiptDataUrl(url) ? url : null;
+}
+
+export function cacheReceiptUrlForExpense(expenseId, url) {
+    if (!expenseId || !hasReceiptUrlValue(url) || isReceiptDataUrl(url)) return;
+    try {
+        const cache = readReceiptUrlCache();
+        if (cache[expenseId] === url) return;
+        cache[expenseId] = url;
+        localStorage.setItem(RECEIPT_URL_CACHE_KEY, JSON.stringify(cache));
+    } catch (error) {
+        console.warn('Failed to cache receipt URL:', error);
+    }
+}
+
+function removeCachedReceiptUrl(expenseId) {
+    if (!expenseId) return;
+    try {
+        const cache = readReceiptUrlCache();
+        if (!cache[expenseId]) return;
+        delete cache[expenseId];
+        localStorage.setItem(RECEIPT_URL_CACHE_KEY, JSON.stringify(cache));
+    } catch (error) {
+        console.warn('Failed to remove cached receipt URL:', error);
+    }
+}
+
+async function getStorageReceiptDownloadUrl(expenseId) {
+    if (!expenseId) return null;
+    if (!storage || !storageRefFn || !getDownloadURLFn) {
+        const ok = await initializeFirebase();
+        if (!ok) return null;
+    }
+    try {
+        const fileRef = storageRefFn(storage, `expense-receipts/${expenseId}`);
+        return await getDownloadURLFn(fileRef);
+    } catch {
+        return null;
+    }
+}
+
+/** Resolve receipt URL: Firestore field → local cache → Firebase Storage file. */
+async function resolveReceiptUrlForExpense(expenseId, firestoreUrl = null) {
+    if (!expenseId) return null;
+    if (hasReceiptUrlValue(firestoreUrl)) {
+        if (!isReceiptDataUrl(firestoreUrl)) {
+            cacheReceiptUrlForExpense(expenseId, firestoreUrl);
+        }
+        return firestoreUrl;
+    }
+    const cached = getCachedReceiptUrl(expenseId);
+    if (cached) return cached;
+    const storageUrl = await getStorageReceiptDownloadUrl(expenseId);
+    if (hasReceiptUrlValue(storageUrl)) {
+        cacheReceiptUrlForExpense(expenseId, storageUrl);
+        return storageUrl;
+    }
+    return null;
+}
+
+function applyCachedReceiptUrlsToExpenses(expenseList) {
+    return expenseList.map((expense) => {
+        if (!expense?.id || !expense.hasReceiptImage || hasReceiptUrlValue(expense.receiptImage)) {
+            if (expense?.id && hasReceiptUrlValue(expense.receiptImage) && !isReceiptDataUrl(expense.receiptImage)) {
+                cacheReceiptUrlForExpense(expense.id, expense.receiptImage);
+            }
+            return expense;
+        }
+        const cached = getCachedReceiptUrl(expense.id);
+        if (!cached) return expense;
+        return normalizeExpenseReceiptState({ ...expense, receiptImage: cached, hasReceiptImage: true });
+    });
+}
+
+/** Restore receipt URLs from cache, Firestore, and Storage for all expenses that need them. */
+export async function rehydrateAllExpenseReceiptUrls() {
+    let didMutate = false;
+    for (let i = 0; i < expenses.length; i++) {
+        const e = expenses[i];
+        if (!e?.id || deletedExpenseIds.has(e.id)) continue;
+        if (!e.hasReceiptImage) continue;
+
+        if (hasReceiptUrlValue(e.receiptImage) && !isReceiptDataUrl(e.receiptImage)) {
+            cacheReceiptUrlForExpense(e.id, e.receiptImage);
+            continue;
+        }
+
+        const url = await resolveReceiptUrlForExpense(
+            e.id,
+            hasReceiptUrlValue(e.receiptImage) ? e.receiptImage : null
+        );
+        if (url) {
+            expenses[i] = normalizeExpenseReceiptState({ ...e, receiptImage: url, hasReceiptImage: true });
+            didMutate = true;
+        }
+    }
+    if (didMutate) {
+        setExpenses(expenses);
+        hasPendingChanges = true;
+        if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('expense-receipts-updated'));
+        }
+    }
+    return didMutate;
 }
 
 export function getSuppliers() {
@@ -511,7 +762,17 @@ export function addExpense(expense) {
         const sid = saveSupplierIfNew(expense);
         if (sid) expense.supplierId = expense.supplierId || sid;
     }
-    expenses.push(expense);
+    // Upsert by id so a double-tapped Save can't create a duplicate local row.
+    const existingIndex = expense.id ? expenses.findIndex((e) => e.id === expense.id) : -1;
+    if (existingIndex >= 0) {
+        expenses[existingIndex] = expense;
+    } else {
+        expenses.push(expense);
+    }
+    if (hasReceiptUrlValue(expense.receiptImage) && !isReceiptDataUrl(expense.receiptImage)) {
+        cacheReceiptUrlForExpense(expense.id, expense.receiptImage);
+    }
+    markExpensePendingSync(expense.id);
     saveToLocalStorage();
     invalidateItemMatchesCache();
 }
@@ -537,6 +798,10 @@ export function updateExpense(expenseId, updatedExpense) {
             }
         }
         expenses[index] = updatedExpense;
+        if (hasReceiptUrlValue(updatedExpense.receiptImage) && !isReceiptDataUrl(updatedExpense.receiptImage)) {
+            cacheReceiptUrlForExpense(expenseId, updatedExpense.receiptImage);
+        }
+        markExpensePendingSync(expenseId);
         saveToLocalStorage();
         invalidateItemMatchesCache();
         return true;
@@ -554,6 +819,9 @@ export async function deleteExpense(expenseId) {
         
         // Track deletion immediately with permanent timestamp
         deletedExpenseIds.add(expenseId);
+        pendingSyncExpenseIds.delete(expenseId);
+        removeCachedReceiptUrl(expenseId);
+        persistPendingSyncExpenseIds();
         expenseDeletionTimestamps.set(expenseId, Date.now());
         
         // Persist deletion tracking to localStorage immediately
@@ -1187,24 +1455,42 @@ export function loadFromLocalStorage() {
         // Check if localStorage was completely cleared (no expenses AND no suppliers)
         const isLocalStorageEmpty = !savedExpenses && !savedSuppliers;
 
+        // No local expenses means nothing to protect — allow Firebase to restore them.
+        let hasNoLocalExpenses = !savedExpenses;
+        if (savedExpenses) {
+            try {
+                hasNoLocalExpenses = JSON.parse(savedExpenses).length === 0;
+            } catch {
+                hasNoLocalExpenses = true;
+            }
+        }
+
         // Permanent supplier tombstones must load before suppliers so merged-away rows stay out of memory.
-        if (isLocalStorageEmpty) {
-            console.log('LocalStorage was cleared - resetting deletion tracking to allow Firebase restore');
+        if (isLocalStorageEmpty || hasNoLocalExpenses) {
+            if (isLocalStorageEmpty) {
+                console.log('LocalStorage was cleared - resetting deletion tracking to allow Firebase restore');
+            } else {
+                console.log('No local expenses - clearing expense deletion tracking to allow Firebase restore');
+            }
             deletedExpenseIds.clear();
             expenseDeletionTimestamps.clear();
-            deletedSupplierIds.clear();
-            deletionTimestamps.clear();
-            supplierTombstoneIds.clear();
             localStorage.removeItem('expenseTracker_deletedExpenses');
-            localStorage.removeItem('expenseTracker_deletedSuppliers');
-            localStorage.removeItem(PERMANENT_SUPPLIER_TOMBSTONE_STORAGE_KEY);
+            if (isLocalStorageEmpty) {
+                deletedSupplierIds.clear();
+                deletionTimestamps.clear();
+                supplierTombstoneIds.clear();
+                localStorage.removeItem('expenseTracker_deletedSuppliers');
+                localStorage.removeItem(PERMANENT_SUPPLIER_TOMBSTONE_STORAGE_KEY);
+            }
         } else {
             loadPermanentSupplierTombstonesFromStorage();
         }
 
+        loadPendingSyncExpenseIdsFromStorage();
+
         if (savedExpenses) {
             const parsedExpenses = JSON.parse(savedExpenses);
-            setExpenses(parsedExpenses);
+            setExpenses(applyCachedReceiptUrlsToExpenses(parsedExpenses));
             console.log('Loaded expenses from localStorage:', expenses.length, 'items');
         }
 
@@ -1363,6 +1649,11 @@ export function saveToLocalStorage() {
     try {
         // Strip receipt images from expenses before saving to localStorage to prevent quota exceeded errors
         // Receipt images are stored in Firebase, so we only need a flag in localStorage
+        for (const e of expenses) {
+            if (e?.id && hasReceiptUrlValue(e.receiptImage) && !isReceiptDataUrl(e.receiptImage)) {
+                cacheReceiptUrlForExpense(e.id, e.receiptImage);
+            }
+        }
         setExpenses(expenses);
         const expensesForStorage = stripReceiptImagesForStorage(expenses);
         const expensesJson = JSON.stringify(expensesForStorage);
@@ -1382,11 +1673,10 @@ export function saveToLocalStorage() {
 
         // Set new timeout for debounced sync
         syncTimeout = setTimeout(() => {
+            syncTimeout = null;
             if (hasPendingChanges && db) {
                 syncToFirebase();
-                hasPendingChanges = false;
             }
-            syncTimeout = null;
         }, SYNC_DEBOUNCE_DELAY);
 
         console.log('Sync scheduled for 3 seconds from now');
@@ -1421,27 +1711,7 @@ export function saveToLocalStorage() {
  * and any code paths still see the URL. Merge writes already prevent wiping the server field.
  */
 async function rehydrateStrippedReceiptUrlsFromFirestore() {
-    if (!db) return;
-    let didMutate = false;
-    for (let i = 0; i < expenses.length; i++) {
-        const e = expenses[i];
-        if (!e?.id || deletedExpenseIds.has(e.id)) continue;
-        if (e.hasReceiptImage && !e.receiptImage) {
-            try {
-                const snap = await getDoc(doc(db, 'expenses', e.id));
-                if (snap.exists()) {
-                    const url = snap.data()?.receiptImage;
-                    if (url && typeof url === 'string') {
-                        expenses[i] = normalizeExpenseReceiptState({ ...e, receiptImage: url, hasReceiptImage: true });
-                        didMutate = true;
-                    }
-                }
-            } catch (err) {
-                console.warn('[Sync] Could not rehydrate receiptImage for expense', e.id, err);
-            }
-        }
-    }
-    if (didMutate) setExpenses(expenses);
+    return rehydrateAllExpenseReceiptUrls();
 }
 
 function hasReceiptUrlValue(value) {
@@ -1468,6 +1738,10 @@ function normalizeExpensesReceiptState(expensesArray = []) {
     return expensesArray.map((expense) => normalizeExpenseReceiptState(expense));
 }
 
+function isReceiptDataUrl(value) {
+    return typeof value === 'string' && value.startsWith('data:');
+}
+
 async function enrichExpenseWithServerReceiptUrl(expense) {
     if (!db || !expense?.id) return normalizeExpenseReceiptState(expense);
     const normalizedExpense = normalizeExpenseReceiptState(expense);
@@ -1481,10 +1755,11 @@ async function enrichExpenseWithServerReceiptUrl(expense) {
     try {
         const snap = await getDoc(doc(db, 'expenses', normalizedExpense.id));
         const serverUrl = snap.exists() ? snap.data()?.receiptImage : null;
-        if (hasReceiptUrlValue(serverUrl)) {
+        const resolved = await resolveReceiptUrlForExpense(normalizedExpense.id, serverUrl);
+        if (hasReceiptUrlValue(resolved)) {
             return normalizeExpenseReceiptState({
                 ...normalizedExpense,
-                receiptImage: serverUrl,
+                receiptImage: resolved,
                 hasReceiptImage: true
             });
         }
@@ -1492,6 +1767,158 @@ async function enrichExpenseWithServerReceiptUrl(expense) {
         console.warn('[Sync] Failed server receipt fallback for expense:', normalizedExpense.id, error);
     }
     return normalizedExpense;
+}
+
+/** Upload inline receipt data URLs before Firestore write; never send base64 in a document. */
+async function prepareExpenseForFirestoreSync(rawExpense) {
+    let expense = await enrichExpenseWithServerReceiptUrl(rawExpense);
+    expense = normalizeExpenseReceiptState(expense);
+
+    if (isReceiptDataUrl(expense.receiptImage)) {
+        const url = await uploadReceiptImageToStorage(expense.id, expense.receiptImage);
+        if (url) {
+            expense = normalizeExpenseReceiptState({
+                ...expense,
+                receiptImage: url,
+                hasReceiptImage: true
+            });
+        }
+    } else if (expense.hasReceiptImage && !hasReceiptUrlValue(expense.receiptImage)) {
+        const resolved = await resolveReceiptUrlForExpense(expense.id);
+        if (resolved) {
+            expense = normalizeExpenseReceiptState({
+                ...expense,
+                receiptImage: resolved,
+                hasReceiptImage: true
+            });
+        }
+    } else if (hasReceiptUrlValue(expense.receiptImage)) {
+        cacheReceiptUrlForExpense(expense.id, expense.receiptImage);
+    }
+
+    const idx = expenses.findIndex((e) => e.id === expense.id);
+    if (idx >= 0) {
+        expenses[idx] = expense;
+    }
+    return expense;
+}
+
+function buildFirestoreExpensePayload(expense) {
+    const data = {
+        ...expense,
+        syncedAt: serverTimestamp(),
+        deviceId: getDeviceId()
+    };
+    // Firestore documents are capped at 1 MiB — never write base64 receipt blobs.
+    if (isReceiptDataUrl(data.receiptImage) || !hasReceiptUrlValue(data.receiptImage)) {
+        delete data.receiptImage;
+        if (expense.hasReceiptImage) {
+            data.hasReceiptImage = true;
+        }
+    } else {
+        data.hasReceiptImage = true;
+        cacheReceiptUrlForExpense(expense.id, data.receiptImage);
+    }
+    return data;
+}
+
+/** Cancel debounced sync and push to Firebase immediately. */
+export async function flushPendingSync() {
+    if (syncTimeout) {
+        clearTimeout(syncTimeout);
+        syncTimeout = null;
+    }
+    if (!db) {
+        return { ok: false, reason: 'offline' };
+    }
+    if (!hasPendingChanges) {
+        hasPendingChanges = true;
+    }
+    try {
+        await syncToFirebase();
+        return { ok: !hasPendingChanges };
+    } catch (error) {
+        console.error('flushPendingSync failed:', error);
+        hasPendingChanges = true;
+        return { ok: false, reason: error?.message || 'sync-failed' };
+    }
+}
+
+// Persist the current expenses/suppliers to localStorage WITHOUT scheduling a full sync.
+// Used by the fast single-expense sync path so it doesn't trigger a heavy full sync.
+function persistExpensesToLocalStorageOnly() {
+    try {
+        const expensesForStorage = stripReceiptImagesForStorage(expenses);
+        localStorage.setItem('expenseTracker_expenses', JSON.stringify(expensesForStorage));
+        localStorage.setItem('expenseTracker_suppliers', JSON.stringify(suppliers));
+    } catch (error) {
+        console.warn('Failed to persist expenses to localStorage:', error);
+    }
+}
+
+/**
+ * Fast path: sync a single expense (and its supplier) to Firebase.
+ * Uploads the receipt to Storage if needed and only clears pending state once the
+ * receipt URL is confirmed, so "synced" never lies about a missing photo.
+ * @returns {Promise<{ ok: boolean, reason?: string }>}
+ */
+export async function syncExpenseToFirebase(expenseId) {
+    if (!expenseId) return { ok: false, reason: 'no-id' };
+    if (!db) {
+        const ok = await initializeFirebase();
+        if (!ok) return { ok: false, reason: 'offline' };
+    }
+    if (deletedExpenseIds.has(expenseId)) return { ok: false, reason: 'deleted' };
+
+    const idx = expenses.findIndex((e) => e.id === expenseId);
+    if (idx < 0) return { ok: false, reason: 'not-found' };
+
+    try {
+        const hadInlineReceipt = isReceiptDataUrl(expenses[idx].receiptImage);
+        const prepared = await prepareExpenseForFirestoreSync(expenses[idx]);
+        expenses[idx] = prepared;
+
+        const receiptExpected = prepared.hasReceiptImage === true || hadInlineReceipt;
+        const receiptResolved =
+            hasReceiptUrlValue(prepared.receiptImage) && !isReceiptDataUrl(prepared.receiptImage);
+
+        // Write the expense document (metadata + resolved URL when available).
+        await setDoc(
+            doc(db, 'expenses', prepared.id),
+            buildFirestoreExpensePayload(prepared),
+            { merge: true }
+        );
+
+        // Write its supplier if present locally and not tombstoned.
+        if (prepared.supplierId) {
+            const supplier = suppliers.find((s) => s.id === prepared.supplierId);
+            if (supplier && !deletedSupplierIds.has(supplier.id) && !supplierTombstoneIds.has(supplier.id)) {
+                await setDoc(
+                    doc(db, 'suppliers', supplier.id),
+                    { ...supplier, syncedAt: serverTimestamp(), deviceId: getDeviceId() },
+                    { merge: true }
+                );
+            }
+        }
+
+        persistExpensesToLocalStorageOnly();
+
+        if (receiptExpected && !receiptResolved) {
+            // Metadata is in Firebase but the photo isn't — keep it pending so the badge stays honest.
+            markExpensePendingSync(prepared.id);
+            return { ok: false, reason: 'receipt-upload-failed' };
+        }
+
+        clearExpensesPendingSync([prepared.id]);
+        if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('expense-sync-updated'));
+        }
+        return { ok: true };
+    } catch (error) {
+        console.error('syncExpenseToFirebase failed:', error);
+        markExpensePendingSync(expenseId);
+        return { ok: false, reason: error?.message || 'sync-failed' };
+    }
 }
 
 // Firebase Sync Functions
@@ -1576,6 +2003,7 @@ export async function syncToFirebase() {
         // Build operations list and commit in chunks to respect Firestore batch limits.
         // Tombstoned items are never recreated.
         const ops = [];
+        const syncedExpenseIds = [];
 
         // Track local expense IDs
         const localExpenseIds = new Set();
@@ -1584,24 +2012,33 @@ export async function syncToFirebase() {
         const localSupplierIds = new Set();
 
         setExpenses(expenses);
-        await rehydrateStrippedReceiptUrlsFromFirestore();
 
         for (const rawExpense of expenses) {
-            const expense = await enrichExpenseWithServerReceiptUrl(rawExpense);
-            localExpenseIds.add(expense.id);
-            if (deletedExpenseIds.has(expense.id)) {
+            localExpenseIds.add(rawExpense.id);
+            if (deletedExpenseIds.has(rawExpense.id)) {
                 continue; // deleted remotely; never recreate on this device
             }
+            // Only push writes for expenses that still need syncing. Everything else is
+            // already on the server, so re-writing it every sync is wasteful/slow.
+            if (!pendingSyncExpenseIds.has(rawExpense.id)) {
+                continue;
+            }
+            // prepareExpenseForFirestoreSync uploads the receipt to Storage and resolves its URL.
+            const expense = await prepareExpenseForFirestoreSync(rawExpense);
             ops.push({
                 kind: 'set',
                 ref: doc(db, 'expenses', expense.id),
                 merge: true,
-                data: {
-                    ...expense,
-                    syncedAt: serverTimestamp(),
-                    deviceId: getDeviceId()
-                }
+                data: buildFirestoreExpensePayload(expense)
             });
+            // Only clear pending once the receipt is confirmed (or there is no receipt),
+            // so a synced badge never hides a missing photo.
+            const receiptExpected = expense.hasReceiptImage === true;
+            const receiptResolved =
+                hasReceiptUrlValue(expense.receiptImage) && !isReceiptDataUrl(expense.receiptImage);
+            if (!receiptExpected || receiptResolved) {
+                syncedExpenseIds.push(expense.id);
+            }
         }
         
         // Get Firebase expense IDs for deletion check
@@ -1675,6 +2112,10 @@ export async function syncToFirebase() {
         });
 
         await commitBatchOps(ops);
+        clearExpensesPendingSync(syncedExpenseIds);
+        if (typeof window !== 'undefined' && syncedExpenseIds.length > 0) {
+            window.dispatchEvent(new CustomEvent('expense-sync-updated'));
+        }
         console.log('Firebase sync completed successfully', { 
             expenses: expenses.length, 
             suppliers: suppliers.length,
@@ -1719,10 +2160,11 @@ export async function syncToFirebase() {
     } catch (error) {
         console.error('Firebase sync failed:', error);
         showSyncStatus('⚠ Sync failed - will retry', 'error');
+        hasPendingChanges = true;
 
         // Queue for retry
         setTimeout(() => {
-            if (!syncInProgress) {
+            if (!syncInProgress && hasPendingChanges) {
                 syncToFirebase();
             }
         }, 5000);
@@ -1731,7 +2173,25 @@ export async function syncToFirebase() {
     }
 }
 
-export async function fetchFromFirebase() {
+// Strip heavy/legacy receipt blobs from a remote expense so the feed stays text-only.
+// Keeps an http(s) receipt URL if present; otherwise just the hasReceiptImage flag.
+function sanitizeExpenseFromRemote(rawDoc) {
+    const { receiptImage, ...rest } = rawDoc;
+    const clean = { ...rest };
+    if (isReceiptDataUrl(receiptImage)) {
+        // Never keep base64 blobs in memory/localStorage (huge + slow).
+        clean.hasReceiptImage = true;
+    } else if (hasReceiptUrlValue(receiptImage)) {
+        clean.receiptImage = receiptImage;
+        clean.hasReceiptImage = true;
+    } else if (rest.hasReceiptImage) {
+        clean.hasReceiptImage = true;
+    }
+    return clean;
+}
+
+export async function fetchFromFirebase(options = {}) {
+    const { rehydrateReceipts = false } = options;
     if (!db) {
         console.log('Database not available for fetching');
         return;
@@ -1796,7 +2256,7 @@ export async function fetchFromFirebase() {
             console.warn('Failed to persist supplier deletion tracking from tombstones:', error);
         }
 
-        const firebaseExpenses = expensesSnapshot.docs.map(doc => ({
+        const firebaseExpenses = expensesSnapshot.docs.map(doc => sanitizeExpenseFromRemote({
             id: doc.id,
             ...doc.data()
         }));
@@ -1817,16 +2277,19 @@ export async function fetchFromFirebase() {
             const normalizedMergedExpenses = normalizeExpensesReceiptState(mergeResult.expenses);
             setExpenses(normalizedMergedExpenses);
             setSuppliers(mergeResult.suppliers);
-            await rehydrateStrippedReceiptUrlsFromFirestore();
             saveToLocalStorage();
-
             console.log('Data updated from Firebase');
             showSyncStatus('↓ Updated', 'success');
-            return true; // Indicate changes were made
         } else {
             console.log('Local data is up to date');
-            return false; // No changes
         }
+
+        // Feed only needs text data; receipts are loaded lazily when an expense is opened.
+        // Only rehydrate receipt URLs when explicitly requested (e.g. startup).
+        if (rehydrateReceipts) {
+            await rehydrateAllExpenseReceiptUrls();
+        }
+        return mergeResult.hasChanges;
 
     } catch (error) {
         console.error('Failed to fetch from Firebase:', error);
@@ -1841,9 +2304,8 @@ function mergeData(localData, firebaseData) {
     const mergedExpenses = [...localData.expenses];
     const mergedSuppliers = [...localData.suppliers];
     
-    // If local data is completely empty, allow all Firebase data to be restored
-    // (deletion tracking should have been cleared in loadFromLocalStorage if localStorage was empty)
-    const isLocalDataEmpty = localData.expenses.length === 0 && localData.suppliers.length === 0;
+    // If local expenses are empty, allow Firebase expenses to be restored even when suppliers exist locally.
+    const isLocalDataEmpty = localData.expenses.length === 0;
 
     // Merge expenses
     firebaseData.expenses.forEach(firebaseItem => {
@@ -1883,21 +2345,15 @@ function mergeData(localData, firebaseData) {
 
             if (firebaseUpdated > localUpdated) {
                 const mergedFirebaseWinner = { ...firebaseItem };
-                if (
-                    !firebaseHasUrl &&
-                    firebaseItem?.receiptImage !== null &&
-                    localHasUrl
-                ) {
+                if (!firebaseHasUrl && localHasUrl) {
                     mergedFirebaseWinner.receiptImage = localItem.receiptImage;
+                    mergedFirebaseWinner.hasReceiptImage = true;
+                } else if (!firebaseHasUrl && !localHasUrl && (localItem.hasReceiptImage || firebaseItem.hasReceiptImage)) {
                     mergedFirebaseWinner.hasReceiptImage = true;
                 }
                 mergedExpenses[localIndex] = normalizeExpenseReceiptState(mergedFirebaseWinner);
                 hasChanges = true;
-            } else if (
-                !localHasUrl &&
-                localItem?.receiptImage !== null &&
-                firebaseHasUrl
-            ) {
+            } else if (!localHasUrl && firebaseHasUrl) {
                 const mergedLocalWinner = normalizeExpenseReceiptState({
                     ...localItem,
                     receiptImage: firebaseItem.receiptImage,
@@ -1905,6 +2361,12 @@ function mergeData(localData, firebaseData) {
                 });
                 mergedExpenses[localIndex] = mergedLocalWinner;
                 hasChanges = true;
+            } else if (localHasUrl && !firebaseHasUrl && firebaseUpdated.getTime() === localUpdated.getTime()) {
+                // Same revision — keep local receipt URL if Firebase row lost the field.
+                mergedExpenses[localIndex] = normalizeExpenseReceiptState({
+                    ...localItem,
+                    hasReceiptImage: true
+                });
             }
         }
     });
@@ -3442,19 +3904,23 @@ function convertToCSV(data) {
     return csvRows.join('\n');
 }
 
-// Force sync before page unload
+function triggerBackgroundSyncFlush() {
+    if (!hasPendingChanges || !db) return;
+    if (syncTimeout) {
+        clearTimeout(syncTimeout);
+        syncTimeout = null;
+    }
+    syncToFirebase();
+    console.log('Forced background sync flush');
+}
+
+// Force sync when the page is hidden or unloaded (mobile-friendly).
 export function setupBeforeUnloadSync() {
-    window.addEventListener('beforeunload', function (e) {
-        if (hasPendingChanges && syncTimeout) {
-            // Clear the timeout and sync immediately
-            clearTimeout(syncTimeout);
-            syncTimeout = null;
-
-            // Force immediate sync (this is synchronous)
-            syncToFirebase();
-            hasPendingChanges = false;
-
-            console.log('Forced sync before page unload');
+    window.addEventListener('beforeunload', triggerBackgroundSyncFlush);
+    window.addEventListener('pagehide', triggerBackgroundSyncFlush);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') {
+            triggerBackgroundSyncFlush();
         }
     });
 }
@@ -3470,8 +3936,15 @@ export async function initializeFirebaseSync() {
         // Fetch latest data from Firebase in background
         const hasChanges = await fetchFromFirebase();
 
-        // Set up periodic sync every 5 minutes
-        setInterval(fetchFromFirebase, 5 * 60 * 1000);
+        // Push local-only rows that never reached the server (failed sync, closed before debounce).
+        if (expenses.length > 0 || suppliers.length > 0) {
+            hasPendingChanges = true;
+            await syncToFirebase();
+        }
+
+        // Set up periodic sync (60s visible / 5min hidden)
+        scheduleFirebasePoll();
+        setupFirebasePollVisibilityHandler();
 
         console.log('Firebase sync initialized');
         return hasChanges;

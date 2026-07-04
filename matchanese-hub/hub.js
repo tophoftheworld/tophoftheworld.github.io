@@ -28,7 +28,7 @@
     menu.hidden = true;
     menu.innerHTML = `
       <a href="/shopify/" data-hub="shopify">Shopify Orders</a>
-      <a href="/workshops" data-hub="workshops">Workshops</a>
+      <a href="/workshops/" data-hub="workshops">Workshops</a>
       <a href="/leads/" data-hub="leads">Service leads &amp; Inbox</a>
     `;
 

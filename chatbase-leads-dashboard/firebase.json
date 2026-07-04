@@ -12,6 +12,13 @@
       "**/.*",
       "**/node_modules/**"
     ],
+    "redirects": [
+      {
+        "regex": "/workshops$",
+        "destination": "/workshops/",
+        "type": 301
+      }
+    ],
     "rewrites": [
       {
         "source": "/api/**",
@@ -22,12 +29,16 @@
         "destination": "/conversation.html"
       },
       {
-        "source": "/workshops",
-        "destination": "/shopify/workshops.html"
+        "source": "/workshops/",
+        "destination": "/workshops/workshops.html"
       },
       {
         "source": "/shopify",
         "destination": "/shopify/index.html"
+      },
+      {
+        "source": "/leads",
+        "destination": "/leads/index.html"
       },
       {
         "source": "**",

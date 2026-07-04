@@ -219,7 +219,16 @@ const server = http.createServer(async (req, res) => {
     return redirect(res, `/leads/index.html${u.search || ""}`);
   }
   if (pathname === "/workshops" || pathname === "/workshops/") {
-    return redirect(res, "/shopify/workshops.html");
+    return redirect(res, `/workshops/workshops.html${u.search || ""}`);
+  }
+
+  if (pathname.startsWith("/workshops/")) {
+    const filePath = safeJoin(SHOPIFY_ROOT, pathname.slice("/workshops/".length));
+    if (!filePath) {
+      res.writeHead(404);
+      return res.end("Not Found");
+    }
+    return sendStatic(res, filePath);
   }
 
   if (pathname.startsWith("/hub/")) {

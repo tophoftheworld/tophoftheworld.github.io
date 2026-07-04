@@ -12,7 +12,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"
         integrity="sha512-ElRFoEQdI5Ht6kZvyzXhYG9NqjtkmlkfYk0wr6wHxU9JEHakS7UJZNeml5ALk+8IKlU6jDgMabC3vkumRokgJA=="
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <link rel="stylesheet" href="css/admin.css?v=1052">
+    <link rel="stylesheet" href="css/admin.css?v=1054">
 </head>
 
 <body>
@@ -34,12 +34,21 @@
             <!-- Cards will be populated by JS -->
         </div>
 
-        <!-- Table Type Selector (Expenses/Suppliers/Analytics) - Moved Above -->
-        <div class="table-type-controls" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; padding: 1rem; background: white; border-radius: 10px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);">
+        <!-- Table Type Selector (Expenses/Suppliers/Analytics) -->
+        <div class="table-type-controls">
             <div class="view-selector">
                 <button class="view-btn active" data-table="expenses">Expenses</button>
                 <button class="view-btn" data-table="suppliers">Suppliers</button>
                 <button class="view-btn" data-table="analytics">Analytics</button>
+            </div>
+            <div class="table-type-actions" id="tableTypeActions">
+                <button class="action-btn primary" id="addExpenseBtn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    Add Expense
+                </button>
             </div>
         </div>
 
@@ -68,28 +77,30 @@
                 </div>
 
                 <div class="date-filter-group">
-                    <div class="date-shortcuts" id="dateShortcuts">
-                        <!-- Dynamic shortcuts populated by JS -->
+                    <div class="date-filter-option" data-date-mode="preset">
+                        <span class="date-filter-option-label">All time</span>
+                        <div class="date-shortcuts" id="dateShortcuts">
+                            <!-- Dynamic shortcuts populated by JS -->
+                        </div>
                     </div>
 
-                    <select id="monthDropdown" class="month-dropdown">
-                        <option value="">Select Month</option>
-                    </select>
+                    <div class="date-filter-option" data-date-mode="month">
+                        <span class="date-filter-option-label">By month</span>
+                        <select id="monthDropdown" class="month-dropdown date-filter-control">
+                            <option value="">Select month…</option>
+                        </select>
+                    </div>
 
-                    <input type="text" id="dateRange" placeholder="Select date range" />
+                    <div class="date-filter-option" data-date-mode="custom">
+                        <span class="date-filter-option-label">Custom range</span>
+                        <input type="text" id="dateRange" class="date-filter-control" placeholder="Pick dates…" readonly />
+                    </div>
                 </div>
             </div>
 
-            <!-- Action Buttons Row -->
-            <div class="action-row">
+            <!-- Bulk action buttons (shown when rows are selected) -->
+            <div class="action-row" id="bulkActionRow" style="display: none;">
                 <div class="table-actions">
-                    <button class="action-btn primary" id="addExpenseBtn">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <line x1="12" y1="5" x2="12" y2="19"></line>
-                            <line x1="5" y1="12" x2="19" y2="12"></line>
-                        </svg>
-                        Add Expense
-                    </button>
                     <button class="action-btn secondary" id="exportBtn" style="display: none;">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -145,7 +156,7 @@
                             <th data-sort="category">Category</th>
                             <th data-sort="amount">Amount</th>
                             <th data-sort="branch">Branch</th>
-                            <th data-sort="payment">Payment</th>
+                            <th data-sort="paidby">Paid By</th>
                             <th data-sort="vat">VAT</th>
                         </tr>
                     </thead>
@@ -207,10 +218,6 @@
                     <div class="analytics-card">
                         <h4>Expense Categories</h4>
                         <div id="expenseCategories"></div>
-                    </div>
-                    <div class="analytics-card">
-                        <h4>Payment Methods</h4>
-                        <div id="paymentMethods"></div>
                     </div>
                     <div class="analytics-card">
                         <h4>VAT Summary</h4>
@@ -296,7 +303,7 @@
     </div>
 
     <!-- Load admin script at the bottom to ensure DOM is ready -->
-    <script type="module" src="./js/admin.js?v=1064"></script>
+    <script type="module" src="./js/admin.js?v=1070"></script>
 
 </body>
 

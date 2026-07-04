@@ -193,6 +193,9 @@ function migrateLeadRow(row) {
     out.pipelineStatus = DEFAULT_PIPELINE_STATUS;
   }
   out.pipelineStatus = resolvePipelineStatus(out);
+  if (!out.updatedAt && out.createdAt) {
+    out.updatedAt = out.createdAt;
+  }
   return out;
 }
 
@@ -789,7 +792,7 @@ async function listServiceLeads({ startDate, endDate, service, eventType, page =
   const startBound = parseDateBound(startDate, false);
   const endBound = parseDateBound(endDate, true);
 
-  const snap = await db.collection(COLLECTION).orderBy("createdAt", "desc").limit(500).get();
+  const snap = await db.collection(COLLECTION).orderBy("updatedAt", "desc").limit(500).get();
 
   let rows = snap.docs.map((doc) => serializeLeadRow(doc.id, doc.data()));
 

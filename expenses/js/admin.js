@@ -1,4 +1,4 @@
-import * as shared from './shared.js?v=1.5.57';
+import * as shared from './shared.js?v=1.5.62';
 import {
     createAutocomplete,
     getItemMatches,
@@ -389,100 +389,83 @@ function adminPromptDeleteSupplier(supplierId) {
     );
 }
 
-function closeAdminSupplierEditOverlay() {
-    document.getElementById('adminSupplierEditOverlay')?.remove();
+function saveAdminSupplierFromFormData(supplierId, supplierData) {
+    const existingSupplier = shared.getSuppliers().find((s) => s.id === supplierId);
+    if (!existingSupplier) {
+        shared.showToast('Supplier not found');
+        return false;
+    }
+    const result = shared.createSupplierObject(supplierData, {
+        existingSupplier,
+        isEditing: supplierId,
+        validate: true,
+    });
+    if (!result.success) {
+        shared.showToast(result.errors.join(', '));
+        return false;
+    }
+    const success = shared.updateSupplier(supplierId, result.supplier);
+    if (!success) {
+        shared.showToast('Failed to update supplier');
+        return false;
+    }
+    const updateResult = shared.updateExpensesForSupplier(existingSupplier, result.supplier);
+    const expenseMsg =
+        updateResult.updated > 0
+            ? ` Updated ${updateResult.updated} expense${updateResult.updated === 1 ? '' : 's'}.`
+            : '';
+    shared.showToast(`Supplier saved.${expenseMsg}`);
+    refreshAdminTables();
+    return result.supplier;
 }
 
-function openAdminSupplierEditModal(supplierId) {
-    const supplier = shared.getSuppliers().find((s) => s.id === supplierId);
-    if (!supplier) {
-        shared.showToast('Supplier not found');
-        return;
-    }
-    closeAdminSupplierEditOverlay();
+function readAdminSupplierInfoForm(form) {
+    return {
+        name: form.querySelector('[data-supplier-field="name"]')?.value?.trim() || '',
+        businessName: form.querySelector('[data-supplier-field="businessName"]')?.value?.trim() || '',
+        tin: form.querySelector('[data-supplier-field="tin"]')?.value?.trim() || '',
+        address: form.querySelector('[data-supplier-field="address"]')?.value?.trim() || '',
+        isVatRegistered: !!form.querySelector('[data-supplier-field="isVatRegistered"]')?.checked,
+    };
+}
 
-    const overlay = document.createElement('div');
-    overlay.id = 'adminSupplierEditOverlay';
-    overlay.className = 'admin-supplier-edit-overlay';
-    overlay.innerHTML = `
-        <div class="admin-supplier-edit-dialog" role="dialog" aria-labelledby="adminSupplierEditTitle">
-            <div class="admin-supplier-edit-header">
-                <h2 id="adminSupplierEditTitle">Edit supplier</h2>
-                <button type="button" class="admin-modal-icon-btn" aria-label="Close" data-admin-edit-close>&times;</button>
-            </div>
-            <form class="admin-supplier-edit-form" id="adminSupplierEditForm">
-                <div class="admin-field">
-                    <label for="adminEditSupName">Supplier name</label>
-                    <input type="text" id="adminEditSupName" required value="${escapeHtml(supplier.name)}">
-                </div>
-                <div class="admin-field">
-                    <label for="adminEditSupBiz">Business name</label>
-                    <input type="text" id="adminEditSupBiz" value="${escapeHtml(supplier.businessName || '')}">
-                </div>
-                <div class="admin-field">
-                    <label for="adminEditSupTin">TIN</label>
-                    <input type="text" id="adminEditSupTin" value="${escapeHtml(supplier.tin || '')}">
-                </div>
-                <div class="admin-field">
-                    <label for="adminEditSupAddr">Address</label>
-                    <textarea id="adminEditSupAddr" rows="2">${escapeHtml(supplier.address || '')}</textarea>
-                </div>
-                <label class="admin-supplier-edit-vat">
-                    <input type="checkbox" id="adminEditSupVat" ${supplier.isVatRegistered ? 'checked' : ''}>
-                    VAT registered
-                </label>
-                <div class="admin-supplier-edit-actions">
-                    <button type="button" class="action-btn secondary" data-admin-edit-cancel>Cancel</button>
-                    <button type="submit" class="action-btn primary">Save</button>
-                </div>
-            </form>
-        </div>`;
+function wireAdminSupplierInfoForm(modal, supplierId) {
+    const form = modal.querySelector('#adminSupplierInfoForm');
+    const saveBtn = modal.querySelector('[data-admin-supplier-info-save]');
+    const headName = modal.querySelector('.admin-supplier-modal-head-name');
+    if (!form || !saveBtn) return;
 
-    overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) closeAdminSupplierEditOverlay();
-    });
-    overlay.querySelector('[data-admin-edit-close]')?.addEventListener('click', closeAdminSupplierEditOverlay);
-    overlay.querySelector('[data-admin-edit-cancel]')?.addEventListener('click', closeAdminSupplierEditOverlay);
+    const snapshot = () => JSON.stringify(readAdminSupplierInfoForm(form));
 
-    overlay.querySelector('#adminSupplierEditForm')?.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const existingSupplier = shared.getSuppliers().find((s) => s.id === supplierId);
-        if (!existingSupplier) {
-            shared.showToast('Supplier not found');
-            return;
-        }
-        const supplierData = {
-            name: document.getElementById('adminEditSupName')?.value?.trim() || '',
-            businessName: document.getElementById('adminEditSupBiz')?.value?.trim() || '',
-            tin: document.getElementById('adminEditSupTin')?.value?.trim() || '',
-            address: document.getElementById('adminEditSupAddr')?.value?.trim() || '',
-            isVatRegistered: !!document.getElementById('adminEditSupVat')?.checked,
-        };
-        const result = shared.createSupplierObject(supplierData, {
-            existingSupplier,
-            isEditing: supplierId,
-            validate: true,
-        });
-        if (!result.success) {
-            shared.showToast(result.errors.join(', '));
-            return;
-        }
-        const success = shared.updateSupplier(supplierId, result.supplier);
-        if (!success) {
-            shared.showToast('Failed to update supplier');
-            return;
-        }
-        const updateResult = shared.updateExpensesForSupplier(existingSupplier, result.supplier);
-        const expenseMsg =
-            updateResult.updated > 0
-                ? ` Updated ${updateResult.updated} expense${updateResult.updated === 1 ? '' : 's'}.`
-                : '';
-        shared.showToast(`Supplier saved.${expenseMsg}`);
-        closeAdminSupplierEditOverlay();
-        refreshAdminTables();
+    let baseline = snapshot();
+    const setSaveEnabled = (enabled) => {
+        saveBtn.disabled = !enabled;
+        saveBtn.classList.toggle('is-dirty', enabled);
+    };
+    setSaveEnabled(false);
+
+    const onFieldChange = () => {
+        setSaveEnabled(snapshot() !== baseline);
+        const nameVal = form.querySelector('[data-supplier-field="name"]')?.value?.trim();
+        if (headName && nameVal) headName.textContent = nameVal;
+    };
+
+    form.querySelectorAll('input, textarea').forEach((el) => {
+        el.addEventListener('input', onFieldChange);
+        el.addEventListener('change', onFieldChange);
     });
 
-    document.body.appendChild(overlay);
+    saveBtn.addEventListener('click', () => {
+        const updated = saveAdminSupplierFromFormData(supplierId, readAdminSupplierInfoForm(form));
+        if (!updated) return;
+        baseline = snapshot();
+        setSaveEnabled(false);
+        if (headName) headName.textContent = updated.name || '';
+    });
+}
+
+function closeAdminSupplierEditOverlay() {
+    document.getElementById('adminSupplierEditOverlay')?.remove();
 }
 
 function getActiveDataTable() {
@@ -597,17 +580,19 @@ function loadLocalDataAndRender() {
     return hasLocalData;
 }
 
+/** @returns {Promise<{ ok: boolean, hasData: boolean }>} */
 async function syncRemoteDataInBackground(startedAtMs) {
     const syncStartMs = performance.now();
-    console.log('[Startup] Starting background Firebase sync...');
+    console.log('[Startup] Starting Firebase sync...');
     try {
         const firebaseReady = await shared.initializeFirebase();
         if (!firebaseReady) {
             console.log('[Startup] Firebase unavailable (offline mode)');
-            return;
+            return { ok: false, hasData: false };
         }
 
         const hasChanges = await shared.fetchFromFirebase();
+        await shared.flushPendingSync();
         if (hasChanges) {
             renderAdminDataSnapshot('Firebase sync applied');
         } else {
@@ -620,12 +605,27 @@ async function syncRemoteDataInBackground(startedAtMs) {
             console.log(`[Startup] VAT backfill updated ${vatBackfillUpdated} expense(s)`);
             refreshAdminTables();
         }
+
+        const hasData = shared.getExpenses().length > 0 || shared.getSuppliers().length > 0;
+        return { ok: true, hasData };
     } catch (error) {
-        console.error('[Startup] Background Firebase sync failed:', error);
+        console.error('[Startup] Firebase sync failed:', error);
+        return { ok: false, hasData: false };
     } finally {
         const remoteMs = Math.round(performance.now() - syncStartMs);
         const totalMs = Math.round(performance.now() - startedAtMs);
         console.log(`[StartupTiming] remote_sync_complete=${remoteMs}ms total_since_boot=${totalMs}ms`);
+    }
+}
+
+function showAdminLoadError(message) {
+    const summaryCards = document.getElementById('summaryCards');
+    if (summaryCards) {
+        summaryCards.innerHTML = `<div class="summary-card"><div class="card-title">Could not load data</div><div class="card-value">${message}</div></div>`;
+    }
+    const tbody = document.getElementById('expenseTableBody');
+    if (tbody) {
+        tbody.innerHTML = `<tr><td colspan="9">${message}</td></tr>`;
     }
 }
 
@@ -665,7 +665,7 @@ function renderTable() {
             ? `<span title="${escapeHtml(vatLbl.title)}">${escapeHtml(vatLbl.text)}</span>`
             : escapeHtml(vatLbl.text);
         const supplierCell = `<strong>${escapeHtml((expense.supplierName || '').trim() || 'No supplier')}</strong>`;
-        const payMethod = expense.paymentMethod ? escapeHtml(expense.paymentMethod) : '—';
+        const paidByCell = escapeHtml(expense.paidBy || '—');
 
         row.innerHTML = `
             <td><input type="checkbox" onchange="updateBulkActionBar()" onclick="handleCheckboxClick(event)"></td>
@@ -675,7 +675,7 @@ function renderTable() {
             <td>${escapeHtml(expense.expenseCategory || shared.DEFAULT_EXPENSE_CATEGORY)}</td>
             <td>₱${(expense.totalAmount || 0).toLocaleString()}</td>
             <td>${escapeHtml(expense.branch || 'No branch')}</td>
-            <td>${payMethod}</td>
+            <td>${paidByCell}</td>
             <td>${vatText}</td>
         `;
 
@@ -817,6 +817,19 @@ function updateSummary() {
 
 // This DOMContentLoaded listener is removed - using the one below instead
 
+function setDateFilterActiveMode(mode) {
+    document.querySelectorAll('.date-filter-option').forEach((el) => {
+        el.classList.toggle('is-active', el.dataset.dateMode === mode);
+    });
+}
+
+function updateDateRangeDisplay(start, end) {
+    if (!dateRangeInput || !start || !end) return;
+    setTimeout(() => {
+        dateRangeInput.value = formatDateRange(start, end);
+    }, 10);
+}
+
 // Format date range display
 function formatDateRange(startDate, endDate) {
     const startMonth = startDate.toLocaleString('en-US', { month: 'short' });
@@ -866,29 +879,23 @@ function initializeDateRangePicker() {
             ],
             onChange: function (selectedDates) {
                 console.log('[DatePicker] Date changed:', selectedDates);
-                // Clear all active shortcut buttons when custom date is selected
                 document.querySelectorAll('.date-shortcut-btn').forEach(btn => {
                     btn.classList.remove('active');
                 });
+                const monthDropdown = document.getElementById('monthDropdown');
+                if (monthDropdown) monthDropdown.value = '';
 
-                // Add custom range styling and format display
                 if (selectedDates.length === 2) {
                     dateRangeInput.classList.add('custom-range');
-                    // Override the display with our custom format
-                    setTimeout(() => {
-                        dateRangeInput.value = formatDateRange(selectedDates[0], selectedDates[1]);
-                    }, 10);
-                    
+                    setDateFilterActiveMode('custom');
+                    updateDateRangeDisplay(selectedDates[0], selectedDates[1]);
                     filterAndRender();
                 }
             },
             onReady: function (selectedDates) {
                 console.log('[DatePicker] Ready with dates:', selectedDates);
-                // Format initial display too
                 if (selectedDates.length === 2) {
-                    setTimeout(() => {
-                        dateRangeInput.value = formatDateRange(selectedDates[0], selectedDates[1]);
-                    }, 10);
+                    updateDateRangeDisplay(selectedDates[0], selectedDates[1]);
                 }
             }
         });
@@ -923,7 +930,7 @@ function createDateShortcuts() {
 
 // Populate month dropdown with months that have data
     if (monthDropdown) {
-    monthDropdown.innerHTML = '<option value="">Select Month</option>';
+    monthDropdown.innerHTML = '<option value="">Select month…</option>';
     
     const monthsWithData = getMonthsWithData();
     
@@ -962,7 +969,7 @@ function refreshMonthDropdown() {
     const monthDropdown = document.getElementById("monthDropdown");
     if (!monthDropdown) return;
     
-    monthDropdown.innerHTML = '<option value="">Select Month</option>';
+    monthDropdown.innerHTML = '<option value="">Select month…</option>';
     
     const monthsWithData = getMonthsWithData();
     
@@ -1043,17 +1050,18 @@ function setDateRangeShortcut(type) {
 
     dateRangeInput._flatpickr.setDate([start, end]);
 
-    // Format the display
-    setTimeout(() => {
-        dateRangeInput.value = "All Data";
-    }, 10);
+    const monthDropdown = document.getElementById('monthDropdown');
+    if (monthDropdown) monthDropdown.value = '';
+
+    updateDateRangeDisplay(start, end);
+    setDateFilterActiveMode('preset');
 
     // Add active state to clicked shortcut
     document.querySelectorAll('.date-shortcut-btn').forEach(btn => {
         btn.classList.toggle('active', btn.textContent === type);
     });
 
-    // Remove custom range styling when using shortcuts
+    // Preset mode — custom-range highlight only when user picks dates manually
     dateRangeInput.classList.remove('custom-range');
 
     filterAndRender();
@@ -1075,20 +1083,15 @@ function setMonthRange(monthDate) {
     dateRangeInput._flatpickr.clear();
     dateRangeInput._flatpickr.setDate([start, end]);
 
-    // Update the input value with month format
-    const monthName = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-    dateRangeInput.value = monthName;
+    updateDateRangeDisplay(start, end);
 
-    // Update active button
     document.querySelectorAll('.date-shortcut-btn').forEach(btn => {
         btn.classList.remove('active');
     });
-    event.target.classList.add('active');
-
-    // Remove custom range styling
+    setDateFilterActiveMode('month');
     dateRangeInput.classList.remove('custom-range');
 
-        filterAndRender();
+    filterAndRender();
 }
 
 function findEarliestDataDate() {
@@ -1153,6 +1156,7 @@ async function initialize() {
     console.log('=== INITIALIZING ADMIN INTERFACE ===');
     updateAdminBusyOverlayMessage('Loading Dashboard');
     const bootStartMs = performance.now();
+    let hasLocalData = false;
 
     try {
         // Set default sorting BEFORE loading data
@@ -1171,20 +1175,17 @@ async function initialize() {
         createDateShortcuts();
         console.log('[3/8] ✓ Created date shortcuts');
 
-        // Critical path: local data only (first interactive paint)
+        // Paint from local cache when available; Firebase is always the source of truth.
         console.log('[4/8] Loading local data...');
-        const hasLocalData = loadLocalDataAndRender();
+        hasLocalData = loadLocalDataAndRender();
         if (hasLocalData) {
             const localMs = Math.round(performance.now() - bootStartMs);
             console.log(`[StartupTiming] local_render_complete=${localMs}ms`);
+            console.log('[4/8] ✓ Local cache rendered');
+        } else {
+            console.log('[4/8] No local cache — will load from Firebase');
+            updateAdminBusyOverlayMessage('Loading expenses from cloud…');
         }
-
-        if (!hasLocalData) {
-            console.error('[4/8] ✗ Failed to load any data');
-            document.getElementById('summaryCards').innerHTML = '<div class="summary-card"><div class="card-title">Error</div><div class="card-value">No data available</div></div>';
-            return;
-        }
-        console.log('[4/8] ✓ Local data loaded');
 
         // Set up all event listeners
         console.log('[5/8] Setting up event listeners...');
@@ -1203,6 +1204,17 @@ async function initialize() {
         setupPagination('expenses');
         setupPagination('suppliers');
         console.log('[7/8] ✓ Setup pagination');
+
+        if (!hasLocalData) {
+            const syncResult = await syncRemoteDataInBackground(bootStartMs);
+            if (!syncResult?.hasData) {
+                const message = syncResult?.ok
+                    ? 'No expenses found in cloud storage.'
+                    : 'Check your internet connection and reload the page.';
+                showAdminLoadError(message);
+                return;
+            }
+        }
 
         // Set default after a small delay to ensure flatpickr is ready
         await new Promise((resolve) => {
@@ -1223,8 +1235,10 @@ async function initialize() {
         hideAdminBusyOverlay();
     }
 
-    // Background phase: network sync and non-critical maintenance work.
-    syncRemoteDataInBackground(bootStartMs);
+    // Background sync when local cache already painted the UI.
+    if (hasLocalData) {
+        syncRemoteDataInBackground(bootStartMs);
+    }
 }
 
 function setupEventListeners() {
@@ -1248,6 +1262,7 @@ function setupEventListeners() {
             const filterSection = document.getElementById('adminFilterSection');
             const mainControls = document.querySelector('.main-controls');
             const addExpenseBtn = document.getElementById('addExpenseBtn');
+            const tableTypeActions = document.getElementById('tableTypeActions');
             const tableControls = document.querySelector('.table-controls');
 
             if (mainControls) mainControls.style.display = 'flex';
@@ -1255,14 +1270,17 @@ function setupEventListeners() {
             if (btn.dataset.table === 'expenses') {
                 if (filterSection) filterSection.style.display = '';
                 if (addExpenseBtn) addExpenseBtn.style.display = 'inline-flex';
+                if (tableTypeActions) tableTypeActions.style.display = '';
                 if (tableControls) tableControls.style.display = 'flex';
             } else if (btn.dataset.table === 'suppliers') {
                 if (filterSection) filterSection.style.display = 'none';
                 if (addExpenseBtn) addExpenseBtn.style.display = 'none';
+                if (tableTypeActions) tableTypeActions.style.display = 'none';
                 if (tableControls) tableControls.style.display = 'flex';
             } else {
                 if (filterSection) filterSection.style.display = 'none';
                 if (addExpenseBtn) addExpenseBtn.style.display = 'none';
+                if (tableTypeActions) tableTypeActions.style.display = 'none';
                 if (tableControls) tableControls.style.display = 'none';
             }
 
@@ -1769,9 +1787,9 @@ function renderFilteredTable(filteredExpenses) {
                     aVal = (a.branch || '').toLowerCase();
                     bVal = (b.branch || '').toLowerCase();
                     break;
-                case 'payment':
-                    aVal = (a.paymentMethod || '').toLowerCase();
-                    bVal = (b.paymentMethod || '').toLowerCase();
+                case 'paidby':
+                    aVal = (a.paidBy || '').toLowerCase();
+                    bVal = (b.paidBy || '').toLowerCase();
                     break;
                 case 'vat':
                     aVal = a.vatAmount || 0;
@@ -1814,7 +1832,7 @@ function renderFilteredTable(filteredExpenses) {
             ? `<span title="${escapeHtml(vatLbl.title)}">${escapeHtml(vatLbl.text)}</span>`
             : escapeHtml(vatLbl.text);
         const supplierCell = `<strong>${escapeHtml((expense.supplierName || '').trim() || 'No supplier')}</strong>`;
-        const payMethod = expense.paymentMethod ? escapeHtml(expense.paymentMethod) : '—';
+        const paidByCell = escapeHtml(expense.paidBy || '—');
 
         row.innerHTML = `
             <td><input type="checkbox" onchange="updateBulkActionBar()" onclick="handleCheckboxClick(event)"></td>
@@ -1824,7 +1842,7 @@ function renderFilteredTable(filteredExpenses) {
             <td>${escapeHtml(expense.expenseCategory || shared.DEFAULT_EXPENSE_CATEGORY)}</td>
             <td>₱${(expense.totalAmount || 0).toLocaleString()}</td>
             <td>${escapeHtml(expense.branch || 'No branch')}</td>
-            <td>${payMethod}</td>
+            <td>${paidByCell}</td>
             <td>${vatText}</td>
         `;
 
@@ -2671,19 +2689,6 @@ function showBulkEditModalDialog(expenses) {
             </div>
             
             <div class="form-group" style="margin-bottom: 1rem;">
-                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Payment Method</label>
-                <select id="bulkEditPayment" style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 6px; font-size: 1rem;">
-                    <option value="">-- Keep current --</option>
-                    <option value="Cash">Cash</option>
-                    <option value="Credit Card">Credit Card</option>
-                    <option value="GCash">GCash</option>
-                    <option value="GrabPay">GrabPay</option>
-                    <option value="Debit Card">Debit Card</option>
-                    <option value="Bank Transfer">Bank Transfer</option>
-                </select>
-            </div>
-            
-            <div class="form-group" style="margin-bottom: 1rem;">
                 <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Paid By</label>
                 <select id="bulkEditPaidBy" style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 6px; font-size: 1rem;">
                     <option value="">-- Keep current --</option>
@@ -2724,7 +2729,6 @@ window.applyBulkEdit = function() {
     if (!expenses || expenses.length === 0) return;
     
     const branch = document.getElementById('bulkEditBranch').value;
-    const payment = document.getElementById('bulkEditPayment').value;
     const paidBy = document.getElementById('bulkEditPaidBy').value;
     const note = document.getElementById('bulkEditNote').value;
     
@@ -2734,7 +2738,6 @@ window.applyBulkEdit = function() {
         const updates = { ...expense };
         
         if (branch) updates.branch = branch;
-        if (payment) updates.paymentMethod = payment;
         if (paidBy === 'Store Cash' || paidBy === 'Company') updates.paidBy = paidBy;
         if (note) {
             updates.notes = updates.notes ? `${updates.notes} | ${note}` : note;
@@ -2815,13 +2818,17 @@ window.updateBulkActionBar = function () {
     const bulkEditBtn = document.getElementById('bulkEditBtn');
     const bulkMergeBtn = document.getElementById('bulkMergeBtn');
     const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
+    const bulkActionRow = document.getElementById('bulkActionRow');
 
     if (tab === 'analytics') {
         if (bulkEditBtn) bulkEditBtn.style.display = 'none';
         if (bulkMergeBtn) bulkMergeBtn.style.display = 'none';
         if (bulkDeleteBtn) bulkDeleteBtn.style.display = 'none';
+        if (bulkActionRow) bulkActionRow.style.display = 'none';
         return;
     }
+
+    let anyVisible = false;
 
     if (tab === 'expenses') {
         if (bulkMergeBtn) bulkMergeBtn.style.display = 'none';
@@ -2829,6 +2836,7 @@ window.updateBulkActionBar = function () {
         if (bulkEditBtn) {
             if (n > 0) {
                 bulkEditBtn.style.display = 'inline-flex';
+                anyVisible = true;
                 const label = n === 1 ? 'Edit' : `Edit ${n} entries`;
                 setBulkButtonLabel(bulkEditBtn, bulkEditSvg, label);
             } else bulkEditBtn.style.display = 'none';
@@ -2836,6 +2844,7 @@ window.updateBulkActionBar = function () {
         if (bulkDeleteBtn) {
             if (n > 0) {
                 bulkDeleteBtn.style.display = 'inline-flex';
+                anyVisible = true;
                 setBulkButtonLabel(bulkDeleteBtn, bulkDelSvg, n === 1 ? 'Delete' : `Delete ${n}`);
             } else bulkDeleteBtn.style.display = 'none';
         }
@@ -2845,16 +2854,20 @@ window.updateBulkActionBar = function () {
         if (bulkMergeBtn) {
             if (n >= 2) {
                 bulkMergeBtn.style.display = 'inline-flex';
+                anyVisible = true;
                 setBulkButtonLabel(bulkMergeBtn, bulkMergeSvg, 'Merge');
             } else bulkMergeBtn.style.display = 'none';
         }
         if (bulkDeleteBtn) {
             if (n > 0) {
                 bulkDeleteBtn.style.display = 'inline-flex';
+                anyVisible = true;
                 setBulkButtonLabel(bulkDeleteBtn, bulkDelSvg, n === 1 ? 'Delete' : `Delete ${n}`);
             } else bulkDeleteBtn.style.display = 'none';
         }
     }
+
+    if (bulkActionRow) bulkActionRow.style.display = anyVisible ? '' : 'none';
 };
 
 /** @deprecated use updateBulkActionBar */
@@ -2953,7 +2966,6 @@ window.viewSupplierDetails = function (supplierName) {
         lastTs != null ? formatDate(new Date(lastTs).toISOString().split('T')[0]) : null;
 
     const mergeSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/><path d="m9 9 6 6"/><path d="M15 9H9v6"/></svg>`;
-    const editSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="m18.5 2.5 a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>`;
     const delSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="3,6 5,6 21,6"/><path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>`;
 
     modal.innerHTML = `
@@ -2965,38 +2977,39 @@ window.viewSupplierDetails = function (supplierName) {
                 </div>
                 <div class="admin-supplier-modal-header-actions">
                     <button type="button" class="admin-modal-icon-btn" title="Merge into this supplier" data-admin-supplier-merge>${mergeSvg}</button>
-                    <button type="button" class="admin-modal-icon-btn" title="Edit supplier" data-admin-supplier-edit>${editSvg}</button>
                     <button type="button" class="admin-modal-icon-btn danger" title="Delete supplier" data-admin-supplier-delete>${delSvg}</button>
                     <button type="button" class="admin-modal-icon-btn" aria-label="Close" data-admin-supplier-close>&times;</button>
                 </div>
             </div>
             <div class="admin-supplier-modal-body">
                 <div class="admin-supplier-detail-grid">
-                    <div class="admin-supplier-detail-card">
-                        <h3 class="admin-supplier-detail-card-title">Information</h3>
-                        <dl class="admin-supplier-detail-dl">
-                            <div class="admin-supplier-detail-row"><dt>Supplier name</dt><dd>${escapeHtml(supplier.name)}</dd></div>
-                            ${
-                                supplier.isVatRegistered
-                                    ? `<div class="admin-supplier-detail-row"><dt>VAT</dt><dd><span class="admin-vat-badge">VAT registered</span></dd></div>`
-                                    : `<div class="admin-supplier-detail-row"><dt>VAT</dt><dd>Not registered</dd></div>`
-                            }
-                            ${
-                                supplier.businessName
-                                    ? `<div class="admin-supplier-detail-row"><dt>Business name</dt><dd>${escapeHtml(supplier.businessName)}</dd></div>`
-                                    : ''
-                            }
-                            ${
-                                supplier.tin
-                                    ? `<div class="admin-supplier-detail-row"><dt>TIN</dt><dd>${escapeHtml(supplier.tin)}</dd></div>`
-                                    : ''
-                            }
-                            ${
-                                supplier.address
-                                    ? `<div class="admin-supplier-detail-row"><dt>Address</dt><dd>${escapeHtml(supplier.address)}</dd></div>`
-                                    : ''
-                            }
-                        </dl>
+                    <div class="admin-supplier-detail-card admin-supplier-info-card">
+                        <div class="admin-supplier-info-card-head">
+                            <h3 class="admin-supplier-detail-card-title">Information</h3>
+                            <button type="button" class="action-btn primary admin-supplier-info-save" data-admin-supplier-info-save disabled>Save changes</button>
+                        </div>
+                        <form class="admin-supplier-info-form" id="adminSupplierInfoForm" autocomplete="off">
+                            <div class="admin-supplier-detail-row admin-supplier-field-row">
+                                <label for="adminSupInfoName">Supplier name</label>
+                                <input type="text" id="adminSupInfoName" data-supplier-field="name" required value="${escapeHtml(supplier.name)}">
+                            </div>
+                            <div class="admin-supplier-detail-row admin-supplier-field-row">
+                                <label for="adminSupInfoBiz">Business name</label>
+                                <input type="text" id="adminSupInfoBiz" data-supplier-field="businessName" value="${escapeHtml(supplier.businessName || '')}" placeholder="Optional">
+                            </div>
+                            <div class="admin-supplier-detail-row admin-supplier-field-row">
+                                <label for="adminSupInfoTin">TIN</label>
+                                <input type="text" id="adminSupInfoTin" data-supplier-field="tin" value="${escapeHtml(supplier.tin || '')}" placeholder="Optional">
+                            </div>
+                            <div class="admin-supplier-detail-row admin-supplier-field-row admin-supplier-field-row--stacked">
+                                <label for="adminSupInfoAddr">Address</label>
+                                <textarea id="adminSupInfoAddr" data-supplier-field="address" rows="2" placeholder="Optional">${escapeHtml(supplier.address || '')}</textarea>
+                            </div>
+                            <div class="admin-supplier-detail-row admin-supplier-field-row admin-supplier-field-row--checkbox">
+                                <label for="adminSupInfoVat">VAT registered</label>
+                                <input type="checkbox" id="adminSupInfoVat" data-supplier-field="isVatRegistered" ${supplier.isVatRegistered ? 'checked' : ''}>
+                            </div>
+                        </form>
                     </div>
                     <div class="admin-supplier-detail-card">
                         <h3 class="admin-supplier-detail-card-title">Transaction summary</h3>
@@ -3040,13 +3053,10 @@ window.viewSupplierDetails = function (supplierName) {
         closeAdminSupplierModal();
         setTimeout(() => showAdminMergeSupplierModal(sid), 150);
     });
-    modal.querySelector('[data-admin-supplier-edit]')?.addEventListener('click', () => {
-        closeAdminSupplierModal();
-        setTimeout(() => openAdminSupplierEditModal(sid), 150);
-    });
     modal.querySelector('[data-admin-supplier-delete]')?.addEventListener('click', () => {
         adminPromptDeleteSupplier(sid);
     });
+    wireAdminSupplierInfoForm(modal, sid);
     modal.addEventListener('click', (e) => {
         if (e.target === modal) closeAdminSupplierModal();
     });
@@ -4342,7 +4352,7 @@ window.removeItem = function(button) {
 };
 
 // Save expense function
-window.saveExpense = function(event, expenseId) {
+window.saveExpense = async function(event, expenseId) {
     event.preventDefault();
 
     const formData = new FormData(event.target);
@@ -4458,6 +4468,8 @@ window.saveExpense = function(event, expenseId) {
         shared.updateExpense(expenseId, expense);
         shared.showToast('Expense updated successfully');
     }
+
+    await shared.flushPendingSync();
 
     closeAdminExpenseModal();
     refreshAdminTables();

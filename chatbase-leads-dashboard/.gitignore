@@ -32,6 +32,8 @@ yarn-error.log*
 
 # Generated on deploy (scripts/prepare-deploy.mjs)
 /public/shopify/
+/public/workshops/
+/public/leads/
 /functions/shopify-orders/
 
 

@@ -233,6 +233,14 @@ function applyClientFilters(rows) {
   return rows.filter((row) => getPipelineStatus(row) === pipeline);
 }
 
+function leadLastUpdatedAt(row) {
+  return row?.updatedAt || row?.createdAt || "";
+}
+
+function sortLeadsByLastUpdated(rows) {
+  return [...rows].sort((a, b) => leadLastUpdatedAt(b).localeCompare(leadLastUpdatedAt(a)));
+}
+
 function replaceLeadInList(updated) {
   const idx = allLeads.findIndex((r) => r.id === updated.id);
   if (idx >= 0) allLeads[idx] = updated;
@@ -376,7 +384,7 @@ function setCountMessage(message, isError = false) {
 }
 
 function getFilteredLeads() {
-  return applyClientFilters(allLeads);
+  return sortLeadsByLastUpdated(applyClientFilters(allLeads));
 }
 
 function getPageRows() {

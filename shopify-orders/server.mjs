@@ -24,6 +24,7 @@ import {
     parseTimeSortKey,
     sessionSlotKey,
 } from "./js/registration-core.mjs";
+import { mergeLineItemBundleMeta } from "./js/bundle-line-items.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3847;
@@ -59,6 +60,149 @@ const CLIENT_SECRET = (process.env.SHOPIFY_CLIENT_SECRET || "").trim();
 let cachedOAuthToken = null;
 let cachedOAuthExpiry = 0;
 let cachedLocationId = null;
+
+const SHOPIFY_MIN_GAP_MS = 520;
+const SHOPIFY_MAX_RETRIES = 6;
+
+let shopifyApiTail = Promise.resolve();
+let lastShopifyCallFinishedAt = 0;
+
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function scheduleShopifyCall(fn) {
+    const job = shopifyApiTail.then(fn, fn);
+    shopifyApiTail = job.then(
+        () => {},
+        () => {}
+    );
+    return job;
+}
+
+async function waitShopifyGap() {
+    const elapsed = Date.now() - lastShopifyCallFinishedAt;
+    const wait = SHOPIFY_MIN_GAP_MS - elapsed;
+    if (wait > 0) await sleep(wait);
+}
+
+function shopifyErrorMessage(body, res) {
+    const msg = body?.errors || body?.error || `Shopify HTTP ${res.status}`;
+    return typeof msg === "string" ? msg : JSON.stringify(msg);
+}
+
+function isShopifyRateLimit(res, message) {
+    if (res.status === 429) return true;
+    const s = String(message || "").toLowerCase();
+    return (
+        s.includes("2 calls per second") ||
+        s.includes("throttle") ||
+        s.includes("rate limit") ||
+        s.includes("too many requests")
+    );
+}
+
+async function shopifyRest(path, options = {}) {
+    return scheduleShopifyCall(async () => {
+        for (let attempt = 0; attempt <= SHOPIFY_MAX_RETRIES; attempt++) {
+            await waitShopifyGap();
+            const token = await resolveAccessToken();
+            const url = `https://${SHOP}.myshopify.com/admin/api/${API_VERSION}${path}`;
+            const res = await fetch(url, {
+                ...options,
+                headers: {
+                    "X-Shopify-Access-Token": token,
+                    "Content-Type": "application/json",
+                    ...(options.headers || {}),
+                },
+            });
+            const text = await res.text();
+            let body;
+            try {
+                body = text ? JSON.parse(text) : {};
+            } catch {
+                body = { errors: text || res.statusText };
+            }
+            lastShopifyCallFinishedAt = Date.now();
+
+            if (!res.ok) {
+                const message = shopifyErrorMessage(body, res);
+                if (
+                    isShopifyRateLimit(res, message) &&
+                    attempt < SHOPIFY_MAX_RETRIES
+                ) {
+                    const retryAfterSec = Number(res.headers.get("retry-after"));
+                    const backoff =
+                        retryAfterSec > 0
+                            ? retryAfterSec * 1000
+                            : Math.min(1500 * 2 ** attempt, 12000);
+                    await sleep(backoff);
+                    continue;
+                }
+                throw new Error(message);
+            }
+            return { body, headers: res.headers };
+        }
+        throw new Error(
+            "Shopify API rate limit: please retry in a few seconds."
+        );
+    });
+}
+
+async function shopifyGraphql(query, variables = {}) {
+    return scheduleShopifyCall(async () => {
+        for (let attempt = 0; attempt <= SHOPIFY_MAX_RETRIES; attempt++) {
+            await waitShopifyGap();
+            const token = await resolveAccessToken();
+            const res = await fetch(
+                `https://${SHOP}.myshopify.com/admin/api/${API_VERSION}/graphql.json`,
+                {
+                    method: "POST",
+                    headers: {
+                        "X-Shopify-Access-Token": token,
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ query, variables }),
+                }
+            );
+            const payload = await res.json().catch(() => ({}));
+            lastShopifyCallFinishedAt = Date.now();
+
+            if (!res.ok) {
+                const message =
+                    payload?.errors?.[0]?.message || res.statusText;
+                if (
+                    isShopifyRateLimit(res, message) &&
+                    attempt < SHOPIFY_MAX_RETRIES
+                ) {
+                    const retryAfterSec = Number(res.headers.get("retry-after"));
+                    const backoff =
+                        retryAfterSec > 0
+                            ? retryAfterSec * 1000
+                            : Math.min(1500 * 2 ** attempt, 12000);
+                    await sleep(backoff);
+                    continue;
+                }
+                throw new Error(message);
+            }
+            if (payload.errors?.length) {
+                const message = payload.errors.map((e) => e.message).join("; ");
+                if (
+                    isShopifyRateLimit(res, message) &&
+                    attempt < SHOPIFY_MAX_RETRIES
+                ) {
+                    await sleep(Math.min(1500 * 2 ** attempt, 12000));
+                    continue;
+                }
+                throw new Error(message);
+            }
+            return payload.data;
+        }
+        throw new Error(
+            "Shopify API rate limit: please retry in a few seconds."
+        );
+    });
+}
 
 async function resolveAccessToken() {
     if (STATIC_TOKEN) return STATIC_TOKEN;
@@ -130,6 +274,11 @@ function fulfillmentOrderMethodType(fo) {
     return (fo.delivery_method?.method_type || "")
         .toLowerCase()
         .replace(/-/g, "_");
+}
+
+function isLocalPickupFulfillmentOrder(fo) {
+    const mt = fulfillmentOrderMethodType(fo);
+    return mt === "pick_up" || mt === "pickup" || mt === "retail";
 }
 
 function hasShipToAddress(fo, order) {
@@ -320,6 +469,11 @@ function buildFulfillmentContext(order, fulfillmentOrders, products = []) {
     let displayFulfillment = null;
 
     if (deliveryMethod === "pickup") {
+        const localPickUpFOs = pickUpFOs.filter((fo) =>
+            isLocalPickupFulfillmentOrder(fo)
+        );
+        const supportsLocalPickup = localPickUpFOs.length > 0;
+
         pickupStage = pickupStageFromFulfillments(order);
         for (const fo of pickUpFOs) {
             if (["open", "in_progress", "scheduled"].includes(fo.status)) {
@@ -332,7 +486,7 @@ function buildFulfillmentContext(order, fulfillmentOrders, products = []) {
                 ["open", "scheduled"].includes(fo.status) &&
                 (fo.line_items || []).some((li) => li.fulfillable_quantity > 0)
         );
-        const hasInProgressPickup = pickUpFOs.some(
+        const hasInProgressPickup = localPickUpFOs.some(
             (fo) => fo.status === "in_progress"
         );
 
@@ -345,15 +499,21 @@ function buildFulfillmentContext(order, fulfillmentOrders, products = []) {
             canMarkReadyForPickup = false;
             canMarkPickedUp = false;
             if (pickupStage === "fulfilled") displayFulfillment = "Fulfilled";
-        } else if (
-            pickupStage === "ready_for_pickup" ||
-            hasInProgressPickup
-        ) {
-            canMarkReadyForPickup = false;
-            canMarkPickedUp = true;
-            displayFulfillment = "Ready for pickup";
+        } else if (supportsLocalPickup) {
+            if (
+                pickupStage === "ready_for_pickup" ||
+                hasInProgressPickup
+            ) {
+                canMarkReadyForPickup = false;
+                canMarkPickedUp = true;
+                displayFulfillment = "Ready for pickup";
+            } else if (pickupStage === "unfulfilled" || pickupStage === "partial") {
+                canMarkReadyForPickup = hasOpenPickup;
+                canMarkPickedUp = false;
+                displayFulfillment = "Unfulfilled";
+            }
         } else if (pickupStage === "unfulfilled" || pickupStage === "partial") {
-            canMarkReadyForPickup = hasOpenPickup;
+            canMarkReadyForPickup = false;
             canMarkPickedUp = false;
             displayFulfillment = "Unfulfilled";
         }
@@ -371,6 +531,10 @@ function buildFulfillmentContext(order, fulfillmentOrders, products = []) {
         pickupFulfillmentOrderIds,
         canMarkReadyForPickup,
         canMarkPickedUp,
+        supportsLocalPickup:
+            deliveryMethod === "pickup"
+                ? pickUpFOs.some((fo) => isLocalPickupFulfillmentOrder(fo))
+                : false,
     };
 }
 
@@ -437,6 +601,13 @@ function parseLinkPageInfo(linkHeader, rel) {
 }
 
 function readJsonBody(req) {
+    if (
+        req.body != null &&
+        typeof req.body === "object" &&
+        !Buffer.isBuffer(req.body)
+    ) {
+        return Promise.resolve(req.body);
+    }
     return new Promise((resolve, reject) => {
         const chunks = [];
         req.on("data", (c) => chunks.push(c));
@@ -451,57 +622,6 @@ function readJsonBody(req) {
         });
         req.on("error", reject);
     });
-}
-
-async function shopifyRest(path, options = {}) {
-    const token = await resolveAccessToken();
-    const url = `https://${SHOP}.myshopify.com/admin/api/${API_VERSION}${path}`;
-    const res = await fetch(url, {
-        ...options,
-        headers: {
-            "X-Shopify-Access-Token": token,
-            "Content-Type": "application/json",
-            ...(options.headers || {}),
-        },
-    });
-    const text = await res.text();
-    let body;
-    try {
-        body = text ? JSON.parse(text) : {};
-    } catch {
-        body = { errors: text || res.statusText };
-    }
-    if (!res.ok) {
-        const msg =
-            body?.errors ||
-            body?.error ||
-            `Shopify HTTP ${res.status}`;
-        throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
-    }
-    return { body, headers: res.headers };
-}
-
-async function shopifyGraphql(query, variables = {}) {
-    const token = await resolveAccessToken();
-    const res = await fetch(
-        `https://${SHOP}.myshopify.com/admin/api/${API_VERSION}/graphql.json`,
-        {
-            method: "POST",
-            headers: {
-                "X-Shopify-Access-Token": token,
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ query, variables }),
-        }
-    );
-    const payload = await res.json().catch(() => ({}));
-    if (!res.ok) {
-        throw new Error(payload?.errors?.[0]?.message || res.statusText);
-    }
-    if (payload.errors?.length) {
-        throw new Error(payload.errors.map((e) => e.message).join("; "));
-    }
-    return payload.data;
 }
 
 function graphqlUserErrors(result, key) {
@@ -578,7 +698,9 @@ async function fetchAllOrdersInWindow(sessionDateIso, dayRadius = ROSTER_DAY_RAD
                   limit: "250",
               })
             : baseQs;
-        const { orders, nextPageInfo } = await proxyShopifyOrders(qs);
+        const { orders, nextPageInfo } = await proxyShopifyOrders(qs, {
+            includeProducts: false,
+        });
         all.push(...(orders || []));
         pageInfo = nextPageInfo;
     } while (pageInfo);
@@ -612,7 +734,9 @@ async function fetchOrdersBetween(createdAtIso, daysBefore = 7, daysAfter = 180)
                   limit: "250",
               })
             : baseQs;
-        const { orders, nextPageInfo } = await proxyShopifyOrders(qs);
+        const { orders, nextPageInfo } = await proxyShopifyOrders(qs, {
+            includeProducts: false,
+        });
         all.push(...(orders || []));
         pageInfo = nextPageInfo;
     } while (pageInfo);
@@ -881,7 +1005,180 @@ async function proxyWorkshopRoster(searchParams) {
     };
 }
 
-async function proxyShopifyOrders(searchParams) {
+function needsListFulfillmentEnrichment(order, products = []) {
+    if (order.cancelled_at) return false;
+    const fin = (order.financial_status || "").toLowerCase();
+    if (fin !== "paid" && fin !== "partially_paid") return false;
+    if (orderIsWorkshop(order, products)) return false;
+
+    const fromRest = displayFulfillmentFromOrder(order);
+    const restLower = fromRest.toLowerCase();
+    if (
+        restLower.includes("ready for pickup") ||
+        restLower.includes("picked up")
+    ) {
+        return false;
+    }
+
+    const fs = (order.fulfillment_status || "").toLowerCase();
+    const inf = inferDeliveryFromOrder(order);
+    if (inf.deliveryMethod === "pickup") return true;
+
+    if (fs === "partial" || fs === "fulfilled") {
+        const noAddr = !String(order.shipping_address?.address1 || "").trim();
+        const sl = (order.shipping_lines || [])
+            .map((s) => (s.title || "").toLowerCase())
+            .join(" ");
+        const looksPickup =
+            sl.includes("pickup") ||
+            sl.includes("pick up") ||
+            sl.includes("podium");
+        if (looksPickup || (noAddr && !(order.shipping_lines || []).length)) {
+            return true;
+        }
+        return false;
+    }
+
+    const noAddr = !String(order.shipping_address?.address1 || "").trim();
+    const noLines = !(order.shipping_lines || []).length;
+    if (
+        noAddr &&
+        noLines &&
+        (order.line_items || []).some((li) => li.requires_shipping !== false)
+    ) {
+        return true;
+    }
+
+    return false;
+}
+
+function graphqlFulfillmentOrderToRest(gfo) {
+    const id = String(gfo.id || "").replace(
+        /^gid:\/\/shopify\/FulfillmentOrder\//,
+        ""
+    );
+    const loc = gfo.assignedLocation?.location;
+    return {
+        id,
+        status: String(gfo.status || "")
+            .toLowerCase()
+            .replace(/-/g, "_"),
+        delivery_method: {
+            method_type: String(gfo.deliveryMethod?.methodType || "")
+                .toLowerCase()
+                .replace(/-/g, "_"),
+            presented_name: gfo.deliveryMethod?.presentedName || "",
+        },
+        assigned_location: loc
+            ? {
+                  location_id: String(loc.id || "").replace(
+                      /^gid:\/\/shopify\/Location\//,
+                      ""
+                  ),
+                  name: loc.name || "",
+              }
+            : {},
+        destination: gfo.destination || {},
+        line_items: (gfo.lineItems?.nodes || []).map((li) => ({
+            id: String(li.id || "").replace(
+                /^gid:\/\/shopify\/FulfillmentOrderLineItem\//,
+                ""
+            ),
+            fulfillable_quantity: Number(li.remainingQuantity) || 0,
+        })),
+    };
+}
+
+async function enrichOrdersWithListFulfillment(orders, products = []) {
+    const targets = orders.filter((order) =>
+        needsListFulfillmentEnrichment(order, products)
+    );
+    if (!targets.length) return;
+
+    const ids = targets.map((order) => orderGid(order.id));
+    let nodes = [];
+    try {
+        const data = await shopifyGraphql(
+            `query OrderListFulfillment($ids: [ID!]!) {
+              nodes(ids: $ids) {
+                ... on Order {
+                  legacyResourceId
+                  fulfillmentOrders(first: 10) {
+                    nodes {
+                      id
+                      status
+                      deliveryMethod {
+                        methodType
+                        presentedName
+                      }
+                      assignedLocation {
+                        location {
+                          id
+                          name
+                        }
+                      }
+                      destination {
+                        address1
+                      }
+                      lineItems(first: 50) {
+                        nodes {
+                          id
+                          remainingQuantity
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }`,
+            { ids }
+        );
+        nodes = data?.nodes || [];
+    } catch (e) {
+        console.warn(
+            "List fulfillment GraphQL enrich failed:",
+            e.message || e
+        );
+        return;
+    }
+
+    const byId = new Map();
+    for (const node of nodes) {
+        if (!node?.legacyResourceId) continue;
+        byId.set(String(node.legacyResourceId), node);
+    }
+
+    for (const order of targets) {
+        const node = byId.get(String(order.id));
+        if (!node) continue;
+        try {
+            const fulfillmentOrders = (node.fulfillmentOrders?.nodes || []).map(
+                (gfo) => graphqlFulfillmentOrderToRest(gfo)
+            );
+            const ctx = buildFulfillmentContext(
+                order,
+                fulfillmentOrders,
+                products
+            );
+            order.list_fulfillment = {
+                displayFulfillment: ctx.displayFulfillment,
+                pickupStage: ctx.pickupStage,
+                deliveryMethod: ctx.deliveryMethod,
+                deliveryLabel: ctx.deliveryLabel,
+                supportsLocalPickup: ctx.supportsLocalPickup,
+                canMarkReadyForPickup: ctx.canMarkReadyForPickup,
+                canMarkPickedUp: ctx.canMarkPickedUp,
+            };
+        } catch (e) {
+            console.warn(
+                `List fulfillment enrich failed for order ${order.id}:`,
+                e.message || e
+            );
+        }
+    }
+}
+
+async function proxyShopifyOrders(searchParams, { includeProducts = true } = {}) {
     const base = `/orders.json`;
     const qs = new URLSearchParams();
     if (searchParams.has("page_info")) {
@@ -895,11 +1192,27 @@ async function proxyShopifyOrders(searchParams) {
     }
     const { body, headers } = await shopifyRest(`${base}?${qs.toString()}`);
     const link = headers.get("link") || "";
-    return {
-        orders: body.orders || [],
+    const orders = body.orders || [];
+    const productIds = [
+        ...new Set(
+            orders
+                .flatMap((o) => (o.line_items || []).map((li) => li.product_id))
+                .filter(Boolean)
+        ),
+    ];
+    let products = [];
+    if (includeProducts && productIds.length) {
+        const batch = await proxyProducts(productIds.join(","));
+        products = batch.products;
+    }
+    await enrichOrdersWithListFulfillment(orders, products);
+    const payload = {
+        orders,
         nextPageInfo: parseLinkPageInfo(link, "next"),
         previousPageInfo: parseLinkPageInfo(link, "previous"),
     };
+    if (includeProducts) payload.products = products;
+    return payload;
 }
 
 async function proxyProducts(idsParam) {
@@ -924,6 +1237,51 @@ async function proxyProducts(idsParam) {
             image_url: p.image?.src || p.images?.[0]?.src || null,
         })),
     };
+}
+
+async function fetchOrderLineItemBundleMeta(orderId) {
+    try {
+        const data = await shopifyGraphql(
+            `query orderBundleLineItems($id: ID!) {
+              order(id: $id) {
+                lineItems(first: 250) {
+                  nodes {
+                    id
+                    lineItemGroup {
+                      id
+                      title
+                      quantity
+                    }
+                  }
+                }
+              }
+            }`,
+            { id: orderGid(orderId) }
+        );
+        const byLineItemId = {};
+        for (const node of data?.order?.lineItems?.nodes || []) {
+            const group = node.lineItemGroup;
+            if (!group?.id) continue;
+            const lineItemId = String(node.id || "").replace(
+                /^gid:\/\/shopify\/LineItem\//,
+                ""
+            );
+            if (!lineItemId) continue;
+            byLineItemId[lineItemId] = {
+                groupId: group.id,
+                bundleTitle: group.title || "Bundle",
+                bundleQuantity: group.quantity || 1,
+            };
+        }
+        return byLineItemId;
+    } catch (e) {
+        console.warn("Bundle line item lookup failed:", e.message || e);
+        return {};
+    }
+}
+
+function mergeLineItemBundleMetaFromGraphql(restLineItems, graphqlMeta) {
+    return mergeLineItemBundleMeta(restLineItems, graphqlMeta);
 }
 
 async function proxyOrderDetail(orderId) {
@@ -958,7 +1316,17 @@ async function proxyOrderDetail(orderId) {
     } catch (_) {
         inferred_registrations = [];
     }
-    return { order, products, fulfillment_context, inferred_registrations };
+    const line_item_bundles = mergeLineItemBundleMetaFromGraphql(
+        order.line_items,
+        await fetchOrderLineItemBundleMeta(orderId)
+    );
+    return {
+        order,
+        products,
+        fulfillment_context,
+        inferred_registrations,
+        line_item_bundles,
+    };
 }
 
 async function getPrimaryLocationId() {
@@ -1163,8 +1531,9 @@ async function handleReadyForPickup(orderId) {
     const fulfillmentOrders = await fetchFulfillmentOrders(orderId);
     const pickUpFOs = fulfillmentOrders.filter(
         (fo) =>
+            isLocalPickupFulfillmentOrder(fo) &&
             isMerchantPickupFulfillmentOrder(fo, order) &&
-            ["open", "in_progress", "scheduled"].includes(fo.status)
+            ["open", "scheduled"].includes(fo.status)
     );
     if (!pickUpFOs.length) {
         throw new Error("No open store-pickup fulfillment on this order.");
@@ -1251,6 +1620,93 @@ async function handlePickedUp(orderId) {
     return { ok: true };
 }
 
+async function handleShipped(orderId) {
+    const order = await fetchOrder(orderId);
+    const fulfillmentOrders = await fetchFulfillmentOrders(orderId);
+    const shippingFOs = fulfillmentOrders.filter(
+        (fo) =>
+            isShippingFulfillmentOrder(fo, order) &&
+            !isMerchantPickupFulfillmentOrder(fo, order) &&
+            ["open", "in_progress", "scheduled"].includes(fo.status) &&
+            (fo.line_items || []).some((li) => li.fulfillable_quantity > 0)
+    );
+    if (!shippingFOs.length) {
+        throw new Error("No open shipping fulfillment on this order.");
+    }
+
+    const lineItemsByFulfillmentOrder = shippingFOs.map((fo) => ({
+        fulfillmentOrderId: fulfillmentOrderGid(fo.id),
+        fulfillmentOrderLineItems: (fo.line_items || [])
+            .filter((li) => li.fulfillable_quantity > 0)
+            .map((li) => ({
+                id: fulfillmentOrderLineItemGid(li.id),
+                quantity: li.fulfillable_quantity,
+            })),
+    }));
+
+    const data = await shopifyGraphql(
+        `mutation fulfillmentCreate($fulfillment: FulfillmentInput!) {
+          fulfillmentCreate(fulfillment: $fulfillment) {
+            fulfillment { id status }
+            userErrors { field message }
+          }
+        }`,
+        {
+            fulfillment: {
+                notifyCustomer: true,
+                trackingInfo: {
+                    number: "Shipped",
+                    company: "Other",
+                },
+                lineItemsByFulfillmentOrder,
+            },
+        }
+    );
+    graphqlUserErrors(data, "fulfillmentCreate");
+    return { ok: true };
+}
+
+async function handleFulfilled(orderId) {
+    const order = await fetchOrder(orderId);
+    const fulfillmentOrders = await fetchFulfillmentOrders(orderId);
+    const openFOs = fulfillmentOrders.filter(
+        (fo) =>
+            !isMerchantPickupFulfillmentOrder(fo, order) &&
+            ["open", "in_progress", "scheduled"].includes(fo.status) &&
+            (fo.line_items || []).some((li) => li.fulfillable_quantity > 0)
+    );
+    if (!openFOs.length) {
+        throw new Error("No fulfillable line items on this order.");
+    }
+
+    const lineItemsByFulfillmentOrder = openFOs.map((fo) => ({
+        fulfillmentOrderId: fulfillmentOrderGid(fo.id),
+        fulfillmentOrderLineItems: (fo.line_items || [])
+            .filter((li) => li.fulfillable_quantity > 0)
+            .map((li) => ({
+                id: fulfillmentOrderLineItemGid(li.id),
+                quantity: li.fulfillable_quantity,
+            })),
+    }));
+
+    const data = await shopifyGraphql(
+        `mutation fulfillmentCreate($fulfillment: FulfillmentInput!) {
+          fulfillmentCreate(fulfillment: $fulfillment) {
+            fulfillment { id status }
+            userErrors { field message }
+          }
+        }`,
+        {
+            fulfillment: {
+                notifyCustomer: false,
+                lineItemsByFulfillmentOrder,
+            },
+        }
+    );
+    graphqlUserErrors(data, "fulfillmentCreate");
+    return { ok: true };
+}
+
 async function createFulfillment(orderId, intent) {
     if (intent === "ready_for_pickup") {
         return handleReadyForPickup(orderId);
@@ -1258,46 +1714,11 @@ async function createFulfillment(orderId, intent) {
     if (intent === "picked_up") {
         return handlePickedUp(orderId);
     }
-
-    const order = await fetchOrder(orderId);
-    const lineItems = (order.line_items || []).filter(
-        (li) => li.fulfillable_quantity > 0
-    );
-    if (!lineItems.length) {
-        throw new Error("No fulfillable line items on this order.");
-    }
-    const locationId = await getPrimaryLocationId();
-    const payload = {
-        fulfillment: {
-            location_id: locationId,
-            notify_customer: intent === "shipped",
-            line_items: lineItems.map((li) => ({
-                id: li.id,
-                quantity: li.fulfillable_quantity,
-            })),
-        },
-    };
     if (intent === "shipped") {
-        payload.fulfillment.tracking_number = "Shipped";
-        payload.fulfillment.tracking_company = "Other";
+        return handleShipped(orderId);
     }
-    const { body } = await shopifyRest(`/orders/${orderId}/fulfillments.json`, {
-        method: "POST",
-        body: JSON.stringify(payload),
-    });
-    const fulfillment = body.fulfillment;
-    if (intent === "shipped" && fulfillment?.id) {
-        await shopifyRest(
-            `/orders/${orderId}/fulfillments/${fulfillment.id}.json`,
-            {
-                method: "PUT",
-                body: JSON.stringify({
-                    fulfillment: { shipment_status: "in_transit" },
-                }),
-            }
-        );
-    }
-    return { ok: true, fulfillment };
+
+    return handleFulfilled(orderId);
 }
 
 function safePath(urlPath) {
@@ -1470,7 +1891,9 @@ export async function handleShopifyHttp(req, res) {
                 case "fulfill":
                     result = await createFulfillment(
                         actionMatch.orderId,
-                        body.intent || "fulfilled"
+                        String(body.intent || "fulfilled")
+                            .trim()
+                            .toLowerCase()
                     );
                     break;
                 default:

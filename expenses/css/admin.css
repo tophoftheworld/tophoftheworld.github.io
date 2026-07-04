@@ -357,12 +357,133 @@ select.month-dropdown:focus {
 }
 
 .date-filter-group {
+    --date-filter-height: 40px;
     display: flex;
-    align-items: center;
-    gap: 1rem;
+    align-items: flex-end;
+    gap: 0;
     flex: 0 0 auto;
     justify-content: flex-end;
     flex-wrap: wrap;
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 12px;
+    padding: 0.5rem 0.75rem;
+}
+
+.date-filter-option {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding: 0 0.75rem;
+}
+
+.date-filter-option + .date-filter-option {
+    border-left: 1px solid #e0e4e8;
+}
+
+.date-filter-option-label {
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #9ca3af;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.date-filter-option.is-active .date-filter-option-label {
+    color: #2b9348;
+}
+
+.date-filter-group .date-filter-control,
+.date-filter-group .date-shortcut-btn {
+    height: var(--date-filter-height);
+    min-height: var(--date-filter-height);
+    box-sizing: border-box;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.875rem;
+    font-weight: 500;
+    line-height: 1;
+    border-radius: 8px;
+    transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+
+.date-filter-group .date-shortcut-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 1rem;
+    background: white;
+    border: 1px solid #dde2e6;
+    cursor: pointer;
+    color: #495057;
+    white-space: nowrap;
+}
+
+.date-filter-group .date-shortcut-btn:hover {
+    border-color: #2b9348;
+    color: #2b9348;
+}
+
+.date-filter-group .date-shortcut-btn.active {
+    background: #2b9348;
+    border-color: #2b9348;
+    color: white;
+}
+
+.date-filter-group #monthDropdown.date-filter-control {
+    min-width: 150px;
+    padding: 0 2.25rem 0 0.875rem !important;
+    background-color: #ffffff !important;
+    border: 1px solid #dde2e6 !important;
+    border-radius: 8px !important;
+    cursor: pointer !important;
+    color: #495057 !important;
+    font-size: 0.875rem !important;
+    font-weight: 500 !important;
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236c757d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6,9 12,15 18,9'%3e%3c/polyline%3e%3c/svg%3e") !important;
+    background-repeat: no-repeat !important;
+    background-position: right 0.65rem center !important;
+    background-size: 1rem !important;
+    box-shadow: none !important;
+    transform: none !important;
+}
+
+.date-filter-group #monthDropdown.date-filter-control:hover,
+.date-filter-group #monthDropdown.date-filter-control:focus {
+    border-color: #2b9348 !important;
+    box-shadow: 0 0 0 2px rgba(43, 147, 72, 0.12) !important;
+    transform: none !important;
+}
+
+.date-filter-option.is-active #monthDropdown.date-filter-control {
+    border-color: #2b9348 !important;
+    background-color: #f0f9f2 !important;
+    color: #1b6b32 !important;
+}
+
+.date-filter-group #dateRange.date-filter-control {
+    min-width: 210px;
+    padding: 0 0.875rem;
+    background: #ffffff;
+    border: 1px solid #dde2e6;
+    color: #495057;
+    cursor: pointer;
+}
+
+.date-filter-group #dateRange.date-filter-control:hover,
+.date-filter-group #dateRange.date-filter-control:focus {
+    border-color: #2b9348;
+    outline: none;
+}
+
+.date-filter-option.is-active #dateRange.date-filter-control,
+.date-filter-group #dateRange.date-filter-control.custom-range {
+    border-color: #2b9348;
+    color: #1b6b32;
+    background: #f0f9f2;
 }
 
 .date-filter-selector {
@@ -426,8 +547,35 @@ select.month-dropdown:focus {
 .date-shortcuts {
     display: flex;
     gap: 0.5rem;
-    flex-wrap: wrap;
-    max-width: 600px;
+    flex-wrap: nowrap;
+}
+
+/* Table type tabs + primary actions */
+.table-type-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.table-type-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+#bulkActionRow {
+    margin-top: -0.25rem;
+}
+
+#bulkActionRow .table-actions {
+    width: 100%;
 }
 
 .view-selector {
@@ -903,7 +1051,28 @@ select.month-dropdown:focus {
     }
 
     .date-filter-group {
-        justify-content: center;
+        justify-content: stretch;
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .date-filter-option {
+        padding: 0.35rem 0;
+    }
+
+    .date-filter-option + .date-filter-option {
+        border-left: none;
+        border-top: 1px solid #e0e4e8;
+        padding-top: 0.65rem;
+    }
+
+    .date-filter-group #dateRange.date-filter-control {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .date-filter-group #monthDropdown.date-filter-control {
+        width: 100%;
     }
 
     .date-shortcuts {
@@ -924,6 +1093,20 @@ select.month-dropdown:focus {
     .admin-header {
         flex-direction: column;
         text-align: center;
+    }
+
+    .table-type-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .table-type-actions {
+        width: 100%;
+    }
+
+    .table-type-actions .action-btn {
+        width: 100%;
+        justify-content: center;
     }
 
     .summary-cards {
@@ -3326,6 +3509,93 @@ select.month-dropdown:focus {
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: #868e96;
+}
+
+.admin-supplier-info-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+}
+
+.admin-supplier-info-card-head .admin-supplier-detail-card-title {
+    margin: 0;
+}
+
+.admin-supplier-info-save {
+    padding: 0.4rem 0.85rem;
+    font-size: 0.82rem;
+    opacity: 0.45;
+    pointer-events: none;
+}
+
+.admin-supplier-info-save.is-dirty {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.admin-supplier-info-form {
+    margin: 0;
+}
+
+.admin-supplier-field-row {
+    align-items: center;
+}
+
+.admin-supplier-field-row label {
+    margin: 0;
+    font-weight: 500;
+    color: #868e96;
+}
+
+.admin-supplier-field-row input[type="text"],
+.admin-supplier-field-row textarea {
+    width: 100%;
+    margin: 0;
+    padding: 0.45rem 0.6rem;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #212529;
+    background: #fff;
+    box-sizing: border-box;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.admin-supplier-field-row textarea {
+    resize: vertical;
+    min-height: 2.75rem;
+    line-height: 1.45;
+    font-weight: 400;
+}
+
+.admin-supplier-field-row input[type="text"]:focus,
+.admin-supplier-field-row textarea:focus {
+    outline: none;
+    border-color: #2b9348;
+    box-shadow: 0 0 0 2px rgba(43, 147, 72, 0.12);
+}
+
+.admin-supplier-field-row--stacked {
+    align-items: start;
+}
+
+.admin-supplier-field-row--stacked label {
+    padding-top: 0.45rem;
+}
+
+.admin-supplier-field-row--checkbox {
+    grid-template-columns: minmax(0, 38%) auto;
+}
+
+.admin-supplier-field-row--checkbox input[type="checkbox"] {
+    width: 1rem;
+    height: 1rem;
+    margin: 0;
+    accent-color: #2b9348;
 }
 
 .admin-supplier-detail-dl {

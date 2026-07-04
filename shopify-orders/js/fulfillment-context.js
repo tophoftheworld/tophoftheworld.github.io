@@ -6,6 +6,11 @@ export function fulfillmentOrderMethodType(fo) {
         .replace(/-/g, "_");
 }
 
+export function isLocalPickupFulfillmentOrder(fo) {
+    const mt = fulfillmentOrderMethodType(fo);
+    return mt === "pick_up" || mt === "pickup" || mt === "retail";
+}
+
 function hasShipToAddress(fo, order) {
     const dest = fo?.destination || order?.shipping_address || {};
     return Boolean(String(dest.address1 || "").trim());
@@ -54,6 +59,36 @@ export function deliveryMethodDisplayText(deliveryMethod, deliveryLabel) {
         return deliveryLabel || "Shipping not required";
     }
     return deliveryLabel || "—";
+}
+
+export function normalizeDeliveryDisplayLabel(deliveryMethod, rawLabel = "") {
+    const label = String(rawLabel || "").trim();
+    const combined = label.toLowerCase();
+
+    if (
+        deliveryMethod === "pickup" ||
+        combined.includes("pickup") ||
+        combined.includes("pick up") ||
+        combined.includes("pick-up") ||
+        combined.includes("podium") ||
+        combined.includes("in store") ||
+        combined.includes("in-store")
+    ) {
+        return "Pickup";
+    }
+    if (combined.includes("nationwide")) {
+        return "Nationwide";
+    }
+    if (combined.includes("metro")) {
+        return "Metro Manila";
+    }
+    if (deliveryMethod === "shipping") {
+        return label || "Shipping";
+    }
+    if (deliveryMethod === "none") {
+        return "";
+    }
+    return label || "";
 }
 
 export function inferDeliveryFromOrder(order) {
@@ -178,6 +213,11 @@ export function buildFulfillmentContext(order, fulfillmentOrders, options = {}) 
     let displayFulfillment = null;
 
     if (deliveryMethod === "pickup") {
+        const localPickUpFOs = pickUpFOs.filter((fo) =>
+            isLocalPickupFulfillmentOrder(fo)
+        );
+        const supportsLocalPickup = localPickUpFOs.length > 0;
+
         pickupStage = pickupStageFromFulfillments(order);
         for (const fo of pickUpFOs) {
             if (["open", "in_progress", "scheduled"].includes(fo.status)) {
@@ -190,7 +230,7 @@ export function buildFulfillmentContext(order, fulfillmentOrders, options = {}) 
                 ["open", "scheduled"].includes(fo.status) &&
                 (fo.line_items || []).some((li) => li.fulfillable_quantity > 0)
         );
-        const hasInProgressPickup = pickUpFOs.some(
+        const hasInProgressPickup = localPickUpFOs.some(
             (fo) => fo.status === "in_progress"
         );
 
@@ -203,15 +243,21 @@ export function buildFulfillmentContext(order, fulfillmentOrders, options = {}) 
             canMarkReadyForPickup = false;
             canMarkPickedUp = false;
             if (pickupStage === "fulfilled") displayFulfillment = "Fulfilled";
-        } else if (
-            pickupStage === "ready_for_pickup" ||
-            hasInProgressPickup
-        ) {
-            canMarkReadyForPickup = false;
-            canMarkPickedUp = true;
-            displayFulfillment = "Ready for pickup";
+        } else if (supportsLocalPickup) {
+            if (
+                pickupStage === "ready_for_pickup" ||
+                hasInProgressPickup
+            ) {
+                canMarkReadyForPickup = false;
+                canMarkPickedUp = true;
+                displayFulfillment = "Ready for pickup";
+            } else if (pickupStage === "unfulfilled" || pickupStage === "partial") {
+                canMarkReadyForPickup = hasOpenPickup;
+                canMarkPickedUp = false;
+                displayFulfillment = "Unfulfilled";
+            }
         } else if (pickupStage === "unfulfilled" || pickupStage === "partial") {
-            canMarkReadyForPickup = hasOpenPickup;
+            canMarkReadyForPickup = false;
             canMarkPickedUp = false;
             displayFulfillment = "Unfulfilled";
         }
@@ -229,5 +275,9 @@ export function buildFulfillmentContext(order, fulfillmentOrders, options = {}) 
         pickupFulfillmentOrderIds,
         canMarkReadyForPickup,
         canMarkPickedUp,
+        supportsLocalPickup:
+            deliveryMethod === "pickup"
+                ? pickUpFOs.some((fo) => isLocalPickupFulfillmentOrder(fo))
+                : false,
     };
 }

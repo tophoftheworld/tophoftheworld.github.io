@@ -75,6 +75,13 @@ function migrateLoadedPackageItem(item, data) {
         const cupsMatch = String(migrated.cups).match(/\d+/);
         if (cupsMatch) migrated.numberOfPax = cupsMatch[0];
     }
+    if (migrated.numberOfPax && !isStandardCupTier(migrated.numberOfPax) && migrated.numberOfPax !== 'custom') {
+        const customN = parseInt(migrated.numberOfPax, 10);
+        if (customN > 0) {
+            migrated.customCups = String(customN);
+            migrated.numberOfPax = 'custom';
+        }
+    }
     if (!migrated.packageType && migrated.eventType === EVENT_TYPES.mobile_bar && migrated.description) {
         for (const [key, pkg] of Object.entries(packages)) {
             if (pkg.name === migrated.description) {
@@ -195,7 +202,15 @@ const packages = {
     },
     signature: {
         name: 'Mobile Matcha Bar - SIGNATURE PACKAGE',
-        menuItems: ['Matchanese Tea', 'Signature Matchanese Latte', 'Strawberry Matchanese Latte', 'Hojicha Latte', 'Matchanese Seasalt Latte', 'Spanish Matchanese Latte', 'Matchanese Sunrise', 'Matchanese Coconut', 'Drink of Choice'],
+        menuItems: [
+            'Signature Matchanese Latte',
+            'Strawberry Matchanese Latte',
+            'Earl Grey Matchanese Latte',
+            'Matchanese Seasalt Latte',
+            'Spanish Matchanese Latte',
+            'Matchanese Coconut Oat Latte',
+            'Hojicha Latte'
+        ],
         additionalOptions: ['Iced (12oz) or Hot (8oz) Drinks', 'Dairy or Oat Milk'],
         otherInclusions: ['Mobile Matcha Bar Setup', 'Transportation & Logistics Costs'],
         rates: {
@@ -216,6 +231,55 @@ const packages = {
         }
     }
 };
+
+const MOBILE_BAR_CUP_TIERS = [50, 100, 150];
+const STANDARD_CUP_TIER_VALUES = new Set(MOBILE_BAR_CUP_TIERS.map(String));
+
+function isStandardCupTier(value) {
+    return STANDARD_CUP_TIER_VALUES.has(String(value));
+}
+
+function computeMobileBarPackagePrice(packageData, cups) {
+    const n = parseInt(cups, 10);
+    if (!packageData?.rates || !n || n <= 0) return 0;
+    if (packageData.rates[n] != null) return packageData.rates[n];
+
+    const rates = packageData.rates;
+    const tiers = MOBILE_BAR_CUP_TIERS;
+    let lower;
+    let upper;
+
+    if (n < tiers[0]) {
+        lower = tiers[0];
+        upper = tiers[1];
+    } else if (n > tiers[tiers.length - 1]) {
+        lower = tiers[tiers.length - 2];
+        upper = tiers[tiers.length - 1];
+    } else {
+        for (let i = 0; i < tiers.length - 1; i++) {
+            if (n > tiers[i] && n < tiers[i + 1]) {
+                lower = tiers[i];
+                upper = tiers[i + 1];
+                break;
+            }
+        }
+    }
+
+    const slope = (rates[upper] - rates[lower]) / (upper - lower);
+    const anchor = n > tiers[tiers.length - 1] ? upper : lower;
+    return Math.round(rates[anchor] + (n - anchor) * slope);
+}
+
+function resolveMobileBarCups(item) {
+    if (item.numberOfPax === 'custom') {
+        return parseInt(item.customCups, 10) || 0;
+    }
+    if (isStandardCupTier(item.numberOfPax)) {
+        return parseInt(item.numberOfPax, 10);
+    }
+    const legacy = parseInt(item.numberOfPax, 10);
+    return legacy > 0 ? legacy : 0;
+}
 
 // Invoice items array
 let invoiceItems = [];
@@ -254,7 +318,8 @@ function createEmptyPackageItem() {
         baristas: '',
         unitPrice: 0,
         packageType: '',
-        numberOfPax: ''
+        numberOfPax: '',
+        customCups: ''
     };
 }
 
@@ -272,16 +337,22 @@ function syncWorkshopItem(item) {
 function syncMobileItem(item) {
     item.isWorkshop = false;
     item.countLabel = 'cups';
-    if (!item.packageType || item.packageType === 'custom' || !item.numberOfPax) {
+    if (!item.packageType || item.packageType === 'custom') {
+        item.description = '';
+        item.unitPrice = 0;
+        return;
+    }
+    const cups = resolveMobileBarCups(item);
+    if (!cups) {
         item.description = '';
         item.unitPrice = 0;
         return;
     }
     const packageData = packages[item.packageType];
     if (!packageData) return;
-    const price = packageData.rates[item.numberOfPax] || 0;
+    const price = computeMobileBarPackagePrice(packageData, cups);
     item.description = packageData.name;
-    item.cups = `${item.numberOfPax} Cups`;
+    item.cups = `${cups} Cups`;
     item.menuItems = [...packageData.menuItems];
     item.additionalOptions = [...packageData.additionalOptions];
     item.otherInclusions = [...packageData.otherInclusions];
@@ -309,7 +380,7 @@ function isPackageVisibleInPreview(item) {
         const unitCost = parseFloat(item.unitCost) || 0;
         return pax > 0 && unitCost > 0;
     }
-    return !!(item.packageType && item.packageType !== 'custom' && item.numberOfPax);
+    return !!(item.packageType && item.packageType !== 'custom' && resolveMobileBarCups(item) > 0);
 }
 
 function addPackage() {
@@ -332,7 +403,14 @@ function removeInvoiceItem(itemId) {
 
 function renderPackageFormFields(item, index) {
     const isWorkshop = isWorkshopEventType(item.eventType);
-    const cupsVal = item.numberOfPax || (String(item.cups || '').match(/\d+/) || [])[0] || '';
+    const legacyCups = (String(item.cups || '').match(/\d+/) || [])[0] || '';
+    const isCustomCups = item.numberOfPax === 'custom' ||
+        (item.numberOfPax && !isStandardCupTier(item.numberOfPax));
+    const selectCupsVal = item.numberOfPax === 'custom' ? 'custom'
+        : isStandardCupTier(item.numberOfPax) ? item.numberOfPax : '';
+    const customCupsVal = item.customCups ||
+        (isCustomCups && !isStandardCupTier(item.numberOfPax) ? item.numberOfPax : '') ||
+        (isCustomCups ? legacyCups : '');
     const paxVal = isWorkshop ? (item.cups || '') : '';
     const perPaxVal = item.unitCost != null && item.unitCost !== '' ? item.unitCost : '';
 
@@ -372,10 +450,15 @@ function renderPackageFormFields(item, index) {
                     <label>Number of Cups</label>
                     <select class="pkg-number-of-pax" data-id="${item.id}">
                         <option value="">Select Number of Cups</option>
-                        <option value="50" ${cupsVal === '50' ? 'selected' : ''}>50 cups</option>
-                        <option value="100" ${cupsVal === '100' ? 'selected' : ''}>100 cups</option>
-                        <option value="150" ${cupsVal === '150' ? 'selected' : ''}>150 cups</option>
+                        <option value="50" ${selectCupsVal === '50' ? 'selected' : ''}>50 cups</option>
+                        <option value="100" ${selectCupsVal === '100' ? 'selected' : ''}>100 cups</option>
+                        <option value="150" ${selectCupsVal === '150' ? 'selected' : ''}>150 cups</option>
+                        <option value="custom" ${selectCupsVal === 'custom' ? 'selected' : ''}>Custom</option>
                     </select>
+                </div>
+                <div class="form-group pkg-custom-cups-wrap ${selectCupsVal === 'custom' ? '' : 'is-hidden'}">
+                    <label>Custom Number of Cups</label>
+                    <input type="number" class="pkg-custom-cups" data-id="${item.id}" min="1" step="1" placeholder="e.g., 75" value="${escapeHtml(String(customCupsVal))}">
                 </div>
             </div>
             <div class="pkg-workshop-fields ${isWorkshop ? '' : 'is-hidden'}">
@@ -438,6 +521,14 @@ function setupPackageListListeners() {
             syncMobileItem(item);
         } else if (el.classList.contains('pkg-number-of-pax')) {
             item.numberOfPax = el.value;
+            const form = el.closest('.package-form');
+            const customWrap = form.querySelector('.pkg-custom-cups-wrap');
+            if (customWrap) {
+                customWrap.classList.toggle('is-hidden', el.value !== 'custom');
+            }
+            if (el.value !== 'custom') {
+                item.customCups = '';
+            }
             syncMobileItem(item);
         } else if (el.classList.contains('pkg-date')) {
             item.eventDate = el.value;
@@ -464,6 +555,10 @@ function setupPackageListListeners() {
             syncWorkshopItem(item);
         } else if (el.classList.contains('pkg-workshop-details')) {
             item.workshopDetails = el.value;
+        } else if (el.classList.contains('pkg-custom-cups')) {
+            item.numberOfPax = 'custom';
+            item.customCups = el.value;
+            syncMobileItem(item);
         }
 
         updatePreview();

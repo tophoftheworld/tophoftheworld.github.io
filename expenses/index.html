@@ -34,8 +34,8 @@
             }
         })();
     </script>
-    <link rel="stylesheet" href="css/style.css?v=1.5.50">
-    <script type="module" src="js/script.js?v=1.5.58"></script>
+    <link rel="stylesheet" href="css/style.css?v=1.5.51">
+    <script type="module" src="js/script.js?v=1.5.62"></script>
 </head>
 
 <body>
@@ -48,7 +48,7 @@
                 <button class="date-nav-btn" id="nextDate">›</button>
             </div>
             <div class="branch-picker">
-                <select class="branch-select" id="branchSelect">
+                <select class="branch-select" id="dashboardBranchSelect">
                     <option value="SM North">SM North</option>
                     <option value="Podium">Podium</option>
                     <option value="Mall of Asia">Mall of Asia</option>
@@ -146,7 +146,9 @@
                         <h3 class="section-title">Basic Information</h3>
                         <div class="form-group">
                             <label for="expenseDate">Date</label>
-                            <input type="date" id="expenseDate" required>
+                            <input type="hidden" id="expenseDateValue" required>
+                            <input type="text" id="expenseDate" class="form-date-picker-input" readonly
+                                placeholder="Select date" autocomplete="off">
                         </div>
                         <div class="form-group">
                             <label for="allocationSelect">Allocation</label>
@@ -159,8 +161,8 @@
                             </select>
                         </div>
                         <div class="form-group" id="branchFieldGroup" style="display: block;">
-                            <label for="branchSelect">Branch</label>
-                            <select id="branchSelect">
+                            <label for="formBranchSelect">Branch</label>
+                            <select id="formBranchSelect">
                                 <option value="">-</option>
                                 <option value="SM North" selected>SM North</option>
                                 <option value="Podium">Podium</option>
@@ -213,7 +215,7 @@
                         <div class="form-group">
                             <h3 class="section-title">Receipt Photo <span style="color: #dc3545;">*</span></h3>
                             <div class="receipt-upload" onclick="document.getElementById('receiptInput').click()">
-                                <input type="file" id="receiptInput" accept="image/*" capture="environment"
+                                <input type="file" id="receiptInput" accept="image/*"
                                     style="display: none;" onchange="handleReceiptUpload(this)">
                                 <div class="receipt-upload-content">
                                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"

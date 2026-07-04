@@ -1,0 +1,82 @@
+{
+  "categories": [
+    { "id": "matcha-lattes", "name": "Matcha Lattes" },
+    { "id": "hojicha-lattes", "name": "Hojicha Lattes" }
+  ],
+  "items": [
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Signature Matchanese Latte",
+      "description": "Matcha Cold Whisked with Milk",
+      "price": 230,
+      "type": "Iced",
+      "shorthand": "SML",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Matchanese Seasalt Latte",
+      "description": "Our Signature Matcha Latte topped with Seasalt Cream",
+      "price": 260,
+      "tags": ["Best Seller"],
+      "type": "Iced",
+      "shorthand": "MSL",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Strawberry Matchanese Latte",
+      "description": "Our Signature Matcha Latte with Strawberry Puree",
+      "price": 260,
+      "type": "Iced",
+      "shorthand": "STML",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Earl Gray Latte",
+      "description": "Our Signature Matcha Latte with Homemade Earl Grey Syrup",
+      "price": 250,
+      "type": "Iced",
+      "shorthand": "EGL",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Coco Oat Latte",
+      "description": "Matcha Cold Whisked with Oat Milk over Coconut Juice",
+      "price": 240,
+      "type": "Iced",
+      "shorthand": "COL",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Dango Pride Latte",
+      "description": "Our Signature Matcha Latte topped with Sweet Cream and your choice of dango colors",
+      "price": 270,
+      "tags": ["Exclusive"],
+      "type": "Iced",
+      "shorthand": "DPL",
+      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+    },
+    {
+      "categoryId": "hojicha-lattes",
+      "name": "Hojicha Latte",
+      "description": "Hojicha Cold Whisked with Milk",
+      "price": 210,
+      "type": "Iced",
+      "shorthand": "HL",
+      "customizations": { "sweetness": true, "milk": true, "discount": true }
+    },
+    {
+      "categoryId": "hojicha-lattes",
+      "name": "Hojicha Seasalt Latte",
+      "description": "Hojicha Latte topped with Seasalt Cream",
+      "price": 240,
+      "type": "Iced",
+      "shorthand": "HSL",
+      "customizations": { "sweetness": true, "milk": true, "discount": true }
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 // Import shared utilities with version for cache busting
 // Static import with versioned URL to avoid caching issues; keep in sync with index.html
-import * as shared from './shared.js?v=1.5.57';
+import * as shared from './shared.js?v=1.5.62';
 
 // Helper function to get today's date in local timezone (YYYY-MM-DD format)
 function getTodayLocal() {
@@ -15,6 +15,11 @@ function getTodayLocal() {
 let itemCounter = 0;
 let selectedDate = getTodayLocal(); // Default to today (local timezone)
 let selectedBranch = localStorage.getItem('expense-selected-branch') || 'SM North';
+let feedRefreshTimer = null;
+let feedRefreshInProgress = false;
+let expenseSubmitInProgress = false;
+/** @type {{ mode: string, selected: string, onSelect: (dateString: string) => void } | null} */
+let dateModalContext = null;
 
 function hideMergeModalProgressUI() {
     const modalOverlay = document.getElementById('mergeSupplierModalOverlay');
@@ -123,14 +128,40 @@ document.addEventListener('DOMContentLoaded', async function () {
     // Initialize date picker and branch select (these also update the display)
     initializeDatePicker();
     initializeBranchSelect();
+    initializeFormDatePicker();
+
+    document.addEventListener('visibilitychange', () => {
+        if (
+            document.visibilityState === 'visible' &&
+            document.getElementById('dashboardPage')?.style.display !== 'none'
+        ) {
+            scheduleDashboardFeedRefresh();
+        }
+    });
+
+    window.addEventListener('expense-sync-updated', () => {
+        loadDashboard();
+    });
+
+    window.addEventListener('expense-receipts-updated', () => {
+        loadDashboard();
+    });
+
+    window.addEventListener('expense-remote-updated', () => {
+        if (document.getElementById('dashboardPage')?.style.display !== 'none') {
+            loadDashboard();
+        }
+    });
 
     // Phase 2: Initialize Firebase (in background)
     const firebaseInitialized = await shared.initializeFirebase();
 
     if (firebaseInitialized) {
-        // Phase 3: Background Firebase sync (non-blocking)
+        // Phase 3: Background Firebase sync (non-blocking).
+        // Receipts are loaded lazily when an expense is opened, so we don't rehydrate
+        // every receipt here (that was the main cause of slow startup/refresh).
         const hasChanges = await shared.initializeFirebaseSync();
-        
+
         if (hasChanges) {
             // Re-render with updated data
             loadDashboard();
@@ -163,8 +194,8 @@ document.addEventListener('DOMContentLoaded', async function () {
         setupSupplierAutocomplete();
     }
 
-    if (document.getElementById('expenseDate')) {
-        document.getElementById('expenseDate').value = selectedDate; // Use currently selected date
+    if (document.getElementById('expenseDateValue')) {
+        setFormExpenseDate(selectedDate);
         addItemRow();
     }
 
@@ -307,6 +338,68 @@ function closeExpenseModal() {
 }
 
 // Dashboard functions
+async function refreshDashboardFeed() {
+    if (feedRefreshInProgress) return;
+    feedRefreshInProgress = true;
+    const expenseList = document.getElementById('expenseList');
+    expenseList?.classList.add('expense-list--refreshing');
+    try {
+        await shared.refreshExpensesFromRemote();
+    } catch (error) {
+        console.warn('Dashboard feed refresh failed:', error);
+    } finally {
+        feedRefreshInProgress = false;
+        expenseList?.classList.remove('expense-list--refreshing');
+        loadDashboard();
+    }
+}
+
+function scheduleDashboardFeedRefresh() {
+    clearTimeout(feedRefreshTimer);
+    feedRefreshTimer = setTimeout(() => {
+        refreshDashboardFeed();
+    }, 300);
+}
+
+function formatFormDateDisplay(isoDate) {
+    if (!isoDate) return '';
+    const date = new Date(isoDate + 'T00:00:00');
+    if (Number.isNaN(date.getTime())) return isoDate;
+    return date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+    });
+}
+
+function getFormExpenseDate() {
+    const hidden = document.getElementById('expenseDateValue');
+    return hidden?.value || selectedDate;
+}
+
+function setFormExpenseDate(isoDate) {
+    const hidden = document.getElementById('expenseDateValue');
+    const display = document.getElementById('expenseDate');
+    if (hidden) hidden.value = isoDate || '';
+    if (display) display.value = formatFormDateDisplay(isoDate);
+}
+
+function openFormDateModal() {
+    openDateModal({
+        mode: 'form',
+        selected: getFormExpenseDate(),
+        onSelect: (dateString) => {
+            setFormExpenseDate(dateString);
+        }
+    });
+}
+
+function initializeFormDatePicker() {
+    const display = document.getElementById('expenseDate');
+    if (!display) return;
+    display.addEventListener('click', openFormDateModal);
+}
+
 function loadDashboard() {
     const expenseList = document.getElementById('expenseList');
     const allExpenses = shared.getExpenses(); // Get expenses from shared module
@@ -413,8 +506,14 @@ function loadDashboard() {
 
         const isToday = expense.date === getTodayLocal();
 
+        const isPending = shared.isExpensePendingSync(expense.id);
+        const pendingClass = isPending ? ' expense-card--pending-sync' : '';
+        const syncBadge = isPending
+            ? `<div class="expense-sync-badge">${shared.isSyncInProgress() ? 'Syncing…' : 'Not synced'}</div>`
+            : '';
+
         return `
-            <div class="expense-card">
+            <div class="expense-card${pendingClass}">
                 <div class="expense-header">
                     <div class="expense-header-content" onclick="viewExpense('${expense.id}')">
                         <div class="expense-left">
@@ -451,6 +550,7 @@ function loadDashboard() {
                         expense.isVatRegistered && expense.vatAmount > 0 ? 'VAT' : null
                     ].filter(Boolean).join(' • ')}</div>
                     <div class="expense-date">${isToday ? 'Today' : formatDate(expense.date)}</div>
+                    ${syncBadge}
                 </div>
             </div>
         `;
@@ -510,7 +610,7 @@ function initializeDatePicker() {
         date.setDate(date.getDate() - 1);
         selectedDate = date.toISOString().split('T')[0];
         updateDateDisplay();
-        loadDashboard();
+        scheduleDashboardFeedRefresh();
     });
 
     // Next date button
@@ -530,7 +630,7 @@ function initializeDatePicker() {
             const day = String(nextDate.getDate()).padStart(2, '0');
             selectedDate = `${year}-${month}-${day}`;
             updateDateDisplay();
-            loadDashboard();
+            scheduleDashboardFeedRefresh();
         }
     });
 
@@ -573,7 +673,7 @@ function updateDateDisplay() {
 }
 
 function initializeBranchSelect() {
-    const branchSelect = document.getElementById('branchSelect');
+    const branchSelect = document.getElementById('dashboardBranchSelect');
     if (!branchSelect) {
         console.warn('Branch select element not found');
         return;
@@ -600,41 +700,31 @@ function initializeBranchSelect() {
         selectedBranch = e.target.value;
         localStorage.setItem('expense-selected-branch', selectedBranch);
         console.log('Branch saved to localStorage:', selectedBranch);
-        updatePaidByVisibility();
-        loadDashboard();
+        scheduleDashboardFeedRefresh();
     });
-    
-    // Function to show/hide Paid By field based on allocation
-    function updatePaidByVisibility() {
-        const branchSelect = document.getElementById('branchSelect');
-        const paidBySection = document.getElementById('paidBySection');
-        const paidBySelect = document.getElementById('paidBy');
-        
-        if (!branchSelect || !paidBySection || !paidBySelect) return;
-        
-        const selectedValue = branchSelect.value;
-        const branches = ['SM North', 'Podium', 'Mall of Asia'];
-        const isStore = branches.includes(selectedValue);
-        
-        if (isStore) {
-            paidBySection.style.display = 'block';
-            paidBySelect.required = true;
-        } else {
-            paidBySection.style.display = 'none';
-            paidBySelect.required = false;
-            paidBySelect.value = 'Company'; // Default to Company
-        }
-    }
-    
-    // Update visibility on page load
-    updatePaidByVisibility();
 }
 
-function openDateModal() {
+function openDateModal(context) {
     const modal = document.getElementById('dateModalOverlay');
     if (!modal) return;
 
-    const currentDate = new Date(selectedDate);
+    if (context) {
+        dateModalContext = context;
+    } else {
+        dateModalContext = {
+            mode: 'dashboard',
+            selected: selectedDate,
+            onSelect: (dateString) => {
+                selectedDate = dateString;
+                updateDateDisplay();
+                scheduleDashboardFeedRefresh();
+            }
+        };
+    }
+
+    const activeDate = dateModalContext.selected;
+    const parsedDate = new Date(activeDate + 'T00:00:00');
+    const currentDate = Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
     let viewMonth = currentDate.getMonth();
     let viewYear = currentDate.getFullYear();
 
@@ -685,7 +775,7 @@ function openDateModal() {
             cell.className = 'date-cell';
 
             // Check if this is the selected date
-            if (dateString === selectedDate) {
+            if (dateString === dateModalContext.selected) {
                 cell.classList.add('selected');
             }
 
@@ -699,9 +789,7 @@ function openDateModal() {
                 cell.classList.add('disabled');
             } else {
                 cell.addEventListener('click', () => {
-                    selectedDate = dateString;
-                    updateDateDisplay();
-                    loadDashboard();
+                    dateModalContext.onSelect(dateString);
                     closeDateModal();
                 });
             }
@@ -734,9 +822,7 @@ function openDateModal() {
 
     if (todayBtn) {
         todayBtn.onclick = () => {
-            selectedDate = getTodayLocal();
-            updateDateDisplay();
-            loadDashboard();
+            dateModalContext.onSelect(getTodayLocal());
             closeDateModal();
         };
     }
@@ -1193,9 +1279,8 @@ function resetForm() {
     const expenseForm = document.getElementById('expenseForm');
     if (expenseForm) expenseForm.reset();
 
-    // Reset date field - use currently selected date
-    const dateInput = document.getElementById('expenseDate');
-    if (dateInput) dateInput.value = selectedDate;
+    // Reset date field - use currently selected dashboard date
+    setFormExpenseDate(selectedDate);
 
     // Reset allocation and branch fields
     const allocationSelect = document.getElementById('allocationSelect');
@@ -1204,9 +1289,10 @@ function resetForm() {
         handleAllocationChange();
     }
     
-    const branchSelect = document.getElementById('branchSelect');
-    if (branchSelect) {
-        branchSelect.value = selectedBranch || 'SM North';
+    const formBranchSelect = document.getElementById('formBranchSelect');
+    if (formBranchSelect) {
+        const branches = ['SM North', 'Podium', 'Mall of Asia'];
+        formBranchSelect.value = branches.includes(selectedBranch) ? selectedBranch : 'SM North';
     }
     
     // Update Paid By visibility
@@ -1288,9 +1374,9 @@ async function handleReceiptUpload(input) {
             return;
         }
 
-        // Validate file size (max 5MB before compression)
-        if (file.size > 5 * 1024 * 1024) {
-            showToast('Image size must be less than 5MB');
+        // Validate file size (max 20MB before compression — phone photos are often 3-8MB)
+        if (file.size > 20 * 1024 * 1024) {
+            showToast('Image size must be less than 20MB');
             return;
         }
 
@@ -1305,8 +1391,8 @@ async function handleReceiptUpload(input) {
         }
 
         try {
-            // Compress image before storing
-            const compressedImage = await shared.compressImage(file, 1920, 1920, 0.8);
+            // Compress to ~800KB at a readable resolution (defaults: 1600px, quality loop)
+            const compressedImage = await shared.compressImage(file);
             
             preview.src = compressedImage;
             preview.style.display = 'block';
@@ -1333,6 +1419,12 @@ async function handleReceiptUpload(input) {
 
             // Store for saving (URL preferred)
             window.currentReceiptData = receiptUrl || compressedImage;
+            if (receiptUrl) {
+                shared.cacheReceiptUrlForExpense(
+                    expenseIdForReceipt || window.currentDraftExpenseId,
+                    receiptUrl
+                );
+            }
             
             // Show compression info
             const originalSize = (file.size / 1024 / 1024).toFixed(2);
@@ -1859,8 +1951,25 @@ function showItemBreakdown(itemId) {
     updateFromItems();
 }
 
-function handleFormSubmission(e) {
+async function handleFormSubmission(e) {
     e.preventDefault();
+
+    // Guard against double-submit (double tap while first save is processing).
+    if (expenseSubmitInProgress) return;
+    expenseSubmitInProgress = true;
+    const saveBtn = e.target?.querySelector('button[type="submit"]');
+    const saveBtnLabel = saveBtn ? saveBtn.textContent : '';
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Saving...';
+    }
+    const releaseSubmitLock = () => {
+        expenseSubmitInProgress = false;
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = saveBtnLabel || 'Save Expense';
+        }
+    };
 
     // Check if we're editing an existing expense
     const isEditing = window.editingExpenseId;
@@ -1897,14 +2006,15 @@ function handleFormSubmission(e) {
     
     // Build data object for expense creation
     // Get date, allocation, and branch from form fields
-    const date = getElementValue('expenseDate', selectedDate);
+    const date = getElementValue('expenseDateValue', selectedDate);
     const allocation = getElementValue('allocationSelect', 'Store');
-    const branch = allocation === 'Store' ? getElementValue('branchSelect', '') : null;
+    const branch = allocation === 'Store' ? getElementValue('formBranchSelect', '') : null;
     
     // Validate receipt is uploaded
     const receiptImage = window.currentReceiptData || (existingExpense?.receiptImage || null);
     if (!receiptImage) {
         showToast('Please upload a receipt photo');
+        releaseSubmitLock();
         return;
     }
 
@@ -1984,16 +2094,12 @@ function handleFormSubmission(e) {
         // Update existing expense using shared function
         // Supplier will be auto-created if new (handled by updateExpense)
         const success = shared.updateExpense(window.editingExpenseId, expense);
-        if (success) {
-            if (isNewSupplier) {
-                showToast('Expense updated and supplier created!');
-            } else {
-                showToast('Expense updated successfully!');
-            }
-        } else {
+        if (!success) {
             showToast('Failed to update expense');
+            releaseSubmitLock();
             return;
         }
+        showToast(isNewSupplier ? 'Expense updated and supplier created!' : 'Expense updated!');
 
         // Clear editing state
         delete window.editingExpenseId;
@@ -2002,18 +2108,26 @@ function handleFormSubmission(e) {
         // Create new expense using shared function
         // Supplier will be auto-created if new (handled by addExpense)
         shared.addExpense(expense);
-        if (isNewSupplier) {
-            showToast('Expense saved and supplier created!');
-        } else {
-            showToast('Expense saved successfully!');
-        }
+        showToast(isNewSupplier ? 'Expense saved and supplier created!' : 'Expense saved!');
     }
 
-    // Close modal and refresh dashboard
-    setTimeout(() => {
-        closeExpenseModal();
+    // Optimistic UX: close modal and refresh feed immediately. Upload runs in background.
+    closeExpenseModal();
+    loadDashboard();
+    releaseSubmitLock();
+
+    // Sync just this expense to Firebase in the background (does not block the UI).
+    // Receipt is usually already uploaded during photo pick; this writes the expense doc + URL.
+    shared.syncExpenseToFirebase(expense.id).then((res) => {
+        if (!res.ok) {
+            showToast('Saved on this device — will sync when online');
+        }
         loadDashboard();
-    }, 300);
+    }).catch((err) => {
+        console.warn('Background expense sync failed:', err);
+        showToast('Saved on this device — will sync when online');
+        loadDashboard();
+    });
 }
 
 function saveSupplierIfNew(expense) {
@@ -3005,7 +3119,7 @@ function switchTab(tab) {
         document.getElementById('dashboardPage').style.display = 'block';
         document.getElementById('suppliersPage').style.display = 'none';
         document.querySelectorAll('.nav-tab')[0].classList.add('active');
-        loadDashboard();
+        scheduleDashboardFeedRefresh();
     } else if (tab === 'suppliers') {
         document.getElementById('dashboardPage').style.display = 'none';
         document.getElementById('suppliersPage').style.display = 'block';
@@ -3317,8 +3431,7 @@ function editExpense(expenseId, event) {
 
 function populateExpenseForm(expense) {
     // Set basic fields with null checks (some fields may not exist in mobile form)
-    const expenseDate = document.getElementById('expenseDate');
-    if (expenseDate) expenseDate.value = expense.date;
+    setFormExpenseDate(expense.date);
     
     const supplierName = document.getElementById('supplierName');
     if (supplierName) {
@@ -3444,9 +3557,9 @@ function populateExpenseForm(expense) {
         handleAllocationChange();
     }
     
-    const branchSelect = document.getElementById('branchSelect');
-    if (branchSelect && expense.branch) {
-        branchSelect.value = expense.branch;
+    const formBranchSelect = document.getElementById('formBranchSelect');
+    if (formBranchSelect && expense.branch) {
+        formBranchSelect.value = expense.branch;
     }
 
     const pettyCb = document.getElementById('isPettyCash');

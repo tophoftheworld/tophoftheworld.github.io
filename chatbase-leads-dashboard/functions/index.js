@@ -95,6 +95,8 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use(express.json());
+
 const path = require("path");
 const { pathToFileURL } = require("url");
 const SHOPIFY_API_PATH = /^\/api\/(config|orders|workshop-sessions|workshop-roster|products)/;
@@ -122,7 +124,6 @@ app.use(async (req, res, next) => {
   }
 });
 
-app.use(express.json());
 app.use((req, _res, next) => {
   if (req.url.startsWith("/api/")) {
     req.url = req.url.slice(4) || "/";
@@ -543,5 +544,5 @@ app.post("/service-leads/delete", async (req, res) => {
   }
 });
 
-exports.api = onRequest(app);
+exports.api = onRequest({ timeoutSeconds: 120 }, app);
 exports.getLeadsApiApp = () => app;

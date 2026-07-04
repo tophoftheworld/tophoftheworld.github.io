@@ -148,6 +148,38 @@ body {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
+.expense-card--pending-sync {
+    opacity: 0.55;
+}
+
+.expense-card--pending-sync:hover {
+    transform: none;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.expense-sync-badge {
+    font-size: 11px;
+    font-weight: 500;
+    color: #8ba3b5;
+    margin-top: 4px;
+}
+
+.expense-list--refreshing {
+    opacity: 0.55;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+.form-date-picker-input {
+    font-family: 'Netflix Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    cursor: pointer;
+    color: #333;
+}
+
+.form-date-picker-input::placeholder {
+    color: #8ba3b5;
+}
+
 /* Action buttons for expense cards */
 .expense-header {
     display: flex;

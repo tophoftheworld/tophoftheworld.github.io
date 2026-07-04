@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Matcha Powder Write</title>
+  <link rel="stylesheet" href="./css/style.css" />
+</head>
+<body class="exp-page">
+  <header class="exp-topbar">
+    <a class="back" href="../index.html">← Home</a>
+    <h1>Matcha Powder Write</h1>
+    <div class="exp-hud">
+      <button type="button" class="toolbar-btn" id="clearBtn" title="Clear powder (C)">Clear</button>
+      <span>Pinch to write</span>
+    </div>
+  </header>
+
+  <div class="stage-wrap">
+    <div class="stage" id="stage">
+      <div class="loading-overlay" id="loading">
+        <div class="spinner"></div>
+        <span>Starting camera &amp; hand model…</span>
+      </div>
+      <video id="webcam" playsinline muted></video>
+      <canvas id="reveal" class="layer"></canvas>
+      <canvas id="powder" class="layer"></canvas>
+      <canvas id="overlay" class="layer"></canvas>
+    </div>
+  </div>
+
+  <p class="hint-bar">
+    Pinch thumb + index to carve matcha powder · <kbd>C</kbd> clear · <kbd>H</kbd> toggle hand overlay
+  </p>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <script src="./js/hands-runtime.js"></script>
+  <script src="./js/exp-template.js"></script>
+  <script src="./js/powder-renderer.js"></script>
+  <script src="./js/app.js"></script>
+</body>
+</html>
