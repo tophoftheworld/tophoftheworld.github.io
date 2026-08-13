@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, doc, setDoc, getDocs, query, where } from 'firebase/firestore';
+import { getFirestore, collection, doc, updateDoc, getDocs, query, where, deleteDoc } from 'firebase/firestore';
 
 const firebaseConfig = {
     apiKey: "AIzaSyA6ikBMsQACcUpn4Jff7PQFeWLN8wv18EE",
@@ -252,57 +252,72 @@ const manilaMatchaFestMenu = {
     ]
 };
 
-async function updateManilaMatchaFest() {
+async function fixManilaMatchaFest() {
     try {
-        console.log('Connecting to Firebase...');
+        console.log('🔧 Fixing Manila Matcha Fest events...\n');
         
-        // Check if Manila Matcha Fest event exists
         const branchesRef = collection(db, 'branches');
-        const q = query(branchesRef, where('key', '==', 'manila-matcha-fest'));
-        const snapshot = await getDocs(q);
         
-        let eventDocId;
-        if (!snapshot.empty) {
-            // Event exists, get its document ID
-            eventDocId = snapshot.docs[0].id;
-            console.log('Found existing Manila Matcha Fest event:', eventDocId);
-        } else {
-            // Create new event with a generated ID
-            console.log('Manila Matcha Fest event not found, will create new one');
-            eventDocId = 'manila-matcha-fest-' + Date.now();
+        // Find all Manila Matcha Fest events
+        const allSnapshot = await getDocs(branchesRef);
+        const events = [];
+        
+        allSnapshot.forEach(doc => {
+            const data = doc.data();
+            if (data.name && data.name.toLowerCase().includes('manila matcha fest')) {
+                events.push({ id: doc.id, ...data });
+            }
+        });
+        
+        console.log(`Found ${events.length} Manila Matcha Fest event(s):`);
+        events.forEach(event => {
+            console.log(`  - ${event.name} (key: ${event.key}, doc ID: ${event.id})`);
+        });
+        console.log('');
+        
+        // Find the 2026 event
+        const event2026 = events.find(e => 
+            e.name.includes('2026') || e.key.includes('2026')
+        );
+        
+        // Find the duplicate event (the one I just created)
+        const duplicateEvent = events.find(e => 
+            e.key === 'manila-matcha-fest' && !e.name.includes('2026')
+        );
+        
+        if (!event2026) {
+            console.error('❌ Could not find Manila Matcha Fest 2026 event!');
+            console.log('Available events:', events.map(e => e.name));
+            process.exit(1);
         }
         
-        // Update or create the event
-        const eventData = {
-            key: 'manila-matcha-fest',
-            name: 'Manila Matcha Fest',
-            type: 'popup',
-            serviceType: 'popup',
-            archived: false,
+        // Update the correct 2026 event with custom menu
+        console.log(`✅ Updating existing event: ${event2026.name}`);
+        const eventRef = doc(db, 'branches', event2026.id);
+        await updateDoc(eventRef, {
             customMenu: manilaMatchaFestMenu
-        };
+        });
+        console.log('   Custom menu with cookies added!\n');
         
-        const eventRef = doc(db, 'branches', eventDocId);
-        await setDoc(eventRef, eventData, { merge: true });
+        // Delete the duplicate event if it exists
+        if (duplicateEvent) {
+            console.log(`🗑️  Deleting duplicate event: ${duplicateEvent.name}`);
+            const duplicateRef = doc(db, 'branches', duplicateEvent.id);
+            await deleteDoc(duplicateRef);
+            console.log('   Duplicate event removed!\n');
+        }
         
-        console.log('✅ Successfully updated Manila Matcha Fest event in Firebase!');
-        console.log('Event key:', eventData.key);
-        console.log('Event name:', eventData.name);
-        console.log('Menu items count:', manilaMatchaFestMenu.items.length);
-        console.log('Cookies with variants:', 
-            manilaMatchaFestMenu.items
-                .filter(item => item.variants)
-                .map(item => ({
-                    name: item.name.replace(/<[^>]*>/g, ''),
-                    variants: item.variants.map(v => v.name)
-                }))
-        );
+        console.log('✅ Successfully fixed Manila Matcha Fest 2026!');
+        console.log('Cookies with variants:');
+        console.log('  - Matcha Bomb');
+        console.log('  - Matcha Dark Choco');
+        console.log('  - Matcha White Choco');
         
         process.exit(0);
     } catch (error) {
-        console.error('Error updating Manila Matcha Fest:', error);
+        console.error('❌ Error fixing Manila Matcha Fest:', error);
         process.exit(1);
     }
 }
 
-updateManilaMatchaFest();
+fixManilaMatchaFest();
