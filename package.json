@@ -1,0 +1,13 @@
+{
+  "name": "matchanese-pos-updater",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Script to update Manila Matcha Fest event in Firebase",
+  "main": "update-manila-matcha-fest.js",
+  "scripts": {
+    "update": "node update-manila-matcha-fest.js"
+  },
+  "dependencies": {
+    "firebase": "^11.6.0"
+  }
+}

@@ -1,4 +1,21 @@
-export const menuData = {
+import { initializeApp } from 'firebase/app';
+import { getFirestore, collection, doc, setDoc, getDocs, query, where } from 'firebase/firestore';
+
+const firebaseConfig = {
+    apiKey: "AIzaSyA6ikBMsQACcUpn4Jff7PQFeWLN8wv18EE",
+    authDomain: "matchanese-attendance.firebaseapp.com",
+    projectId: "matchanese-attendance",
+    storageBucket: "matchanese-attendance.firebasestorage.app",
+    messagingSenderId: "339591618451",
+    appId: "1:339591618451:web:23f9d95833ee5010bbd266",
+    measurementId: "G-YEK4GML6SJ"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// Manila Matcha Fest menu with cookies
+const manilaMatchaFestMenu = {
     categories: [
         {
             id: "matcha-lattes",
@@ -27,7 +44,6 @@ export const menuData = {
             name: "signature <span class=\"text-span-2\">matchanese</span> latte",
             description: "Hand-whisked Ceremonial Matcha over Milk",
             price: 200,
-            // tags: ["signature"],
             type: "Iced"
         },
         {
@@ -51,13 +67,12 @@ export const menuData = {
             name: "<span class=\"text-span-2\">matchanese</span> tea",
             description: "Hand-Whisked Ceremonial Matcha",
             price: 190,
-            // tags: ["classic"],
             type: "Iced",
             customizations: {
-                size: true,      // Can customize size
-                serving: true,   // Can customize serving
-                sweetness: false, // Can customize sweetness
-                milk: false,     // Cannot customize milk
+                size: true,
+                serving: true,
+                sweetness: false,
+                milk: false,
                 discount: true
             }
         },
@@ -68,9 +83,9 @@ export const menuData = {
             price: 200,
             type: "Iced",
             customizations: {
-                size: true,      // Can customize size
-                serving: true,   // Can customize serving
-                sweetness: false, // Can customize sweetness
+                size: true,
+                serving: true,
+                sweetness: false,
                 milk: false,
                 discount: true
             }
@@ -82,9 +97,9 @@ export const menuData = {
             price: 200,
             type: "Iced",
             customizations: {
-                size: true,      // Can customize size
-                serving: true,   // Can customize serving
-                sweetness: false, // Can customize sweetness
+                size: true,
+                serving: true,
+                sweetness: false,
                 milk: false,
                 discount: true
             }
@@ -97,9 +112,9 @@ export const menuData = {
             tags: ["Limited Time"],
             type: "Iced",
             customizations: {
-                size: true,      // Can customize size
-                serving: true,   // Can customize serving
-                sweetness: false, // Can customize sweetness
+                size: true,
+                serving: true,
+                sweetness: false,
                 milk: false,
                 discount: true
             }
@@ -132,43 +147,8 @@ export const menuData = {
             name: "<span class=\"text-span-2\">hojicha</span> latte",
             description: "Freshly Whisked Roasted Green Tea over Milk",
             price: 180,
-            // tags: ["best-seller"],
             type: "Iced"
         },
-        // {
-        //     categoryId: "desserts",
-        //     name: "<span class=\"text-span-2\">warabi mochi</span> (box)",
-        //     description: "",
-        //     price: 270,
-        //     type: "",
-        //     variants: [
-        //         { name: "Matcha", price: 0 },
-        //         { name: "Kinako", price: 0 },
-        //     ],
-        //     customizations: {
-        //         size: false,      // Can customize size
-        //         serving: false,   // Can customize serving
-        //         sweetness: false, // Can customize sweetness
-        //         milk: false      // Cannot customize milk
-        //     }
-        // },
-        // {
-        //     categoryId: "desserts",
-        //     name: "<span class=\"text-span-2\">warabi mochi</span> (cup)",
-        //     description: "",
-        //     price: 105,
-        //     type: "",
-        //     variants: [
-        //         { name: "Matcha", price: 0 },
-        //         { name: "Kinako", price: 0 },
-        //     ],
-        //     customizations: {
-        //         size: false,      // Can customize size
-        //         serving: false,   // Can customize serving
-        //         sweetness: false, // Can customize sweetness
-        //         milk: false      // Cannot customize milk
-        //     }
-        // },
         {
             categoryId: "desserts",
             name: "matcha <span class=\"text-span-2\">cookie</span>",
@@ -181,10 +161,10 @@ export const menuData = {
                 { name: "Matcha White Choco", price: 0 }
             ],
             customizations: {
-                size: false,      // Can customize size
-                serving: false,   // Can customize serving
-                sweetness: false, // Can customize sweetness
-                milk: false      // Cannot customize milk
+                size: false,
+                serving: false,
+                sweetness: false,
+                milk: false
             }
         },
         {
@@ -194,10 +174,10 @@ export const menuData = {
             price: 240,
             type: "",
             customizations: {
-                size: false,      // Can customize size
-                serving: false,   // Can customize serving
-                sweetness: false, // Can customize sweetness
-                milk: false      // Cannot customize milk
+                size: false,
+                serving: false,
+                sweetness: false,
+                milk: false
             }
         },
         {
@@ -211,10 +191,10 @@ export const menuData = {
                 { name: "Kinako", price: 0 },
             ],
             customizations: {
-                size: false,      // Can customize size
-                serving: false,   // Can customize serving
-                sweetness: false, // Can customize sweetness
-                milk: false      // Cannot customize milk
+                size: false,
+                serving: false,
+                sweetness: false,
+                milk: false
             }
         },
         {
@@ -224,10 +204,10 @@ export const menuData = {
             price: 160,
             type: "",
             customizations: {
-                size: false,      // Can customize size
-                serving: false,   // Can customize serving
-                sweetness: false, // Can customize sweetness
-                milk: false      // Cannot customize milk
+                size: false,
+                serving: false,
+                sweetness: false,
+                milk: false
             }
         },
         {
@@ -237,10 +217,10 @@ export const menuData = {
             price: 160,
             type: "",
             customizations: {
-                size: false,      // Can customize size
-                serving: false,   // Can customize serving
-                sweetness: false, // Can customize sweetness
-                milk: false      // Cannot customize milk
+                size: false,
+                serving: false,
+                sweetness: false,
+                milk: false
             }
         },
         {
@@ -250,10 +230,10 @@ export const menuData = {
             price: 190,
             type: "",
             customizations: {
-                size: false,      // Can customize size
-                serving: false,   // Can customize serving
-                sweetness: false, // Can customize sweetness
-                milk: false      // Cannot customize milk
+                size: false,
+                serving: false,
+                sweetness: false,
+                milk: false
             }
         },
         {
@@ -263,11 +243,66 @@ export const menuData = {
             price: 220,
             type: "",
             customizations: {
-                size: false,      // Can customize size
-                serving: false,   // Can customize serving
-                sweetness: false, // Can customize sweetness
-                milk: false      // Cannot customize milk
+                size: false,
+                serving: false,
+                sweetness: false,
+                milk: false
             }
         }
     ]
 };
+
+async function updateManilaMatchaFest() {
+    try {
+        console.log('Connecting to Firebase...');
+        
+        // Check if Manila Matcha Fest event exists
+        const branchesRef = collection(db, 'branches');
+        const q = query(branchesRef, where('key', '==', 'manila-matcha-fest'));
+        const snapshot = await getDocs(q);
+        
+        let eventDocId;
+        if (!snapshot.empty) {
+            // Event exists, get its document ID
+            eventDocId = snapshot.docs[0].id;
+            console.log('Found existing Manila Matcha Fest event:', eventDocId);
+        } else {
+            // Create new event with a generated ID
+            console.log('Manila Matcha Fest event not found, will create new one');
+            eventDocId = 'manila-matcha-fest-' + Date.now();
+        }
+        
+        // Update or create the event
+        const eventData = {
+            key: 'manila-matcha-fest',
+            name: 'Manila Matcha Fest',
+            type: 'popup',
+            serviceType: 'popup',
+            archived: false,
+            customMenu: manilaMatchaFestMenu
+        };
+        
+        const eventRef = doc(db, 'branches', eventDocId);
+        await setDoc(eventRef, eventData, { merge: true });
+        
+        console.log('✅ Successfully updated Manila Matcha Fest event in Firebase!');
+        console.log('Event key:', eventData.key);
+        console.log('Event name:', eventData.name);
+        console.log('Menu items count:', manilaMatchaFestMenu.items.length);
+        console.log('Cookies with variants:', 
+            manilaMatchaFestMenu.items
+                .filter(item => item.variants)
+                .map(item => ({
+                    name: item.name.replace(/<[^>]*>/g, ''),
+                    variants: item.variants.map(v => v.name)
+                }))
+        );
+        
+        process.exit(0);
+    } catch (error) {
+        console.error('Error updating Manila Matcha Fest:', error);
+        process.exit(1);
+    }
+}
+
+updateManilaMatchaFest();
