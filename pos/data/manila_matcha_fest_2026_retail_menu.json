@@ -1,0 +1,238 @@
+{
+  "categories": [
+    {
+      "id": "retail-matchanese",
+      "name": "Retail (Matchanese)",
+      "countsAsCup": false
+    },
+    {
+      "id": "retail-nuki-nuki",
+      "name": "Retail (Nuki Nuki)",
+      "countsAsCup": false
+    },
+    {
+      "id": "merch",
+      "name": "Merch",
+      "countsAsCup": false
+    }
+  ],
+  "items": [
+    {
+      "categoryId": "retail-matchanese",
+      "name": "Aki",
+      "description": "Matchanese retail matcha",
+      "price": 900,
+      "type": "Retail",
+      "shorthand": "AKI",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": false
+      }
+    },
+    {
+      "categoryId": "retail-matchanese",
+      "name": "Natsu",
+      "description": "Matchanese retail matcha",
+      "price": 1150,
+      "type": "Retail",
+      "shorthand": "NAT",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": false
+      }
+    },
+    {
+      "categoryId": "retail-matchanese",
+      "name": "Hojicha",
+      "description": "Matchanese retail hojicha",
+      "price": 550,
+      "type": "Retail",
+      "shorthand": "HOJ",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": false
+      }
+    },
+    {
+      "categoryId": "retail-matchanese",
+      "name": "Samidori",
+      "description": "Matchanese retail matcha",
+      "price": 1250,
+      "type": "Retail",
+      "shorthand": "SAM",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": false
+      }
+    },
+    {
+      "categoryId": "retail-nuki-nuki",
+      "name": "Nuki Nuki 01",
+      "description": "Nuki Nuki retail matcha",
+      "price": 950,
+      "type": "Retail",
+      "shorthand": "NN01",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": false
+      }
+    },
+    {
+      "categoryId": "retail-nuki-nuki",
+      "name": "Nuki Nuki 02",
+      "description": "Nuki Nuki retail matcha",
+      "price": 1150,
+      "type": "Retail",
+      "shorthand": "NN02",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": false
+      }
+    },
+    {
+      "categoryId": "merch",
+      "name": "Shirt",
+      "description": "Official MMF merch",
+      "price": 750,
+      "type": "Merch",
+      "shorthand": "SHT",
+      "variants": [
+        {
+          "name": "Matcha Lover"
+        },
+        {
+          "name": "Matcha Fest"
+        }
+      ],
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": false
+      }
+    },
+    {
+      "categoryId": "merch",
+      "name": "Cap",
+      "description": "Official MMF merch",
+      "price": 650,
+      "type": "Merch",
+      "shorthand": "CAP",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": false
+      }
+    },
+    {
+      "categoryId": "merch",
+      "name": "Tote Bag (Small)",
+      "description": "Official MMF merch",
+      "price": 150,
+      "type": "Merch",
+      "shorthand": "TBS",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": false
+      }
+    },
+    {
+      "categoryId": "merch",
+      "name": "Tote Bag (Big)",
+      "description": "Official MMF merch",
+      "price": 450,
+      "type": "Merch",
+      "shorthand": "TBB",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": false
+      }
+    },
+    {
+      "categoryId": "merch",
+      "name": "Sticker Pack",
+      "description": "Official MMF merch",
+      "price": 150,
+      "type": "Merch",
+      "shorthand": "STK",
+      "variants": [
+        {
+          "name": "MMF 2025"
+        },
+        {
+          "name": "MMF 2026"
+        },
+        {
+          "name": "Matchanese Tools"
+        },
+        {
+          "name": "Matchanese Desserts"
+        },
+        {
+          "name": "Matchanese 5th Anniv"
+        }
+      ],
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": false
+      }
+    },
+    {
+      "categoryId": "merch",
+      "name": "Sticker Pack (3 for ₱360)",
+      "description": "Any 3 sticker packs",
+      "price": 360,
+      "type": "Merch",
+      "shorthand": "STK3",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": false
+      }
+    }
+  ]
+}

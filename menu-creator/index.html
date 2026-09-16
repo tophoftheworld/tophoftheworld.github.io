@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Menu Creator</title>
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/style.css?v=3">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap" rel="stylesheet">
@@ -21,6 +21,16 @@
             </div>
 
             <div id="layoutPanel" class="panel-content active" role="tabpanel">
+            <section class="form-section">
+                <h2>Mode</h2>
+                <div class="layout-mode-toggle" role="tablist" aria-label="Layout mode">
+                    <button type="button" class="layout-mode-btn active" data-layout-mode="grid" role="tab" aria-selected="true">Grid tiles</button>
+                    <button type="button" class="layout-mode-btn" data-layout-mode="overlay" role="tab" aria-selected="false">Image overlay</button>
+                </div>
+                <p class="form-hint grid-only">Build the menu from columns and tiles.</p>
+                <p class="form-hint overlay-only">Load one background image, then place modules on it and resize them freely.</p>
+            </section>
+
             <section class="form-section">
                 <h2>Canvas</h2>
                 <div class="form-row two-cols">
@@ -39,7 +49,7 @@
                         </select>
                     </div>
                 </div>
-                <div class="form-row two-cols">
+                <div class="form-row two-cols grid-only">
                     <div class="form-group">
                         <label for="margin">Margin</label>
                         <input type="number" id="margin" min="0" step="0.5" value="12" placeholder="12">
@@ -62,7 +72,41 @@
                 <p class="form-hint" id="canvasHint">Margin, tile spacing, width & height use the same unit.</p>
             </section>
 
-            <section class="form-section">
+            <section class="form-section overlay-only" id="overlayImageSection">
+                <h2>Background image</h2>
+                <div class="overlay-bg-preview-wrap" id="overlayBgPreviewWrap">
+                    <p class="form-hint" id="overlayBgEmptyHint">No image loaded yet.</p>
+                    <img id="overlayBgThumb" alt="Background preview" hidden draggable="false">
+                </div>
+                <div class="menu-local-actions">
+                    <button type="button" id="overlayBgPickBtn" class="btn btn-primary">Load image</button>
+                    <button type="button" id="overlayBgRemoveBtn" class="btn btn-secondary">Remove</button>
+                </div>
+                <input type="file" id="overlayBgInput" accept="image/*" hidden aria-hidden="true">
+                <p class="form-hint" id="overlayBgStatus"></p>
+            </section>
+
+            <section class="form-section overlay-only" id="overlayModulesSection">
+                <h2>Modules</h2>
+                <div class="form-row two-cols">
+                    <div class="form-group">
+                        <label for="overlayModuleType">Module</label>
+                        <select id="overlayModuleType">
+                            <option value="photo">Photo / video gallery</option>
+                            <option value="customer-display">Customer display</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="addOverlayModuleBtn">&nbsp;</label>
+                        <button type="button" id="addOverlayModuleBtn" class="btn btn-primary">Add to image</button>
+                    </div>
+                </div>
+                <p class="form-hint">Drag the module to move it. Use the corner and edge handles to resize. Content reflows inside the box (it does not stretch).</p>
+                <div id="overlayModuleList" class="overlay-module-list"></div>
+                <div id="overlaySelectedProps"></div>
+            </section>
+
+            <section class="form-section grid-only">
                 <h2>Columns</h2>
                 <div class="form-group">
                     <label for="columnCount">Number of columns</label>
@@ -74,7 +118,7 @@
                 <p class="form-hint">Widths are in %. They auto-adjust so the total stays 100%.</p>
             </section>
 
-            <section class="form-section" id="rowsSection">
+            <section class="form-section grid-only" id="rowsSection">
                 <h2>Tiles per column</h2>
                 <div id="columnRowsContainer">
                     <!-- Per-column tile count + tile height % + template + props -->
@@ -223,6 +267,11 @@
                     <div id="tileGrid" class="tile-grid">
                         <!-- Tiles rendered by JS -->
                     </div>
+                    <div id="overlayStage" class="overlay-stage" hidden>
+                        <div id="overlayEmptyState" class="overlay-empty-state">Load a background image to start</div>
+                        <img id="overlayBgImage" class="overlay-bg-image" alt="" hidden draggable="false">
+                        <div id="overlayModules" class="overlay-modules"></div>
+                    </div>
                 </div>
                 </div>
                 </div>
@@ -231,6 +280,6 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-    <script type="module" src="js/script.js"></script>
+    <script type="module" src="js/script.js?v=8"></script>
 </body>
 </html>

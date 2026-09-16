@@ -1,0 +1,387 @@
+{
+  "meta": {
+    "version": "1.0",
+    "snapshot_at": "2026-07-31T01:00:00+08:00",
+    "snapshot_state": "PRE_PAYMENT",
+    "description": "Position before the 31-Jul-2026 09:00 payment run. Nothing in `payables` has been paid yet.",
+    "currency": "PHP",
+    "owner": "Toph (Cristopher Palma David)",
+    "entities": ["Matchanese Inc.", "Manila Matcha Fest 2026"],
+    "source_documents": [
+      "mmf-payment-reconciliation-2026-07-30(1).xls",
+      "MANILA_MATCHA_FEST_2026.pdf — SM Prime MOA dated 16-Jul-2026",
+      "BPI statement screenshots 31-Jul-2026",
+      "Balances and clarifications provided by owner 30/31-Jul-2026"
+    ]
+  },
+
+  "funds": [
+    {
+      "id": "MMF",
+      "name": "Manila Matcha Fest",
+      "purpose": "Ring-fenced event fund. Exhibitor slot fees in; venue lease, merch and production out.",
+      "color": "#3F7D58"
+    },
+    {
+      "id": "MATCHANESE_OPS",
+      "name": "Matchanese Operations",
+      "purpose": "Company money. Store takings in; payroll, rent, supplies and matcha out.",
+      "color": "#B4763A"
+    },
+    {
+      "id": "PERSONAL",
+      "name": "Personal",
+      "purpose": "Owner's money. Salary and draws in; condo, cards and living costs out.",
+      "color": "#5B6B8C"
+    }
+  ],
+
+  "accounts": [
+    {
+      "id": "BDO_SM_NORTH",
+      "name": "BDO Business — SM North",
+      "institution": "BDO",
+      "type": "business_checking",
+      "titling": "Matchanese Inc.",
+      "role": "OPERATING",
+      "balance": 300393.91,
+      "as_of": "2026-07-31T01:00:00+08:00",
+      "limits": {
+        "internal_bdo": "No cap, instant",
+        "external_instapay": 50000,
+        "external_pesonet": "No cap; banking days only, subject to cut-off"
+      },
+      "notes": "Received PHP 168,000 of exhibitor payments. Intended long-term home for SM North store funds."
+    },
+    {
+      "id": "BDO_PODIUM",
+      "name": "BDO Business — Podium",
+      "institution": "BDO",
+      "type": "business_checking",
+      "titling": "Matchanese Inc.",
+      "role": "OPERATING",
+      "balance": 247139.99,
+      "as_of": "2026-07-31T01:00:00+08:00",
+      "limits": {
+        "internal_bdo": "No cap, instant",
+        "external_instapay": 50000,
+        "external_pesonet": "No cap; banking days only"
+      },
+      "notes": "Already net of PHP 25,000 transferred to BDO Toph. Intended long-term home for Podium store funds."
+    },
+    {
+      "id": "BPI_SAVINGS",
+      "name": "BPI Savings 0829677495",
+      "institution": "BPI",
+      "type": "savings",
+      "titling": "Personal",
+      "role": "TRANSIT",
+      "balance": 250000.00,
+      "as_of": "2026-07-31T01:00:00+08:00",
+      "limits": {
+        "external_instapay": 50000,
+        "external_pesonet": "No cap; banking days only"
+      },
+      "notes": "Reconciles exactly from zero as of 28-Jul. 100% exhibitor money. Personal-titled but holds no personal funds."
+    },
+    {
+      "id": "GCASH",
+      "name": "GCash",
+      "institution": "GCash",
+      "type": "ewallet",
+      "titling": "Personal",
+      "role": "TRANSIT",
+      "balance": 120001.48,
+      "as_of": "2026-07-31T01:00:00+08:00",
+      "limits": {
+        "instapay_per_transfer": 50000,
+        "instapay_daily": "Typically 100,000 — CONFIRM"
+      },
+      "notes": "Received PHP 168,000 of exhibitor payments including Soft Brews Club, who was invoiced BPI but paid GCash."
+    },
+    {
+      "id": "PAYPAL",
+      "name": "PayPal",
+      "institution": "PayPal",
+      "type": "ewallet",
+      "titling": "Personal",
+      "role": "EXTERNAL_WALLET",
+      "balance": 28174.39,
+      "as_of": "2026-07-31T01:00:00+08:00",
+      "limits": {
+        "withdrawal_to_ph_bank": "2-4 banking days"
+      },
+      "notes": "Essentially one exhibitor payment (Matcha Besties Club, PHP 28,000) plus PHP 174.39."
+    },
+    {
+      "id": "BDO_TOPH",
+      "name": "BDO — Toph (savings)",
+      "institution": "BDO",
+      "type": "savings",
+      "titling": "Personal",
+      "role": "PERSONAL",
+      "balance": 5201.00,
+      "as_of": "2026-07-31T01:00:00+08:00",
+      "limits": {
+        "internal_bdo": "No cap, instant",
+        "external_instapay": 50000
+      },
+      "notes": "Nearly drained. Has been paying company expenses on the company's behalf."
+    },
+    {
+      "id": "BDO_CURRENT",
+      "name": "BDO — Current (check account)",
+      "institution": "BDO",
+      "type": "current",
+      "titling": "Personal",
+      "role": "PERSONAL",
+      "balance": null,
+      "as_of": null,
+      "limits": {
+        "internal_bdo": "No cap, instant"
+      },
+      "notes": "UNKNOWN BALANCE. Drawee account for the condo check. Assumed 0.00 for planning."
+    },
+    {
+      "id": "UNIONBANK",
+      "name": "Unionbank",
+      "institution": "Unionbank",
+      "type": "savings",
+      "titling": "Personal",
+      "role": "OPERATING",
+      "balance": null,
+      "as_of": null,
+      "limits": {},
+      "notes": "UNKNOWN BALANCE. Designated as the dedicated MMF fund account going forward."
+    },
+    {
+      "id": "WISE",
+      "name": "Wise",
+      "institution": "Wise",
+      "type": "multicurrency",
+      "titling": "Personal",
+      "role": "EXTERNAL_WALLET",
+      "balance": null,
+      "as_of": null,
+      "limits": {},
+      "notes": "UNKNOWN BALANCE. Receives owner's salary; pays the Japanese matcha supplier directly, avoiding FX cost."
+    }
+  ],
+
+  "fund_allocations": [
+    { "account_id": "BDO_SM_NORTH", "fund_id": "MMF", "amount": 168000.00, "note": "Exhibitor payments received into this account" },
+    { "account_id": "BDO_SM_NORTH", "fund_id": "MATCHANESE_OPS", "amount": 132393.91 },
+    { "account_id": "BDO_PODIUM", "fund_id": "MATCHANESE_OPS", "amount": 247139.99 },
+    { "account_id": "BPI_SAVINGS", "fund_id": "MMF", "amount": 250000.00, "note": "Entire balance is exhibitor money" },
+    { "account_id": "GCASH", "fund_id": "MMF", "amount": 120001.48, "note": "Entire balance is exhibitor money" },
+    { "account_id": "PAYPAL", "fund_id": "MMF", "amount": 28000.00 },
+    { "account_id": "PAYPAL", "fund_id": "PERSONAL", "amount": 174.39 },
+    { "account_id": "BDO_TOPH", "fund_id": "PERSONAL", "amount": 5201.00 }
+  ],
+
+  "fund_totals_check": {
+    "MMF": 566001.48,
+    "MATCHANESE_OPS": 379533.90,
+    "PERSONAL": 5375.39,
+    "TOTAL": 950910.77
+  },
+
+  "receivables": [
+    { "id": "R01", "payer": "Go To Matcha", "fund_id": "MMF", "amount_total": 56000, "amount_paid": 56000, "amount_due": 0, "received_in": "BDO_SM_NORTH", "status": "PAID", "terms": "Full payment" },
+    { "id": "R02", "payer": "Matcha Folk", "fund_id": "MMF", "amount_total": 56000, "amount_paid": 56000, "amount_due": 0, "received_in": "BPI_SAVINGS", "status": "PAID", "terms": "Full payment", "note": "Either Catherine De Leon Gagui (29-Jul, 56,000) or the ELINK split (28-Jul, 50,000 + 6,000) — not yet resolved which" },
+    { "id": "R03", "payer": "Shizu Matcha Bar", "fund_id": "MMF", "amount_total": 56000, "amount_paid": 56000, "amount_due": 0, "received_in": "BPI_SAVINGS", "status": "PAID", "terms": "Full payment", "note": "The other of Catherine De Leon Gagui / ELINK split" },
+    { "id": "R04", "payer": "Too Much Matcha", "fund_id": "MMF", "amount_total": 56000, "amount_paid": 56000, "amount_due": 0, "received_in": "BPI_SAVINGS", "status": "PAID", "terms": "Full payment", "note": "Honorato Ethan Ramirez Edano, 28-Jul" },
+
+    { "id": "R05", "payer": "Take Five", "fund_id": "MMF", "amount_total": 56000, "amount_paid": 28000, "amount_due": 28000, "received_in": "BPI_SAVINGS", "status": "PARTIAL", "terms": "50% downpayment", "note": "Kayla Marisse Martinez Embusca, 30-Jul" },
+    { "id": "R06", "payer": "Day Off Space", "fund_id": "MMF", "amount_total": 56000, "amount_paid": 28000, "amount_due": 28000, "received_in": "BPI_SAVINGS", "status": "PARTIAL", "terms": "50% downpayment", "note": "Kiel Magtoto Marin, 29-Jul" },
+    { "id": "R07", "payer": "Hoshi House", "fund_id": "MMF", "amount_total": 56000, "amount_paid": 28000, "amount_due": 28000, "received_in": "BPI_SAVINGS", "status": "PARTIAL", "terms": "50% downpayment", "note": "Therese Young Tresvalles, 29-Jul" },
+    { "id": "R08", "payer": "Slo Matcha", "fund_id": "MMF", "amount_total": 56000, "amount_paid": 28000, "amount_due": 28000, "received_in": "BPI_SAVINGS", "status": "PARTIAL", "terms": "50% downpayment", "note": "Juan Antonio Antenor Castro, 28-Jul 6pm" },
+
+    { "id": "R09", "payer": "Kaori", "fund_id": "MMF", "amount_total": 56000, "amount_paid": 28000, "amount_due": 28000, "received_in": "BDO_SM_NORTH", "status": "PARTIAL", "terms": "50% downpayment" },
+    { "id": "R10", "payer": "Kokorobi Matcha", "fund_id": "MMF", "amount_total": 56000, "amount_paid": 28000, "amount_due": 28000, "received_in": "BDO_SM_NORTH", "status": "PARTIAL", "terms": "50% downpayment" },
+    { "id": "R11", "payer": "Matcha House", "fund_id": "MMF", "amount_total": 56000, "amount_paid": 28000, "amount_due": 28000, "received_in": "BDO_SM_NORTH", "status": "PARTIAL", "terms": "50% downpayment" },
+    { "id": "R12", "payer": "Nagomi Matcha", "fund_id": "MMF", "amount_total": 56000, "amount_paid": 28000, "amount_due": 28000, "received_in": "BDO_SM_NORTH", "status": "PARTIAL", "terms": "50% downpayment" },
+
+    { "id": "R13", "payer": "Kumatcha", "fund_id": "MMF", "amount_total": 56000, "amount_paid": 28000, "amount_due": 28000, "received_in": "GCASH", "status": "PARTIAL", "terms": "50% downpayment" },
+    { "id": "R14", "payer": "Matcha by Kamo", "fund_id": "MMF", "amount_total": 56000, "amount_paid": 28000, "amount_due": 28000, "received_in": "GCASH", "status": "PARTIAL", "terms": "50% downpayment" },
+    { "id": "R15", "payer": "Sari Matcha Bar", "fund_id": "MMF", "amount_total": 56000, "amount_paid": 28000, "amount_due": 28000, "received_in": "GCASH", "status": "PARTIAL", "terms": "50% downpayment" },
+    { "id": "R16", "payer": "Spare Key Matcha Bar", "fund_id": "MMF", "amount_total": 56000, "amount_paid": 28000, "amount_due": 28000, "received_in": "GCASH", "status": "PARTIAL", "terms": "50% downpayment" },
+    { "id": "R17", "payer": "The Matcha Co", "fund_id": "MMF", "amount_total": 56000, "amount_paid": 28000, "amount_due": 28000, "received_in": "GCASH", "status": "PARTIAL", "terms": "50% downpayment" },
+    { "id": "R18", "payer": "Soft Brews Club", "fund_id": "MMF", "amount_total": 56000, "amount_paid": 28000, "amount_due": 28000, "received_in": "GCASH", "status": "PARTIAL", "terms": "50% downpayment", "note": "Tricia — invoiced BPI, paid from her BPI to GCash. Sheet originally recorded this under BPI." },
+
+    { "id": "R19", "payer": "Matcha Besties Club", "fund_id": "MMF", "amount_total": 56000, "amount_paid": 28000, "amount_due": 28000, "received_in": "PAYPAL", "status": "PARTIAL", "terms": "50% downpayment" },
+
+    { "id": "R20", "payer": "One Cup Matcha", "fund_id": "MMF", "amount_total": 56000, "amount_paid": 0, "amount_due": 56000, "received_in": null, "status": "UNPAID", "terms": "Full payment", "note": "Committed to full payment, nothing received" },
+    { "id": "R21", "payer": "Unconfirmed brand 1", "fund_id": "MMF", "amount_total": 56000, "amount_paid": 0, "amount_due": 56000, "received_in": null, "status": "UNPAID", "note": "Not yet on the reconciliation sheet. Owner expects confirmation and payment." },
+    { "id": "R22", "payer": "Unconfirmed brand 2", "fund_id": "MMF", "amount_total": 56000, "amount_paid": 0, "amount_due": 56000, "received_in": null, "status": "UNPAID", "note": "Not yet on the reconciliation sheet." },
+    { "id": "R23", "payer": "Unconfirmed brand 3", "fund_id": "MMF", "amount_total": 56000, "amount_paid": 0, "amount_due": 56000, "received_in": null, "status": "UNPAID", "note": "Not yet on the reconciliation sheet." }
+  ],
+
+  "receivables_summary": {
+    "slot_price": 56000,
+    "external_slots": 23,
+    "note": "24 brands total including Matchanese itself, which pays nothing.",
+    "gross_slot_revenue": 1288000,
+    "collected": 644000,
+    "outstanding": 644000,
+    "collected_by_account": {
+      "BPI_SAVINGS": 280000,
+      "GCASH": 168000,
+      "BDO_SM_NORTH": 168000,
+      "PAYPAL": 28000
+    }
+  },
+
+  "payables": [
+    {
+      "id": "P01",
+      "payee": "Condo — Q3 assessment",
+      "fund_id": "PERSONAL",
+      "amount": 210000.00,
+      "due_date": "2026-07-31",
+      "planned_source": "BDO_CURRENT",
+      "funding_route": "BDO_PODIUM -> BDO_CURRENT, internal transfer, instant",
+      "rail": "check",
+      "status": "SCHEDULED",
+      "priority": 1,
+      "note": "Check must be funded before presentation. Do this transfer first."
+    },
+    {
+      "id": "P02",
+      "payee": "Payroll (via GoTyme)",
+      "fund_id": "MATCHANESE_OPS",
+      "amount": 180000.00,
+      "due_date": "2026-07-31",
+      "planned_source": "BPI_SAVINGS",
+      "rail": "PESONet",
+      "status": "SCHEDULED",
+      "priority": 2,
+      "note": "Only payment needing an external rail. Routed off BPI to avoid BDO's 50k cap. Initiate at bank open. Fallback: InstaPay 50k x2 from BPI plus 50k x2 from GCash."
+    },
+    {
+      "id": "P03",
+      "payee": "Corner Market — Podium rent",
+      "fund_id": "MATCHANESE_OPS",
+      "amount": 156321.78,
+      "due_date": "2026-07-31",
+      "planned_source": "BDO_SM_NORTH",
+      "rail": "BDO internal",
+      "status": "SCHEDULED",
+      "priority": 3,
+      "note": "Nominally due within 2 days, but next banking day is Mon 03-Aug. Pay today."
+    },
+    {
+      "id": "P04",
+      "payee": "MOA popup lease",
+      "fund_id": "MATCHANESE_OPS",
+      "amount": 78000.00,
+      "due_date": "2026-07-31",
+      "planned_source": "BDO_SM_NORTH",
+      "rail": "BDO internal",
+      "status": "SCHEDULED",
+      "priority": 4,
+      "note": "Retail popup lease. Unrelated to the Matcha Fest."
+    },
+    {
+      "id": "P05",
+      "payee": "SM Prime Holdings Inc — Manila Matcha Fest venue lease",
+      "fund_id": "MMF",
+      "amount": 1032242.00,
+      "due_date": "2026-08-03",
+      "planned_source": "UNIONBANK",
+      "rail": "TBD",
+      "status": "SCHEDULED",
+      "priority": 5,
+      "breakdown": {
+        "basic_rent": 920000.00,
+        "evat_12pct": 110400.00,
+        "doc_stamp_tax": 1842.00
+      },
+      "note": "Per MOA dated 16-Jul-2026, pay on or before 03-Aug-2026. Security deposit rolled over from MOA 2026-0030. Contract also states 'subject to other service charges' — expect extras. Contact: Grace M. Guanzon, Leasing Manager, 556-0660."
+    }
+  ],
+
+  "expected_inflows": [
+    { "id": "I01", "description": "Exhibitor collections — remaining balances, all 23 slots", "fund_id": "MMF", "amount": 644000.00, "expected_by": "2026-08-03", "to_account": "UNIONBANK", "confidence": "assumed_per_owner", "note": "Owner instructed to assume full collection by 03-Aug." },
+    { "id": "I02", "description": "Pending cash deposits — last weekend's popups", "fund_id": "MATCHANESE_OPS", "amount": 100000.00, "expected_by": "2026-07-31", "to_account": null, "confidence": "high", "note": "Cash on hand, not yet deposited. Deposit today so it clears before Monday." },
+    { "id": "I03", "description": "Weekend cash takings, both stores", "fund_id": "MATCHANESE_OPS", "amount": 60000.00, "expected_by": "2026-08-03", "to_account": null, "confidence": "estimate" },
+    { "id": "I04", "description": "Other store payment methods", "fund_id": "MATCHANESE_OPS", "amount": 100000.00, "expected_by": "2026-08-03", "to_account": null, "confidence": "estimate" },
+    { "id": "I05", "description": "Owner salary", "fund_id": "PERSONAL", "amount": 120000.00, "expected_by": "2026-08-03", "to_account": "WISE", "confidence": "high", "note": "Stays in Wise to pay the Japanese matcha supplier." }
+  ],
+
+  "interfund_balances": [
+    {
+      "id": "IF01",
+      "debtor_fund": "PERSONAL",
+      "creditor_fund": "MMF",
+      "amount": 40138.99,
+      "reason": "Personal card payments made from exhibitor-funded accounts: GCredit 10,138.99 (GCash) and BPI credit card 30,000 (BPI).",
+      "status": "OPEN"
+    },
+    {
+      "id": "IF02",
+      "debtor_fund": "MATCHANESE_OPS",
+      "creditor_fund": "MMF",
+      "amount": 37859.53,
+      "reason": "Exhibitor money in GCash used for company payroll and matcha purchases. Balancing figure — verify against GCash statement.",
+      "status": "OPEN",
+      "confidence": "derived"
+    },
+    {
+      "id": "IF03",
+      "debtor_fund": "MATCHANESE_OPS",
+      "creditor_fund": "PERSONAL",
+      "amount": 145073.00,
+      "reason": "Company expenses paid from personal accounts (170,073.00) net of the 25,000 reimbursement transfer from BDO Podium.",
+      "status": "OPEN",
+      "note": "Partly funded by exhibitor money sitting in those personal accounts. Overlaps IF01/IF02 — review before settling."
+    }
+  ],
+
+  "credit_lines": [
+    { "id": "C01", "name": "GCredit", "limit": null, "known_available": 10138.99, "note": "Headroom freed by the 10,138.99 payment. Full limit UNKNOWN." },
+    { "id": "C02", "name": "BPI Credit Card ...00004", "limit": null, "known_available": 30000.00, "note": "Headroom freed by the 30,000 payment on 28-Jul. Full limit UNKNOWN. Usable for merch, supplies and matcha — lessors will not accept card for the venue lease." }
+  ],
+
+  "history": [
+    { "date": "2026-07-28", "account_id": "BPI_SAVINGS", "fund_id": "MMF", "direction": "in", "amount": 56000.00, "counterparty": "Honorato Ethan Ramirez Edano", "category": "exhibitor_payment", "note": "Too Much Matcha, full payment", "already_reflected_in_opening_balance": true },
+    { "date": "2026-07-28", "account_id": "BPI_SAVINGS", "fund_id": "MMF", "direction": "in", "amount": 50000.00, "counterparty": "ELINK inter-bank transfer", "category": "exhibitor_payment", "note": "Part 1 of a 56,000 full payment split around the 50k InstaPay cap. Sender not shown — Matcha Folk or Shizu.", "already_reflected_in_opening_balance": true },
+    { "date": "2026-07-28", "account_id": "BPI_SAVINGS", "fund_id": "MMF", "direction": "in", "amount": 6000.00, "counterparty": "ELINK inter-bank transfer", "category": "exhibitor_payment", "note": "Part 2 of the split above.", "already_reflected_in_opening_balance": true },
+    { "date": "2026-07-28", "account_id": "BPI_SAVINGS", "fund_id": "MMF", "direction": "in", "amount": 28000.00, "counterparty": "Juan Antonio Antenor Castro", "category": "exhibitor_payment", "note": "Slo Matcha, 50% downpayment", "already_reflected_in_opening_balance": true },
+    { "date": "2026-07-28", "account_id": "BPI_SAVINGS", "fund_id": "PERSONAL", "direction": "out", "amount": 30000.00, "counterparty": "BPI Credit Card ...00004", "category": "credit_card_payment", "note": "Personal spend paid with exhibitor money. Creates IF01.", "already_reflected_in_opening_balance": true },
+    { "date": "2026-07-29", "account_id": "BPI_SAVINGS", "fund_id": "MMF", "direction": "in", "amount": 56000.00, "counterparty": "Catherine De Leon Gagui", "category": "exhibitor_payment", "note": "Matcha Folk or Shizu — unresolved", "already_reflected_in_opening_balance": true },
+    { "date": "2026-07-29", "account_id": "BPI_SAVINGS", "fund_id": "MMF", "direction": "in", "amount": 28000.00, "counterparty": "Kiel Magtoto Marin", "category": "exhibitor_payment", "note": "Day Off Space", "already_reflected_in_opening_balance": true },
+    { "date": "2026-07-29", "account_id": "BPI_SAVINGS", "fund_id": "MMF", "direction": "in", "amount": 28000.00, "counterparty": "Therese Young Tresvalles", "category": "exhibitor_payment", "note": "Hoshi House", "already_reflected_in_opening_balance": true },
+    { "date": "2026-07-30", "account_id": "BPI_SAVINGS", "fund_id": "MMF", "direction": "in", "amount": 28000.00, "counterparty": "Kayla Marisse Martinez Embusca", "category": "exhibitor_payment", "note": "Take Five", "already_reflected_in_opening_balance": true },
+
+    { "date": "2026-07", "account_id": "GCASH", "fund_id": "MATCHANESE_OPS", "direction": "out", "amount": 9510.00, "counterparty": "Payroll", "category": "payroll", "note": "Company payroll paid from a personal wallet holding exhibitor money", "already_reflected_in_opening_balance": true },
+    { "date": "2026-07", "account_id": "GCASH", "fund_id": "MATCHANESE_OPS", "direction": "out", "amount": 90020.00, "counterparty": "Wise -> Japanese matcha supplier", "category": "inventory", "already_reflected_in_opening_balance": true },
+    { "date": "2026-07", "account_id": "GCASH", "fund_id": "PERSONAL", "direction": "out", "amount": 10138.99, "counterparty": "GCredit", "category": "credit_card_payment", "note": "Contributes to IF01", "already_reflected_in_opening_balance": true },
+
+    { "date": "2026-07-30", "account_id": "BDO_TOPH", "fund_id": "MATCHANESE_OPS", "direction": "out", "amount": 23166.00, "counterparty": "Lester", "category": "store_supplies", "already_reflected_in_opening_balance": true },
+    { "date": "2026-07", "account_id": "BDO_TOPH", "fund_id": "MATCHANESE_OPS", "direction": "out", "amount": 24932.00, "counterparty": "Lester", "category": "store_supplies", "already_reflected_in_opening_balance": true },
+    { "date": "2026-07", "account_id": "BDO_TOPH", "fund_id": "MATCHANESE_OPS", "direction": "out", "amount": 20000.00, "counterparty": "Wise -> Japanese matcha supplier", "category": "inventory", "note": "Top-up to the 90,020 sent from GCash", "already_reflected_in_opening_balance": true },
+    { "date": "2026-07", "account_id": "BDO_TOPH", "fund_id": "MATCHANESE_OPS", "direction": "out", "amount": 1500.00, "counterparty": "Utak POS", "category": "software", "already_reflected_in_opening_balance": true },
+    { "date": "2026-07", "account_id": "BDO_TOPH", "fund_id": "MATCHANESE_OPS", "direction": "out", "amount": 945.00, "counterparty": "Adobe", "category": "software", "already_reflected_in_opening_balance": true },
+    { "date": "2026-07", "account_id": "BDO_TOPH", "fund_id": "PERSONAL", "direction": "out", "amount": 2018.00, "counterparty": "Personal", "category": "personal", "already_reflected_in_opening_balance": true },
+    { "date": "2026-07", "account_id": "BDO_TOPH", "fund_id": "PERSONAL", "direction": "out", "amount": 1340.00, "counterparty": "Personal", "category": "personal", "already_reflected_in_opening_balance": true },
+    { "date": "2026-07", "account_id": "BDO_TOPH", "fund_id": "PERSONAL", "direction": "out", "amount": 1445.00, "counterparty": "Grab", "category": "transport", "already_reflected_in_opening_balance": true },
+    { "date": "2026-07", "account_id": "BDO_TOPH", "fund_id": "PERSONAL", "direction": "out", "amount": 800.00, "counterparty": "Grab", "category": "transport", "already_reflected_in_opening_balance": true },
+    { "date": "2026-07", "account_id": "BDO_TOPH", "fund_id": "PERSONAL", "direction": "out", "amount": 618.00, "counterparty": "Grab", "category": "transport", "already_reflected_in_opening_balance": true },
+    { "date": "2026-07", "account_id": "BDO_TOPH", "fund_id": "PERSONAL", "direction": "out", "amount": 1538.80, "counterparty": "Grab", "category": "transport", "already_reflected_in_opening_balance": true },
+    { "date": "2026-07", "account_id": "BDO_TOPH", "fund_id": "MATCHANESE_OPS", "direction": "in", "amount": 25000.00, "counterparty": "BDO Business Podium", "category": "reimbursement", "note": "Partial reimbursement of company expenses paid personally", "already_reflected_in_opening_balance": true }
+  ],
+
+  "open_questions": [
+    { "id": "Q01", "question": "BDO Current Account balance?", "impact": "Determines how much must move from BDO Podium to fund the 210,000 condo check." },
+    { "id": "Q02", "question": "Unionbank balance?", "impact": "Designated fest fund account; currently unmodelled." },
+    { "id": "Q03", "question": "Wise balance?", "impact": "Holds owner salary and pays the matcha supplier; unmodelled liquidity." },
+    { "id": "Q04", "question": "GCredit and BPI credit card limits?", "impact": "Determines available credit as a funding source for merch, supplies and matcha." },
+    { "id": "Q05", "question": "Which of Catherine De Leon Gagui / the ELINK split is Matcha Folk and which is Shizu Matcha Bar?", "impact": "Receivable attribution only; totals unaffected." },
+    { "id": "Q06", "question": "Names of the 3 unconfirmed brands?", "impact": "168,000 of receivables currently held against placeholders." },
+    { "id": "Q07", "question": "Does GCash show 168,000 of exhibitor credits, confirming Soft Brews Club landed there?", "impact": "Validates the corrected channel attribution." },
+    { "id": "Q08", "question": "GCash daily InstaPay ceiling?", "impact": "Determines whether the payroll fallback route works." },
+    { "id": "Q09", "question": "IF02 is a derived balancing figure. Verify against the GCash statement.", "impact": "Inter-fund accuracy." },
+    { "id": "Q10", "question": "Actual Manila Matcha Fest event costs beyond the venue lease — merch, production, staffing, permits, power?", "impact": "The 255,758 gross budget has no cost side yet." }
+  ]
+}

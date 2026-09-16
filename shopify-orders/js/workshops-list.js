@@ -47,6 +47,7 @@ function rosterUrl(session) {
         event_id: session.eventId,
         session_date: session.sessionDateIso,
     });
+    qs.set("v", "54");
     return `workshop.html?${qs.toString()}`;
 }
 

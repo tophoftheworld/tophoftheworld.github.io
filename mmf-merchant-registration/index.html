@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manila Matcha Fest 2026 — Merchant Registration</title>
+    <meta name="description" content="Merchant registration for Manila Matcha Fest 2026 — August 7–16 at SM Mall of Asia.">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Manila Matcha Fest 2026 — Merchant Registration">
+    <meta property="og:description" content="Confirm your slot at Manila Matcha Fest 2026. August 7–16 at SM Mall of Asia.">
+    <meta property="og:url" content="https://mmf-info.web.app/">
+    <meta property="og:image" content="https://mmf-info.web.app/images/og-cover.png">
+    <meta property="og:image:alt" content="Manila Matcha Fest — August 7–16 at SM Mall of Asia">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Manila Matcha Fest 2026 — Merchant Registration">
+    <meta name="twitter:description" content="Confirm your slot at Manila Matcha Fest 2026. August 7–16 at SM Mall of Asia.">
+    <meta name="twitter:image" content="https://mmf-info.web.app/images/og-cover.png">
+    <link rel="icon" href="images/mmf-logo.png" type="image/png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- Welcome -->
+    <section class="screen active" id="screen-welcome" aria-label="Welcome">
+        <div class="welcome" id="welcomeRoot">
+            <div class="welcome-inner">
+                <img class="welcome-logo" src="images/mmf-logo.png" alt="Manila Matcha Fest — August 7–16 at SM Mall of Asia">
+                <h1 class="welcome-title">Merchant Information</h1>
+                <p class="welcome-copy">Thank you for accepting our invite to be part of the largest celebration of Matcha in the Philippines!</p>
+                <p class="welcome-copy">Select your brand to review or update your details. New brands can start a blank registration below.</p>
+
+                <div class="field welcome-brand-field" data-field="merchantSelect">
+                    <label for="merchantSelect">Your brand</label>
+                    <select class="input" id="merchantSelect" name="merchantSelect" aria-label="Brand name">
+                        <option value="">Loading brands…</option>
+                    </select>
+                </div>
+                <div class="field welcome-brand-field" data-field="accessCode">
+                    <label for="accessCode">Access code</label>
+                    <input class="input" type="password" id="accessCode" name="accessCode" placeholder="8-character code" autocomplete="current-password">
+                    <span class="field-hint welcome-brand-hint">Same code used for the Merchant Hub.</span>
+                    <div class="field-error" id="welcomeLoginError">Select your brand and enter your access code</div>
+                </div>
+
+                <button type="button" class="btn" id="btnStart">Continue</button>
+                <button type="button" class="btn-add-link" id="btnNewRegistration" style="display:block;margin:1rem auto 0;">Start a new registration instead</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- Form pages -->
+    <section class="screen" id="screen-form" aria-label="Registration form">
+        <div class="form-shell">
+            <nav class="stepper" id="stepper" aria-label="Form progress">
+                <div class="step active" data-step="0">
+                    <div class="step-dot" aria-hidden="true"></div>
+                    <span class="step-label">Brand Details</span>
+                </div>
+                <div class="step" data-step="1">
+                    <div class="step-dot" aria-hidden="true"></div>
+                    <span class="step-label">Terms</span>
+                </div>
+                <div class="step" data-step="2">
+                    <div class="step-dot" aria-hidden="true"></div>
+                    <span class="step-label">Payment</span>
+                </div>
+                <div class="step" data-step="3">
+                    <div class="step-dot" aria-hidden="true"></div>
+                    <span class="step-label">Support</span>
+                </div>
+            </nav>
+
+            <form id="merchantForm" novalidate>
+                <!-- Page 1: Brand Details -->
+                <div class="form-page" data-page="0">
+                    <h2 class="page-title">Brand Details</h2>
+
+                    <div class="selected-brand-bar hidden" id="selectedBrandBar">
+                        <div>
+                            <span class="selected-brand-label">Editing</span>
+                            <strong id="selectedBrandName">—</strong>
+                        </div>
+                        <button type="button" class="btn-add-link" id="btnChangeBrand">Change brand</button>
+                    </div>
+
+                    <div class="field" data-field="brandName">
+                        <label class="required" for="brandName">Brand Name</label>
+                        <span class="field-hint">As it should appear on all event materials and signage.</span>
+                        <input class="input" type="text" id="brandName" name="brandName" autocomplete="organization" required>
+                        <div class="field-error">Field is required</div>
+                    </div>
+
+                    <div class="field" data-field="registeredBusinessName">
+                        <label for="registeredBusinessName">Registered Business Name</label>
+                        <span class="field-hint">For contracts, permits, and invoicing.</span>
+                        <input class="input" type="text" id="registeredBusinessName" name="registeredBusinessName">
+                    </div>
+
+                    <div class="field" data-field="businessDoc">
+                        <label for="businessDoc">Business Permit or Proof of Registration</label>
+                        <span class="field-hint">Optional. Upload a copy of your valid business permit, DTI/SEC registration, or equivalent document showing your registered business.</span>
+                        <div class="upload-zone" id="businessDocZone" tabindex="0" role="button" aria-label="Upload business document">
+                            <div class="icon" aria-hidden="true">
+                                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                                </svg>
+                            </div>
+                            <div>Drag &amp; drop a file or <span class="browse">browse</span></div>
+                        </div>
+                        <input type="file" id="businessDoc" name="businessDoc" accept="image/*,.pdf" hidden>
+                        <div class="upload-preview" id="businessDocPreview">
+                            <img id="businessDocThumb" alt="">
+                            <span id="businessDocName"></span>
+                            <button type="button" class="remove" id="businessDocRemove">Remove</button>
+                        </div>
+                    </div>
+
+                    <hr class="divider">
+
+                    <div class="field" data-field="brandDescription">
+                        <label class="required" for="brandDescription">Brand Description</label>
+                        <span class="field-hint">This will be used for our promotional materials. Most importantly: what makes your brand different? How does your brand stand out among the 24 Matcha Brands?</span>
+                        <textarea class="textarea" id="brandDescription" name="brandDescription" maxlength="400" required></textarea>
+                        <div class="char-count" id="descCount">0 / 400</div>
+                        <div class="field-error">Field is required</div>
+                    </div>
+
+                    <div class="field" data-field="instagram">
+                        <label class="required" for="instagram">Instagram</label>
+                        <span class="field-hint">Username or full link — e.g. @yourbrand or instagram.com/yourbrand</span>
+                        <input class="input" type="text" id="instagram" name="instagram" placeholder="@yourbrand" required>
+                        <div class="field-error">Enter your Instagram username or link</div>
+                    </div>
+
+                    <div class="field" data-field="otherLinks">
+                        <label>Website/Other Social Media Links</label>
+                        <div class="link-list" id="otherLinksList">
+                            <div class="link-row">
+                                <input class="input" type="text" name="otherLinks" placeholder="https://…">
+                            </div>
+                        </div>
+                        <button type="button" class="btn-add-link" id="btnAddOtherLink">+ Add another link</button>
+                    </div>
+
+                    <hr class="divider">
+
+                    <div class="field" data-field="contactPerson">
+                        <label class="required" for="contactPerson">Contact Person</label>
+                        <input class="input" type="text" id="contactPerson" name="contactPerson" autocomplete="name" required>
+                        <div class="field-error">Field is required</div>
+                    </div>
+
+                    <div class="field" data-field="role">
+                        <label for="role">Role / Position</label>
+                        <input class="input" type="text" id="role" name="role" autocomplete="organization-title">
+                    </div>
+
+                    <div class="field" data-field="contactNumber">
+                        <label class="required" for="contactNumber">Contact Number</label>
+                        <input class="input" type="tel" id="contactNumber" name="contactNumber" autocomplete="tel" required>
+                        <div class="field-error">Field is required</div>
+                    </div>
+
+                    <div class="field" data-field="email">
+                        <label class="required" for="email">Email Address</label>
+                        <input class="input" type="email" id="email" name="email" placeholder="you@yourbrand.com" autocomplete="email" required>
+                        <div class="field-error">Enter a valid email</div>
+                    </div>
+
+                    <div class="nav-row">
+                        <button type="button" class="btn btn-ghost" data-back>← Back</button>
+                        <button type="button" class="btn" data-next>Next →</button>
+                    </div>
+                </div>
+
+                <!-- Page 2: Terms -->
+                <div class="form-page hidden terms-page" data-page="1">
+                    <h2 class="page-title">Terms</h2>
+
+                    <div class="inclusions-grid">
+                        <div class="section-block">
+                            <h3 class="section-title">Participation</h3>
+                            <div class="fee-table">
+                                <div class="fee-row">
+                                    <span>Participation fee (VAT-exclusive)</span>
+                                    <span id="feeExVat">₱50,000.00</span>
+                                </div>
+                                <div class="fee-row">
+                                    <span>12% VAT</span>
+                                    <span id="feeVat">₱6,000.00</span>
+                                </div>
+                                <div class="fee-row total">
+                                    <span>Total cash due</span>
+                                    <span id="feeTotal">₱56,000.00</span>
+                                </div>
+                            </div>
+                            <p class="muted" style="font-size:0.9rem;margin:1rem 0 0.35rem;">Plus, as part of the arrangement with SM Mall of Asia, for media and KOLs:</p>
+                            <ul class="bullet-list">
+                                <li>5 retail items from your brand — matcha tins, matcha essentials, or equivalent</li>
+                                <li>30 complimentary drinks via the MOA Matcha Pass during the Day 1 Media Crawl</li>
+                            </ul>
+                        </div>
+
+                        <div class="section-block">
+                            <h3 class="section-title">What's included</h3>
+                            <ul class="bullet-list">
+                                <li>3m × 3m booth space</li>
+                                <li>Full 10-day run — August 7 to 16</li>
+                                <li>Marketing across MMF and SM Mall of Asia channels — inclusion in all official event materials, plus promotion through both networks</li>
+                                <li>Media and KOL amplification — logo and product integration in boosted reels and TikTok content</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="what-we-ask section-block" id="whatWeAsk">
+                        <h3 class="section-title">What we ask</h3>
+                        <p class="field-hint what-we-ask-intro">Please tick all commitments below, then confirm to continue.</p>
+
+                        <div class="what-we-ask-group">
+                            <h4 class="subsection-title required">Partner Commitments</h4>
+                            <div class="check-list" data-field="commitments">
+                                <label class="check-item">
+                                    <input type="checkbox" name="commitPromotion" id="commitPromotion" required>
+                                    <span>Active promotion of Manila Matcha Fest on your own brand and social channels</span>
+                                </label>
+                                <label class="check-item">
+                                    <input type="checkbox" name="commitManpower" id="commitManpower" required>
+                                    <span>Submission of manpower and equipment lists within provided deadlines, for permit processing and site access</span>
+                                </label>
+                                <label class="check-item">
+                                    <input type="checkbox" name="commitBooth" id="commitBooth" required>
+                                    <span>Branded booth setup and daily operations for the full 10-day run</span>
+                                </label>
+                                <label class="check-item">
+                                    <input type="checkbox" name="commitCleanliness" id="commitCleanliness" required>
+                                    <span>Maintain proper cleanliness and responsible disposal of waste throughout the event</span>
+                                </label>
+                                <label class="check-item">
+                                    <input type="checkbox" name="commitSalesData" id="commitSalesData" required>
+                                    <span>Submission of sales data as requested by the organizers</span>
+                                </label>
+                            </div>
+                            <div class="field-error" id="commitmentsError">Please tick all commitments to proceed</div>
+                        </div>
+
+                        <div class="what-we-ask-group">
+                            <h4 class="subsection-title required">Confirmation</h4>
+                            <div class="check-list" data-field="confirmation">
+                                <label class="check-item">
+                                    <input type="checkbox" name="confirmAccuracy" id="confirmAccuracy" required>
+                                    <span>All information I provided is accurate.</span>
+                                </label>
+                                <label class="check-item">
+                                    <input type="checkbox" name="confirmTerms" id="confirmTerms" required>
+                                    <span>I accept the participation terms, commitments, and event guidelines above.</span>
+                                </label>
+                            </div>
+                            <div class="field-error" id="confirmationError">Please confirm both items to proceed</div>
+                        </div>
+                    </div>
+
+                    <div class="nav-row">
+                        <button type="button" class="btn btn-ghost" data-back>← Back</button>
+                        <button type="button" class="btn" data-next>Next →</button>
+                    </div>
+                </div>
+
+                <!-- Page 3: Payment -->
+                <div class="form-page hidden" data-page="2">
+                    <h2 class="page-title">Payment</h2>
+                    <p class="field-hint" style="margin-bottom:1.25rem;">Payment secures your slot. Slots are released if unpaid by the deadline in your confirmation email.</p>
+
+                    <div class="field" data-field="settlementType">
+                        <label class="field-label required">How would you like to settle?</label>
+                        <div class="settle-cards">
+                            <label class="settle-card">
+                                <input type="radio" name="settlementType" value="full" required checked>
+                                <div class="settle-card-body">
+                                    <div class="settle-row">
+                                        <span class="settle-name">Full Payment</span>
+                                        <span class="settle-amount" id="settleFullAmount">₱56,000.00</span>
+                                    </div>
+                                    <div class="settle-due-now">
+                                        <span class="settle-meta-label">Due</span>
+                                        <span class="settle-meta-value">Now</span>
+                                    </div>
+                                </div>
+                            </label>
+                            <label class="settle-card">
+                                <input type="radio" name="settlementType" value="downpayment">
+                                <div class="settle-card-body">
+                                    <div class="settle-row">
+                                        <span class="settle-name">50% Downpayment</span>
+                                        <span class="settle-amount" id="settleDpAmount">₱28,000.00</span>
+                                    </div>
+                                    <div class="settle-due-now">
+                                        <span class="settle-meta-label">Due</span>
+                                        <span class="settle-meta-value">Now</span>
+                                    </div>
+                                    <div class="settle-meta">
+                                        <span class="settle-meta-item">
+                                            <span class="settle-meta-label">Due</span>
+                                            <span class="settle-meta-value" id="settleDpDue">August 6, 2026</span>
+                                        </span>
+                                        <span class="settle-meta-side">
+                                            <span class="settle-meta-label">Balance</span>
+                                            <span class="settle-meta-value settle-meta-value--balance" id="settleDpBalance">₱28,000.00</span>
+                                        </span>
+                                    </div>
+                                </div>
+                            </label>
+                        </div>
+                        <div class="field-error">Select how you would like to settle</div>
+                    </div>
+
+                    <div class="section-block">
+                        <h3 class="section-title" id="payDetailsTitle">Payment Details</h3>
+
+                        <div class="field" data-field="paymentMethod">
+                            <label class="field-label required">How will you pay?</label>
+                            <div class="pill-radios">
+                                <label class="pill-radio">
+                                    <input type="radio" name="paymentMethod" value="bank" required>
+                                    <span>Bank transfer</span>
+                                </label>
+                                <label class="pill-radio">
+                                    <input type="radio" name="paymentMethod" value="ewallet">
+                                    <span>E-wallet</span>
+                                </label>
+                                <label class="pill-radio">
+                                    <input type="radio" name="paymentMethod" value="card" id="payMethodCard">
+                                    <span id="cardRadioLabel">Card (PayPal)</span>
+                                </label>
+                            </div>
+                            <p class="field-hint hidden" id="cardRadioHint" style="margin-top:0.5rem;">You’ll be redirected to PayPal after you submit this form.</p>
+                            <div class="field-error">Select a payment method</div>
+                        </div>
+
+                        <div id="transferPaySection">
+                            <p class="field-hint" id="payDetailsHint" style="margin-bottom:0.75rem;">For Bank Transfer / Cash Deposit:</p>
+                            <div id="payAccounts"></div>
+
+                            <div class="field" data-field="proofFile">
+                                <label class="field-label required" id="proofLabel">Upload Proof of Payment</label>
+                                <span class="field-hint">Screenshot or photo of your deposit slip or transfer confirmation.</span>
+                                <div class="upload-zone" id="uploadZone" tabindex="0" role="button" aria-label="Upload proof of payment">
+                                    <div class="icon" aria-hidden="true">
+                                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                                        </svg>
+                                    </div>
+                                    <div>Drag &amp; drop a file or <span class="browse">browse</span></div>
+                                </div>
+                                <input type="file" id="proofFile" name="proofFile" accept="image/*,.pdf" hidden>
+                                <div class="upload-preview" id="uploadPreview">
+                                    <img id="uploadThumb" alt="">
+                                    <span id="uploadName"></span>
+                                    <button type="button" class="remove" id="uploadRemove">Remove</button>
+                                </div>
+                                <div class="field-error">Upload proof of payment</div>
+                            </div>
+                        </div>
+
+                        <div id="cardPaySection" class="hidden">
+                            <div class="pay-box" id="cardPayBox">
+                                <h4>Card Payment</h4>
+                                <p id="cardPayNote">After you submit, you’ll be taken to PayPal to complete payment by card.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="nav-row">
+                        <button type="button" class="btn btn-ghost" data-back>← Back</button>
+                        <button type="button" class="btn" data-next>Next →</button>
+                    </div>
+                </div>
+
+                <!-- Page 4: Support -->
+                <div class="form-page hidden" data-page="3">
+                    <h2 class="page-title">Additional Support</h2>
+                    <p class="field-hint" style="margin-bottom:1.25rem;">We're exploring ways to better support your participation — from consolidated suppliers for basics like ice and water, to meal options for your crew. No commitments for now — if you check any of these, we'll later provide options for you to choose from or review.</p>
+
+                    <div class="field" data-field="supplierInterest">
+                        <label class="field-label">Check any that might be of interest</label>
+                        <div class="check-list" style="margin-top:0.75rem;">
+                            <label class="check-item">
+                                <input type="checkbox" name="supplierIce" id="supplierIce" value="ice">
+                                <span>Ice supply</span>
+                            </label>
+                            <label class="check-item">
+                                <input type="checkbox" name="supplierWater" id="supplierWater" value="water">
+                                <span>Water supply</span>
+                            </label>
+                            <label class="check-item">
+                                <input type="checkbox" name="supplierCrewMeals" id="supplierCrewMeals" value="crewMeals">
+                                <span>Crew meals</span>
+                            </label>
+                            <label class="check-item">
+                                <input type="checkbox" name="supplierOther" id="supplierOther" value="other">
+                                <span>Other:</span>
+                            </label>
+                            <input class="input" type="text" id="supplierOtherText" name="supplierOtherText" placeholder="Specify…">
+                        </div>
+                    </div>
+
+                    <div class="field" data-field="notes">
+                        <label for="notes">Anything else we should know?</label>
+                        <span class="field-hint">Questions, concerns, requests, or ideas for collaborations during the run.</span>
+                        <textarea class="textarea" id="notes" name="notes"></textarea>
+                    </div>
+
+                    <div class="form-error-banner" id="submitError" role="alert"></div>
+
+                    <div class="nav-row">
+                        <button type="button" class="btn btn-ghost" data-back>← Back</button>
+                        <button type="submit" class="btn" id="btnSubmit">Submit</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </section>
+
+    <!-- Thank you -->
+    <section class="screen" id="screen-thanks" aria-label="Thank you">
+        <div class="thanks">
+            <div class="thanks-inner">
+                <img class="thanks-logo" src="images/mmf-logo.png" alt="Manila Matcha Fest — August 7–16 at SM Mall of Asia">
+                <h1 id="thanksTitle">Thank you!</h1>
+                <p id="thanksLead">We're so excited to have you at Manila Matcha Fest.</p>
+                <p>Next, please complete the <a href="https://mmf-requirements.web.app/">Merchant Requirements form</a> so we can process logistics and promote your brand.</p>
+                <p><a class="btn" href="https://mmf-requirements.web.app/" style="display:inline-flex;margin-top:0.35rem;">Open requirements form</a></p>
+                <p>Feel free to reach out directly via Viber for any other concerns.</p>
+                <p class="thanks-signature"><strong>Manila Matcha Fest Team</strong></p>
+                <button type="button" class="btn btn-ghost" id="btnEditSubmission" style="margin-top:1.25rem;">Edit submission</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- E-wallet QR modal -->
+    <div class="qr-modal hidden" id="qrModal" role="dialog" aria-modal="true" aria-label="Payment QR code">
+        <div class="qr-modal-backdrop" id="qrModalBackdrop"></div>
+        <div class="qr-modal-card">
+            <button type="button" class="qr-modal-close" id="qrModalClose" aria-label="Close">×</button>
+            <img class="qr-modal-image" id="qrModalImage" alt="">
+            <a class="qr-modal-download" id="qrModalDownload" download>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Download
+            </a>
+        </div>
+    </div>
+
+    <script type="module" src="js/form.js"></script>
+</body>
+</html>

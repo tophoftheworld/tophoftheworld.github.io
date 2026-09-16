@@ -15,7 +15,7 @@ const PUBLIC_LEADS = path.join(PUBLIC_ROOT, "leads");
 const PUBLIC_WORKSHOPS = path.join(PUBLIC_ROOT, "workshops");
 const FUNCTIONS_SHOPIFY = path.join(DASHBOARD_ROOT, "functions", "shopify-orders");
 
-const LEADS_HOSTING_SKIP = new Set(["shopify", "leads", "workshops"]);
+const LEADS_HOSTING_SKIP = new Set(["shopify", "leads", "workshops", "i"]);
 
 const SKIP_NAMES = new Set([
   ".env",
@@ -129,10 +129,70 @@ for (const file of ["index.html", "workshop.html", "workshops.html"]) {
   patchShopifyHtml(path.join(PUBLIC_SHOPIFY, file));
 }
 
+function copyPublicInvoiceAssets(dest) {
+  const src = path.join(REPO_ROOT, "invoice-generator");
+  rmDir(dest);
+  fs.mkdirSync(path.join(dest, "css"), { recursive: true });
+  fs.mkdirSync(path.join(dest, "js"), { recursive: true });
+  fs.mkdirSync(path.join(dest, "img"), { recursive: true });
+  fs.copyFileSync(path.join(src, "view.html"), path.join(dest, "index.html"));
+  fs.copyFileSync(path.join(src, "css", "invoice-view.css"), path.join(dest, "css", "invoice-view.css"));
+  fs.copyFileSync(
+    path.join(src, "css", "invoice-pdf-document.css"),
+    path.join(dest, "css", "invoice-pdf-document.css")
+  );
+  fs.copyFileSync(path.join(src, "js", "invoice-page-render.js"), path.join(dest, "js", "invoice-page-render.js"));
+  fs.copyFileSync(path.join(src, "js", "invoice-pdf-legacy.js"), path.join(dest, "js", "invoice-pdf-legacy.js"));
+  fs.copyFileSync(path.join(src, "js", "invoice-view.js"), path.join(dest, "js", "invoice-view.js"));
+  fs.copyFileSync(path.join(src, "img", "logo.png"), path.join(dest, "img", "logo.png"));
+  fs.copyFileSync(
+    path.join(src, "img", "matchanese-logo-full.png"),
+    path.join(dest, "img", "matchanese-logo-full.png")
+  );
+  fs.copyFileSync(path.join(src, "img", "sign.png"), path.join(dest, "img", "sign.png"));
+  fs.copyFileSync(path.join(src, "img", "og-social.jpg"), path.join(dest, "img", "og-social.jpg"));
+  const qrSrc = path.join(src, "img", "qr");
+  const qrDest = path.join(dest, "img", "qr");
+  fs.mkdirSync(qrDest, { recursive: true });
+  for (const name of fs.readdirSync(qrSrc)) {
+    if (!name.toLowerCase().endsWith(".png")) continue;
+    fs.copyFileSync(path.join(qrSrc, name), path.join(qrDest, name));
+  }
+}
+
+function copyPublicInvoiceHosting() {
+  // Keep /i on the main attendance site for old links.
+  copyPublicInvoiceAssets(path.join(PUBLIC_ROOT, "i"));
+  // Dedicated customer invoice site (matchanese-invoice.web.app).
+  const invoiceSiteRoot = path.join(DASHBOARD_ROOT, "public-invoice");
+  const invoiceSiteI = path.join(invoiceSiteRoot, "i");
+  rmDir(invoiceSiteRoot);
+  fs.mkdirSync(invoiceSiteRoot, { recursive: true });
+  copyPublicInvoiceAssets(invoiceSiteI);
+  // Root OG image for crawlers (cleaner URL than /i/img/...).
+  fs.copyFileSync(
+    path.join(REPO_ROOT, "invoice-generator", "img", "og-social.jpg"),
+    path.join(invoiceSiteRoot, "og-social.jpg")
+  );
+  // Also on attendance public root for the same absolute OG URL fallback.
+  fs.copyFileSync(
+    path.join(REPO_ROOT, "invoice-generator", "img", "og-social.jpg"),
+    path.join(PUBLIC_ROOT, "og-social.jpg")
+  );
+  // Shell HTML for Cloud Function (injects correct og:url per token).
+  fs.copyFileSync(
+    path.join(REPO_ROOT, "invoice-generator", "view.html"),
+    path.join(DASHBOARD_ROOT, "functions", "invoice-page-shell.html")
+  );
+}
+
 copyWorkshopsHosting();
 copyLeadsHosting();
+copyPublicInvoiceHosting();
 
 console.log("Prepared Shopify hosting at public/shopify");
 console.log("Prepared Workshops hosting at public/workshops");
 console.log("Prepared Leads hosting at public/leads");
+console.log("Prepared public invoice page at public/i");
+console.log("Prepared matchanese-invoice site at public-invoice");
 console.log("Prepared Shopify API bundle at functions/shopify-orders");

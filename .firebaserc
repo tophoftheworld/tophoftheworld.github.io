@@ -1,7 +1,16 @@
 {
   "projects": {
-    "default": "matchanese-attendance"
+    "default": "matchanese-attendance",
+    "mmf": "manila-matcha-fest"
   },
-  "targets": {},
+  "targets": {
+    "matchanese-attendance": {
+      "hosting": {
+        "staff": [
+          "matchanese-staff"
+        ]
+      }
+    }
+  },
   "etags": {}
 }

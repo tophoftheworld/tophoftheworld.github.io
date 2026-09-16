@@ -18,7 +18,7 @@
 
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-    <link rel="stylesheet" href="css/admin-style.css">
+    <link rel="stylesheet" href="css/admin-style.css?v=20260914-1">
 </head>
 
 <body>
@@ -37,8 +37,142 @@
                     <input type="text" id="editNickname" placeholder="Auto-generated if empty">
                 </div>
                 <div class="form-group">
-                    <label for="editBaseRate">Base Rate</label>
-                    <input type="number" id="editBaseRate" min="0" step="10" required>
+                    <label for="editEmail">Email address</label>
+                    <input type="email" id="editEmail" placeholder="you@example.com" autocomplete="email">
+                </div>
+                <div class="form-group">
+                    <label for="editPhone">Mobile phone</label>
+                    <input type="tel" id="editPhone" placeholder="e.g. 09171234567" autocomplete="tel">
+                </div>
+                <div class="form-group">
+                    <label for="editBirthday">Birthday</label>
+                    <input type="date" id="editBirthday">
+                </div>
+                <div class="form-section" id="editPayrollBankSection">
+                    <h3>Payroll bank</h3>
+                    <p class="form-hint">Add at least one account. Staff can save both GoTyme and BDO.</p>
+                    <div class="bank-account-card is-open" id="editGotymeBankCard">
+                        <button type="button" class="bank-account-toggle" data-edit-bank-toggle="gotyme" aria-expanded="true">
+                            <span class="bank-account-toggle-main">
+                                <span class="bank-chevron" aria-hidden="true"></span>
+                                <span>GoTyme</span>
+                            </span>
+                            <span class="bank-add-hint">Tap to add</span>
+                            <span class="bank-complete-check" id="editGotymeCompleteCheck" aria-label="GoTyme complete">✓</span>
+                        </button>
+                        <div class="bank-account-card-body">
+                        <div class="form-group">
+                            <label for="editGotymeAccountName">Account name</label>
+                            <input type="text" id="editGotymeAccountName" autocomplete="off" placeholder="Full name on the GoTyme account">
+                        </div>
+                        <div class="form-group">
+                            <label for="editGotymeAccountNumber">Account number</label>
+                            <input type="text" id="editGotymeAccountNumber" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="12-digit GoTyme number">
+                            <p class="form-hint" id="editGotymeAccountHint">GoTyme account numbers are exactly 12 digits.</p>
+                        </div>
+                        <div class="form-group">
+                            <label for="editGotymeQr">GoTyme QR Code</label>
+                            <p class="form-hint">Required. Screenshot from the GoTyme app (Receive / My QR).</p>
+                            <div class="current-photo qr-current" id="editCurrentGotymeQr" style="display: none;">
+                                <img id="editCurrentGotymeQrImg" alt="Current GoTyme QR">
+                                <span class="current-photo-label">Current QR</span>
+                                <button type="button" class="remove-photo-btn" id="editRemoveGotymeQrBtn">Remove QR</button>
+                            </div>
+                            <input type="file" id="editGotymeQr" accept="image/*" class="photo-input">
+                            <div class="photo-preview" id="editGotymeQrPreview" style="display: none;">
+                                <img id="editGotymeQrPreviewImg" alt="New GoTyme QR">
+                                <button type="button" class="remove-photo-btn" id="editClearGotymeQrPreviewBtn">Remove</button>
+                            </div>
+                        </div>
+                        </div>
+                    </div>
+                    <div class="bank-account-card" id="editBdoBankCard">
+                        <button type="button" class="bank-account-toggle" data-edit-bank-toggle="bdo" aria-expanded="false">
+                            <span class="bank-account-toggle-main">
+                                <span class="bank-chevron" aria-hidden="true"></span>
+                                <span>BDO</span>
+                            </span>
+                            <span class="bank-add-hint">Tap to add</span>
+                            <span class="bank-complete-check" id="editBdoCompleteCheck" aria-label="BDO complete">✓</span>
+                        </button>
+                        <div class="bank-account-card-body">
+                        <div class="form-group">
+                            <label for="editBdoAccountName">Account name</label>
+                            <input type="text" id="editBdoAccountName" autocomplete="off" placeholder="Full name on the BDO account">
+                        </div>
+                        <div class="form-group">
+                            <label for="editBdoAccountNumber">Account number</label>
+                            <input type="text" id="editBdoAccountNumber" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="10–12 digit BDO number">
+                            <p class="form-hint" id="editBdoAccountHint">BDO account numbers are 10 to 12 digits and usually start with 00.</p>
+                        </div>
+                        <div class="form-group">
+                            <label for="editBdoQr">BDO QR Code</label>
+                            <p class="form-hint">Required. Screenshot the BDO QR from the banking app.</p>
+                            <div class="current-photo qr-current" id="editCurrentBdoQr" style="display: none;">
+                                <img id="editCurrentBdoQrImg" alt="Current BDO QR">
+                                <span class="current-photo-label">Current QR</span>
+                                <button type="button" class="remove-photo-btn" id="editRemoveBdoQrBtn">Remove QR</button>
+                            </div>
+                            <input type="file" id="editBdoQr" accept="image/*" class="photo-input">
+                            <div class="photo-preview" id="editBdoQrPreview" style="display: none;">
+                                <img id="editBdoQrPreviewImg" alt="New BDO QR">
+                                <button type="button" class="remove-photo-btn" id="editClearBdoQrPreviewBtn">Remove</button>
+                            </div>
+                        </div>
+                        </div>
+                    </div>
+                    <div class="form-group" id="editPreferredBankRow" hidden>
+                        <label for="editPreferredBank">Pay salary via</label>
+                        <select id="editPreferredBank">
+                            <option value="gotyme">GoTyme</option>
+                            <option value="bdo">BDO</option>
+                        </select>
+                        <p class="form-hint">Both accounts are on file. Choose which one payroll should use.</p>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="editPayType">Pay Type</label>
+                    <select id="editPayType" required>
+                        <option value="hourly">Daily (barista)</option>
+                        <option value="monthly">Monthly (salaried)</option>
+                        <option value="hybrid">Hybrid (daily + fixed per cutoff)</option>
+                    </select>
+                </div>
+                <div class="form-group" id="editPaySchemeGroup">
+                    <label for="editPayScheme">Pay scheme</label>
+                    <select id="editPayScheme">
+                        <option value="standard">Base + meal allowance</option>
+                        <option value="inclusive">Meal included in daily rate</option>
+                    </select>
+                    <p class="form-hint" id="editPaySchemeHint">₱150 is added on top of the daily base (₱75 half day).</p>
+                </div>
+                <div class="form-group" id="editBaseRateGroup">
+                    <label for="editBaseRate">Base Rate (daily)</label>
+                    <input type="number" id="editBaseRate" min="0" step="10">
+                </div>
+                <div class="form-group" id="editMonthlySalaryGroup" style="display: none;">
+                    <label for="editMonthlySalary">Monthly Salary</label>
+                    <input type="number" id="editMonthlySalary" min="0" step="100" placeholder="e.g., 30000">
+                    <p class="form-hint" id="editMonthlyCutoffHint">Per cutoff: ₱0.00 (monthly ÷ 2)</p>
+                </div>
+                <div class="form-group" id="editPeriodFixedGroup" style="display: none;">
+                    <label for="editPeriodFixedAmount">Fixed Amount per Cutoff</label>
+                    <input type="number" id="editPeriodFixedAmount" min="0" step="100" placeholder="e.g., 5000">
+                    <p class="form-hint">Added on top of daily barista pay each cutoff</p>
+                </div>
+                <div class="form-group">
+                    <label for="editLeaveEligible">Paid leave</label>
+                    <div class="toggle-container">
+                        <input type="checkbox" id="editLeaveEligible">
+                        <label for="editLeaveEligible">Eligible</label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="editCashAdvanceEligible">Cash advance</label>
+                    <div class="toggle-container">
+                        <input type="checkbox" id="editCashAdvanceEligible">
+                        <label for="editCashAdvanceEligible">Eligible</label>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label for="editActive">Status</label>
@@ -82,6 +216,7 @@
                     <label for="roleSelect">Role</label>
                     <select id="roleSelect" required>
                         <option value="staff">Staff - No Admin Access</option>
+                        <option value="intern">Intern - No Admin Access</option>
                         <option value="manager">Manager - Select Access</option>
                         <option value="admin">Admin - Full Access</option>
                     </select>
@@ -97,8 +232,28 @@
                             <label for="permPayroll">Payroll</label>
                         </div>
                         <div class="checkbox-item">
+                            <input type="checkbox" id="permRequests">
+                            <label for="permRequests">Requests</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="permStaff">
+                            <label for="permStaff">Staff Management</label>
+                        </div>
+                        <div class="checkbox-item">
                             <input type="checkbox" id="permSchedule">
                             <label for="permSchedule">Schedule</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="permInbox">
+                            <label for="permInbox">Inbox</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="permShopify">
+                            <label for="permShopify">Shopify</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="permWorkshops">
+                            <label for="permWorkshops">Workshops</label>
                         </div>
                         <div class="checkbox-item">
                             <input type="checkbox" id="permSales">
@@ -109,16 +264,28 @@
                             <label for="permExpenses">Expenses</label>
                         </div>
                         <div class="checkbox-item">
+                            <input type="checkbox" id="permPurchasing">
+                            <label for="permPurchasing">Purchasing</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="permMoney">
+                            <label for="permMoney">Money</label>
+                        </div>
+                        <div class="checkbox-item">
                             <input type="checkbox" id="permInventory">
                             <label for="permInventory">Inventory</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="permForecast">
+                            <label for="permForecast">Forecast</label>
                         </div>
                         <div class="checkbox-item">
                             <input type="checkbox" id="permPopups">
                             <label for="permPopups">Pop-ups</label>
                         </div>
                         <div class="checkbox-item">
-                            <input type="checkbox" id="permStaff">
-                            <label for="permStaff">Staff Management</label>
+                            <input type="checkbox" id="permEvents">
+                            <label for="permEvents">Events</label>
                         </div>
                     </div>
                 </div>
@@ -150,6 +317,7 @@
                     <label for="addRoleSelect">Role</label>
                     <select id="addRoleSelect" required>
                         <option value="staff">Staff - No Admin Access</option>
+                        <option value="intern">Intern - No Admin Access</option>
                         <option value="manager">Manager - Select Access</option>
                         <option value="admin">Admin - Full Access</option>
                     </select>
@@ -159,8 +327,60 @@
                     <input type="text" id="addNickname" placeholder="Auto-generated if empty">
                 </div>
                 <div class="form-group">
-                    <label for="addBaseRate">Base Rate</label>
-                    <input type="number" id="addBaseRate" min="0" step="10" required placeholder="e.g., 700">
+                    <label for="addEmail">Email address (Optional)</label>
+                    <input type="email" id="addEmail" placeholder="you@example.com" autocomplete="email">
+                </div>
+                <div class="form-group">
+                    <label for="addPhone">Mobile phone (Optional)</label>
+                    <input type="tel" id="addPhone" placeholder="e.g. 09171234567" autocomplete="tel">
+                </div>
+                <div class="form-group">
+                    <label for="addBirthday">Birthday (Optional)</label>
+                    <input type="date" id="addBirthday">
+                </div>
+                <div class="form-group">
+                    <label for="addPayType">Pay Type</label>
+                    <select id="addPayType" required>
+                        <option value="hourly">Daily (barista)</option>
+                        <option value="monthly">Monthly (salaried)</option>
+                        <option value="hybrid">Hybrid (daily + fixed per cutoff)</option>
+                    </select>
+                </div>
+                <div class="form-group" id="addPaySchemeGroup">
+                    <label for="addPayScheme">Pay scheme</label>
+                    <select id="addPayScheme">
+                        <option value="standard">Base + meal allowance</option>
+                        <option value="inclusive" selected>Meal included in daily rate</option>
+                    </select>
+                    <p class="form-hint" id="addPaySchemeHint">Meal is already part of the daily rate, so it isn’t added again.</p>
+                </div>
+                <div class="form-group" id="addBaseRateGroup">
+                    <label for="addBaseRate">Base Rate (daily)</label>
+                    <input type="number" id="addBaseRate" min="0" step="10" placeholder="e.g., 750">
+                </div>
+                <div class="form-group" id="addMonthlySalaryGroup" style="display: none;">
+                    <label for="addMonthlySalary">Monthly Salary</label>
+                    <input type="number" id="addMonthlySalary" min="0" step="100" placeholder="e.g., 30000">
+                    <p class="form-hint" id="addMonthlyCutoffHint">Per cutoff: ₱0.00 (monthly ÷ 2)</p>
+                </div>
+                <div class="form-group" id="addPeriodFixedGroup" style="display: none;">
+                    <label for="addPeriodFixedAmount">Fixed Amount per Cutoff</label>
+                    <input type="number" id="addPeriodFixedAmount" min="0" step="100" placeholder="e.g., 5000">
+                    <p class="form-hint">Added on top of daily barista pay each cutoff</p>
+                </div>
+                <div class="form-group">
+                    <label for="addLeaveEligible">Paid leave</label>
+                    <div class="toggle-container">
+                        <input type="checkbox" id="addLeaveEligible">
+                        <label for="addLeaveEligible">Eligible</label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="addCashAdvanceEligible">Cash advance</label>
+                    <div class="toggle-container">
+                        <input type="checkbox" id="addCashAdvanceEligible">
+                        <label for="addCashAdvanceEligible">Eligible</label>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label for="addPhoto">Display Photo (Optional)</label>
@@ -178,6 +398,41 @@
         </div>
     </div>
 
+    <!-- Personal info view -->
+    <div class="modal" id="personalInfoModal" style="display: none;">
+        <div class="modal-content info-modal-content">
+            <span class="close-modal" id="closePersonalInfoModal">&times;</span>
+            <div class="info-modal-header">
+                <h2>Personal info</h2>
+                <span class="info-status-badge" id="personalInfoStatus"></span>
+            </div>
+            <p class="info-modal-subtitle" id="personalInfoEmployeeName"></p>
+            <div class="info-fields" id="personalInfoFields"></div>
+            <div class="form-actions">
+                <button type="button" class="submit-btn" id="editPersonalInfoBtn">Edit</button>
+                <button type="button" class="cancel-btn" id="closePersonalInfoBtn">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bank info view -->
+    <div class="modal" id="bankInfoModal" style="display: none;">
+        <div class="modal-content info-modal-content">
+            <span class="close-modal" id="closeBankInfoModal">&times;</span>
+            <div class="info-modal-header">
+                <h2>Payroll bank</h2>
+                <span class="info-status-badge" id="bankInfoStatus"></span>
+            </div>
+            <p class="info-modal-subtitle" id="bankInfoEmployeeName"></p>
+            <p class="form-hint" id="bankInfoPreferred" hidden></p>
+            <div id="bankInfoBody"></div>
+            <div class="form-actions">
+                <button type="button" class="submit-btn" id="editBankInfoBtn">Edit</button>
+                <button type="button" class="cancel-btn" id="closeBankInfoBtn">Close</button>
+            </div>
+        </div>
+    </div>
+
     <div class="container">
         <div class="admin-header">
             <div class="logo-section">
@@ -185,6 +440,10 @@
                 <h1 class="app-title">Staff Management</h1>
             </div>
             <div class="controls">
+                <div class="toggle-container staff-hide-inactive">
+                    <input type="checkbox" id="hideInactiveToggle" checked>
+                    <label for="hideInactiveToggle">Hide inactive</label>
+                </div>
                 <button class="employee-btn" id="addEmployeeBtn">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -220,8 +479,10 @@
                 <thead>
                     <tr>
                         <th>Photo</th>
-                        <th>Account Code</th>
+                        <th class="sortable" data-sort="id" scope="col" title="Sort by account code">Account Code</th>
                         <th>Name</th>
+                        <th class="sortable" data-sort="accountInfo" scope="col" title="Sort by empty Personal/Bank info">Account info</th>
+                        <th>Pay Type</th>
                         <th>Role</th>
                         <th>Status</th>
                         <th>Actions</th>
@@ -239,7 +500,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-    <script type="module" src="js/staff-script.js?v=20250208-1"></script>
+    <script type="module" src="js/staff-script.js?v=20260914-1"></script>
 </body>
 
 </html>

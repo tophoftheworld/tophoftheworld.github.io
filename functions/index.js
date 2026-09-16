@@ -3,8 +3,14 @@
  * Deploy: from repo root, `firebase deploy --only functions`
  */
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const PayCalculator = require('./payCalculator');
+const { extractExpenseFieldsFromImage } = require('./extractExpenseReceipt');
+const { extractDiscountIdFromImage } = require('./extractDiscountId');
+const { generateInvoiceFromChat } = require('./generateInvoiceFromChat');
+
+const geminiApiKey = defineSecret('GEMINI_API_KEY');
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -26,6 +32,7 @@ const SHIFT_SCHEDULES = {
  * Map one attendance_v2 date doc to PayCalculator row (same shape as admin app).
  */
 function docToDateEntry(dateStr, dateData, branchFilter) {
+  const isPaidLeave = dateData.isPaidLeave === true;
   const shiftType = dateData.clockIn?.shift || 'Custom';
   let scheduledIn;
   let scheduledOut;
@@ -38,7 +45,7 @@ function docToDateEntry(dateStr, dateData, branchFilter) {
     scheduledOut = shiftSchedule.timeOut;
   }
   const branchName = dateData.clockIn?.branch || 'N/A';
-  if (branchFilter && branchFilter !== 'all') {
+  if (!isPaidLeave && branchFilter && branchFilter !== 'all') {
     const want =
       branchFilter === 'sm-north'
         ? 'SM North'
@@ -65,7 +72,8 @@ function docToDateEntry(dateStr, dateData, branchFilter) {
     fixedPayAmount: dateData.fixedPayAmount || 0,
     hasDoublePay: dateData.hasDoublePay || false,
     hasMealAllowance: dateData.hasMealAllowance !== false,
-    salesBonus: dateData.salesBonus || 0
+    salesBonus: dateData.salesBonus || 0,
+    isPaidLeave: isPaidLeave
   };
 }
 
@@ -250,6 +258,8 @@ exports.calculatePayrollPeriodV2 = onCall(
           payType: rateRow.payType || 'hourly',
           monthlySalary: rateRow.monthlySalary || 0,
           periodGross: rateRow.periodGross,
+          periodFixedAmount: rateRow.periodFixedAmount || 0,
+          payScheme: rateRow.payScheme || 'standard',
           rateHistory: rawEmp.rateHistory,
           _rawEmp: rawEmp
         };
@@ -279,7 +289,9 @@ exports.calculatePayrollPeriodV2 = onCall(
         nickname: empData.nickname || '',
         payType: merged.payType || 'hourly',
         monthlySalary: merged.monthlySalary || 0,
-        periodGross: merged.periodGross != null ? merged.periodGross : null
+        periodGross: merged.periodGross != null ? merged.periodGross : null,
+        periodFixedAmount: merged.periodFixedAmount || 0,
+        payScheme: merged.payScheme || 'standard'
       };
 
       const pay = calculator.calculateTotalPay(bucket.dates, employeeForCalc, 'simple');
@@ -307,6 +319,8 @@ exports.calculatePayrollPeriodV2 = onCall(
         payType: merged.payType || 'hourly',
         monthlySalary: merged.monthlySalary || 0,
         periodGross: merged.periodGross != null ? merged.periodGross : null,
+        periodFixedAmount: merged.periodFixedAmount || 0,
+        payScheme: merged.payScheme || 'standard',
         rateHistory: Array.isArray(empData.rateHistory) ? empData.rateHistory : [],
         salesBonusEligible: !!empData.salesBonusEligible,
         paymentConfirmation: paymentRow
@@ -322,5 +336,145 @@ exports.calculatePayrollPeriodV2 = onCall(
       employeeCount: employeesOut.length,
       employees: employeesOut
     };
+  }
+);
+
+/**
+ * Callable: extract expense form fields from a receipt photo via Gemini 3.5 Flash.
+ * Requires Firebase Auth in the handler. Cloud Run must still allow unauthenticated
+ * invoke so browser CORS preflight (OPTIONS) can reach the function.
+ * Set secret: `firebase functions:secrets:set GEMINI_API_KEY`
+ * @param {object} data
+ * @param {string} data.imageBase64 - data URL or raw base64
+ * @param {string} [data.mimeType] - e.g. image/jpeg
+ */
+exports.extractExpenseReceipt = onCall(
+  {
+    region: 'us-central1',
+    memory: '512MiB',
+    timeoutSeconds: 60,
+    invoker: 'public',
+    secrets: [geminiApiKey]
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Sign in required to extract receipt details.');
+    }
+
+    const data = request.data || {};
+    const imageBase64 = data.imageBase64;
+    const mimeType = data.mimeType;
+
+    if (!imageBase64 || typeof imageBase64 !== 'string') {
+      throw new HttpsError('invalid-argument', 'imageBase64 is required.');
+    }
+
+    try {
+      const parsed = await extractExpenseFieldsFromImage({
+        apiKey: geminiApiKey.value(),
+        imageBase64,
+        mimeType
+      });
+      return { ok: true, parsed };
+    } catch (error) {
+      const code = error?.code || 'internal';
+      const message = error?.message || 'Receipt extraction failed';
+      if (code === 'invalid-argument' || code === 'failed-precondition' || code === 'resource-exhausted') {
+        throw new HttpsError(code, message);
+      }
+      console.error('extractExpenseReceipt failed:', message);
+      throw new HttpsError('internal', message);
+    }
+  }
+);
+
+/**
+ * Callable: extract Senior / PWD ID fields from a card photo via Gemini.
+ * POS kiosks are unauthenticated (same as order writes). Set secret: GEMINI_API_KEY
+ * @param {object} data
+ * @param {string} data.imageBase64
+ * @param {string} [data.mimeType]
+ * @param {string} [data.idType] - 'senior' | 'pwd'
+ */
+exports.extractDiscountId = onCall(
+  {
+    region: 'us-central1',
+    memory: '512MiB',
+    timeoutSeconds: 60,
+    invoker: 'public',
+    secrets: [geminiApiKey]
+  },
+  async (request) => {
+    const data = request.data || {};
+    const imageBase64 = data.imageBase64;
+    const mimeType = data.mimeType;
+    const idType = data.idType === 'pwd' ? 'pwd' : 'senior';
+
+    if (!imageBase64 || typeof imageBase64 !== 'string') {
+      throw new HttpsError('invalid-argument', 'imageBase64 is required.');
+    }
+
+    try {
+      const parsed = await extractDiscountIdFromImage({
+        apiKey: geminiApiKey.value(),
+        imageBase64,
+        mimeType,
+        idType
+      });
+      return { ok: true, parsed };
+    } catch (error) {
+      const code = error?.code || 'internal';
+      const message = error?.message || 'ID extraction failed';
+      if (code === 'invalid-argument' || code === 'failed-precondition' || code === 'resource-exhausted') {
+        throw new HttpsError(code, message);
+      }
+      console.error('extractDiscountId failed:', message);
+      throw new HttpsError('internal', message);
+    }
+  }
+);
+
+/**
+ * Callable: chat turn → structured invoice draft via Gemini.
+ * Public (invoice-generator has no Firebase Auth). Set secret: GEMINI_API_KEY
+ * @param {object} data
+ * @param {Array<{role:string, content:string}>} data.messages
+ * @param {object} [data.currentInvoice]
+ */
+exports.generateInvoiceFromChat = onCall(
+  {
+    region: 'us-central1',
+    memory: '512MiB',
+    timeoutSeconds: 60,
+    invoker: 'public',
+    secrets: [geminiApiKey]
+  },
+  async (request) => {
+    const data = request.data || {};
+    const messages = data.messages;
+    const currentInvoice = data.currentInvoice || {};
+    const documentPreview = data.documentPreview || '';
+
+    if (!Array.isArray(messages) || messages.length === 0) {
+      throw new HttpsError('invalid-argument', 'messages array is required.');
+    }
+
+    try {
+      const result = await generateInvoiceFromChat({
+        apiKey: geminiApiKey.value(),
+        messages,
+        currentInvoice,
+        documentPreview
+      });
+      return { ok: true, ...result };
+    } catch (error) {
+      const code = error?.code || 'internal';
+      const message = error?.message || 'Invoice chat failed';
+      if (code === 'invalid-argument' || code === 'failed-precondition' || code === 'resource-exhausted') {
+        throw new HttpsError(code, message);
+      }
+      console.error('generateInvoiceFromChat failed:', message);
+      throw new HttpsError('internal', message);
+    }
   }
 );

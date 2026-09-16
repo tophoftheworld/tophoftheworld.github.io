@@ -13,7 +13,7 @@ export function initPlacement({ onModeChange, cancelTool }) {
   cancelToolFn = cancelTool;
 
   const ghost = document.getElementById('placementGhost');
-  const overlay = document.getElementById('overlayLayer');
+  const pagesContainer = document.getElementById('pagesContainer');
 
   document.addEventListener('mousemove', (e) => {
     if (!placementMode.active) return;
@@ -21,14 +21,19 @@ export function initPlacement({ onModeChange, cancelTool }) {
     ghost.style.top = `${e.clientY}px`;
   });
 
-  overlay.addEventListener('click', async (e) => {
+  pagesContainer.addEventListener('click', async (e) => {
     if (e.target.closest('.placed-item') || e.target.closest('.text-editor-inline')) return;
     if (!pdfViewer.getState().pdfDoc) return;
 
-    const rect = overlay.getBoundingClientRect();
+    const wrap = e.target.closest('.page-wrap');
+    if (!wrap) return;
+    const pageIndex = Number(wrap.dataset.pageIndex);
+    const els = pdfViewer.getPageEls(pageIndex);
+    if (!els) return;
+
+    const rect = els.overlay.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const clickY = e.clientY - rect.top;
-    const pageIndex = pdfViewer.getCurrentPage();
     const pageSize = pdfViewer.getPageSize(pageIndex);
     const scale = pdfViewer.getRenderScale();
     const pdfPoint = screenPointToPdf(clickX, clickY, pageSize.height, scale);
@@ -40,7 +45,7 @@ export function initPlacement({ onModeChange, cancelTool }) {
 
     const tool = getActiveTool();
     if (tool === 'check') placeCheck(pdfPoint, pageIndex);
-    else if (tool === 'text') placeTextEditor(clickX, clickY, pdfPoint, pageIndex, scale);
+    else if (tool === 'text') placeTextEditor(els.overlay, clickX, clickY, pdfPoint, pageIndex, scale);
   });
 
   document.addEventListener('keydown', (e) => {
@@ -85,8 +90,7 @@ function placeCheck(pdfPoint, pageIndex) {
   });
 }
 
-function placeTextEditor(screenX, screenY, pdfPoint, pageIndex, scale) {
-  const overlay = document.getElementById('overlayLayer');
+function placeTextEditor(overlay, screenX, screenY, pdfPoint, pageIndex, scale) {
   overlay.querySelectorAll('.text-editor-inline').forEach((el) => el.remove());
 
   const fontSize = getToolSize();
@@ -147,7 +151,7 @@ export async function startPlacementMode(signatureId) {
   ghostImg.style.height = `${size.screenHeight}px`;
   ghost.hidden = false;
 
-  document.getElementById('overlayLayer').classList.add('placement-mode', 'interactive');
+  pdfViewer.eachPage((els) => els.overlay.classList.add('placement-mode', 'interactive'));
   if (onPlacementModeChange) onPlacementModeChange(placementMode);
 }
 
@@ -159,8 +163,7 @@ export function cancelPlacementMode() {
   ghostImg.style.width = '';
   ghostImg.style.height = '';
 
-  const overlay = document.getElementById('overlayLayer');
-  overlay.classList.remove('placement-mode');
+  pdfViewer.eachPage((els) => els.overlay.classList.remove('placement-mode'));
   if (onPlacementModeChange) onPlacementModeChange(placementMode);
 }
 

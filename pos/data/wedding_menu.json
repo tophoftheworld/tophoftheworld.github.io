@@ -2,11 +2,13 @@
   "categories": [
     {
       "id": "matcha",
-      "name": "MATCHA"
+      "name": "MATCHA",
+      "countsAsCup": true
     },
     {
       "id": "coffee",
-      "name": "COFFEE"
+      "name": "COFFEE",
+      "countsAsCup": true
     }
   ],
   "items": [

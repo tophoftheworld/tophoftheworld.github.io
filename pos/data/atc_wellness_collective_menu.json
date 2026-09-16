@@ -1,0 +1,264 @@
+{
+  "oatUpgradePrice": 0,
+  "defaultMilk": "oat",
+  "strengthLevelPrices": {
+    "1": 0,
+    "2": 30,
+    "3": 70
+  },
+  "categories": [
+    {
+      "id": "matcha-starters",
+      "name": "Matcha Starters",
+      "countsAsCup": true
+    },
+    {
+      "id": "matcha-lattes",
+      "name": "Matcha Lattes",
+      "countsAsCup": true
+    },
+    {
+      "id": "beyond-matcha",
+      "name": "Beyond Matcha",
+      "countsAsCup": true
+    },
+    {
+      "id": "exclusive",
+      "name": "Exclusive",
+      "countsAsCup": true
+    },
+    {
+      "id": "cookies",
+      "name": "Cookies",
+      "countsAsCup": false
+    },
+    {
+      "id": "matcha-powder",
+      "name": "Matcha Powder",
+      "countsAsCup": false
+    }
+  ],
+  "items": [
+    {
+      "categoryId": "matcha-starters",
+      "name": "Signature Matchanese Latte",
+      "description": "Matcha Cold Whisked with Milk",
+      "price": 230,
+      "type": "Iced",
+      "shorthand": "SML",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "matcha-starters",
+      "name": "Matchanese Seasalt Latte",
+      "description": "Our Signature Matcha Latte with Seasalt Cream",
+      "price": 260,
+      "tags": [
+        "Best Seller"
+      ],
+      "type": "Iced",
+      "shorthand": "MSL",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Strawberry Matchanese Latte",
+      "description": "Our Signature Matcha Latte with Strawberry Puree",
+      "price": 260,
+      "type": "Iced",
+      "shorthand": "STML",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Earl Grey Matchanese Latte",
+      "description": "Our Signature Matcha Latte with Homemade Earl Grey Syrup",
+      "price": 250,
+      "type": "Iced",
+      "shorthand": "EGML",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Spanish Matchanese Latte",
+      "description": "Our Signature Matcha Latte with Sweetened Milk",
+      "price": 250,
+      "type": "Iced",
+      "shorthand": "SPML",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Matchanese Coco Oat Latte",
+      "description": "Cold Whisked Matcha with Oat Milk over Vita Coco",
+      "price": 240,
+      "type": "Iced",
+      "shorthand": "COML",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "beyond-matcha",
+      "name": "Hōjicha Latte",
+      "description": "Cold Whisked Hōjicha with Milk",
+      "price": 200,
+      "type": "Iced",
+      "shorthand": "HL",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "beyond-matcha",
+      "name": "Hōjicha Seasalt Latte",
+      "description": "Hōjicha Latte topped with Seasalt Cream",
+      "price": 240,
+      "type": "Iced",
+      "shorthand": "HSL",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "beyond-matcha",
+      "name": "Genmaicha Latte",
+      "description": "Cold Whisked Genmaicha with Milk",
+      "price": 190,
+      "type": "Iced",
+      "shorthand": "GL",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "beyond-matcha",
+      "name": "Genmaicha Seasalt Latte",
+      "description": "Genmaicha Latte topped with Seasalt Cream",
+      "price": 230,
+      "type": "Iced",
+      "shorthand": "GSL",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "exclusive",
+      "name": "White Champorado Matcha Latte",
+      "description": "White Chocolate Dome, White Chocolate Cream, Rice Crispies",
+      "price": 320,
+      "tags": [
+        "Exclusive"
+      ],
+      "type": "Iced",
+      "shorthand": "WCML",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "exclusive",
+      "name": "Dulce de LECHE! Matcha Latte",
+      "description": "Dulce de Leche Cream, Smashed Lengua de Gato",
+      "price": 300,
+      "tags": [
+        "Exclusive"
+      ],
+      "type": "Iced",
+      "shorthand": "DDML",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "cookies",
+      "name": "Cookie",
+      "description": "Cookie per piece",
+      "price": 150,
+      "type": "Cookie",
+      "shorthand": "CK",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "matcha-powder",
+      "name": "Aki",
+      "description": "Matcha powder",
+      "price": 900,
+      "type": "Matcha Powder",
+      "shorthand": "AKI",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": false
+      }
+    },
+    {
+      "categoryId": "matcha-powder",
+      "name": "Natsu",
+      "description": "Matcha powder",
+      "price": 1200,
+      "type": "Matcha Powder",
+      "shorthand": "NAT",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": false
+      }
+    }
+  ]
+}

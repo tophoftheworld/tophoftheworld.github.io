@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MMF Merchant Hub — Manila Matcha Fest 2026</title>
+    <meta name="robots" content="noindex,nofollow">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="MMF Merchant Hub — Manila Matcha Fest 2026">
+    <meta property="og:description" content="One-stop merchant dashboard for Manila Matcha Fest 2026 — contacts, suppliers, booth layout, and daily sales reporting.">
+    <meta property="og:url" content="https://mmf-merchant.web.app/">
+    <meta property="og:image" content="https://mmf-merchant.web.app/images/og-cover.png">
+    <meta property="og:image:alt" content="Manila Matcha Fest — August 7–16 at SM Mall of Asia">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="MMF Merchant Hub — Manila Matcha Fest 2026">
+    <meta name="twitter:description" content="One-stop merchant dashboard for Manila Matcha Fest 2026.">
+    <meta name="twitter:image" content="https://mmf-merchant.web.app/images/og-cover.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- Login gate -->
+    <div id="loginGate" class="gate-body">
+        <div class="card gate-card">
+            <img class="gate-logo" src="images/mmf-logo.png" alt="Manila Matcha Fest 2026" width="160" height="160">
+            <h1>Merchant Hub</h1>
+            <p class="muted">August 7–16 · SM Mall of Asia Main Atrium</p>
+            <form id="loginForm" autocomplete="off">
+                <div class="field">
+                    <label for="loginBrand">Your brand</label>
+                    <select class="select" id="loginBrand" required>
+                        <option value="">Loading brands…</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="loginCode">Access code</label>
+                    <input class="input" type="password" id="loginCode" placeholder="8-character code" autocomplete="current-password" required>
+                    <span class="field-hint">Use the code emailed to your brand contact.</span>
+                </div>
+                <button type="submit" class="btn" id="loginBtn" style="width:100%">Sign in</button>
+                <p class="gate-status" id="loginStatus" aria-live="polite"></p>
+            </form>
+        </div>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="hubApp" class="hub-body hidden">
+        <header class="hub-header">
+            <div class="hub-header-inner">
+                <div class="hub-brand">
+                    <img class="hub-logo" src="images/mmf-logo.png" alt="" width="40" height="40">
+                    <div class="hub-brand-text">
+                        <h1>Merchant Hub</h1>
+                        <p class="hub-brand-name" id="headerBrandName">—</p>
+                        <p class="hub-brand-meta muted" id="headerBrandMeta"></p>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-ghost btn-sm" id="logoutBtn">Log out</button>
+            </div>
+        </header>
+
+        <main class="hub-main">
+            <!-- Outstanding balance (shown only when owed) -->
+            <section class="hub-section hub-balance-section is-collapsed hidden" id="sectionBalance" data-collapsible>
+                <button type="button" class="hub-section-toggle" data-toggle aria-expanded="false">
+                    <div class="hub-section-toggle-text">
+                        <h2>Payment balance</h2>
+                        <p class="muted" id="balanceToggleSub">Outstanding amount due</p>
+                    </div>
+                    <span class="hub-chevron" aria-hidden="true"></span>
+                </button>
+                <div class="hub-section-body" hidden>
+                    <div class="hub-balance-inner">
+                        <div class="hub-balance-header">
+                            <h3 id="balanceTitle">Remaining balance</h3>
+                            <p class="muted" id="balanceSubtitle"></p>
+                        </div>
+                        <div class="hub-balance-amount" id="balanceAmount">₱0.00</div>
+                        <p class="hub-balance-due muted" id="balanceDue"></p>
+                        <div id="balanceAccounts" class="hub-balance-accounts"></div>
+                        <p class="hub-balance-note muted" id="balanceNote"></p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Contacts -->
+            <section class="hub-section is-collapsed" id="sectionContacts" data-collapsible>
+                <button type="button" class="hub-section-toggle" data-toggle aria-expanded="false">
+                    <div class="hub-section-toggle-text">
+                        <h2>Contacts</h2>
+                        <p class="muted">Who to reach during the event</p>
+                    </div>
+                    <span class="hub-chevron" aria-hidden="true"></span>
+                </button>
+                <div class="hub-section-body" hidden>
+                    <div class="cards-grid" id="contactsGrid"></div>
+                </div>
+            </section>
+
+            <!-- Ingress -->
+            <section class="hub-section is-collapsed" id="sectionIngress" data-collapsible>
+                <button type="button" class="hub-section-toggle" data-toggle aria-expanded="false">
+                    <div class="hub-section-toggle-text">
+                        <h2>Ingress reminders</h2>
+                        <p class="muted">Schedule, entry points, and mall rules</p>
+                    </div>
+                    <span class="hub-chevron" aria-hidden="true"></span>
+                </button>
+                <div class="hub-section-body" hidden>
+                    <div class="ingress-groups" id="ingressGrid"></div>
+                </div>
+            </section>
+
+            <!-- Suppliers -->
+            <section class="hub-section is-collapsed" id="sectionSuppliers" data-collapsible>
+                <button type="button" class="hub-section-toggle" data-toggle aria-expanded="false">
+                    <div class="hub-section-toggle-text">
+                        <h2>Supplier references</h2>
+                        <p class="muted">Ice and water</p>
+                    </div>
+                    <span class="hub-chevron" aria-hidden="true"></span>
+                </button>
+                <div class="hub-section-body" hidden>
+                    <div class="cards-grid" id="suppliersGrid"></div>
+                </div>
+            </section>
+
+            <!-- Booth layout -->
+            <section class="hub-section is-collapsed" id="sectionLayout" data-collapsible>
+                <button type="button" class="hub-section-toggle" data-toggle aria-expanded="false">
+                    <div class="hub-section-toggle-text">
+                        <h2>Event &amp; booth layout</h2>
+                        <p class="muted">Floor plan</p>
+                    </div>
+                    <span class="hub-chevron" aria-hidden="true"></span>
+                </button>
+                <div class="hub-section-body" hidden>
+                    <figure class="layout-figure">
+                        <img id="boothLayoutImg" src="images/booth-layout.png" alt="Manila Matcha Fest MOA floor plan with booth numbers 1–24">
+                    </figure>
+                </div>
+            </section>
+
+            <!-- Report / order launchers -->
+            <section class="hub-section" id="sectionCrewMeals">
+                <button type="button" class="hub-section-toggle" id="openCrewModal">
+                    <div class="hub-section-toggle-text">
+                        <h2>Crew meals</h2>
+                        <p class="muted">Order meals for your team</p>
+                    </div>
+                    <span class="hub-chevron" aria-hidden="true"></span>
+                </button>
+            </section>
+
+            <section class="hub-section" id="sectionSales">
+                <button type="button" class="hub-section-toggle" id="openSalesModal">
+                    <div class="hub-section-toggle-text">
+                        <h2>Daily sales report</h2>
+                        <p class="muted">Log each day’s cash sales</p>
+                    </div>
+                    <span class="hub-chevron" aria-hidden="true"></span>
+                </button>
+            </section>
+
+            <section class="hub-section" id="sectionKol">
+                <button type="button" class="hub-section-toggle" id="openKolModal">
+                    <div class="hub-section-toggle-text">
+                        <h2>Freebies Claim Report</h2>
+                        <p class="muted">KOL drinks and retail given away</p>
+                    </div>
+                    <span class="hub-chevron" aria-hidden="true"></span>
+                </button>
+            </section>
+        </main>
+    </div>
+
+    <!-- Sales modal -->
+    <div class="hub-modal hidden" id="salesModal" role="dialog" aria-modal="true" aria-labelledby="salesModalTitle" hidden>
+        <div class="hub-modal-backdrop" data-close-modal="salesModal"></div>
+        <div class="hub-modal-card">
+            <div class="hub-modal-header">
+                <div>
+                    <h2 id="salesModalTitle">Daily sales report</h2>
+                    <p class="muted">Aug 7–16</p>
+                </div>
+                <button type="button" class="hub-modal-close" data-close-modal="salesModal" aria-label="Close">×</button>
+            </div>
+            <div class="hub-modal-body">
+                <div class="day-strip" id="salesDayStrip" role="tablist" aria-label="Select sales day"></div>
+                <form id="salesForm" class="report-form">
+                    <div class="field">
+                        <label for="salesCash">Cash sales (₱) <span class="req">*</span></label>
+                        <input class="input input-lg" type="text" inputmode="decimal" id="salesCash" placeholder="0.00" data-money required>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn" id="salesSaveBtn">Save</button>
+                        <span class="save-status" id="salesStatus" aria-live="polite"></span>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Freebies modal -->
+    <div class="hub-modal hidden" id="kolModal" role="dialog" aria-modal="true" aria-labelledby="kolModalTitle" hidden>
+        <div class="hub-modal-backdrop" data-close-modal="kolModal"></div>
+        <div class="hub-modal-card">
+            <div class="hub-modal-header">
+                <div>
+                    <h2 id="kolModalTitle">Freebies Claim Report</h2>
+                    <p class="muted">Aug 7–16</p>
+                </div>
+                <button type="button" class="hub-modal-close" data-close-modal="kolModal" aria-label="Close">×</button>
+            </div>
+            <div class="hub-modal-body">
+                <div class="day-strip" id="kolDayStrip" role="tablist" aria-label="Select freebies day"></div>
+                <form id="kolForm" class="report-form">
+                    <div class="stepper-grid">
+                        <div class="field">
+                            <label for="kolDrinks">Claimed drinks</label>
+                            <div class="stepper" data-stepper>
+                                <button type="button" class="stepper-btn" data-step="-1" aria-label="Decrease drinks">−</button>
+                                <input class="input stepper-input" type="text" inputmode="numeric" id="kolDrinks" value="0" data-int>
+                                <button type="button" class="stepper-btn" data-step="1" aria-label="Increase drinks">+</button>
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label for="kolRetail">Claimed retail items</label>
+                            <div class="stepper" data-stepper>
+                                <button type="button" class="stepper-btn" data-step="-1" aria-label="Decrease retail">−</button>
+                                <input class="input stepper-input" type="text" inputmode="numeric" id="kolRetail" value="0" data-int>
+                                <button type="button" class="stepper-btn" data-step="1" aria-label="Increase retail">+</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn" id="kolSaveBtn">Save</button>
+                        <span class="save-status" id="kolStatus" aria-live="polite"></span>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Crew meals modal -->
+    <div class="hub-modal hidden" id="crewModal" role="dialog" aria-modal="true" aria-labelledby="crewModalTitle" hidden>
+        <div class="hub-modal-backdrop" data-close-modal="crewModal"></div>
+        <div class="hub-modal-card hub-modal-card--wide">
+            <div class="hub-modal-header">
+                <div class="hub-modal-header-main">
+                    <button type="button" class="crew-back-btn hidden" id="crewBackBtn" aria-label="Back">←</button>
+                    <div>
+                        <h2 id="crewModalTitle">Crew meals</h2>
+                        <p class="muted" id="crewModalSub">Order by 6:00 PM the day before</p>
+                    </div>
+                </div>
+                <button type="button" class="hub-modal-close" data-close-modal="crewModal" aria-label="Close">×</button>
+            </div>
+
+            <div class="hub-modal-body" id="crewScrollBody">
+                <div id="crewDayArea">
+                    <div class="day-strip" id="crewDayStrip" role="tablist" aria-label="Select order day"></div>
+                    <p class="crew-advance-note" id="crewAdvanceNote"></p>
+                </div>
+                <div id="crewMenuRoot"></div>
+                <div id="crewConfirmedRoot" class="hidden"></div>
+                <div id="crewSummaryRoot" class="hidden"></div>
+            </div>
+
+            <div class="crew-order-footer" id="crewMenuFooter">
+                <button type="button" class="btn crew-cart-btn" id="crewReviewBtn" disabled>
+                    <span class="crew-cart-label">Add items to order</span>
+                    <span class="crew-cart-total" id="crewOrderTotal">₱0.00</span>
+                </button>
+                <p class="crew-footer-hint muted" id="crewStatus" aria-live="polite"></p>
+            </div>
+
+            <div class="crew-order-footer hidden" id="crewSummaryFooter">
+                <button type="button" class="btn crew-cart-btn" id="crewPlaceBtn">
+                    <span class="crew-cart-label" id="crewPlaceLabel">Place order</span>
+                    <span class="crew-cart-total" id="crewPlaceTotal">₱0.00</span>
+                </button>
+                <p class="crew-footer-hint muted" id="crewPlaceStatus" aria-live="polite"></p>
+            </div>
+
+            <div class="crew-order-footer hidden" id="crewConfirmedFooter">
+                <button type="button" class="btn btn-ghost crew-cart-btn" id="crewEditBtn">
+                    <span class="crew-cart-label">Edit order</span>
+                </button>
+                <p class="crew-footer-hint muted" id="crewConfirmedStatus" aria-live="polite"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- QR enlarge modal -->
+    <div class="hub-modal hidden" id="qrModal" role="dialog" aria-modal="true" aria-labelledby="qrModalTitle" hidden>
+        <div class="hub-modal-backdrop" data-close-modal="qrModal"></div>
+        <div class="hub-modal-card hub-modal-card--qr">
+            <div class="hub-modal-header">
+                <div>
+                    <h2 id="qrModalTitle">QR code</h2>
+                    <p class="muted" id="qrModalSub"></p>
+                </div>
+                <button type="button" class="hub-modal-close" data-close-modal="qrModal" aria-label="Close">×</button>
+            </div>
+            <div class="hub-modal-body hub-qr-modal-body">
+                <img id="qrModalImg" src="" alt="Payment QR code">
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>

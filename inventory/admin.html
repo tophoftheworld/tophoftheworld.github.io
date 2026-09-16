@@ -8,13 +8,159 @@
   <style>
     body { background: #f9f9f9; font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial, sans-serif; color: #333; }
     .builder-container { max-width: 1440px; margin: 0 auto; padding: 24px; box-sizing: border-box; }
-    .builder-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
-    .builder-title { font-size: 1.6rem; font-weight: 600; color: #2b9348; }
+    .builder-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; gap: 16px; }
+    .builder-title { font-size: 1.6rem; font-weight: 600; color: #2b9348; flex-shrink: 0; }
+    .builder-navigation { display: flex; align-items: center; justify-content: flex-end; flex: 1; min-width: 0; }
 
-    /* Tabs */
-    .task-navigation { display: flex; gap: 8px; background: #f5f5f5; padding: 6px; border-radius: 8px; width: fit-content; }
-    .task-nav-btn { padding: 10px 16px; background: transparent; border: none; border-radius: 6px; cursor: pointer; font-size: 0.95rem; color: #666; }
-    .task-nav-btn.active { background: #fff; color: #2b9348; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    /* Daily / Weekly / Order stay put; Settings opens Master Items / Branch List */
+    .admin-nav-bar {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: #f5f5f5;
+      padding: 6px;
+      border-radius: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .nav-separator {
+      width: 1px;
+      height: 22px;
+      background: #d8d8d8;
+      margin: 0 6px;
+      flex-shrink: 0;
+    }
+    .task-navigation { display: contents; }
+    .task-nav-btn,
+    .admin-nav-menu-btn {
+      padding: 10px 16px;
+      background: transparent;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.95rem;
+      color: #666;
+      font-weight: 500;
+      white-space: nowrap;
+      font-family: inherit;
+    }
+    .task-nav-btn:hover,
+    .admin-nav-menu-btn:hover { color: #333; }
+    .task-nav-btn.active,
+    .admin-nav-menu-btn.active,
+    .admin-nav-menu.open > .admin-nav-menu-btn {
+      background: #fff;
+      color: #2b9348;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .admin-nav-menu {
+      position: relative;
+      flex-shrink: 0;
+    }
+    .admin-nav-menu-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      box-sizing: border-box;
+    }
+    .admin-nav-menu-caret {
+      font-size: 0.7rem;
+      line-height: 1;
+      color: #999;
+    }
+    .admin-nav-menu-panel {
+      position: absolute;
+      right: 0;
+      top: calc(100% + 8px);
+      z-index: 40;
+      min-width: 168px;
+      padding: 6px;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+      border: 1px solid #eee;
+    }
+    .admin-nav-menu-panel[hidden] { display: none !important; }
+    .admin-nav-menu-item {
+      display: block;
+      width: 100%;
+      text-align: left;
+      padding: 10px 12px;
+      border: none;
+      background: transparent;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.92rem;
+      color: #444;
+      font-weight: 500;
+    }
+    .admin-nav-menu-item:hover { background: #f5f5f5; color: #222; }
+    .admin-nav-menu-item.active {
+      background: #f4faf5;
+      color: #2b9348;
+    }
+    .admin-nav-menu-panel .task-nav-btn {
+      display: block;
+      width: 100%;
+      text-align: left;
+      padding: 10px 12px;
+      box-shadow: none;
+      background: transparent;
+      color: #444;
+    }
+    .admin-nav-menu-panel .task-nav-btn.active {
+      background: #f4faf5;
+      color: #2b9348;
+      box-shadow: none;
+    }
+    .category-header { cursor: pointer; }
+    #inventoryTable .category-item-row > td:first-child,
+    #dashboardTable .category-item-row > td:first-child,
+    #weeklyTable .category-item-row > td:first-child,
+    #weeklyViewTable .category-item-row > td:first-child,
+    #masterItemsList .category-item-row > td:first-child,
+    #branchItemsList .category-item-row > td:first-child,
+    #masterTable .category-item-row > td:first-child,
+    #branchTable .category-item-row > td:first-child {
+      padding-left: 28px;
+    }
+    #orderTable .inv-table td.order-view-col-item {
+      padding-left: 20px;
+    }
+    .category-manage-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 0;
+      border-bottom: 1px solid #eee;
+    }
+    .category-manage-row:last-child { border-bottom: none; }
+    .category-manage-name {
+      flex: 1;
+      min-width: 0;
+      padding: 8px 10px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 0.9rem;
+    }
+    .category-manage-count {
+      font-size: 0.8rem;
+      color: #888;
+      white-space: nowrap;
+    }
+    .category-manage-error {
+      color: #c62828;
+      font-size: 0.85rem;
+      margin-top: 6px;
+      min-height: 1.1em;
+    }
+    .settings-subnav {
+      display: inline-flex;
+    }
+    .settings-subnav .task-nav-btn {
+      padding: 0.45rem 0.9rem;
+      box-shadow: none;
+    }
 
     /* Panels */
     .task-section { display: none; }
@@ -27,7 +173,28 @@
 
     /* Order View: never cram title + controls + copy into one flex row (avoids horizontal scroll + text beside dropdowns) */
     .order-view-head { margin-bottom: 12px; }
-    .order-view-head .section-title { margin-bottom: 10px; }
+    .order-view-head-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .order-view-head .section-title { margin-bottom: 2px; }
+    .order-view-week-title {
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: #555;
+    }
+    .order-view-toggles {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .order-view-toggles .segmented-control { width: fit-content; }
+    .order-view-toggles .segmented-btn { padding: 0.45rem 0.9rem; font-size: 0.85rem; }
     .order-view-controls {
       display: grid;
       gap: 12px 16px;
@@ -52,11 +219,18 @@
     .order-view-control-group .order-view-inline-label {
       flex-shrink: 0;
     }
-    .order-view-control-group .branch-select {
+    .order-view-control-group .branch-select,
+    .order-view-locations-dropdown > summary {
       flex: 1 1 0;
       min-width: 0;
       width: 100%;
       max-width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      background: white;
+      box-sizing: border-box;
     }
     .order-view-control-group .order-view-locations-dropdown {
       flex: 1 1 0;
@@ -65,20 +239,11 @@
     }
     .order-view-locations-dropdown {
       position: relative;
-      display: inline-block;
-      vertical-align: middle;
+      display: block;
     }
     .order-view-locations-dropdown > summary {
       list-style: none;
       cursor: pointer;
-      padding: 6px 12px;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      font-size: 0.85rem;
-      background: white;
-      min-width: 0;
-      width: 100%;
-      box-sizing: border-box;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -109,9 +274,35 @@
     }
     .order-view-branch-label input { margin: 0; cursor: pointer; flex-shrink: 0; }
     .order-view-branch-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 8px; padding-top: 8px; border-top: 1px solid #eee; }
-    .order-view-control-full {
-      grid-column: 1 / -1;
-      flex-wrap: wrap;
+    .order-view-expand-col { width: 36px; min-width: 36px; max-width: 36px; padding: 4px !important; text-align: center; }
+    .order-view-expand-btn {
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      padding: 0 4px 0 0;
+      font-size: 0.7rem;
+      color: #666;
+      line-height: 1;
+      vertical-align: middle;
+    }
+    .order-view-branch-row td {
+      background: #fafafa;
+      font-size: 0.92em;
+    }
+    .order-view-branch-name {
+      color: #555;
+    }
+    .order-view-warn {
+      color: #c62828;
+      font-weight: 700;
+      margin-right: 2px;
+    }
+    .order-view-cell-sub {
+      font-size: 0.72rem;
+      color: #888;
+      font-weight: 400;
+      line-height: 1.2;
+      margin-top: 2px;
     }
     #orderTable .inv-table tbody tr.order-view-row-needs-order {
       background: #fff5f5;
@@ -128,29 +319,72 @@
       margin-top: 3px;
     }
 
-    /* Order View table: centered headers; numeric body cells stay right-aligned */
+    /* Order View table: item/desc left; numeric headers centered, values right-aligned */
     #orderTable .category-header {
       cursor: pointer;
     }
     #orderTable .inv-table {
-      table-layout: auto;
+      table-layout: fixed;
+      width: 100%;
     }
+    #orderTable .inv-table col.order-view-col-expand { width: 36px; }
+    #orderTable .inv-table col.order-view-col-item { width: auto; }
+    #orderTable .inv-table col.order-view-col-desc { width: 16%; }
+    #orderTable .inv-table col.order-view-col-num { width: 11%; }
+    #orderTable .inv-table col.order-view-col-runout { width: 12%; }
     #orderTable .inv-table th {
       white-space: normal;
       vertical-align: middle;
       line-height: 1.3;
-      padding: 10px 8px;
+      padding: 10px 12px;
+      text-align: left;
+    }
+    #orderTable .inv-table th.order-view-th-num,
+    #orderTable .inv-table th.order-view-th-runout {
       text-align: center;
     }
     #orderTable .inv-table th.order-view-th-num {
-      font-weight: 400;
+      font-weight: 600;
     }
-    #orderTable .inv-table .order-view-th-photo { width: 52px; min-width: 52px; }
-    #orderTable .inv-table .order-view-th-item { min-width: 9rem; }
-    #orderTable .inv-table .order-view-th-desc { min-width: 7rem; }
-    #orderTable .inv-table .order-view-th-num { min-width: 6.5rem; }
-    #orderTable .inv-table .order-view-th-runout { min-width: 7.5rem; }
-    /* Must use !important: global .quantity-cell sets font-weight: 500 !important */
+    #orderTable .inv-table td.order-view-col-usage {
+      color: #888 !important;
+      font-weight: 400 !important;
+    }
+    #orderTable .inv-table td.order-view-col-need {
+      color: inherit;
+      font-weight: 500 !important;
+    }
+    #orderTable .inv-table td.order-view-col-suggested {
+      font-weight: 700 !important;
+      color: #222 !important;
+    }
+    #orderTable .inv-table td.order-view-col-suggested.order-view-suggested-empty {
+      color: #bbb !important;
+      font-weight: 500 !important;
+    }
+    #orderTable .inv-table th.order-view-col-expand,
+    #orderTable .inv-table td.order-view-expand-col {
+      width: 36px;
+      min-width: 36px;
+      max-width: 36px;
+      padding-left: 8px;
+      padding-right: 4px;
+      box-sizing: border-box;
+    }
+    #orderTable .inv-table th.order-view-col-item,
+    #orderTable .inv-table td.order-view-col-item,
+    #orderTable .inv-table .order-view-th-item {
+      width: auto;
+      text-align: left;
+    }
+    #orderTable .inv-table th.order-view-col-desc,
+    #orderTable .inv-table td.order-view-col-desc,
+    #orderTable .inv-table .order-view-th-desc { width: 16%; text-align: left; }
+    #orderTable .inv-table th.order-view-col-num,
+    #orderTable .inv-table .order-view-th-num { width: 11%; min-width: 0; }
+    #orderTable .inv-table th.order-view-col-runout,
+    #orderTable .inv-table .order-view-th-runout { width: 12%; min-width: 0; }
+    /* Suggested order: boldest when there is something to order */
     #orderTable .inv-table td.quantity-cell.order-view-suggested-cell {
       font-weight: 700 !important;
     }
@@ -177,13 +411,42 @@
     #orderTable .inv-table td.quantity-cell {
       white-space: nowrap;
       text-align: right;
+      padding: 12px 10px 12px 14px;
     }
     #orderTable .inv-table td.order-view-runout-cell.quantity-cell {
       white-space: normal;
+      text-align: right;
+    }
+
+    @keyframes order-view-cell-shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+    #orderTable.order-view-refreshing .inv-table tbody td.quantity-cell,
+    #orderTable.order-view-refreshing .inv-table tbody td.order-view-runout-cell {
+      position: relative;
+    }
+    #orderTable.order-view-refreshing .inv-table tbody td.quantity-cell::after,
+    #orderTable.order-view-refreshing .inv-table tbody td.order-view-runout-cell::after {
+      content: '';
+      position: absolute;
+      inset: 6px 10px;
+      border-radius: 4px;
+      background: linear-gradient(90deg, #ececec 0%, #f5f5f5 45%, #ececec 90%);
+      background-size: 200% 100%;
+      animation: order-view-cell-shimmer 1.1s ease-in-out infinite;
+      pointer-events: none;
+    }
+    #orderTable.order-view-refreshing .inv-table tbody td.quantity-cell > *,
+    #orderTable.order-view-refreshing .inv-table tbody td.order-view-runout-cell > * {
+      visibility: hidden;
+    }
+    #orderTable.order-view-refreshing .inv-table thead .order-view-th-sub {
+      color: #bbb;
     }
 
     /* Buttons */
-    .btn { padding: 0.55rem 1rem; border: none; border-radius: 8px; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: all 0.2s; }
+    .btn { padding: 0.55rem 1rem; border: none; border-radius: 8px; cursor: pointer; font-size: 0.9rem; font-weight: 500; font-family: inherit; transition: all 0.2s; }
     .btn-primary { background: #2b9348; color: white; }
     .btn-primary:hover { background: #22863a; }
     .btn-secondary { background: white; color: #333; border: 1px solid #e5e5e5; }
@@ -195,12 +458,6 @@
     .btn-small { padding: 0.35rem 0.7rem; border-radius: 6px; font-size: 0.85rem; }
     .btn-disabled { opacity: 0.5; cursor: not-allowed; }
     
-    /* Navigation */
-    .builder-navigation { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-    .nav-buttons { display: flex; gap: 8px; }
-    .nav-btn { padding: 8px 12px; background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 6px; cursor: pointer; font-size: 0.85rem; color: #333; text-decoration: none; transition: all 0.2s; }
-    .nav-btn:hover { background: #e8e8e8; border-color: #ccc; }
-
     /* Lists */
     .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .toolbar input[type="text"] { padding: 0.5rem 0.8rem; border-radius: 8px; border: 1px solid #ddd; min-width: 260px; }
@@ -288,31 +545,7 @@
     .inv-table th, .inv-table td { padding: 12px; border-bottom: 1px solid #eee; text-align: left; font-size: 0.92rem; height: 60px; vertical-align: middle; }
     .inv-table th { background: #f5f5f5; font-weight: 600; color: #333; user-select: none; }
     .inv-table tr:last-child td { border-bottom: none; }
-    .inv-table img { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; border: 1px solid #eee; }
-    
-    .photo-container {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 40px;
-      height: 40px;
-      margin: 0 auto;
-    }
-    
-    .photo-placeholder {
-      width: 40px;
-      height: 40px;
-      border-radius: 8px;
-      border: 1px solid #ddd;
-      background: #f5f5f5;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    
-    .photo-placeholder:hover {
-      border-color: #2b9348;
-      background: #f0f8f0;
-    }
+
     /* Column widths are now defined in the main CSS section below */
 
     /* Drag and drop styles */
@@ -402,8 +635,8 @@
     /* Dashboard controls */
     .toolbar {
       display: flex;
-      gap: 24px;
-      align-items: end;
+      gap: 8px;
+      align-items: center;
       flex-wrap: wrap;
     }
     
@@ -411,6 +644,39 @@
       display: flex;
       flex-direction: column;
       gap: 8px;
+    }
+    
+    .section-header .toolbar .control-group {
+      flex-direction: row;
+    }
+
+    /* Match branch + date picker height to segmented toggle buttons */
+    .section-header .toolbar .control-group .branch-select {
+      padding: 0.6rem 1.2rem;
+      font-size: 0.9rem;
+      font-weight: 500;
+      height: auto;
+      line-height: 1.2;
+      box-sizing: border-box;
+    }
+
+    .section-header .toolbar .control-group .date-picker {
+      padding: 0.25rem;
+      height: auto;
+      box-sizing: border-box;
+    }
+
+    .section-header .toolbar .date-nav-btn {
+      padding: 0.35rem 0.55rem;
+      font-size: 1rem;
+      height: auto;
+      width: auto;
+    }
+
+    .section-header .toolbar .date-display {
+      padding: 0.6rem 0.75rem;
+      font-size: 0.9rem;
+      min-width: 110px;
     }
     
     .control-group label {
@@ -511,13 +777,6 @@
     /* Dashboard table column widths */
     #inventoryTable .inv-table th:nth-child(1),
     #inventoryTable .inv-table td:nth-child(1) {
-      width: 100px; /* Photo - reduced width */
-      text-align: center;
-      padding: 8px 6px;
-    }
-    
-    #inventoryTable .inv-table th:nth-child(2),
-    #inventoryTable .inv-table td:nth-child(2) {
       width: 25%; /* Item name */
       white-space: nowrap;
       overflow: hidden;
@@ -525,15 +784,17 @@
       font-weight: 600;
     }
     
-    #inventoryTable .inv-table th:nth-child(3),
-    #inventoryTable .inv-table td:nth-child(3) {
-      width: 15%; /* Description - reduced width */
+    #inventoryTable .inv-table th:nth-child(2),
+    #inventoryTable .inv-table td:nth-child(2) {
+      width: 15%; /* Description */
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
     
     /* Quantity columns - equal widths (Opening, Added, Pull Out, Closing, Used, Wastage) */
+    #inventoryTable .inv-table th:nth-child(3),
+    #inventoryTable .inv-table td:nth-child(3),
     #inventoryTable .inv-table th:nth-child(4),
     #inventoryTable .inv-table td:nth-child(4),
     #inventoryTable .inv-table th:nth-child(5),
@@ -543,9 +804,7 @@
     #inventoryTable .inv-table th:nth-child(7),
     #inventoryTable .inv-table td:nth-child(7),
     #inventoryTable .inv-table th:nth-child(8),
-    #inventoryTable .inv-table td:nth-child(8),
-    #inventoryTable .inv-table th:nth-child(9),
-    #inventoryTable .inv-table td:nth-child(9) {
+    #inventoryTable .inv-table td:nth-child(8) {
       width: 10%; /* Equal width for all quantity columns */
       text-align: right;
     }
@@ -594,40 +853,33 @@
     /* Master table specific column widths */
     .master-table th:nth-child(1),
     .master-table td:nth-child(1) {
-      width: 100px; /* Photo - reduced width */
-      text-align: center;
-      padding: 8px 6px;
+      width: 20%; /* Item name */
     }
     
     .master-table th:nth-child(2),
     .master-table td:nth-child(2) {
-      width: 20%; /* Item name - consistent with dashboard */
+      width: 20%; /* Description */
     }
     
     .master-table th:nth-child(3),
     .master-table td:nth-child(3) {
-      width: 20%; /* Description - reduced width */
+      width: 15%; /* Category */
     }
     
     .master-table th:nth-child(4),
     .master-table td:nth-child(4) {
-      width: 15%; /* Category - consistent with dashboard */
+      width: 6%; /* Unit */
+      text-align: center;
     }
     
     .master-table th:nth-child(5),
     .master-table td:nth-child(5) {
-      width: 6%; /* Unit */
+      width: 8%; /* Restock Value */
       text-align: center;
     }
     
     .master-table th:nth-child(6),
     .master-table td:nth-child(6) {
-      width: 8%; /* Restock Value */
-      text-align: center;
-    }
-    
-    .master-table th:nth-child(7),
-    .master-table td:nth-child(7) {
       width: 22%; /* Actions */
       text-align: center;
     }
@@ -676,34 +928,27 @@
     /* Branch table specific column widths - Non-edit mode */
     .branch-table th:nth-child(1),
     .branch-table td:nth-child(1) {
-      width: 120px; /* Photo - reduced width */
-      text-align: center;
-      padding: 8px 6px;
+      width: 20%; /* Item name */
     }
     
     .branch-table th:nth-child(2),
     .branch-table td:nth-child(2) {
-      width: 20%; /* Item name - consistent with dashboard */
+      width: 25%; /* Description */
     }
     
     .branch-table th:nth-child(3),
     .branch-table td:nth-child(3) {
-      width: 25%; /* Description - consistent with dashboard */
+      width: 15%; /* Category */
     }
     
     .branch-table th:nth-child(4),
     .branch-table td:nth-child(4) {
-      width: 15%; /* Category - consistent with dashboard */
+      width: 8%; /* Unit */
+      text-align: center;
     }
     
     .branch-table th:nth-child(5),
     .branch-table td:nth-child(5) {
-      width: 8%; /* Unit - consistent with dashboard */
-      text-align: center;
-    }
-    
-    .branch-table th:nth-child(6),
-    .branch-table td:nth-child(6) {
       width: 15%; /* Restock */
       text-align: center;
     }
@@ -718,36 +963,78 @@
     
     .branch-table.edit-mode th:nth-child(2),
     .branch-table.edit-mode td:nth-child(2) {
-      width: 100px; /* Photo - reduced width to accommodate Include */
-      text-align: center;
-      padding: 8px 6px;
+      width: 20%; /* Item name */
     }
     
     .branch-table.edit-mode th:nth-child(3),
     .branch-table.edit-mode td:nth-child(3) {
-      width: 20%; /* Item name - consistent with dashboard */
+      width: 18%; /* Description */
     }
     
     .branch-table.edit-mode th:nth-child(4),
     .branch-table.edit-mode td:nth-child(4) {
-      width: 25%; /* Description - consistent with dashboard */
+      width: 15%; /* Category */
     }
     
     .branch-table.edit-mode th:nth-child(5),
     .branch-table.edit-mode td:nth-child(5) {
-      width: 15%; /* Category - consistent with dashboard */
+      width: 8%; /* Unit */
+      text-align: center;
     }
     
     .branch-table.edit-mode th:nth-child(6),
     .branch-table.edit-mode td:nth-child(6) {
-      width: 8%; /* Unit - consistent with dashboard */
+      width: 22%; /* Restock + Suggest */
       text-align: center;
+      overflow: visible;
     }
-    
-    .branch-table.edit-mode th:nth-child(7),
-    .branch-table.edit-mode td:nth-child(7) {
-      width: 15%; /* Restock */
+
+    .restock-edit {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .restock-value {
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: #333;
+      font-family: inherit;
+    }
+
+    .restock-input {
+      width: 88px;
+      padding: 0.45rem 0.55rem;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      font-family: inherit;
+      color: #333;
       text-align: center;
+      background: #fff;
+      box-sizing: border-box;
+      -moz-appearance: textfield;
+      appearance: textfield;
+    }
+    .restock-input::-webkit-outer-spin-button,
+    .restock-input::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    .restock-input:focus {
+      outline: none;
+      border-color: #2b9348;
+      box-shadow: 0 0 0 3px rgba(43, 147, 72, 0.12);
+    }
+    .restock-input.suggested {
+      border-color: #2b9348;
+      background: #f4faf5;
+    }
+    .restock-suggest-btn {
+      padding: 0.4rem 0.65rem;
+      white-space: nowrap;
     }
     
     /* Category header styles */
@@ -848,41 +1135,8 @@
       background-color: #fff3e0;
     }
     
-    /* Photo container */
-    .photo-container {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 40px;
-      height: 40px;
-      margin: 0 auto;
-    }
-    
-    .photo-placeholder {
-      width: 40px;
-      height: 40px;
-      border-radius: 8px;
-      border: 1px solid #ddd;
-      background: #f5f5f5;
-    }
-    
-    .inv-table img {
-      width: 40px;
-      height: 40px;
-      border-radius: 8px;
-      object-fit: contain;
-      border: 1px solid #eee;
-    }
-    
-    .master-table img,
-    .branch-table img {
-      width: 40px;
-      height: 40px;
-      border-radius: 8px;
-      object-fit: contain;
-      border: 1px solid #eee;
-    }
-    
+    /* Category header styling */
+
     /* Calendar styles */
     .calendar-header {
       text-align: center;
@@ -1132,49 +1386,75 @@
       opacity: 0.5;
     }
     
-    /* Weekly table specific column widths */
+    /* Weekly table: item/desc get a fixed share; remaining width splits equally across days. */
+    .weekly-table {
+      table-layout: fixed;
+      width: 100%;
+    }
+    .weekly-table col.weekly-col-item { width: 28%; }
+    .weekly-table col.weekly-col-desc { width: 12%; }
+    .weekly-table col.weekly-col-day,
+    .weekly-table col.weekly-col-total { width: auto; }
+
     .weekly-table th:nth-child(1),
     .weekly-table td:nth-child(1) {
-      width: 80px; /* Photo - increased from 50px to show full "Photo" text */
-      text-align: center;
-      padding: 8px 6px;
-    }
-    
-    .weekly-table th:nth-child(2),
-    .weekly-table td:nth-child(2) {
-      width: 15%; /* Item name - reduced from 20% */
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
       font-weight: 600;
+      min-width: 0;
     }
     
-    .weekly-table th:nth-child(3),
-    .weekly-table td:nth-child(3) {
-      width: 12%; /* Description - reduced from 15% */
+    .weekly-table th:nth-child(2),
+    .weekly-table td:nth-child(2) {
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      min-width: 0;
     }
-    
-    .weekly-table th:nth-child(n+4):not(:last-child),
-    .weekly-table td:nth-child(n+4):not(:last-child) {
-      width: 9%; /* Each day column - adjusted to accommodate total column */
-      text-align: center; /* Changed from right to center */
-      font-weight: 500;
+
+    .weekly-table th.weekly-day-col,
+    .weekly-table td.weekly-day-col,
+    .weekly-table td.quantity-cell {
+      text-align: center !important;
+      min-width: 0;
+      overflow: hidden;
+      padding-left: 4px;
+      padding-right: 4px;
     }
     
     /* Total column styling (only in usage mode) */
     .weekly-table th.total-column-header {
-      width: 10%; /* Total column */
       text-align: center;
-      font-weight: 600; /* Slightly bolder for emphasis */
-      background-color: #f8f9fa !important; /* Subtle background to distinguish */
+      font-weight: 600;
+      background-color: #f8f9fa !important;
+      min-width: 0;
+      padding-left: 4px;
+      padding-right: 4px;
     }
     
     .weekly-table td.total-column {
       background-color: #f8f9fa;
-      font-weight: 600; /* Slightly bolder for emphasis */
+      font-weight: 600;
+      text-align: center !important;
+      min-width: 0;
+    }
+
+    .weekly-table tr.weekly-sales-row td {
+      background: #f4faf5;
+      font-weight: 600;
+      color: #1f7a3a;
+      border-bottom: 2px solid #d4e8d8;
+    }
+    .weekly-table tr.weekly-sales-row td:first-child {
+      padding-left: 12px;
+    }
+    .weekly-table tr.weekly-sales-row td.weekly-day-col,
+    .weekly-table tr.weekly-sales-row td.quantity-cell {
+      font-variant-numeric: tabular-nums;
+    }
+    .weekly-table tr.weekly-sales-row td.total-column {
+      background: #eaf5ec;
     }
     
     /* Segmented Control Styles (from sales dashboard) */
@@ -1231,14 +1511,25 @@
 <body>
   <div class="builder-container">
     <div class="builder-header">
-              <div class="builder-title">Inventory Management</div>
-            <div class="builder-navigation">
-        <div class="task-navigation">
-          <button class="task-nav-btn active" data-task="dashboard">Dashboard</button>
-          <button class="task-nav-btn" data-task="weekly-view">Weekly View</button>
-          <button class="task-nav-btn" data-task="order-view">Order View</button>
-          <button class="task-nav-btn" data-task="master-items">Master Items</button>
-          <button class="task-nav-btn" data-task="branch-list">Branch List</button>
+      <div class="builder-title">Inventory Management</div>
+      <div class="builder-navigation">
+        <div class="admin-nav-bar">
+          <div class="task-navigation" data-mode="inventory">
+            <button type="button" class="task-nav-btn active" data-task="dashboard">Daily</button>
+            <button type="button" class="task-nav-btn" data-task="weekly-view">Weekly View</button>
+            <button type="button" class="task-nav-btn" data-task="order-view">Order View</button>
+          </div>
+          <span class="nav-separator" aria-hidden="true"></span>
+          <div class="admin-nav-menu" id="adminNavMenu">
+            <button type="button" class="admin-nav-menu-btn" id="settingsNavBtn" aria-haspopup="menu" aria-expanded="false">
+              Settings
+              <span class="admin-nav-menu-caret" aria-hidden="true">▾</span>
+            </button>
+            <div class="admin-nav-menu-panel" id="adminNavMenuPanel" role="menu" hidden>
+              <button type="button" class="admin-nav-menu-item task-nav-btn" data-task="master-items" role="menuitem">Master Items</button>
+              <button type="button" class="admin-nav-menu-item task-nav-btn" data-task="branch-list" role="menuitem">Branch List</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -1247,7 +1538,7 @@
     <div class="task-section active" id="dashboard-task">
       <div class="section">
         <div class="section-header">
-          <div class="section-title">Inventory Dashboard</div>
+          <div class="section-title">Daily</div>
           <div class="toolbar">
             <div class="segmented-control">
               <button class="segmented-btn active" id="filterLowStocksBtn">Show All</button>
@@ -1266,9 +1557,6 @@
                 <button class="date-nav-btn" id="nextDate">›</button>
               </div>
             </div>
-            <div class="control-group">
-              <button class="btn btn-primary" id="refreshBtn">Refresh Data</button>
-            </div>
           </div>
         </div>
         <div id="inventoryTable">
@@ -1276,10 +1564,8 @@
           <table class="inv-table">
             <thead>
               <tr>
-                <th style="width:50px;text-align:center;">Photo</th>
                 <th style="width:200px;">Item Name</th>
                 <th style="width:150px;">Description</th>
-                <th style="width:180px;">Category</th>
                 <th style="width:120px;text-align:right;">Opening</th>
                 <th style="width:120px;text-align:right;">Added</th>
                 <th style="width:120px;text-align:right;">Closing</th>
@@ -1288,7 +1574,7 @@
             </thead>
             <tbody>
               <tr class="category-header" data-category="Loading...">
-                <td colspan="8" style="padding: 8px 12px;">
+                <td colspan="6" style="padding: 8px 12px;">
                   <div class="category-header-container">
                     <div class="category-header-left">
                       <button class="category-collapse-btn" data-category="Loading...">
@@ -1302,14 +1588,8 @@
                 </td>
               </tr>
               <tr class="inventory-row category-item-row" data-category="Loading...">
-                <td style="width:50px;text-align:center;padding:4px;">
-                  <div class="photo-container">
-                    <div class="photo-placeholder"></div>
-                  </div>
-                </td>
                 <td style="width:200px;">Loading...</td>
                 <td style="width:150px;">Loading...</td>
-                <td style="width:180px;">Loading...</td>
                 <td class="quantity-cell opening">-</td>
                 <td class="quantity-cell added">-</td>
                 <td class="quantity-cell closing">-</td>
@@ -1357,7 +1637,6 @@
           <table class="inv-table weekly-table">
             <thead>
               <tr>
-                <th style="width:50px;text-align:center;">Photo</th>
                 <th style="width:200px;">Item Name</th>
                 <th style="width:150px;">Description</th>
                 <th style="width:120px;text-align:center;"><strong>Mon</strong><br>Oct 10</th>
@@ -1371,7 +1650,7 @@
             </thead>
             <tbody>
               <tr class="category-header" data-category="Loading...">
-                <td colspan="10" style="padding: 8px 12px;">
+                <td colspan="9" style="padding: 8px 12px;">
                   <div class="category-header-container">
                     <div class="category-header-left">
                       <button class="category-collapse-btn" data-category="Loading...">
@@ -1385,11 +1664,6 @@
                 </td>
               </tr>
               <tr class="inventory-row category-item-row" data-category="Loading...">
-                <td style="width:50px;text-align:center;padding:4px;">
-                  <div class="photo-container">
-                    <div class="photo-placeholder"></div>
-                  </div>
-                </td>
                 <td style="width:200px;">Loading...</td>
                 <td style="width:150px;">Loading...</td>
                 <td class="quantity-cell used">-</td>
@@ -1413,36 +1687,44 @@
     <div class="task-section" id="order-view-task">
       <div class="section">
         <div class="order-view-head">
-          <div class="section-title">Order View</div>
-          <div class="order-view-controls" title="Pick locations, which week’s usage to copy from, and how far ahead to plan. Stock uses yesterday’s closing (previous calendar day). Week modes plan need for today through Sunday from that usage pattern.">
+          <div class="order-view-head-row">
+            <div>
+              <div class="section-title">Order View</div>
+              <div id="orderViewWeekTitle" class="order-view-week-title"></div>
+            </div>
+            <div class="order-view-toggles">
+              <div class="segmented-control" role="group" aria-label="Which rows to show">
+                <button type="button" class="segmented-btn" data-order-filter="to-order">To order</button>
+                <button type="button" class="segmented-btn" data-order-filter="all">All items</button>
+              </div>
+              <div class="segmented-control">
+                <button type="button" class="segmented-btn" id="orderDemandBufferBtn" title="Adds 20% in case usage is higher than last week.">+20% buffer</button>
+              </div>
+            </div>
+          </div>
+          <div class="order-view-controls">
             <div class="order-view-control-group">
-              <span class="order-view-inline-label" style="font-size:0.8rem;color:#666;">Locations</span>
-              <details class="order-view-locations-dropdown" id="orderViewLocationsDetails">
-                <summary id="orderViewLocationsSummary">Select locations…</summary>
-                <div class="order-view-locations-panel" id="orderViewBranchFilters" role="group" aria-label="Locations to include"></div>
-              </details>
+              <span class="order-view-inline-label" style="font-size:0.8rem;color:#666;">Plan for</span>
+              <select id="orderHorizon" class="branch-select" aria-label="Week window to cover">
+                <option value="week">Entire week</option>
+                <option value="wave1">Mon–Thu</option>
+                <option value="wave2">Fri–Sun</option>
+              </select>
             </div>
             <div class="order-view-control-group">
               <span class="order-view-inline-label" style="font-size:0.8rem;color:#666;">Usage from</span>
               <select id="orderUsageBaseline" class="branch-select" aria-label="Which week’s usage to use as the pattern">
                 <option value="prev-week">Last week</option>
                 <option value="two-weeks-ago">2 weeks ago</option>
-                <option value="rolling-avg" disabled>Rolling 4-week average (planned)</option>
+                <option value="rolling-avg">4-week average</option>
               </select>
             </div>
             <div class="order-view-control-group">
-              <span class="order-view-inline-label" style="font-size:0.8rem;color:#666;">Plan for</span>
-              <select id="orderHorizon" class="branch-select" aria-label="How far ahead to estimate need">
-                <option value="week">This week</option>
-                <option value="today">Today</option>
-                <option value="buffered">This week + 20%</option>
-              </select>
-            </div>
-            <div class="order-view-control-group order-view-control-full">
-              <label class="order-view-branch-label" for="orderViewNeedsOrderOnly">
-                <input type="checkbox" id="orderViewNeedsOrderOnly" />
-                Needs order only
-              </label>
+              <span class="order-view-inline-label" style="font-size:0.8rem;color:#666;">Locations</span>
+              <details class="order-view-locations-dropdown" id="orderViewLocationsDetails">
+                <summary id="orderViewLocationsSummary">Select locations…</summary>
+                <div class="order-view-locations-panel" id="orderViewBranchFilters" role="group" aria-label="Locations to include"></div>
+              </details>
             </div>
           </div>
         </div>
@@ -1458,13 +1740,16 @@
     <div class="task-section" id="master-items-task">
       <div class="section">
         <div class="section-header">
-          <div class="section-title">Master Items</div>
+          <div class="segmented-control settings-subnav" role="group" aria-label="Settings pages">
+            <button type="button" class="segmented-btn task-nav-btn active" data-task="master-items">Master Items</button>
+            <button type="button" class="segmented-btn task-nav-btn" data-task="branch-list">Branch List</button>
+          </div>
           <div class="toolbar">
             <input type="text" id="masterSearch" placeholder="Search items..." />
             <button class="btn btn-secondary" id="importMasterBtn">Import JSON</button>
             <button class="btn btn-secondary" id="addMasterItemBtn">+ Add Item</button>
             <button class="btn btn-secondary" id="addMultipleItemsBtn">+ Add Multiple</button>
-            <button class="btn btn-secondary" id="addCategoryBtn">+ Add Category</button>
+            <button class="btn btn-secondary" id="addCategoryBtn">Manage Categories</button>
             <button class="btn btn-primary" id="toggleMasterEditBtn">Rearrange</button>
           </div>
         </div>
@@ -1481,11 +1766,15 @@
     <div class="task-section" id="branch-list-task">
       <div class="section">
         <div class="section-header">
-          <div class="section-title">Branch List</div>
+          <div class="segmented-control settings-subnav" role="group" aria-label="Settings pages">
+            <button type="button" class="segmented-btn task-nav-btn" data-task="master-items">Master Items</button>
+            <button type="button" class="segmented-btn task-nav-btn active" data-task="branch-list">Branch List</button>
+          </div>
           <div class="toolbar">
 
             <select id="branchListSelector" class="btn btn-secondary" style="min-width:160px"></select>
             <input type="text" id="branchSearch" placeholder="Search items..." />
+            <button class="btn btn-primary" id="saveBranchRestockBtn" hidden>Save</button>
             <button class="btn btn-primary" id="toggleBranchEditBtn">Edit</button>
 
           </div>
@@ -1607,6 +1896,27 @@
   <!-- Hidden file inputs -->
   <input type="file" id="masterImportFile" accept=".json" style="display:none;" />
 
+  <!-- Manage Categories Modal -->
+  <div class="modal-overlay" id="categoryManageModalOverlay" style="display: none;">
+    <div class="modal" style="max-width: 560px;">
+      <div class="modal-header">
+        <h3>Manage Categories</h3>
+        <button type="button" class="modal-close" id="categoryManageModalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="newCategoryName">New category</label>
+          <div style="display:flex; gap:8px;">
+            <input type="text" id="newCategoryName" placeholder="e.g. Dry Ingredients" style="flex:1;">
+            <button type="button" class="btn btn-primary" id="addCategoryConfirmBtn">Add</button>
+          </div>
+          <div class="category-manage-error" id="categoryManageError"></div>
+        </div>
+        <div id="categoryManageList"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- Date Picker Modal -->
   <div class="modal-overlay" id="dateModalOverlay" style="display: none;">
     <div class="modal">
@@ -1623,6 +1933,6 @@
   </div>
 
 
-  <script type="module" src="js/inventory-builder.js?v=67&t=1738600000"></script>
+  <script type="module" src="js/inventory-builder.js?v=105&t=1757580000"></script>
 </body>
 </html>

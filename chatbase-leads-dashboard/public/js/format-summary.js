@@ -1,8 +1,7 @@
 const SECTION_ORDER = [
   ["urgent", "Urgent"],
-  ["topics", "Topics"],
   ["leads", "Leads"],
-  ["payments", "Payments"],
+  ["payments", "Payments to verify"],
   ["followUps", "Follow-ups"],
   ["awaitingReply", "Awaiting reply"]
 ];
@@ -15,6 +14,7 @@ const SECTION_HEADERS = new Set([
   "topics",
   "leads",
   "payments",
+  "payments to verify",
   "follow-ups",
   "follow ups",
   "followups"
@@ -68,6 +68,37 @@ function normalizeSummaryLine(text) {
     .replace(/\s+/g, " ");
 }
 
+/** Strip a leaked 1–10 importance score the model sometimes prints in an Awaiting reply bullet. */
+function stripLeakedImportanceScore(text) {
+  const t = normalizeSummaryLine(text);
+  if (!t) return t;
+  const SCORE = /^(?:10(?:\.0)?|[0-9](?:\.[0-9])?)$/;
+  const parts = t.split(/\s+[—–-]\s+/);
+  if (!parts.some((p) => SCORE.test(p.trim()))) return t;
+  return parts.filter((p) => !SCORE.test(p.trim())).join(" — ");
+}
+
+/** Normalize age to "Nd ago"; drop ambiguous ranges like "1-4d open". */
+function normalizeAwaitingReplyAge(text) {
+  const t = normalizeSummaryLine(text);
+  if (!t) return t;
+  const parts = t.split(/\s+[—–-]\s+/);
+  if (parts.length < 2) return t;
+
+  const out = [];
+  for (const part of parts) {
+    const p = part.trim();
+    if (/^\d+\s*[–—-]\s*\d+\s*d(?:ays?)?(?:\s+open)?$/i.test(p)) continue;
+    const exact = p.match(/^(\d+)\s*d(?:ays?)?(?:\s+open|\s+ago)?$/i);
+    if (exact) {
+      out.push(`${Number(exact[1])}d ago`);
+      continue;
+    }
+    out.push(p);
+  }
+  return out.join(" — ");
+}
+
 function isPlaceholderSummaryBullet(text) {
   const t = normalizeSummaryLine(text);
   if (!t) return true;
@@ -85,7 +116,10 @@ function isPlaceholderSummaryBullet(text) {
 export function formatSummarySectionsHtml(sections) {
   const chunks = [];
   for (const [key, label] of SECTION_ORDER) {
-    const items = (sections?.[key] || []).filter((item) => !isPlaceholderSummaryBullet(item));
+    let items = (sections?.[key] || []).filter((item) => !isPlaceholderSummaryBullet(item));
+    if (key === "awaitingReply") {
+      items = items.map(stripLeakedImportanceScore).map(normalizeAwaitingReplyAge);
+    }
     if (!items.length) continue;
     chunks.push(`<h3 class="inbox-summary-section">${escapeHtml(label)}</h3>`);
     chunks.push('<ul class="inbox-summary-list">');

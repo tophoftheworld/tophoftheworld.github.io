@@ -3,10 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
   <title>Matchanese Customer Display</title>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/normalize.css?v=4">
-  <link rel="stylesheet" href="css/style.css?v=4">
+  <link rel="stylesheet" href="css/normalize.css?v=5">
+  <link rel="stylesheet" href="css/style.css?v=10">
 </head>
 <body class="body customer-display-body">
   <div class="customer-display-app">
@@ -50,12 +52,16 @@
     <div class="display-qr-modal">
       <h3 id="displayPaymentMethod">GCASH PAYMENT</h3>
       <div class="display-qr-amount" id="displayQrAmount">Amount Due: ₱ 0.00</div>
-      <img src="images/qr-toph.jpg" alt="Payment QR Code" class="customer-qr-image" id="displayQrImage">
+      <img src="images/qr-bea.png" alt="Payment QR Code" class="customer-qr-image" id="displayQrImage">
     </div>
   </div>
 
-  <script type="module" src="js/firebase-setup.js?v=4"></script>
-  <script type="module" src="js/firebase-sync.js?v=4"></script>
-  <script type="module" src="js/customer-display.js?v=1"></script>
+  <div class="display-greeting-overlay" id="displayGreetingOverlay" aria-hidden="true">
+    <p class="display-greeting-text" id="displayGreetingText"></p>
+  </div>
+
+  <script type="module" src="js/firebase-setup.js?v=7"></script>
+  <script type="module" src="js/firebase-sync.js?v=9"></script>
+  <script type="module" src="js/customer-display.js?v=greeting-fix-3"></script>
 </body>
 </html>

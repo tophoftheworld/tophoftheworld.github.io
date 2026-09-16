@@ -125,6 +125,13 @@ export function deleteServiceLeads(ids) {
   });
 }
 
+export function promoteServiceLeadToEvent(id) {
+  return request(`/service-leads/${encodeURIComponent(id)}/promote-event`, {
+    method: "POST",
+    body: JSON.stringify({})
+  });
+}
+
 export function listPaymentIntakes(params) {
   return request("/payment-intakes", { method: "GET" }, params);
 }
@@ -176,8 +183,9 @@ export function findConversationByOrder({ orderNumber, loggedAt, anchorDate }) {
   });
 }
 
-export function fetchInboxSummary({ date, filteredSources, batch, pendingBatch } = {}) {
+export function fetchInboxSummary({ date, filteredSources, batch, pendingBatch, windowMode } = {}) {
   const query = { date, filteredSources };
+  if (windowMode) query.windowMode = windowMode;
   if (pendingBatch != null && pendingBatch !== "") {
     query.pendingBatch = pendingBatch;
   } else {
@@ -187,6 +195,18 @@ export function fetchInboxSummary({ date, filteredSources, batch, pendingBatch }
     "/inbox/summary",
     { method: "GET" },
     query,
+    { timeoutMs: SUMMARY_TIMEOUT_MS, apiBase: FIREBASE_API_BASE }
+  );
+}
+
+export function sendInboxSummaryEmail(payload = {}) {
+  return request(
+    "/inbox/summary/email",
+    {
+      method: "POST",
+      body: JSON.stringify(payload)
+    },
+    {},
     { timeoutMs: SUMMARY_TIMEOUT_MS, apiBase: FIREBASE_API_BASE }
   );
 }

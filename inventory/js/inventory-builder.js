@@ -1,10 +1,52 @@
 import { db } from './firebase-inventory.js';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where, setDoc, getDoc } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
+import {
+  startOfWeekMonday,
+  getDateKey,
+  lastCompleteWeekStart,
+  lastCompleteWeekStarts,
+  weekDates,
+  planWeekStart,
+  planWeekDates,
+  sliceOfPlanWeek,
+  coverageDatesForHorizon,
+  defaultHorizonForToday,
+  computeProjectedNeed,
+  computeSuggestedOrder,
+  upliftCensoredPattern,
+  isCensoredDay,
+  pickLatestStock,
+  rollForwardStock,
+  countAgeDays,
+  computeRunOutDate,
+  formatDateRange,
+  horizonLabel,
+  migrateStoredHorizon,
+  averageWeekdayPatterns,
+  restockLookbackDates,
+  suggestRestockFromUsage,
+  DEFAULT_LEAD_TIME_DAYS,
+  DEFAULT_BUFFER_PCT,
+  STOCK_LOOKBACK_DAYS,
+  addDays
+} from './shared/forecast.js?v=105';
+import {
+  buildOrderViewSnapshot as buildOrderViewSnapshotCore,
+  fetchOrderViewQuantities as fetchOrderViewQuantitiesCore,
+  setCategoryOrderMap,
+} from './shared/order-view-feed.js?v=105';
+import {
+  buildCategoryOrderMap,
+  compareCategoryNames,
+  compareItemsByCategoryOrder,
+  uniqueSortedCategoryNames,
+} from './shared/category-order.js?v=105';
 
-console.log('=== INVENTORY BUILDER LOADED - VERSION 31 (Order View control row grid) ===');
+console.log('=== INVENTORY BUILDER LOADED - VERSION 99 (branch restock edit/suggest) ===');
 
-// Global state - CACHE BUST: v31 (Order View 3-col control grid desktop)
+// Global state - CACHE BUST: v98
 let masterItems = [];
+let categories = [];
 let availableBranches = ['sm-north', 'podium', 'moa'];
 // Removed branchAssignments and branchOverrides - using new structure in master-items
 let selectedBranch = 'sm-north';
@@ -30,9 +72,13 @@ let wastageQuantities = {};
 let dashboardCollapsedCategories = JSON.parse(localStorage.getItem('dashboard-collapsed-categories') || '[]');
 let branchCollapsedCategories = JSON.parse(localStorage.getItem('branch-collapsed-categories') || '[]');
 let orderViewCollapsedCategories = JSON.parse(localStorage.getItem('order-view-collapsed-categories') || '[]');
-let orderViewNeedsOrderOnly = localStorage.getItem('order-view-needs-order-only') === '1';
+let orderViewNeedsOrderOnly = localStorage.getItem('order-view-needs-order-only') !== '0';
+let orderViewExpandedItems = new Set();
 /** Last successful Order View payload so toggles can re-render without refetching */
 let lastOrderViewSnapshot = null;
+/** branch â†’ dateStr â†’ daily quantities (avoids refetching unchanged weeks) */
+let orderViewQuantityCache = {};
+let orderViewLoadGen = 0;
 let isFilteringLowStocks = false;
 
 // Weekly View state
@@ -46,6 +92,7 @@ let weeklyDate = (() => {
   return startOfWeekMonday(new Date()); // Default to current week
 })();
 let weeklyData = {}; // Will store 7 days of usage data
+let weeklySalesByDate = {}; // dateKey -> total sales number, or null if none
 let weeklyQuantityType = localStorage.getItem('weekly-quantity-type') || 'used'; // 'used', 'closing', or 'movement'
 const validWeeklyQuantityTypes = new Set(['used', 'closing', 'movement']);
 if (!validWeeklyQuantityTypes.has(weeklyQuantityType)) {
@@ -58,57 +105,48 @@ let isMovingItems = false; // Track if we're currently moving items to prevent b
 let isTogglingBranch = false; // Track if we're currently toggling branch enabled status to prevent background sync override
 let forceDashboardRefresh = false; // Force dashboard to load fresh data
 
-// Order View — planning anchored to current calendar week / today (not Weekly View picker)
-const ORDER_VIEW_BUFFER_MULTIPLIER = 1.2;
+// Replenishment - coverage windows + latest counts (not Weekly View picker)
 const ORDER_VIEW_STORAGE_BRANCH_SELECTION = 'order-view-branch-selection';
 const ORDER_VIEW_STORAGE_SCOPE_LEGACY = 'order-view-stock-scope';
 const ORDER_VIEW_STORAGE_BASELINE = 'order-view-usage-baseline';
 const ORDER_VIEW_STORAGE_HORIZON = 'order-view-horizon';
+const ORDER_VIEW_STORAGE_BUFFER = 'order-view-demand-buffer';
 const ORDER_VIEW_STORAGE_NEEDS_ORDER_ONLY = 'order-view-needs-order-only';
 const ORDER_VIEW_HUGE_VALUE_THRESHOLD = 1_000_000;
-const validOrderBaselines = new Set(['prev-week', 'two-weeks-ago']);
-const validOrderHorizons = new Set(['week', 'today', 'buffered']);
+const validOrderBaselines = new Set(['prev-week', 'two-weeks-ago', 'rolling-avg']);
+const validOrderHorizons = new Set(['week', 'wave1', 'wave2']);
 
 /** Branch keys selected in Order View (multi-select); persisted as JSON */
 let orderViewBranchSelection = [];
 let orderUsageBaseline = localStorage.getItem(ORDER_VIEW_STORAGE_BASELINE) || 'prev-week';
-let orderHorizon = localStorage.getItem(ORDER_VIEW_STORAGE_HORIZON) || 'week';
+const storedOrderHorizon = localStorage.getItem(ORDER_VIEW_STORAGE_HORIZON);
+let orderHorizon = migrateStoredHorizon(storedOrderHorizon, new Date());
+if (!storedOrderHorizon || !validOrderHorizons.has(orderHorizon)) {
+  orderHorizon = defaultHorizonForToday(new Date());
+}
+let orderDemandBuffer = localStorage.getItem(ORDER_VIEW_STORAGE_BUFFER) !== '0';
 if (!validOrderBaselines.has(orderUsageBaseline)) orderUsageBaseline = 'prev-week';
-if (!validOrderHorizons.has(orderHorizon)) orderHorizon = 'week';
+if (!validOrderHorizons.has(orderHorizon)) orderHorizon = defaultHorizonForToday(new Date());
 
-/** Same category + display order as Dashboard (`loadDashboardData` sort). */
-const INVENTORY_CATEGORY_SORT_RANK = {
-  'Base Ingredients': 0,
-  'Packaging & Consumables': 1,
-  'Liquid Ingredients': 2,
-  'Dry Ingredients': 3,
-  'Desserts': 4
-};
-
-function compareMasterItemsDashboardOrder(a, b) {
-  const rankA = INVENTORY_CATEGORY_SORT_RANK[a.category] ?? 999;
-  const rankB = INVENTORY_CATEGORY_SORT_RANK[b.category] ?? 999;
-  if (rankA !== rankB) return rankA - rankB;
-  const oa = a.displayOrder ?? a.order ?? 0;
-  const ob = b.displayOrder ?? b.order ?? 0;
-  return oa - ob;
+function currentCategoryOrderMap() {
+  return buildCategoryOrderMap(categories, masterItems.length ? masterItems : dashboardItems);
 }
 
-/** Order View: same as dashboard, plus `categoryOrder` when category name is not in the fixed map. */
+function syncSharedCategoryOrderMap() {
+  setCategoryOrderMap(currentCategoryOrderMap());
+}
+
+/** Same category + display order as Master Items (`categories` collection). */
+function compareMasterItemsDashboardOrder(a, b) {
+  return compareItemsByCategoryOrder(a, b, currentCategoryOrderMap());
+}
+
 function compareOrderViewMasterItems(a, b) {
-  const rankA = INVENTORY_CATEGORY_SORT_RANK[a.category] ?? a.categoryOrder ?? 999;
-  const rankB = INVENTORY_CATEGORY_SORT_RANK[b.category] ?? b.categoryOrder ?? 999;
-  if (rankA !== rankB) return rankA - rankB;
-  const oa = a.displayOrder ?? a.order ?? 0;
-  const ob = b.displayOrder ?? b.order ?? 0;
-  return oa - ob;
+  return compareItemsByCategoryOrder(a, b, currentCategoryOrderMap());
 }
 
 function compareCategoryNamesDashboardOrder(nameA, nameB) {
-  const rankA = INVENTORY_CATEGORY_SORT_RANK[nameA] ?? 999;
-  const rankB = INVENTORY_CATEGORY_SORT_RANK[nameB] ?? 999;
-  if (rankA !== rankB) return rankA - rankB;
-  return String(nameA).localeCompare(String(nameB));
+  return compareCategoryNames(nameA, nameB, currentCategoryOrderMap());
 }
 
 function syncOrderViewBranchSelectionFromStorage() {
@@ -146,7 +184,7 @@ function updateOrderViewLocationsSummary() {
   const n = orderViewBranchSelection.length;
   const total = availableBranches.length;
   if (n === 0) {
-    sum.textContent = 'Choose locations…';
+    sum.textContent = 'Choose locations...';
   } else if (n === total) {
     sum.textContent = 'All locations';
   } else if (n <= 2) {
@@ -170,6 +208,58 @@ function renderOrderViewBranchCheckboxes() {
   updateOrderViewLocationsSummary();
 }
 
+function baselineWeekStartsFor(today) {
+  if (orderUsageBaseline === 'rolling-avg') return lastCompleteWeekStarts(today, 4);
+  if (orderUsageBaseline === 'two-weeks-ago') return [lastCompleteWeekStart(today, 2)];
+  return [lastCompleteWeekStart(today, 1)];
+}
+
+function refreshOrderViewControls(today = new Date()) {
+  const weekDatesList = planWeekDates(today);
+  const weekTitle = document.getElementById('orderViewWeekTitle');
+  if (weekTitle) {
+    weekTitle.textContent = `Week of ${formatDateRange(weekDatesList[0], weekDatesList[6])}`;
+  }
+
+  const baselineEl = document.getElementById('orderUsageBaseline');
+  if (baselineEl) {
+    const lastWeekStart = lastCompleteWeekStart(today, 1);
+    const twoAgoStart = lastCompleteWeekStart(today, 2);
+    const fourStarts = lastCompleteWeekStarts(today, 4);
+    const fourOldest = fourStarts[fourStarts.length - 1];
+    const fourNewestEnd = addDays(fourStarts[0], 6);
+    for (const opt of baselineEl.options) {
+      if (opt.value === 'prev-week') {
+        opt.textContent = `Last week (${formatDateRange(lastWeekStart, addDays(lastWeekStart, 6))})`;
+      } else if (opt.value === 'two-weeks-ago') {
+        opt.textContent = `2 weeks ago (${formatDateRange(twoAgoStart, addDays(twoAgoStart, 6))})`;
+      } else if (opt.value === 'rolling-avg') {
+        opt.textContent = `4-week average (${formatDateRange(fourOldest, fourNewestEnd)})`;
+      }
+    }
+    if (validOrderBaselines.has(orderUsageBaseline)) baselineEl.value = orderUsageBaseline;
+  }
+
+  const horizonEl = document.getElementById('orderHorizon');
+  if (horizonEl) {
+    const weekStart = planWeekStart(today);
+    for (const opt of horizonEl.options) {
+      if (!validOrderHorizons.has(opt.value)) continue;
+      const slice = sliceOfPlanWeek(weekStart, opt.value);
+      const range = slice.length ? formatDateRange(slice[0], slice[slice.length - 1]) : '-';
+      opt.textContent = `${horizonLabel(opt.value)} (${range})`;
+    }
+    if (validOrderHorizons.has(orderHorizon)) horizonEl.value = orderHorizon;
+  }
+
+  document.querySelectorAll('[data-order-filter]').forEach(btn => {
+    const on = btn.dataset.orderFilter === 'to-order' ? orderViewNeedsOrderOnly : !orderViewNeedsOrderOnly;
+    btn.classList.toggle('active', on);
+  });
+  const bufferBtn = document.getElementById('orderDemandBufferBtn');
+  if (bufferBtn) bufferBtn.classList.toggle('active', orderDemandBuffer);
+}
+
 console.log('Dashboard state initialized:', {
   dashboardBranch,
   dashboardDate: dashboardDate.toDateString(),
@@ -179,10 +269,80 @@ console.log('Dashboard state initialized:', {
 
 // UI state
 let branchEditMode = false;
+let pendingBranchRestocks = {};
+let suggestedBranchRestockIds = new Set();
+let branchRestockSaving = false;
+let branchRestockUsageCache = null;
 let masterEditMode = false; // Changed from reorder mode to general edit mode
 let masterSort = { key: 'displayOrder', dir: 'asc' }; // default to saved order
 let branchSort = { key: 'displayOrder', dir: 'asc' };
-let currentTask = 'master-items';
+let currentTask = 'dashboard';
+const INVENTORY_TASKS = new Set(['dashboard', 'weekly-view', 'order-view']);
+const SETUP_TASKS = new Set(['master-items', 'branch-list']);
+const STORAGE_ADMIN_MODE = 'inventory-admin-mode';
+const STORAGE_TASK_INVENTORY = 'inventory-admin-task-inventory';
+const STORAGE_TASK_SETUP = 'inventory-admin-task-setup';
+let currentMode = 'inventory';
+
+function taskModeFor(task) {
+  return SETUP_TASKS.has(task) ? 'setup' : 'inventory';
+}
+
+const SETTINGS_NAV_HTML = `<div class="admin-nav-menu" id="adminNavMenu">
+  <button type="button" class="admin-nav-menu-btn" id="settingsNavBtn" aria-haspopup="menu" aria-expanded="false">
+    Settings
+    <span class="admin-nav-menu-caret" aria-hidden="true">&#9662;</span>
+  </button>
+  <div class="admin-nav-menu-panel" id="adminNavMenuPanel" role="menu" hidden>
+    <button type="button" class="admin-nav-menu-item task-nav-btn" data-task="master-items" role="menuitem">Master Items</button>
+    <button type="button" class="admin-nav-menu-item task-nav-btn" data-task="branch-list" role="menuitem">Branch List</button>
+  </div>
+</div>`;
+
+function ensureSettingsNav() {
+  const bar = document.querySelector('.admin-nav-bar');
+  if (!bar) return;
+  const wrap = document.createElement('div');
+  wrap.innerHTML = SETTINGS_NAV_HTML.trim();
+  const next = wrap.firstElementChild;
+  const existing = document.getElementById('adminNavMenu');
+  if (existing) existing.replaceWith(next);
+  else bar.appendChild(next);
+  document.querySelectorAll('.mode-nav-btn').forEach(el => el.remove());
+}
+
+function setSettingsMenuOpen(open) {
+  const menu = document.getElementById('adminNavMenu');
+  const btn = document.getElementById('settingsNavBtn');
+  const panel = document.getElementById('adminNavMenuPanel');
+  if (!menu || !btn || !panel) return;
+  menu.classList.toggle('open', open);
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  panel.hidden = !open;
+}
+
+function updateAdminNavUI(task, mode) {
+  document.querySelectorAll('.task-navigation').forEach(nav => {
+    nav.hidden = false;
+  });
+  document.querySelectorAll('.task-nav-btn, .admin-nav-menu-item').forEach(b => {
+    b.classList.toggle('active', b.dataset.task === task);
+  });
+  const settingsBtn = document.getElementById('settingsNavBtn');
+  if (settingsBtn) settingsBtn.classList.toggle('active', mode === 'setup');
+  setSettingsMenuOpen(false);
+}
+
+function switchMode(mode, preferredTask = null) {
+  currentMode = mode;
+  localStorage.setItem(STORAGE_ADMIN_MODE, mode);
+  const task =
+    preferredTask ||
+    (mode === 'setup'
+      ? localStorage.getItem(STORAGE_TASK_SETUP) || 'master-items'
+      : localStorage.getItem(STORAGE_TASK_INVENTORY) || 'dashboard');
+  switchToTask(task, { skipModeCheck: true });
+}
 
 // Removed assignmentId and inventoryDocId - no longer needed with new structure
 
@@ -202,25 +362,8 @@ function setSortableHeaders(containerId, onSort) {
   });
 }
 
-// Get date key in local time (not UTC) to avoid timezone issues
-function getDateKey(date = new Date()) {
-  // Use local time instead of UTC to avoid timezone issues
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`; // Returns "YYYY-MM-DD" in local time
-}
-
-function startOfWeekMonday(date) {
-  const normalized = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const dayOfWeek = normalized.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
-  const offsetToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-  normalized.setDate(normalized.getDate() + offsetToMonday);
-  return normalized;
-}
-
 /**
- * Same usage math as Weekly View / dashboard (opening + added − closing when closing checked).
+ * Same usage math as Weekly View / dashboard (opening + added âˆ’ closing when closing checked).
  */
 function computeDayUsageFromItemQuantities(itemQuantities) {
   if (!itemQuantities || typeof itemQuantities !== 'object') {
@@ -250,9 +393,86 @@ async function fetchDailyQuantitiesForBranchDate(branch, dateStr) {
   return docSnap.data().quantities || {};
 }
 
-function getIndexFromMondayForDate(d) {
-  const dow = d.getDay();
-  return dow === 0 ? 6 : dow - 1;
+function isDashboardToday(date) {
+  return getDateKey(date) === getDateKey(new Date());
+}
+
+function dashboardHasOpeningLogged(quantities, items) {
+  if (!items?.length) return false;
+  return items.some(item => quantities[item.id]?.opening?.checked);
+}
+
+function dashboardHasAnyLoggedQuantities(quantities, items) {
+  if (!items?.length) return false;
+  return items.some(item => {
+    const q = quantities[item.id];
+    if (!q) return false;
+    return q.opening?.checked || q.closing?.checked;
+  });
+}
+
+function applyDashboardQuantitiesFromRaw(quantities) {
+  window.dashboardRawQuantities = quantities || {};
+  openingQuantities = {};
+  closingQuantities = {};
+  addedQuantities = {};
+  deliveryQuantities = {};
+  pullOutQuantities = {};
+  wastageQuantities = {};
+
+  Object.keys(quantities || {}).forEach(itemId => {
+    const itemQuantities = quantities[itemId];
+
+    if (itemQuantities.opening && itemQuantities.opening.checked) {
+      openingQuantities[itemId] = itemQuantities.opening.value;
+    }
+    if (itemQuantities.closing && itemQuantities.closing.checked) {
+      closingQuantities[itemId] = itemQuantities.closing.value;
+    }
+    if (itemQuantities.added && itemQuantities.added.checked) {
+      addedQuantities[itemId] = itemQuantities.added.value;
+    }
+
+    let delivery = 0;
+    let pullOut = 0;
+    let wastage = 0;
+
+    if (itemQuantities.adjustments && Array.isArray(itemQuantities.adjustments)) {
+      itemQuantities.adjustments.forEach(adj => {
+        const value = Math.abs(adj.value || 0);
+        if (adj.reason === 'delivery') {
+          delivery += value;
+        } else if (adj.reason === 'pulled-out') {
+          pullOut += value;
+        } else if (adj.reason === 'wastage') {
+          wastage += value;
+        }
+      });
+    }
+
+    deliveryQuantities[itemId] = delivery;
+    pullOutQuantities[itemId] = pullOut;
+    wastageQuantities[itemId] = wastage;
+  });
+}
+
+/** If today has no opening logged yet, use the previous day that has data. */
+async function resolveDashboardQuantitiesDate(items) {
+  let date = new Date(dashboardDate);
+  let quantities = await fetchDailyQuantitiesForBranchDate(dashboardBranch, getDateKey(date));
+  let usedFallback = false;
+
+  if (isDashboardToday(date) && !dashboardHasOpeningLogged(quantities, items)) {
+    const prevDate = addDays(date, -1);
+    const prevQuantities = await fetchDailyQuantitiesForBranchDate(dashboardBranch, getDateKey(prevDate));
+    if (dashboardHasAnyLoggedQuantities(prevQuantities, items)) {
+      date = prevDate;
+      quantities = prevQuantities;
+      usedFallback = true;
+    }
+  }
+
+  return { date, quantities, usedFallback };
 }
 
 document.addEventListener('DOMContentLoaded', async function () {
@@ -269,25 +489,31 @@ document.addEventListener('DOMContentLoaded', async function () {
   });
   
   const switchStart = performance.now();
-  switchToTask('dashboard');
+  const savedMode = localStorage.getItem(STORAGE_ADMIN_MODE) || 'inventory';
+  const savedTask =
+    savedMode === 'setup'
+      ? localStorage.getItem(STORAGE_TASK_SETUP) || 'master-items'
+      : localStorage.getItem(STORAGE_TASK_INVENTORY) || 'dashboard';
+  currentMode = savedMode;
+  switchToTask(savedTask, { skipModeCheck: true });
   const switchEnd = performance.now();
-  console.log(`Switched to dashboard task in: ${(switchEnd - switchStart).toFixed(2)}ms`);
+  console.log(`Switched to ${savedTask} task in: ${(switchEnd - switchStart).toFixed(2)}ms`);
   // Dashboard data will be loaded by switchToTask
   console.log('Dashboard initialization complete');
   
   const totalInitTime = performance.now() - initStart;
-  console.log(`🚀 Total initialization time: ${totalInitTime.toFixed(2)}ms`);
+  console.log(`ðŸš€ Total initialization time: ${totalInitTime.toFixed(2)}ms`);
 });
 
 async function initializeBuilder() {
   await loadBranches();
   await loadMasterItems();
+  await loadCategories();
   // No longer need to load branch assignments - using new structure
   // Don't render master items here - let the task switching handle it
   updateBranchEditControlsState();
   updateMasterEditControlsState();
-  
-  // No longer need to sync to separate collections - everything is in master-items now
+  refreshCurrentInventoryView();
 }
 
 async function loadBranches() {
@@ -339,14 +565,7 @@ async function loadBranches() {
   }
 
   renderOrderViewBranchCheckboxes();
-  const orderBaselineEl = document.getElementById('orderUsageBaseline');
-  if (orderBaselineEl && validOrderBaselines.has(orderUsageBaseline)) {
-    orderBaselineEl.value = orderUsageBaseline;
-  }
-  const orderHorizonEl = document.getElementById('orderHorizon');
-  if (orderHorizonEl && validOrderHorizons.has(orderHorizon)) {
-    orderHorizonEl.value = orderHorizon;
-  }
+  refreshOrderViewControls();
 }
 
 async function loadMasterItems(skipCategoryOrderInit = false, forceRefresh = false) {
@@ -440,21 +659,34 @@ function setupEventListeners() {
   // Add global checkbox event listener for debugging
   document.addEventListener('change', function(e) {
     if (e.target.type === 'checkbox' && e.target.closest('#branchItemsList')) {
-      console.log('🔍 GLOBAL DEBUG: Checkbox change detected');
-      console.log('🔍 GLOBAL DEBUG: Checkbox element:', e.target);
-      console.log('🔍 GLOBAL DEBUG: Checkbox checked:', e.target.checked);
-      console.log('🔍 GLOBAL DEBUG: Checkbox onchange attribute:', e.target.getAttribute('onchange'));
+      console.log('ðŸ” GLOBAL DEBUG: Checkbox change detected');
+      console.log('ðŸ” GLOBAL DEBUG: Checkbox element:', e.target);
+      console.log('ðŸ” GLOBAL DEBUG: Checkbox checked:', e.target.checked);
+      console.log('ðŸ” GLOBAL DEBUG: Checkbox onchange attribute:', e.target.getAttribute('onchange'));
       
       // Check if the onchange function exists
       const onchangeAttr = e.target.getAttribute('onchange');
       if (!onchangeAttr) {
-        console.error('🔍 GLOBAL DEBUG: No onchange attribute found on checkbox!');
+        console.error('ðŸ” GLOBAL DEBUG: No onchange attribute found on checkbox!');
       }
     }
   });
 
+  ensureSettingsNav();
   document.querySelectorAll('.task-nav-btn').forEach(btn => {
     btn.addEventListener('click', () => switchToTask(btn.dataset.task));
+  });
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('#settingsNavBtn')) {
+      e.preventDefault();
+      const menu = document.getElementById('adminNavMenu');
+      setSettingsMenuOpen(!menu?.classList.contains('open'));
+      return;
+    }
+    if (!e.target.closest('#adminNavMenu')) setSettingsMenuOpen(false);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') setSettingsMenuOpen(false);
   });
 
   const addBtn = document.getElementById('addMasterItemBtn');
@@ -480,56 +712,45 @@ function setupEventListeners() {
   
   // Add category button
   const addCategoryBtn = document.getElementById('addCategoryBtn');
-  if (addCategoryBtn) addCategoryBtn.addEventListener('click', () => {
-    const newCategory = prompt('Enter new category name:');
-    if (newCategory && newCategory.trim()) {
-      // Create a temporary item with the new category to establish it
-      const tempItem = {
-        name: 'TEMP_ITEM_TO_CREATE_CATEGORY',
-        description: '',
-        category: newCategory.trim(),
-        unit: 'pcs',
-        restockAmount: 0,
-        displayOrder: 999 // High order to put it at the end
-      };
-      
-      console.log('Creating temp item for category:', newCategory.trim());
-      
-      addDoc(collection(db, 'inventory', '_config', 'items'), tempItem).then(async (docRef) => {
-        console.log('Temp item created, now deleting...');
-        // Immediately delete the temp item
-        await deleteDoc(docRef);
-        console.log('Temp item deleted, reloading data...');
-        
-        await loadMasterItems();
-        renderMasterItems();
-        renderBranchList();
-        
-        // Update the modal dropdown
-        const categorySelect = document.getElementById('masterItemCategory');
-        if (categorySelect) {
-          const categories = getUniqueCategories();
-          categorySelect.innerHTML = categories.map(cat => `<option value="${cat}">${cat}</option>`).join('') + '<option value="Other">Other</option>';
-        }
-        
-        console.log('Category added successfully:', newCategory.trim());
-        console.log('Available categories:', getUniqueCategories());
-      }).catch(error => {
-        console.error('Error adding category:', error);
-        alert('Error adding category. Please try again.');
-      });
-    }
-  });
+  if (addCategoryBtn) addCategoryBtn.addEventListener('click', () => openCategoryManageModal());
+  setupCategoryManageModal();
 
   // Branch list controls
   const branchListSelector = document.getElementById('branchListSelector');
-  if (branchListSelector) branchListSelector.addEventListener('change', e => { selectedBranch = e.target.value; renderBranchList(); });
+  if (branchListSelector) branchListSelector.addEventListener('change', e => {
+    if (!confirmDiscardUnsavedBranchRestocks()) {
+      e.target.value = selectedBranch;
+      return;
+    }
+    clearPendingBranchRestocks();
+    branchRestockUsageCache = null;
+    selectedBranch = e.target.value;
+    renderBranchList();
+  });
   const branchSearch = document.getElementById('branchSearch');
   if (branchSearch) branchSearch.addEventListener('input', renderBranchList);
   const selectAllBtn = document.getElementById('selectAllBtn');
   const clearAllBtn = document.getElementById('clearAllBtn');
   const toggleEditBtn = document.getElementById('toggleBranchEditBtn');
-  if (toggleEditBtn) toggleEditBtn.addEventListener('click', () => { branchEditMode = !branchEditMode; toggleEditBtn.textContent = branchEditMode ? 'Done' : 'Edit'; updateBranchEditControlsState(); renderBranchList(); });
+  if (toggleEditBtn) toggleEditBtn.addEventListener('click', () => {
+    if (branchEditMode) {
+      if (!confirmDiscardUnsavedBranchRestocks()) return;
+      branchEditMode = false;
+      clearPendingBranchRestocks();
+    } else {
+      branchEditMode = true;
+      clearPendingBranchRestocks();
+    }
+    updateBranchEditControlsState();
+    renderBranchList();
+  });
+  const saveRestockBtn = document.getElementById('saveBranchRestockBtn');
+  if (saveRestockBtn) saveRestockBtn.addEventListener('click', () => {
+    savePendingBranchRestocks().catch((err) => {
+      console.error('Error saving restock values:', err);
+      showSyncIndicator('Could not save restock values', 'error');
+    });
+  });
   // Removed bulk assign/clear buttons - using new branch management system
 
   // Modal (guarded)
@@ -571,22 +792,6 @@ function setupEventListeners() {
   if (prevDateBtn) prevDateBtn.addEventListener('click', () => changeDashboardDate(-1));
   if (nextDateBtn) nextDateBtn.addEventListener('click', () => changeDashboardDate(1));
   if (dateDisplay) dateDisplay.addEventListener('click', openDateModal);
-  
-  const refreshBtn = document.getElementById('refreshBtn');
-  if (refreshBtn) {
-    refreshBtn.addEventListener('click', async () => {
-      refreshBtn.disabled = true;
-      refreshBtn.textContent = 'Refreshing...';
-      
-      // Clear cache to force fresh data load
-      clearInventoryItemsCache();
-      clearQuantitiesCache();
-      
-      await loadDashboardData();
-      refreshBtn.disabled = false;
-      refreshBtn.textContent = 'Refresh Data';
-    });
-  }
 
   // Low Stocks filter segmented control
   const filterLowStocksBtn = document.getElementById('filterLowStocksBtn');
@@ -706,20 +911,24 @@ function setupEventListeners() {
       if (!validOrderHorizons.has(v)) return;
       orderHorizon = v;
       localStorage.setItem(ORDER_VIEW_STORAGE_HORIZON, orderHorizon);
-      if (currentTask === 'order-view') loadOrderViewData();
+      if (currentTask === 'order-view') reapplyOrderViewHorizon();
     });
   }
-  const orderViewNeedsOrderOnlyEl = document.getElementById('orderViewNeedsOrderOnly');
-  if (orderViewNeedsOrderOnlyEl) {
-    orderViewNeedsOrderOnlyEl.checked = orderViewNeedsOrderOnly;
-    orderViewNeedsOrderOnlyEl.addEventListener('change', () => {
-      orderViewNeedsOrderOnly = orderViewNeedsOrderOnlyEl.checked;
+  document.querySelectorAll('[data-order-filter]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      orderViewNeedsOrderOnly = btn.dataset.orderFilter === 'to-order';
       localStorage.setItem(ORDER_VIEW_STORAGE_NEEDS_ORDER_ONLY, orderViewNeedsOrderOnly ? '1' : '0');
-      if (lastOrderViewSnapshot) {
-        renderOrderView(lastOrderViewSnapshot);
-      } else if (currentTask === 'order-view') {
-        loadOrderViewData();
-      }
+      refreshOrderViewControls();
+      if (lastOrderViewSnapshot) renderOrderView(lastOrderViewSnapshot);
+      else if (currentTask === 'order-view') loadOrderViewData();
+    });
+  });
+  const orderDemandBufferBtn = document.getElementById('orderDemandBufferBtn');
+  if (orderDemandBufferBtn) {
+    orderDemandBufferBtn.addEventListener('click', () => {
+      orderDemandBuffer = !orderDemandBuffer;
+      localStorage.setItem(ORDER_VIEW_STORAGE_BUFFER, orderDemandBuffer ? '1' : '0');
+      reapplyOrderViewBuffer();
     });
   }
   const dateModalClose = document.getElementById('dateModalClose');
@@ -745,15 +954,48 @@ function setupEventListeners() {
   if (clearBulkTableBtn) clearBulkTableBtn.addEventListener('click', clearBulkTable);
 }
 
+function hasUnsavedBranchRestocks() {
+  return Object.keys(pendingBranchRestocks).length > 0;
+}
+
+function clearPendingBranchRestocks() {
+  pendingBranchRestocks = {};
+  suggestedBranchRestockIds = new Set();
+}
+
+function confirmDiscardUnsavedBranchRestocks() {
+  if (!hasUnsavedBranchRestocks()) return true;
+  return window.confirm('Discard unsaved restock changes?');
+}
+
+function displayedBranchRestock(item, branch = selectedBranch) {
+  if (pendingBranchRestocks[item.id] !== undefined) return pendingBranchRestocks[item.id];
+  const override = item.branchOverrides?.[branch]?.restockLevel;
+  if (override !== undefined) return override;
+  return item.restockAmount || 0;
+}
+
 function updateBranchEditControlsState() {
   const disabled = !branchEditMode;
   const selectAllBtn = document.getElementById('selectAllBtn');
   const clearAllBtn = document.getElementById('clearAllBtn');
   const editControls = document.querySelector('.edit-controls');
+  const toggleEditBtn = document.getElementById('toggleBranchEditBtn');
+  const saveBtn = document.getElementById('saveBranchRestockBtn');
   
   if (selectAllBtn) selectAllBtn.classList.toggle('btn-disabled', disabled);
   if (clearAllBtn) clearAllBtn.classList.toggle('btn-disabled', disabled);
   if (editControls) editControls.style.display = branchEditMode ? 'flex' : 'none';
+  if (toggleEditBtn) {
+    toggleEditBtn.textContent = branchEditMode ? 'Done' : 'Edit';
+    toggleEditBtn.classList.toggle('btn-primary', !branchEditMode);
+    toggleEditBtn.classList.toggle('btn-secondary', branchEditMode);
+  }
+  if (saveBtn) {
+    saveBtn.hidden = !branchEditMode;
+    saveBtn.disabled = branchRestockSaving || !hasUnsavedBranchRestocks();
+    saveBtn.textContent = branchRestockSaving ? 'Saving…' : 'Save';
+  }
 }
 
 function updateMasterEditControlsState() {
@@ -763,7 +1005,7 @@ function updateMasterEditControlsState() {
   
   if (editBtn) editBtn.textContent = masterEditMode ? 'Done' : 'Rearrange';
   if (addItemBtn) addItemBtn.disabled = masterEditMode;
-  if (addCategoryBtn) addCategoryBtn.disabled = masterEditMode;
+  if (addCategoryBtn) addCategoryBtn.disabled = false;
   
   // Toggle master-edit-mode class on body
   document.body.classList.toggle('master-edit-mode', masterEditMode);
@@ -772,16 +1014,26 @@ function updateMasterEditControlsState() {
   renderMasterItems();
 }
 
-function switchToTask(task) {
+function switchToTask(task, { skipModeCheck = false } = {}) {
   console.log('=== SWITCH TO TASK ===', task);
   // Check if we're in edit mode and warn user
   if ((masterEditMode || branchEditMode) && task !== currentTask) {
     showEditModeWarning(task);
     return;
   }
-  
+
+  const mode = taskModeFor(task);
+  if (!skipModeCheck && mode !== currentMode) {
+    switchMode(mode, task);
+    return;
+  }
+
   currentTask = task;
-  document.querySelectorAll('.task-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.task === task));
+  currentMode = mode;
+  localStorage.setItem(STORAGE_ADMIN_MODE, mode);
+  if (mode === 'setup') localStorage.setItem(STORAGE_TASK_SETUP, task);
+  else localStorage.setItem(STORAGE_TASK_INVENTORY, task);
+  updateAdminNavUI(task, mode);
   document.querySelectorAll('.task-section').forEach(sec => sec.classList.remove('active'));
   const el = document.getElementById(`${task}-task`);
   if (el) el.classList.add('active');
@@ -829,15 +1081,22 @@ function showEditModeWarning(newTask) {
   setTimeout(() => modal.classList.add('show'), 10);
 }
 
-function finishEditingAndSwitch(newTask) {
-  // Exit edit mode
+async function finishEditingAndSwitch(newTask) {
   if (masterEditMode) {
     masterEditMode = false;
     updateMasterEditControlsState();
     renderMasterItems();
   }
   if (branchEditMode) {
+    try {
+      await savePendingBranchRestocks();
+    } catch (err) {
+      console.error('Error saving restock values before switch:', err);
+      showSyncIndicator('Could not save restock values', 'error');
+      return;
+    }
     branchEditMode = false;
+    clearPendingBranchRestocks();
     updateBranchEditControlsState();
     renderBranchList();
   }
@@ -847,7 +1106,6 @@ function finishEditingAndSwitch(newTask) {
 }
 
 function cancelEditingAndSwitch(newTask) {
-  // Exit edit mode without saving
   if (masterEditMode) {
     masterEditMode = false;
     updateMasterEditControlsState();
@@ -855,6 +1113,7 @@ function cancelEditingAndSwitch(newTask) {
   }
   if (branchEditMode) {
     branchEditMode = false;
+    clearPendingBranchRestocks();
     updateBranchEditControlsState();
     renderBranchList();
   }
@@ -934,7 +1193,7 @@ function renderMasterItems() {
     ` : '';
     
     const header = `<tr class="category-header" data-category="${cat}">
-      <td colspan="6">
+      <td colspan="5">
         <div class="category-header-left">
           <button class="category-collapse-btn ${isCollapsed ? 'collapsed' : ''}" data-category="${cat}">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
@@ -951,16 +1210,8 @@ function renderMasterItems() {
       </td>
     </tr>`;
     
-    const catRows = byCat[cat].map((item, idx) => `
+    const catRows = (byCat[cat] || []).map((item, idx) => `
       <tr class="category-item-row" data-category="${cat}" data-item-id="${item.id}" data-category="${cat}" data-index="${idx}" ${isCollapsed ? 'style="display:none;"' : ''}>
-        <td>
-          <div class="photo-container" onclick="${masterEditMode ? (item.photo ? `editMasterItem('${item.id}')` : `openPhotoUpload('${item.id}')`) : 'return false'}">
-            ${item.photo ? 
-              `<img src="${item.photo}" alt="" onerror="this.style.display='none'"/>` : 
-              `<div class="photo-placeholder"></div>`
-            }
-          </div>
-        </td>
         <td>${item.name}</td>
         <td>${item.description || ''}</td>
         <td>${item.category || 'Other'}</td>
@@ -996,10 +1247,9 @@ function renderMasterItems() {
   }).join('');
 
   container.innerHTML = `
-    <table class="master-table">
+    <table class="master-table" id="masterTable">
       <thead>
         <tr>
-          <th>Photo</th>
           <th>Item</th>
           <th>Description</th>
           <th>Category</th>
@@ -1019,19 +1269,19 @@ function renderMasterItems() {
 }
 
 function renderBranchList() {
-  console.log('🔍 RENDER DEBUG: Starting renderBranchList');
+  console.log('ðŸ” RENDER DEBUG: Starting renderBranchList');
   
   const container = document.getElementById('branchItemsList');
   if (!container) {
-    console.log('🔍 RENDER DEBUG: No container found');
+    console.log('ðŸ” RENDER DEBUG: No container found');
     return;
   }
   
   const term = (document.getElementById('branchSearch')?.value || '').toLowerCase();
-  console.log('🔍 RENDER DEBUG: Search term:', term);
-  console.log('🔍 RENDER DEBUG: Master items count:', masterItems.length);
-  console.log('🔍 RENDER DEBUG: Branch edit mode:', branchEditMode);
-  console.log('🔍 RENDER DEBUG: Selected branch:', selectedBranch);
+  console.log('ðŸ” RENDER DEBUG: Search term:', term);
+  console.log('ðŸ” RENDER DEBUG: Master items count:', masterItems.length);
+  console.log('ðŸ” RENDER DEBUG: Branch edit mode:', branchEditMode);
+  console.log('ðŸ” RENDER DEBUG: Selected branch:', selectedBranch);
   
   let items = masterItems.map(mi => ({
     id: mi.id,
@@ -1049,10 +1299,10 @@ function renderBranchList() {
   const itemNames = items.map(item => item.name);
   const duplicates = itemNames.filter((name, index) => itemNames.indexOf(name) !== index);
   if (duplicates.length > 0) {
-    console.log('🔍 RENDER DEBUG: Found duplicate item names:', duplicates);
+    console.log('ðŸ” RENDER DEBUG: Found duplicate item names:', duplicates);
     duplicates.forEach(dupName => {
       const duplicateItems = items.filter(item => item.name === dupName);
-      console.log(`🔍 RENDER DEBUG: Duplicate items for "${dupName}":`, duplicateItems.map(item => ({ id: item.id, name: item.name })));
+      console.log(`ðŸ” RENDER DEBUG: Duplicate items for "${dupName}":`, duplicateItems.map(item => ({ id: item.id, name: item.name })));
     });
   }
 
@@ -1085,7 +1335,7 @@ function renderBranchList() {
   const rows = getUniqueCategories().map(cat => {
     const isCollapsed = branchCollapsedCategories.includes(cat);
     const header = `<tr class="category-header" data-category="${cat}">
-      <td colspan="${branchEditMode ? '7' : '6'}">
+      <td colspan="${branchEditMode ? '6' : '5'}">
         <div class="category-header-container">
           <div class="category-header-left">
             <button class="category-collapse-btn ${isCollapsed ? 'collapsed' : ''}" data-category="${cat}">
@@ -1098,13 +1348,11 @@ function renderBranchList() {
         </div>
       </td>
     </tr>`;
-      const catRows = byCat[cat].map(item => {
+      const catRows = (byCat[cat] || []).map(item => {
     // Get the full master item to access all data
     const masterItem = masterItems.find(m => m.id === item.id);
     
-    // Get restock level - either from branch override or default
-    const branchRestockLevel = item.branchOverrides?.[selectedBranch]?.restockLevel;
-    const currentRestockLevel = branchRestockLevel !== undefined ? branchRestockLevel : (item.restockAmount || 0);
+    const currentRestockLevel = displayedBranchRestock(item, selectedBranch);
     const valueAttr = `value="${currentRestockLevel}"`;
     
     // Check if item is enabled for this branch
@@ -1115,44 +1363,42 @@ function renderBranchList() {
       ? true  // Legacy items without enabledBranches field
       : item.enabledBranches.includes(selectedBranch);  // Check if branch is in the array
 
-    console.log(`🔍 RENDER DEBUG: Item ${item.name}: enabledBranches =`, item.enabledBranches, ', selectedBranch =', selectedBranch, ', isEnabled =', isEnabled);
-    console.log(`🔍 RENDER DEBUG: Item ${item.name}: item.id =`, item.id);
+    console.log(`ðŸ” RENDER DEBUG: Item ${item.name}: enabledBranches =`, item.enabledBranches, ', selectedBranch =', selectedBranch, ', isEnabled =', isEnabled);
+    console.log(`ðŸ” RENDER DEBUG: Item ${item.name}: item.id =`, item.id);
 
     const checkbox = branchEditMode ? `<input type="checkbox" ${isEnabled ? 'checked' : ''} onchange="onToggleBranchEnabled('${item.id}', '${selectedBranch}', this.checked)">` : '';
     
     if (branchEditMode && (item.name === 'Iced Cups' || item.name === 'Strawless Lids')) {
-      console.log(`🔍 RENDER DEBUG: Special item ${item.name} checkbox HTML:`, checkbox);
-      console.log(`🔍 RENDER DEBUG: Special item ${item.name} onchange attribute:`, `onchange="onToggleBranchEnabled('${item.id}', '${selectedBranch}', this.checked)"`);
+      console.log(`ðŸ” RENDER DEBUG: Special item ${item.name} checkbox HTML:`, checkbox);
+      console.log(`ðŸ” RENDER DEBUG: Special item ${item.name} onchange attribute:`, `onchange="onToggleBranchEnabled('${item.id}', '${selectedBranch}', this.checked)"`);
     }
-    const restockInput = `<input type="number" min="0" ${valueAttr} style="width:100px" ${branchEditMode ? '' : 'disabled'} onchange="onBranchRestockChange('${item.id}', '${selectedBranch}', this.value)">`;
+    const suggestedClass = suggestedBranchRestockIds.has(item.id) ? ' suggested' : '';
+    const restockCell = branchEditMode
+      ? `<div class="restock-edit">
+          <input type="number" class="restock-input${suggestedClass}" min="0" step="1" inputmode="numeric" ${valueAttr} data-item-id="${item.id}" oninput="onBranchRestockInput('${item.id}', this.value)">
+          <button type="button" class="btn btn-secondary btn-small restock-suggest-btn" data-item-id="${item.id}" onclick="suggestBranchRestockForItem('${item.id}')">Suggest</button>
+        </div>`
+      : `<span class="restock-value">${formatNumberWithCommas(currentRestockLevel)}</span>`;
 
     const checkboxCell = branchEditMode ? `<td style="width:40px;text-align:center">${checkbox}</td>` : '';
     
     return `
       <tr class="category-item-row" data-category="${cat}" ${isCollapsed ? 'style="display:none;"' : ''}>
         ${checkboxCell}
-        <td>
-          <div class="photo-container">
-            ${masterItem?.photo ? 
-              `<img src="${masterItem.photo}" alt="" onerror="this.style.display='none'"/>` : 
-              `<div class="photo-placeholder"></div>`
-            }
-          </div>
-        </td>
         <td>${item.name}</td>
         <td>${item.description}</td>
         <td>${item.category}</td>
         <td>${item.unit}</td>
-        <td>${restockInput}</td>
+        <td>${restockCell}</td>
       </tr>`;
   }).join('');
     return header + catRows;
   }).join('');
 
-  const headers = branchEditMode ? ['Include', 'Photo', 'Item', 'Description', 'Category', 'Unit', 'Restock'] : ['Photo', 'Item', 'Description', 'Category', 'Unit', 'Restock'];
+  const headers = branchEditMode ? ['Include', 'Item', 'Description', 'Category', 'Unit', 'Restock'] : ['Item', 'Description', 'Category', 'Unit', 'Restock'];
   const tableClass = branchEditMode ? 'branch-table edit-mode' : 'branch-table';
   container.innerHTML = `
-    <table class="${tableClass}">
+    <table class="${tableClass}" id="branchTable">
       <thead>
         <tr>
           ${headers.map(h => `<th>${h}</th>`).join('')}
@@ -1169,7 +1415,7 @@ function renderBranchList() {
 
 // Removed onToggleAssignment - using new onToggleBranchEnabled function
 
-// Removed onRestockChange - using new onBranchRestockChange function
+// Branch restock edits stay local until Save.
 
 async function onMasterRestockChange(masterId, valueStr) {
   const value = Math.max(0, parseInt(valueStr, 10) || 0);
@@ -1180,7 +1426,7 @@ async function onMasterRestockChange(masterId, valueStr) {
 
 // Migration function to restructure collections
 async function migrateToNewStructure() {
-  console.log('🔄 Starting migration to new collection structure...');
+  console.log('ðŸ”„ Starting migration to new collection structure...');
   
   try {
     // 1. Create categories collection
@@ -1198,12 +1444,12 @@ async function migrateToNewStructure() {
         name: category.name,
         order: category.order
       });
-      console.log(`✅ Created category: ${category.name}`);
+      console.log(`âœ… Created category: ${category.name}`);
     }
     
     // 2. Migrate master-items to inventory/items
     const masterItemsSnapshot = await getDocs(collection(db, 'inventory', '_config', 'items'));
-    console.log(`📦 Found ${masterItemsSnapshot.docs.length} items to migrate`);
+    console.log(`ðŸ“¦ Found ${masterItemsSnapshot.docs.length} items to migrate`);
     
     for (const docSnapshot of masterItemsSnapshot.docs) {
       const data = docSnapshot.data();
@@ -1228,141 +1474,233 @@ async function migrateToNewStructure() {
       });
       
       await setDoc(doc(db, 'inventory', '_config', 'items', docSnapshot.id), newData);
-      console.log(`✅ Migrated item: ${data.name}`);
+      console.log(`âœ… Migrated item: ${data.name}`);
     }
     
-    console.log('🎉 Migration completed successfully!');
-    console.log('⚠️  You can now delete the old master-items collection');
+    console.log('ðŸŽ‰ Migration completed successfully!');
+    console.log('âš ï¸  You can now delete the old master-items collection');
     
   } catch (error) {
-    console.error('❌ Migration failed:', error);
+    console.error('âŒ Migration failed:', error);
   }
 }
 
 // New functions for branch-specific operations
 async function onToggleBranchEnabled(masterId, branch, enabled) {
-  console.log('🔍 TOGGLE DEBUG: Starting onToggleBranchEnabled');
-  console.log('🔍 TOGGLE DEBUG: masterId =', masterId);
-  console.log('🔍 TOGGLE DEBUG: branch =', branch);
-  console.log('🔍 TOGGLE DEBUG: enabled =', enabled);
-  console.log('🔍 TOGGLE DEBUG: isTogglingBranch before =', isTogglingBranch);
+  console.log('ðŸ” TOGGLE DEBUG: Starting onToggleBranchEnabled');
+  console.log('ðŸ” TOGGLE DEBUG: masterId =', masterId);
+  console.log('ðŸ” TOGGLE DEBUG: branch =', branch);
+  console.log('ðŸ” TOGGLE DEBUG: enabled =', enabled);
+  console.log('ðŸ” TOGGLE DEBUG: isTogglingBranch before =', isTogglingBranch);
   
   const masterItem = masterItems.find(m => m.id === masterId);
   if (!masterItem) {
-    console.error('🔍 TOGGLE DEBUG: masterItem not found for id:', masterId);
+    console.error('ðŸ” TOGGLE DEBUG: masterItem not found for id:', masterId);
     return;
   }
   
-  console.log('🔍 TOGGLE DEBUG: Found masterItem:', masterItem.name);
-  console.log('🔍 TOGGLE DEBUG: Current enabledBranches =', masterItem.enabledBranches);
-  console.log('🔍 TOGGLE DEBUG: availableBranches =', availableBranches);
+  console.log('ðŸ” TOGGLE DEBUG: Found masterItem:', masterItem.name);
+  console.log('ðŸ” TOGGLE DEBUG: Current enabledBranches =', masterItem.enabledBranches);
+  console.log('ðŸ” TOGGLE DEBUG: availableBranches =', availableBranches);
   
   // Set flag to prevent background sync override
   isTogglingBranch = true;
-  console.log('🔍 TOGGLE DEBUG: Set isTogglingBranch = true');
+  console.log('ðŸ” TOGGLE DEBUG: Set isTogglingBranch = true');
   
   // Handle different states of enabledBranches
   let enabledBranches;
   if (masterItem.enabledBranches === undefined) {
     // Legacy items without enabledBranches field - start with all branches
     enabledBranches = [...availableBranches];
-    console.log('🔍 TOGGLE DEBUG: Legacy item (no enabledBranches field), starting with all branches =', enabledBranches);
+    console.log('ðŸ” TOGGLE DEBUG: Legacy item (no enabledBranches field), starting with all branches =', enabledBranches);
   } else if (masterItem.enabledBranches.length === 0) {
     // Items with empty array [] - start with all branches (they were disabled for all)
     enabledBranches = [...availableBranches];
-    console.log('🔍 TOGGLE DEBUG: Empty enabledBranches array, starting with all branches =', enabledBranches);
+    console.log('ðŸ” TOGGLE DEBUG: Empty enabledBranches array, starting with all branches =', enabledBranches);
   } else {
     // Items with explicit array - use as is
     enabledBranches = [...masterItem.enabledBranches];
-    console.log('🔍 TOGGLE DEBUG: Initial enabledBranches copy =', enabledBranches);
+    console.log('ðŸ” TOGGLE DEBUG: Initial enabledBranches copy =', enabledBranches);
   }
   
   if (enabled) {
     if (!enabledBranches.includes(branch)) {
       enabledBranches.push(branch);
-      console.log('🔍 TOGGLE DEBUG: Added branch to enabledBranches =', enabledBranches);
+      console.log('ðŸ” TOGGLE DEBUG: Added branch to enabledBranches =', enabledBranches);
     } else {
-      console.log('🔍 TOGGLE DEBUG: Branch already in enabledBranches');
+      console.log('ðŸ” TOGGLE DEBUG: Branch already in enabledBranches');
     }
   } else {
     const index = enabledBranches.indexOf(branch);
-    console.log('🔍 TOGGLE DEBUG: Index of branch to remove =', index);
+    console.log('ðŸ” TOGGLE DEBUG: Index of branch to remove =', index);
     if (index > -1) {
       enabledBranches.splice(index, 1);
-      console.log('🔍 TOGGLE DEBUG: Removed branch, new enabledBranches =', enabledBranches);
+      console.log('ðŸ” TOGGLE DEBUG: Removed branch, new enabledBranches =', enabledBranches);
     } else {
-      console.log('🔍 TOGGLE DEBUG: Branch not found in enabledBranches to remove');
+      console.log('ðŸ” TOGGLE DEBUG: Branch not found in enabledBranches to remove');
     }
   }
   
   // Update local state immediately to prevent checkbox flickering
   const oldEnabledBranches = masterItem.enabledBranches;
   masterItem.enabledBranches = enabledBranches;
-  console.log('🔍 TOGGLE DEBUG: Updated local state from', oldEnabledBranches, 'to', masterItem.enabledBranches);
+  console.log('ðŸ” TOGGLE DEBUG: Updated local state from', oldEnabledBranches, 'to', masterItem.enabledBranches);
   
   // Re-render immediately with the new state
-  console.log('🔍 TOGGLE DEBUG: About to call renderBranchList()');
+  console.log('ðŸ” TOGGLE DEBUG: About to call renderBranchList()');
   renderBranchList();
-  console.log('🔍 TOGGLE DEBUG: renderBranchList() completed');
+  console.log('ðŸ” TOGGLE DEBUG: renderBranchList() completed');
   
   try {
-    console.log('🔍 TOGGLE DEBUG: About to update Firebase with enabledBranches =', enabledBranches);
+    console.log('ðŸ” TOGGLE DEBUG: About to update Firebase with enabledBranches =', enabledBranches);
     // Update Firebase in background
     await updateDoc(doc(db, 'inventory', '_config', 'items', masterId), { enabledBranches });
-    console.log('🔍 TOGGLE DEBUG: Firebase update successful');
+    console.log('ðŸ” TOGGLE DEBUG: Firebase update successful');
     
     // Clear cache to ensure future loads get fresh data
     localStorage.removeItem('inventory-config-items-cache');
-    console.log('🔍 TOGGLE DEBUG: Cache cleared');
+    console.log('ðŸ” TOGGLE DEBUG: Cache cleared');
   } catch (error) {
-    console.error('🔍 TOGGLE DEBUG: Firebase update failed:', error);
+    console.error('ðŸ” TOGGLE DEBUG: Firebase update failed:', error);
     // Revert local state if Firebase update failed
     masterItem.enabledBranches = [...(masterItem.enabledBranches || availableBranches)];
     renderBranchList();
-    console.log('🔍 TOGGLE DEBUG: Reverted local state due to Firebase error');
+    console.log('ðŸ” TOGGLE DEBUG: Reverted local state due to Firebase error');
   } finally {
     // Clear the flag to allow background sync again
     isTogglingBranch = false;
-    console.log('🔍 TOGGLE DEBUG: Set isTogglingBranch = false');
-    console.log('🔍 TOGGLE DEBUG: onToggleBranchEnabled completed');
+    console.log('ðŸ” TOGGLE DEBUG: Set isTogglingBranch = false');
+    console.log('ðŸ” TOGGLE DEBUG: onToggleBranchEnabled completed');
   }
 }
 
-async function onBranchRestockChange(masterId, branch, valueStr) {
+function onBranchRestockInput(masterId, valueStr) {
   const value = Math.max(0, parseInt(valueStr, 10) || 0);
-  const masterItem = masterItems.find(m => m.id === masterId);
-  if (!masterItem) return;
-  
+  pendingBranchRestocks[masterId] = value;
+  suggestedBranchRestockIds.delete(masterId);
+  const input = document.querySelector(`.restock-input[data-item-id="${masterId}"]`);
+  if (input) input.classList.remove('suggested');
+  updateBranchEditControlsState();
+}
+
+function nextBranchOverridesForRestock(masterItem, branch, value) {
   const branchOverrides = { ...(masterItem.branchOverrides || {}) };
-  
-  if (value === masterItem.defaultRestockLevel) {
-    // If value matches default, remove the override
-    delete branchOverrides[branch];
+  const defaultRestock = masterItem.restockAmount || 0;
+  if (value === defaultRestock) {
+    if (branchOverrides[branch]) {
+      const next = { ...branchOverrides[branch] };
+      delete next.restockLevel;
+      if (Object.keys(next).length === 0) delete branchOverrides[branch];
+      else branchOverrides[branch] = next;
+    }
   } else {
-    // Set the branch-specific override
     branchOverrides[branch] = { ...branchOverrides[branch], restockLevel: value };
   }
-  
-  // Update local state immediately to prevent input flickering
-  masterItem.branchOverrides = branchOverrides;
-  
-  // Re-render immediately with the new state
-  renderBranchList();
-  
+  return branchOverrides;
+}
+
+async function savePendingBranchRestocks() {
+  if (branchRestockSaving) return;
+  const entries = Object.entries(pendingBranchRestocks);
+  if (entries.length === 0) return;
+
+  branchRestockSaving = true;
+  updateBranchEditControlsState();
+
+  const previousOverrides = {};
   try {
-    // Update Firebase in background
-    await updateDoc(doc(db, 'inventory', '_config', 'items', masterId), { branchOverrides });
-    
-    // Clear cache to ensure future loads get fresh data
+    const writes = [];
+    for (const [masterId, value] of entries) {
+      const masterItem = masterItems.find((m) => m.id === masterId);
+      if (!masterItem) continue;
+      const savedOverride = masterItem.branchOverrides?.[selectedBranch]?.restockLevel;
+      const saved = savedOverride !== undefined ? savedOverride : (masterItem.restockAmount || 0);
+      if (saved === value) continue;
+      previousOverrides[masterId] = masterItem.branchOverrides;
+      const branchOverrides = nextBranchOverridesForRestock(masterItem, selectedBranch, value);
+      masterItem.branchOverrides = branchOverrides;
+      writes.push(updateDoc(doc(db, 'inventory', '_config', 'items', masterId), { branchOverrides }));
+    }
+
+    await Promise.all(writes);
     localStorage.removeItem('inventory-config-items-cache');
-    
-    // Don't reload from Firebase as it would cause re-rendering and revert the input state
-    // The local state is already updated and displayed correctly
-  } catch (error) {
-    console.error('Error updating branch restock level:', error);
-    // Revert local state if Firebase update failed
-    masterItem.branchOverrides = { ...(masterItem.branchOverrides || {}) };
+    clearPendingBranchRestocks();
+    showSyncIndicator(writes.length ? `Saved ${writes.length} restock value${writes.length === 1 ? '' : 's'}` : 'No restock changes', 'success');
     renderBranchList();
+  } catch (error) {
+    console.error('Error updating branch restock levels:', error);
+    Object.entries(previousOverrides).forEach(([id, overrides]) => {
+      const masterItem = masterItems.find((m) => m.id === id);
+      if (masterItem) masterItem.branchOverrides = overrides;
+    });
+    showSyncIndicator('Could not save restock values', 'error');
+    throw error;
+  } finally {
+    branchRestockSaving = false;
+    updateBranchEditControlsState();
+  }
+}
+
+async function loadBranchRestockUsageDays() {
+  const dateKeys = restockLookbackDates(new Date()).map((d) => getDateKey(d));
+  if (
+    branchRestockUsageCache
+    && branchRestockUsageCache.branch === selectedBranch
+    && branchRestockUsageCache.dateKeys.join() === dateKeys.join()
+  ) {
+    return branchRestockUsageCache.days;
+  }
+  const days = await Promise.all(
+    dateKeys.map((dateStr) => fetchDailyQuantitiesForBranchDate(selectedBranch, dateStr))
+  );
+  branchRestockUsageCache = { branch: selectedBranch, dateKeys, days };
+  return days;
+}
+
+async function suggestBranchRestockForItem(itemId) {
+  if (!branchEditMode) return;
+  const item = masterItems.find((m) => m.id === itemId);
+  if (!item) return;
+
+  const btn = document.querySelector(`.restock-suggest-btn[data-item-id="${itemId}"]`);
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '…';
+  }
+
+  try {
+    const fetchedDays = await loadBranchRestockUsageDays();
+    const dailyUsages = fetchedDays.map((quantities) => {
+      const itemQuantities = quantities?.[item.id];
+      if (!itemQuantities) return { used: 0, hasClosingData: false };
+      const { used, hasClosingData } = computeDayUsageFromItemQuantities(itemQuantities);
+      return { used, hasClosingData };
+    });
+
+    const suggested = suggestRestockFromUsage(dailyUsages);
+    if (suggested == null) {
+      showSyncIndicator(`No usage in the last 2 weeks for ${item.name}`, 'info');
+      return;
+    }
+
+    pendingBranchRestocks[item.id] = suggested;
+    suggestedBranchRestockIds.add(item.id);
+    const input = document.querySelector(`.restock-input[data-item-id="${item.id}"]`);
+    if (input) {
+      input.value = suggested;
+      input.classList.add('suggested');
+    }
+    updateBranchEditControlsState();
+    const unit = item.unit ? ` ${item.unit}` : '';
+    showSyncIndicator(`Suggested ${formatNumberWithCommas(suggested)}${unit} (2-day supply)`, 'success');
+  } catch (err) {
+    console.error('Error suggesting restock value:', err);
+    showSyncIndicator('Could not suggest a restock value', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Suggest';
+    }
   }
 }
 
@@ -1375,29 +1713,13 @@ async function onDisplayOrderChange(masterId, valueStr) {
 
 // Setup master category collapse functionality
 function setupMasterCategoryCollapse() {
-  // Make entire category headers clickable
-  const categoryHeaders = document.querySelectorAll('#masterTable .category-header');
-  
-  categoryHeaders.forEach(header => {
+  const root = document.getElementById('masterTable') || document.getElementById('masterItemsList');
+  if (!root) return;
+  root.querySelectorAll('.category-header').forEach(header => {
     header.addEventListener('click', (e) => {
-      // Don't trigger if clicking on edit controls
-      if (e.target.closest('.category-edit-controls')) {
-        return;
-      }
-      
+      if (e.target.closest('.category-edit-controls, .category-edit-controls')) return;
       const category = header.dataset.category;
-      toggleCategoryCollapse(category);
-    });
-  });
-  
-  // Also keep the collapse button clickable for visual feedback
-  const buttons = document.querySelectorAll('#masterTable .category-collapse-btn');
-  
-  buttons.forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const category = btn.dataset.category;
-      toggleCategoryCollapse(category);
+      if (category) toggleCategoryCollapse(category);
     });
   });
 }
@@ -1620,19 +1942,18 @@ async function handleMasterItemSubmit(e) {
     console.log('Item saved successfully');
     console.log('masterItems count after save:', masterItems.length);
     
-    // Reload data and re-render UI after successful save (skip categoryOrder init for faster response)
-    await loadMasterItems(true);
+    await loadMasterItems(true, true);
     console.log('masterItems count after loadMasterItems:', masterItems.length);
-    
-    // Clear dashboard cache to ensure it reflects the changes
+
     clearInventoryItemsCache();
-    
-    renderMasterItems();
-    console.log('renderMasterItems completed');
-    renderBranchList();
-    console.log('renderBranchList completed');
-    
-    // Close modal after successful save
+
+    try {
+      renderMasterItems();
+      renderBranchList();
+    } catch (renderErr) {
+      console.error('Saved, but the list failed to refresh:', renderErr);
+    }
+
     closeMasterItemModal();
   } catch (error) {
     console.error('Error saving master item:', error);
@@ -1689,11 +2010,11 @@ async function deleteMasterItem(itemId) {
 }
 
 async function moveMasterItem(itemId, direction) {
-  console.log('🔄 MOVE ITEM: Starting moveMasterItem:', itemId, direction);
+  console.log('ðŸ”„ MOVE ITEM: Starting moveMasterItem:', itemId, direction);
   
   // Set flag to prevent background sync override
   isMovingItems = true;
-  console.log('🔄 MOVE ITEM: Set isMovingItems = true');
+  console.log('ðŸ”„ MOVE ITEM: Set isMovingItems = true');
   
   const item = masterItems.find(i => i.id === itemId);
   console.log('Found item:', item);
@@ -1761,54 +2082,54 @@ async function moveMasterItem(itemId, direction) {
   renderBranchList();
   
   // BACKGROUND SYNC: Update Firebase in the background
-  console.log('🔄 MOVE ITEM: Starting background sync to Firebase');
+  console.log('ðŸ”„ MOVE ITEM: Starting background sync to Firebase');
   syncMoveToFirebase(categoryItems, 'item');
 }
 
 // Background sync function for Firebase updates
 async function syncMoveToFirebase(items, type) {
   try {
-    console.log(`🔄 SYNC: Updating ${type} order in Firebase...`);
+    console.log(`ðŸ”„ SYNC: Updating ${type} order in Firebase...`);
     
     const updates = [];
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       // Always update displayOrder to match the current array position
-      console.log(`🔄 SYNC: Updating ${item.name} displayOrder from ${item.displayOrder} to ${i}`);
+      console.log(`ðŸ”„ SYNC: Updating ${item.name} displayOrder from ${item.displayOrder} to ${i}`);
       updates.push(updateDoc(doc(db, 'inventory', '_config', 'items', item.id), { displayOrder: i }));
     }
     
-    console.log(`🔄 SYNC: Saving ${updates.length} updates to Firebase...`);
+    console.log(`ðŸ”„ SYNC: Saving ${updates.length} updates to Firebase...`);
     await Promise.all(updates);
-    console.log(`🔄 SYNC: ${type} order updated successfully in Firebase`);
+    console.log(`ðŸ”„ SYNC: ${type} order updated successfully in Firebase`);
     
     // No longer need to sync to separate collections - everything is in master-items now
-    console.log('🔄 SYNC: Master items updated successfully');
+    console.log('ðŸ”„ SYNC: Master items updated successfully');
     
     // Clear dashboard cache to ensure fresh data
     clearInventoryItemsCache();
-    console.log('🔄 SYNC: Dashboard cache cleared');
+    console.log('ðŸ”„ SYNC: Dashboard cache cleared');
   } catch (error) {
-    console.error('🔄 SYNC: Background sync error:', error);
+    console.error('ðŸ”„ SYNC: Background sync error:', error);
     // Could show a subtle notification here if needed
   } finally {
     // Clear the flag to allow background sync again
     isMovingItems = false;
     // Force dashboard refresh on next load
     forceDashboardRefresh = true;
-    console.log('🔄 SYNC: Move operation completed, flag cleared, dashboard refresh forced');
+    console.log('ðŸ”„ SYNC: Move operation completed, flag cleared, dashboard refresh forced');
   }
 }
 
 async function moveCategory(categoryName, direction) {
-  console.log('🔄 MOVE CATEGORY: Starting moveCategory:', categoryName, direction);
+  console.log('ðŸ”„ MOVE CATEGORY: Starting moveCategory:', categoryName, direction);
   
   // Set flag to prevent background sync override
   isMovingItems = true;
-  console.log('🔄 MOVE CATEGORY: Set isMovingItems = true');
+  console.log('ðŸ”„ MOVE CATEGORY: Set isMovingItems = true');
   
-  const categories = getUniqueCategories();
-  const currentIndex = categories.indexOf(categoryName);
+  const orderedNames = getUniqueCategories();
+  const currentIndex = orderedNames.indexOf(categoryName);
   if (currentIndex === -1) {
     console.error('Category not found:', categoryName);
     isMovingItems = false; // Clear flag on error
@@ -1824,7 +2145,7 @@ async function moveCategory(categoryName, direction) {
     }
   } else if (direction === 'down') {
     newIndex = currentIndex + 1;
-    if (newIndex >= categories.length) {
+    if (newIndex >= orderedNames.length) {
       isMovingItems = false; // Clear flag
       return; // Already at bottom
     }
@@ -1834,21 +2155,31 @@ async function moveCategory(categoryName, direction) {
   }
   
   // INSTANT UI UPDATE: Swap the categories immediately
-  const temp = categories[currentIndex];
-  categories[currentIndex] = categories[newIndex];
-  categories[newIndex] = temp;
+  const temp = orderedNames[currentIndex];
+  orderedNames[currentIndex] = orderedNames[newIndex];
+  orderedNames[newIndex] = temp;
   
   // Update categoryOrder in local masterItems array immediately
-  for (let i = 0; i < categories.length; i++) {
-    const categoryName = categories[i];
-    const categoryItems = masterItems.filter(item => item.category === categoryName);
+  for (let i = 0; i < orderedNames.length; i++) {
+    const name = orderedNames[i];
+    const categoryItems = masterItems.filter(item => item.category === name);
     for (const item of categoryItems) {
       const masterItemIndex = masterItems.findIndex(mi => mi.id === item.id);
       if (masterItemIndex !== -1) {
         masterItems[masterItemIndex].categoryOrder = i;
       }
     }
+    let cat = categories.find(c => c.name === name);
+    if (!cat) {
+      const id = uniqueCategoryDocId(name);
+      cat = { id, name, order: i };
+      categories.push(cat);
+    } else {
+      cat.order = i;
+    }
   }
+  categories.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+  syncSharedCategoryOrderMap();
   
   // Update cache immediately
   cacheMasterItems(masterItems);
@@ -1858,46 +2189,55 @@ async function moveCategory(categoryName, direction) {
   renderBranchList();
   
   // BACKGROUND SYNC: Update Firebase in the background
-  console.log('🔄 MOVE CATEGORY: Starting background sync to Firebase');
-  syncCategoryMoveToFirebase(categories);
+  console.log('ðŸ”„ MOVE CATEGORY: Starting background sync to Firebase');
+  syncCategoryMoveToFirebase(orderedNames);
 }
 
 // Background sync function for category moves
-async function syncCategoryMoveToFirebase(categories) {
+async function syncCategoryMoveToFirebase(orderedNames) {
   try {
-    console.log('🔄 SYNC: Updating category order in Firebase...');
+    console.log('ðŸ”„ SYNC: Updating category order in Firebase...');
     
     const updates = [];
-    for (let i = 0; i < categories.length; i++) {
-      const categoryName = categories[i];
+    for (let i = 0; i < orderedNames.length; i++) {
+      const categoryName = orderedNames[i];
       const categoryItems = masterItems.filter(item => item.category === categoryName);
       
       for (const item of categoryItems) {
         // Always update categoryOrder to match the current category position
-        console.log(`🔄 SYNC: Updating ${item.name} categoryOrder from ${item.categoryOrder} to ${i}`);
+        console.log(`ðŸ”„ SYNC: Updating ${item.name} categoryOrder from ${item.categoryOrder} to ${i}`);
         updates.push(updateDoc(doc(db, 'inventory', '_config', 'items', item.id), { categoryOrder: i }));
       }
+      let cat = categories.find(c => c.name === categoryName);
+      if (!cat) {
+        const id = uniqueCategoryDocId(categoryName);
+        cat = { id, name: categoryName, order: i };
+        categories.push(cat);
+      } else {
+        cat.order = i;
+      }
+      updates.push(setDoc(doc(db, 'inventory', '_config', 'categories', cat.id), { name: cat.name, order: i }, { merge: true }));
     }
     
-    console.log(`🔄 SYNC: Saving ${updates.length} category updates to Firebase...`);
+    console.log(`ðŸ”„ SYNC: Saving ${updates.length} category updates to Firebase...`);
     await Promise.all(updates);
-    console.log('🔄 SYNC: Category order updated successfully in Firebase');
+    console.log('ðŸ”„ SYNC: Category order updated successfully in Firebase');
     
     // No longer need to sync to separate collections - everything is in master-items now
-    console.log('🔄 SYNC: Master items updated successfully');
+    console.log('ðŸ”„ SYNC: Master items updated successfully');
     
     // Clear dashboard cache to ensure fresh data
     clearInventoryItemsCache();
-    console.log('🔄 SYNC: Dashboard cache cleared');
+    console.log('ðŸ”„ SYNC: Dashboard cache cleared');
   } catch (error) {
-    console.error('🔄 SYNC: Background sync error:', error);
+    console.error('ðŸ”„ SYNC: Background sync error:', error);
     // Could show a subtle notification here if needed
   } finally {
     // Clear the flag to allow background sync again
     isMovingItems = false;
     // Force dashboard refresh on next load
     forceDashboardRefresh = true;
-    console.log('🔄 SYNC: Category move operation completed, flag cleared, dashboard refresh forced');
+    console.log('ðŸ”„ SYNC: Category move operation completed, flag cleared, dashboard refresh forced');
   }
 }
 
@@ -1965,29 +2305,303 @@ function getBranchDisplayName(branch) {
 }
 
 // Get unique categories from master items with their order
-function getUniqueCategories() {
-  const categoryMap = new Map();
-  masterItems.forEach(item => {
-    if (item.category) {
-      if (!categoryMap.has(item.category)) {
-        categoryMap.set(item.category, {
-          name: item.category,
-          order: item.categoryOrder || 0,
-          itemCount: 0
-        });
+function categoryDocId(name) {
+  return String(name).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'category';
+}
+
+function uniqueCategoryDocId(name, excludeId = null) {
+  let id = categoryDocId(name);
+  const taken = new Set(categories.filter(c => c.id !== excludeId).map(c => c.id));
+  if (!taken.has(id)) return id;
+  let n = 2;
+  while (taken.has(`${id}-${n}`)) n++;
+  return `${id}-${n}`;
+}
+
+function countItemsInCategory(name) {
+  return masterItems.filter(i => i.category === name).length;
+}
+
+async function loadCategories() {
+  try {
+    const snap = await getDocs(collection(db, 'inventory', '_config', 'categories'));
+    categories = snap.docs.map(d => {
+      const data = d.data() || {};
+      return { id: d.id, name: data.name || d.id, order: typeof data.order === 'number' ? data.order : 0 };
+    });
+    if (!categories.length) await seedCategoriesFromItems();
+    categories.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+    syncSharedCategoryOrderMap();
+  } catch (err) {
+    console.error('Failed to load categories', err);
+    categories = [];
+    syncSharedCategoryOrderMap();
+  }
+}
+
+async function ensureCategoriesLoaded() {
+  if (categories.length) {
+    syncSharedCategoryOrderMap();
+    return;
+  }
+  await loadCategories();
+}
+
+function refreshCurrentInventoryView() {
+  if (currentTask === 'dashboard' && dashboardItems.length) renderDashboard();
+  if (currentTask === 'weekly-view' && dashboardItems.length) renderWeeklyView();
+  if (currentTask === 'order-view' && lastOrderViewSnapshot) renderOrderView(lastOrderViewSnapshot);
+}
+
+async function seedCategoriesFromItems() {
+  const seen = new Set();
+  const names = [];
+  masterItems
+    .slice()
+    .sort((a, b) => (a.categoryOrder ?? 999) - (b.categoryOrder ?? 999) || String(a.name || '').localeCompare(String(b.name || '')))
+    .forEach(item => {
+      if (item.category && !seen.has(item.category)) {
+        seen.add(item.category);
+        names.push(item.category);
       }
-      categoryMap.get(item.category).itemCount++;
+    });
+  categories = [];
+  await Promise.all(names.map((name, order) => {
+    const id = uniqueCategoryDocId(name);
+    categories.push({ id, name, order });
+    return setDoc(doc(db, 'inventory', '_config', 'categories', id), { name, order });
+  }));
+}
+
+function getUniqueCategories() {
+  const byName = new Map();
+  categories.forEach(c => {
+    if (c.name) byName.set(c.name, c.order);
+  });
+  masterItems.forEach(item => {
+    if (item.category && !byName.has(item.category)) {
+      byName.set(item.category, item.categoryOrder ?? 999);
     }
   });
-  
-  // Sort by category order, then by name
-  return Array.from(categoryMap.values())
-    .sort((a, b) => (a.order || 0) - (b.order || 0) || a.name.localeCompare(b.name))
-    .map(cat => cat.name);
+  return Array.from(byName.entries())
+    .sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]))
+    .map(([name]) => name);
 }
+
+function setCategoryManageError(msg) {
+  const el = document.getElementById('categoryManageError');
+  if (el) el.textContent = msg || '';
+}
+
+function openCategoryManageModal() {
+  const overlay = document.getElementById('categoryManageModalOverlay');
+  if (!overlay) return;
+  setCategoryManageError('');
+  const input = document.getElementById('newCategoryName');
+  if (input) input.value = '';
+  renderCategoryManageList();
+  overlay.style.display = 'flex';
+  input?.focus();
+}
+
+function closeCategoryManageModal() {
+  const overlay = document.getElementById('categoryManageModalOverlay');
+  if (overlay) overlay.style.display = 'none';
+  setCategoryManageError('');
+}
+
+function renderCategoryManageList() {
+  const list = document.getElementById('categoryManageList');
+  if (!list) return;
+  const names = getUniqueCategories();
+  if (!names.length) {
+    list.innerHTML = '<div style="padding:12px 0;color:#888;">No categories yet.</div>';
+    return;
+  }
+  list.innerHTML = names.map((name, idx) => {
+    const count = countItemsInCategory(name);
+    const empty = count === 0;
+    return `<div class="category-manage-row" data-category="${escapeHtml(name)}">
+      <button type="button" class="btn btn-light btn-small" data-cat-move="up" ${idx === 0 ? 'disabled' : ''}>&#8593;</button>
+      <button type="button" class="btn btn-light btn-small" data-cat-move="down" ${idx === names.length - 1 ? 'disabled' : ''}>&#8595;</button>
+      <input type="text" class="category-manage-name" value="${escapeHtml(name)}">
+      <span class="category-manage-count">${count} item${count === 1 ? '' : 's'}</span>
+      <button type="button" class="btn btn-secondary btn-small" data-cat-save>Save</button>
+      <button type="button" class="btn btn-light btn-small" data-cat-delete ${empty ? '' : 'disabled'} title="${empty ? 'Delete category' : 'Only empty categories can be deleted'}">Delete</button>
+    </div>`;
+  }).join('');
+}
+
+function refreshCategorySelect() {
+  const categorySelect = document.getElementById('masterItemCategory');
+  if (!categorySelect) return;
+  const current = categorySelect.value;
+  const names = getUniqueCategories();
+  categorySelect.innerHTML = names.map(cat => `<option value="${escapeHtml(cat)}">${escapeHtml(cat)}</option>`).join('') + '<option value="Other">Other</option>';
+  if ([...names, 'Other'].includes(current)) categorySelect.value = current;
+}
+
+function refreshCategoryUI() {
+  renderCategoryManageList();
+  refreshCategorySelect();
+  if (currentTask === 'master-items') renderMasterItems();
+  if (currentTask === 'branch-list') renderBranchList();
+}
+
+async function handleAddCategoryFromModal() {
+  const input = document.getElementById('newCategoryName');
+  const name = (input?.value || '').trim();
+  if (!name) {
+    setCategoryManageError('Enter a category name.');
+    return;
+  }
+  if (getUniqueCategories().some(c => c.toLowerCase() === name.toLowerCase())) {
+    setCategoryManageError('That category already exists.');
+    return;
+  }
+  const order = categories.reduce((max, c) => Math.max(max, c.order), -1) + 1;
+  const id = uniqueCategoryDocId(name);
+  try {
+    await setDoc(doc(db, 'inventory', '_config', 'categories', id), { name, order });
+    categories.push({ id, name, order });
+    categories.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+    syncSharedCategoryOrderMap();
+    if (input) input.value = '';
+    setCategoryManageError('');
+  } catch (err) {
+    console.error(err);
+    setCategoryManageError('Could not add category.');
+    return;
+  }
+  try {
+    refreshCategoryUI();
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+async function handleSaveCategoryRow(row) {
+  const oldName = row.dataset.category;
+  const newName = (row.querySelector('.category-manage-name')?.value || '').trim();
+  if (!newName) {
+    setCategoryManageError('Category name cannot be empty.');
+    return;
+  }
+  if (newName === oldName) return;
+  if (getUniqueCategories().some(c => c !== oldName && c.toLowerCase() === newName.toLowerCase())) {
+    setCategoryManageError('That category already exists.');
+    return;
+  }
+  try {
+    const existing = categories.find(c => c.name === oldName);
+    const order = existing?.order ?? getCategoryOrder(oldName);
+    const newId = uniqueCategoryDocId(newName, existing?.id);
+    await setDoc(doc(db, 'inventory', '_config', 'categories', newId), { name: newName, order });
+    if (existing && existing.id !== newId) {
+      try { await deleteDoc(doc(db, 'inventory', '_config', 'categories', existing.id)); } catch (_) {}
+    }
+    if (existing) {
+      existing.id = newId;
+      existing.name = newName;
+    } else {
+      categories.push({ id: newId, name: newName, order });
+    }
+    await updateCategoryName(oldName, newName);
+    setCategoryManageError('');
+    refreshCategoryUI();
+  } catch (err) {
+    console.error(err);
+    setCategoryManageError('Could not rename category.');
+  }
+}
+
+async function handleMoveCategory(name, direction) {
+  const names = getUniqueCategories();
+  const idx = names.indexOf(name);
+  const swapWith = direction === 'up' ? idx - 1 : idx + 1;
+  if (idx < 0 || swapWith < 0 || swapWith >= names.length) return;
+  const swapped = names.slice();
+  [swapped[idx], swapped[swapWith]] = [swapped[swapWith], swapped[idx]];
+  try {
+    await Promise.all(swapped.map(async (catName, order) => {
+      let cat = categories.find(c => c.name === catName);
+      if (!cat) {
+        const id = uniqueCategoryDocId(catName);
+        cat = { id, name: catName, order };
+        categories.push(cat);
+      } else {
+        cat.order = order;
+      }
+      await setDoc(doc(db, 'inventory', '_config', 'categories', cat.id), { name: cat.name, order }, { merge: true });
+    }));
+    const itemsToSync = masterItems.filter(i => swapped.includes(i.category));
+    await Promise.all(itemsToSync.map(item => {
+      const order = swapped.indexOf(item.category);
+      item.categoryOrder = order;
+      return updateDoc(doc(db, 'inventory', '_config', 'items', item.id), { categoryOrder: order });
+    }));
+    categories.sort((x, y) => x.order - y.order || x.name.localeCompare(y.name));
+    syncSharedCategoryOrderMap();
+    setCategoryManageError('');
+    refreshCategoryUI();
+  } catch (err) {
+    console.error(err);
+    setCategoryManageError('Could not reorder categories.');
+  }
+}
+
+async function handleDeleteCategory(name) {
+  if (countItemsInCategory(name) > 0) {
+    setCategoryManageError('Move or reassign items before deleting this category.');
+    return;
+  }
+  try {
+    const existing = categories.find(c => c.name === name);
+    if (existing) {
+      await deleteDoc(doc(db, 'inventory', '_config', 'categories', existing.id));
+      categories = categories.filter(c => c.id !== existing.id);
+    }
+    setCategoryManageError('');
+    refreshCategoryUI();
+  } catch (err) {
+    console.error(err);
+    setCategoryManageError('Could not delete category.');
+  }
+}
+
+function setupCategoryManageModal() {
+  const overlay = document.getElementById('categoryManageModalOverlay');
+  const closeBtn = document.getElementById('categoryManageModalClose');
+  const addBtn = document.getElementById('addCategoryConfirmBtn');
+  const input = document.getElementById('newCategoryName');
+  const list = document.getElementById('categoryManageList');
+  closeBtn?.addEventListener('click', closeCategoryManageModal);
+  overlay?.addEventListener('click', (e) => {
+    if (e.target === overlay) closeCategoryManageModal();
+  });
+  addBtn?.addEventListener('click', handleAddCategoryFromModal);
+  input?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleAddCategoryFromModal();
+    }
+  });
+  list?.addEventListener('click', (e) => {
+    const row = e.target.closest('.category-manage-row');
+    if (!row) return;
+    const name = row.dataset.category;
+    if (e.target.closest('[data-cat-save]')) handleSaveCategoryRow(row);
+    else if (e.target.closest('[data-cat-delete]')) handleDeleteCategory(name);
+    else if (e.target.closest('[data-cat-move="up"]')) handleMoveCategory(name, 'up');
+    else if (e.target.closest('[data-cat-move="down"]')) handleMoveCategory(name, 'down');
+  });
+}
+
 
 // Get category order for a specific category
 function getCategoryOrder(categoryName) {
+  const fromList = categories.find(c => c.name === categoryName);
+  if (fromList) return fromList.order;
   const categoryItem = masterItems.find(item => item.category === categoryName);
   return categoryItem?.categoryOrder || 0;
 }
@@ -2073,7 +2687,7 @@ function handleMasterPhotoRemove() {
 
 // Debug function to check master items state
 window.debugMasterItems = function() {
-  console.log('🔍 MASTER ITEMS DEBUG:');
+  console.log('ðŸ” MASTER ITEMS DEBUG:');
   console.log('- isMovingItems:', isMovingItems);
   console.log('- masterItems count:', masterItems.length);
   console.log('- Current items order:', masterItems.map(item => ({ 
@@ -2101,9 +2715,11 @@ window.editMasterItem = (id) => openMasterItemModal(id);
 window.deleteMasterItem = (id) => deleteMasterItem(id);
 window.moveMasterItem = (id, direction) => moveMasterItem(id, direction);
 window.moveCategory = (category, direction) => moveCategory(category, direction);
-window.switchToTask = (task) => switchToTask(task);
+window.switchMode = mode => switchMode(mode);
+window.switchToTask = task => switchToTask(task);
 window.onToggleBranchEnabled = (id, branch, checked) => onToggleBranchEnabled(id, branch, checked);
-window.onBranchRestockChange = (id, branch, value) => onBranchRestockChange(id, branch, value);
+window.onBranchRestockInput = onBranchRestockInput;
+window.suggestBranchRestockForItem = suggestBranchRestockForItem;
 window.closeCategoryEditModal = closeCategoryEditModal;
 window.saveCategoryEdit = saveCategoryEdit;
 window.toggleCategoryCollapse = (category) => {
@@ -2123,10 +2739,7 @@ window.toggleCategoryCollapse = (category) => {
   // Re-render to show changes
   renderMasterItems();
 };
-window.editCategory = (category) => {
-  // Make this immediate and non-blocking
-  setTimeout(() => openCategoryEditModal(category), 0);
-};
+window.editCategory = () => openCategoryManageModal();
 window.deleteCategory = (category) => deleteEmptyCategory(category);
 window.duplicateMasterItem = (itemId) => duplicateMasterItem(itemId);
 window.startCategoryDrag = (event, category) => {
@@ -2149,7 +2762,7 @@ window.closeEditWarning = closeEditWarning;
 
 // Debug function for dashboard loading
 window.testDashboardLoading = function() {
-  console.log('🧪 Testing dashboard loading...');
+  console.log('ðŸ§ª Testing dashboard loading...');
   console.log('Dashboard branch:', dashboardBranch);
   console.log('Dashboard date:', dashboardDate.toDateString());
   console.log('Current dashboard items count:', dashboardItems.length);
@@ -2189,7 +2802,7 @@ window.testDashboardLoading = function() {
 
 // Debug function for bold styling
 window.testBoldStyling = function() {
-  console.log('🧪 Testing bold styling logic...');
+  console.log('ðŸ§ª Testing bold styling logic...');
   console.log('Raw quantities:', window.dashboardRawQuantities);
   console.log('Opening quantities:', openingQuantities);
   console.log('Closing quantities:', closingQuantities);
@@ -2224,9 +2837,9 @@ window.testBoldStyling = function() {
 
 // Debug function to test cache invalidation
 window.testCacheInvalidation = function() {
-  console.log('🧪 Testing cache invalidation...');
+  console.log('ðŸ§ª Testing cache invalidation...');
   invalidateInventoryCache();
-  console.log('✅ Cache invalidation completed');
+  console.log('âœ… Cache invalidation completed');
   
   // Test if cache is cleared
   const branches = ['sm-north', 'podium', 'moa'];
@@ -2269,6 +2882,8 @@ async function loadDashboardData() {
     console.error('inventoryTable container not found!');
     return;
   }
+
+  await ensureCategoriesLoaded();
   
   // Loading flag already set in switchToTask
   
@@ -2285,7 +2900,7 @@ async function loadDashboardData() {
   console.log(`Cache lookup took: ${cacheLoadTime.toFixed(2)}ms`);
   
   if (false) { // Disable cache loading for now
-    console.log('✅ Loading cached inventory items instantly');
+    console.log('âœ… Loading cached inventory items instantly');
     console.log('Cached items count:', cachedItems.length);
     
     const itemsLoadStart = performance.now();
@@ -2319,13 +2934,13 @@ async function loadDashboardData() {
       openingQuantities = cachedQuantities.openingQuantities || {};
       closingQuantities = cachedQuantities.closingQuantities || {};
       addedQuantities = cachedQuantities.addedQuantities || {};
-      console.log('✅ Loading cached quantities for date:', getDateKey(dashboardDate));
+      console.log('âœ… Loading cached quantities for date:', getDateKey(dashboardDate));
     } else {
       // No cached quantities for this date, load from Firebase
       openingQuantities = {};
       closingQuantities = {};
       addedQuantities = {};
-      console.log('⚠️ No cached quantities for this date, will load from Firebase');
+      console.log('âš ï¸ No cached quantities for this date, will load from Firebase');
     }
     
     const renderStart = performance.now();
@@ -2337,7 +2952,7 @@ async function loadDashboardData() {
     dashboardLoading = false;
     
     const totalTime = performance.now() - startTime;
-    console.log(`🎉 TOTAL CACHED LOAD TIME: ${totalTime.toFixed(2)}ms`);
+    console.log(`ðŸŽ‰ TOTAL CACHED LOAD TIME: ${totalTime.toFixed(2)}ms`);
     
     // Show cached data indicator
     showSyncIndicator('Showing cached inventory items', 'info');
@@ -2391,67 +3006,13 @@ async function loadDashboardData() {
     dashboardItems.sort(compareMasterItemsDashboardOrder);
     
     
-    // Load quantities for both opening and closing
-    const dateKey = getDateKey(dashboardDate);
-    
-    // Get daily document from branch subcollection
-    const docRef = doc(db, 'inventory-quantities', dashboardBranch, 'daily-quantities', dateKey);
-    const docSnap = await getDoc(docRef);
-    
-    // Initialize quantities objects
-    openingQuantities = {};
-    closingQuantities = {};
-    addedQuantities = {};
-    
-    if (docSnap.exists()) {
-      const data = docSnap.data();
-      const quantities = data.quantities || {};
-      
-      console.log('Found quantities for', Object.keys(quantities).length, 'items on date:', dateKey);
-      
-      // Store the raw quantities data for bold styling logic
-      window.dashboardRawQuantities = quantities;
-      
-      // Process quantities from single document
-      Object.keys(quantities).forEach(itemId => {
-        const itemQuantities = quantities[itemId];
-        
-        if (itemQuantities.opening && itemQuantities.opening.checked) {
-          openingQuantities[itemId] = itemQuantities.opening.value;
-        }
-        if (itemQuantities.closing && itemQuantities.closing.checked) {
-          closingQuantities[itemId] = itemQuantities.closing.value;
-        }
-        if (itemQuantities.added && itemQuantities.added.checked) {
-          addedQuantities[itemId] = itemQuantities.added.value;
-        }
-        
-        // Calculate breakdown from adjustments array
-        let delivery = 0;
-        let pullOut = 0;
-        let wastage = 0;
-        
-        if (itemQuantities.adjustments && Array.isArray(itemQuantities.adjustments)) {
-          itemQuantities.adjustments.forEach(adj => {
-            const value = Math.abs(adj.value || 0);
-            if (adj.reason === 'delivery') {
-              delivery += value;
-            } else if (adj.reason === 'pulled-out') {
-              pullOut += value;
-            } else if (adj.reason === 'wastage') {
-              wastage += value;
-            }
-          });
-        }
-        
-        deliveryQuantities[itemId] = delivery;
-        pullOutQuantities[itemId] = pullOut;
-        wastageQuantities[itemId] = wastage;
-      });
-    } else {
-      console.log('No quantities found for date:', dateKey);
-      window.dashboardRawQuantities = {};
+    const { date: resolvedDate, quantities, usedFallback } = await resolveDashboardQuantitiesDate(dashboardItems);
+    if (usedFallback) {
+      dashboardDate = resolvedDate;
+      showSyncIndicator('Opening not logged yet - showing previous day', 'info');
     }
+
+    applyDashboardQuantitiesFromRaw(quantities);
     
     console.log('Opening quantities:', openingQuantities);
     console.log('Closing quantities:', closingQuantities);
@@ -2470,7 +3031,9 @@ async function loadDashboardData() {
     dashboardLoading = false;
     
     // Show sync success indicator
-    showSyncIndicator('Data synced from Firebase', 'success');
+    if (!usedFallback) {
+      showSyncIndicator('Data synced from Firebase', 'success');
+    }
     
     console.log('Dashboard data loaded successfully');
   } catch (error) {
@@ -2500,34 +3063,15 @@ async function loadWeeklyViewData() {
   }
 
   try {
-    // Ensure we have dashboard items loaded
-    if (dashboardItems.length === 0) {
-      console.log('No dashboard items loaded, loading them first...');
-      // Load master items and filter by enabled branches (same as dashboard)
-      const querySnapshot = await getDocs(collection(db, 'inventory', '_config', 'items'));
-      console.log('Query completed, found', querySnapshot.docs.length, 'documents');
-      
-      dashboardItems = querySnapshot.docs
-        .map(d => {
-          const data = d.data();
-          return { 
-            id: d.id, 
-            ...data,
-            // Ensure we have the required fields
-            name: data.name || 'Unnamed Item',
-            category: data.category || 'Other',
-            description: data.description || '',
-            photo: data.photo || null
-          };
-        })
-        .filter(item => {
-          // Filter by enabled branches (same logic as dashboard)
-          const branchData = item.branches?.[weeklyBranch];
-          return branchData && branchData.enabled;
-        });
-      
-      console.log('Found', dashboardItems.length, 'inventory items for weekly view branch:', weeklyBranch);
+    await ensureCategoriesLoaded();
+    if (masterItems.length === 0) {
+      console.log('No master items loaded, loading them first...');
+      await loadMasterItems(true);
     }
+    if (dashboardItems.length === 0) {
+      dashboardItems = masterItems.filter(item => isMasterItemEnabledForBranch(item, weeklyBranch));
+    }
+    console.log('Found', getWeeklyViewItems().length, 'inventory items for weekly view branch:', weeklyBranch);
     // Get the 7 days starting from weeklyDate
     const startDate = new Date(weeklyDate);
     const dates = [];
@@ -2543,6 +3087,7 @@ async function loadWeeklyViewData() {
 
     // Load usage data for each day
     weeklyData = {};
+    weeklySalesByDate = {};
     const promises = dates.map(async (date) => {
       const dateStr = getDateKey(date);
       const docRef = doc(db, 'inventory-quantities', weeklyBranch, 'daily-quantities', dateStr);
@@ -2580,9 +3125,10 @@ async function loadWeeklyViewData() {
       }
     });
 
-    await Promise.all(promises);
+    await Promise.all([...promises, fetchWeeklySalesForDates(weeklyBranch, dates)]);
     console.log('Weekly data loaded:', weeklyData);
-    console.log('Dashboard items count:', dashboardItems.length);
+    console.log('Weekly sales loaded:', weeklySalesByDate);
+    console.log('Weekly items count:', getWeeklyViewItems().length);
 
     // Render the weekly view
     renderWeeklyView();
@@ -2601,6 +3147,105 @@ function isMasterItemEnabledForBranch(item, branchKey) {
   return item.enabledBranches.includes(branchKey);
 }
 
+function getWeeklyViewItems() {
+  const source = masterItems.length ? masterItems : dashboardItems;
+  return source.filter(item => isMasterItemEnabledForBranch(item, weeklyBranch));
+}
+
+function branchUsesPodiumSalesLayout(branch) {
+  return branch === 'podium' || branch === 'moa';
+}
+
+/** Same total as the sales dashboard for this branch. */
+function calculateBranchDailySales(data, branch) {
+  if (!data) return null;
+  if (branchUsesPodiumSalesLayout(branch)) {
+    const walkIn = (data.cash || 0) + (data.card || 0) + (data.qr || 0) + (data.giftCard || 0);
+    return walkIn + (data.grab || 0);
+  }
+  const hasGrabData = Object.prototype.hasOwnProperty.call(data, 'grab') && data.grab !== undefined;
+  if (hasGrabData) {
+    const walkIn = (data.cash || 0) + (data.gcash || 0) + (data.maya || 0) + (data.card || 0);
+    return walkIn + (data.grab || 0);
+  }
+  const total = Number(data.totalSales);
+  return Number.isFinite(total) ? total : 0;
+}
+
+function formatPeso(amount) {
+  const n = Number(amount);
+  if (!Number.isFinite(n)) return '-';
+  return '₱' + n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
+async function fetchWeeklySalesForDates(branch, dates) {
+  const byDate = {};
+  await Promise.all(dates.map(async (date) => {
+    const dateStr = getDateKey(date);
+    try {
+      const snap = await getDoc(doc(db, 'sales-data', branch, 'daily', dateStr));
+      byDate[dateStr] = snap.exists() ? calculateBranchDailySales(snap.data(), branch) : null;
+    } catch (err) {
+      console.error('Failed to load daily sales for', dateStr, err);
+      byDate[dateStr] = null;
+    }
+  }));
+  weeklySalesByDate = byDate;
+}
+
+function buildWeeklySalesRow(dates, includeTotal) {
+  const cells = ['Total Daily Sales', ''];
+  let weekTotal = 0;
+  let hasAny = false;
+  dates.forEach((date) => {
+    const amount = weeklySalesByDate[getDateKey(date)];
+    if (amount == null) {
+      cells.push('-');
+    } else {
+      hasAny = true;
+      weekTotal += amount;
+      cells.push(formatPeso(amount));
+    }
+  });
+  if (includeTotal) cells.push(hasAny ? formatPeso(weekTotal) : '-');
+  return { type: 'sales-total', cells };
+}
+
+function usagePatternForWeeks(fetched, branch, itemId, weekStarts) {
+  const weekResults = weekStarts.map(weekStart => {
+    const dates = weekDates(weekStart);
+    const used = [];
+    const censored = [];
+    const hasClosing = [];
+    for (let i = 0; i < 7; i++) {
+      const iq = fetched[branch]?.[getDateKey(dates[i])]?.[itemId];
+      const day = computeDayUsageFromItemQuantities(iq);
+      used.push(day.used);
+      censored.push(isCensoredDay(day));
+      hasClosing.push(day.hasClosingData);
+    }
+    const uplifted = upliftCensoredPattern(used, censored);
+    return {
+      used,
+      censored,
+      hasClosing,
+      recordedTotal: used.reduce((a, b) => a + (Number(b) || 0), 0),
+      ...uplifted
+    };
+  });
+  if (weekResults.length === 1) return weekResults[0];
+  const pattern = averageWeekdayPatterns(weekResults.map(w => w.pattern));
+  return {
+    used: pattern,
+    censored: weekResults.reduce((acc, w) => acc.map((c, i) => c || w.censored[i]), [false, false, false, false, false, false, false]),
+    hasClosing: weekResults.reduce((acc, w) => acc.map((c, i) => c || w.hasClosing[i]), [false, false, false, false, false, false, false]),
+    recordedTotal: pattern.reduce((a, b) => a + (Number(b) || 0), 0),
+    pattern,
+    zeroDays: Math.max(0, ...weekResults.map(w => w.zeroDays || 0)),
+    uplifted: weekResults.some(w => w.uplifted)
+  };
+}
+
 function filterOrderViewItems(items, selectedBranches) {
   if (!selectedBranches || selectedBranches.length === 0) return [];
   return items.filter(item => selectedBranches.some(b => isMasterItemEnabledForBranch(item, b)));
@@ -2608,73 +3253,54 @@ function filterOrderViewItems(items, selectedBranches) {
 
 function orderViewFormatQty(n, item) {
   const u = item.unit ? ` ${item.unit}` : '';
-  return formatNumberWithCommas(n) + u;
+  const num = Number(n);
+  if (!Number.isFinite(num)) return `0${u}`;
+  // Averages / buffers produce float junk (168.0208); display cleanly.
+  const unit = String(item?.unit || '').toLowerCase().trim();
+  const wholeUnit = /^(pcs|pc|ea|each|ct|count|bag|bags|box|boxes|pack|packs|bottle|bottles|cup|cups)$/.test(unit);
+  const rounded = wholeUnit ? Math.round(num) : Math.round(num * 10) / 10;
+  return formatNumberWithCommas(rounded) + u;
 }
 
-/**
- * Project when stock hits zero: start from tomorrow (local), subtract each calendar day's
- * usage from pattern[Mon=0..Sun=6] cycling weekly. Stock is previous calendar day's closing
- * (yesterday) aggregated like the Stock column — today's actual use is not applied in the loop.
- * Independent of Plan for.
- * @returns {{ date: Date, daysUntil: number } | { outNow: true, noBaselineUsage?: true } | { beyondHorizon: true } | null}
- */
-function computeOrderViewRunOutDate(stock, pattern, today) {
-  if (!Array.isArray(pattern) || pattern.length !== 7) return null;
-
-  let remaining = Number(stock);
-  if (!Number.isFinite(remaining)) remaining = 0;
-
-  const sumUse = pattern.reduce((a, x) => a + (Number(x) || 0), 0);
-
-  if (sumUse <= 0) {
-    // Cannot project a calendar run-out without a usage pattern. If stock is already out, zero
-    // baseline usage often means the item was unavailable (out) all week — not "no need to order."
-    if (remaining <= 0) return { outNow: true, noBaselineUsage: true };
-    return null;
-  }
-
-  if (remaining <= 0) return { outNow: true };
-
-  const cursor = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  cursor.setDate(cursor.getDate() + 1);
-
-  for (let i = 0; i < 730; i++) {
-    const idx = getIndexFromMondayForDate(cursor);
-    remaining -= Number(pattern[idx]) || 0;
-    if (remaining <= 0) {
-      const runMid = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate());
-      const todayMid = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-      const daysUntil = Math.round((runMid - todayMid) / 86400000);
-      return { date: new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate()), daysUntil };
-    }
-    cursor.setDate(cursor.getDate() + 1);
-  }
-  return { beyondHorizon: true };
+function itemLeadTimeDays(item) {
+  const n = Number(item?.leadTimeDays);
+  return Number.isFinite(n) && n >= 0 ? n : DEFAULT_LEAD_TIME_DAYS;
 }
 
-function formatOrderViewRunOutCell(runResult) {
+function formatOrderViewRunOutCell(runResult, daysOut = null, today = new Date()) {
   const baseTitle =
-    'Assumes closing from the previous calendar day (yesterday); daily use follows the selected baseline week (Mon–Sun), repeating every week.';
+    'Stock is the latest completed count (rolled forward with typical usage if the count is older). Daily use follows the selected baseline week (Mon-Sun), repeating every week.';
   if (runResult === null) {
     return {
-      runOutPrimary: '—',
+      runOutPrimary: '-',
       runOutSecondary: '',
-      title: `${baseTitle} No usage in baseline week and stock on hand — cannot project run-out (inactive item or no movement). Use Projected need / Suggested order if applicable.`
+      title: `${baseTitle} No usage in baseline week and stock on hand - cannot project run-out.`
     };
   }
   if (runResult.beyondHorizon) {
     return {
-      runOutPrimary: '—',
+      runOutPrimary: '-',
       runOutSecondary: '',
       title: `${baseTitle} Not depleted within 730-day projection (very low daily usage vs stock).`
     };
   }
   if (runResult.outNow) {
+    if (daysOut != null && daysOut > 0) {
+      const outSince = addDays(today, -(daysOut - 1));
+      const short = outSince.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      const long = outSince.toLocaleDateString(undefined, { dateStyle: 'long' });
+      const daysOutLabel = daysOut === 1 ? '1 Day Out' : `${daysOut} Days Out`;
+      return {
+        runOutPrimary: short,
+        runOutSecondary: daysOutLabel,
+        title: `Out of stock for ${daysOutLabel} (since ${long}). ${baseTitle}`
+      };
+    }
     const title = runResult.noBaselineUsage
-      ? `${baseTitle} Stock at or below zero on yesterday’s closing. No usage in baseline week — often because the item was already out. Run-out date not projected; rely on Projected need and Suggested order.`
-      : `${baseTitle} Stock at or below zero on yesterday’s closing snapshot.`;
+      ? `${baseTitle} Stock at or below zero. No usage in baseline week - often because the item was already out.`
+      : `${baseTitle} Stock at or below zero.`;
     return {
-      runOutPrimary: '—',
+      runOutPrimary: '-',
       runOutSecondary: '',
       title
     };
@@ -2682,46 +3308,403 @@ function formatOrderViewRunOutCell(runResult) {
   const { date, daysUntil } = runResult;
   const short = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   const long = date.toLocaleDateString(undefined, { dateStyle: 'long' });
-  const dayLabel = daysUntil === 1 ? 'day' : 'days';
+  const inDaysLabel = daysUntil === 1 ? 'In 1 Day' : `In ${daysUntil} Days`;
   return {
     runOutPrimary: short,
-    runOutSecondary: `(${daysUntil} ${dayLabel})`,
-    title: `Projected run-out ${long} (${daysUntil} ${dayLabel} from today). ${baseTitle}`
+    runOutSecondary: inDaysLabel,
+    title: `Projected run-out ${long} (${daysUntil === 1 ? '1 day' : `${daysUntil} days`} from today). ${baseTitle}`
   };
+}
+
+function computeDaysOutOfStock(stockByDate, today, effectiveStock) {
+  if (effectiveStock > 0) return null;
+  let daysOut = 0;
+  for (let i = 0; i <= STOCK_LOOKBACK_DAYS; i++) {
+    const date = addDays(today, -i);
+    const key = getDateKey(date);
+    const q = stockByDate[key];
+    if (!q) break;
+    const closingChecked = !!(q.closing && q.closing.checked);
+    const openingChecked = !!(q.opening && q.opening.checked);
+    if (closingChecked) {
+      if ((Number(q.closing.value) || 0) > 0) break;
+      daysOut++;
+      continue;
+    }
+    if (openingChecked) {
+      if ((Number(q.opening.value) || 0) + (Number(q.added?.value) || 0) > 0) break;
+      daysOut++;
+      continue;
+    }
+    break;
+  }
+  if (daysOut === 0) return 1;
+  return daysOut;
+}
+
+function buildOrderViewMetrics({
+  item,
+  today,
+  used,
+  censored,
+  hasClosing,
+  stockPick,
+  stockByDate = {},
+  coverageDates,
+  applyLeadTime,
+  applyBuffer,
+  skipUplift = false,
+  zeroDaysHint = 0,
+  upliftedHint = false
+}) {
+  const recordedTotal = used.reduce((a, b) => a + (Number(b) || 0), 0);
+  const { pattern, zeroDays, uplifted } = skipUplift
+    ? { pattern: used.map(n => Number(n) || 0), zeroDays: zeroDaysHint, uplifted: upliftedHint }
+    : upliftCensoredPattern(used, censored);
+  const needsCount = !stockPick?.date;
+  const ageDays = countAgeDays(stockPick?.date, today);
+  const stale = ageDays != null && ageDays >= 3;
+  const countedQty = needsCount ? 0 : stockPick.qty;
+  const effectiveStock = needsCount
+    ? 0
+    : rollForwardStock(countedQty, pattern, stockPick.date, stockPick.kind, today);
+
+  let projected = null;
+  let rawNeed = null;
+  if (!needsCount) {
+    const parts = computeProjectedNeed({
+      pattern,
+      coverageDates,
+      leadTimeDays: itemLeadTimeDays(item),
+      bufferPct: DEFAULT_BUFFER_PCT,
+      applyLeadTime,
+      applyBuffer
+    });
+    rawNeed = parts.rawNeed;
+    projected = parts.projected;
+  }
+
+  let suggested = null;
+  if (projected == null) {
+    suggested = null;
+  } else {
+    suggested = computeSuggestedOrder(projected, effectiveStock, 0);
+  }
+
+  const runRaw = computeRunOutDate(effectiveStock, pattern, today);
+  const daysOut = computeDaysOutOfStock(stockByDate, today, effectiveStock);
+  const runOut = formatOrderViewRunOutCell(runRaw, daysOut, today);
+  const runOutUrgent = effectiveStock <= 0;
+  const runOutBeforeDelivery =
+    !!runRaw &&
+    (runRaw.outNow === true ||
+      (typeof runRaw.daysUntil === 'number' && runRaw.daysUntil <= itemLeadTimeDays(item)));
+
+  const warnReasons = [];
+  if (needsCount) warnReasons.push('No count this period - cannot forecast from stock.');
+  else if (stale) warnReasons.push(`Count is ${ageDays} days old.`);
+  if (zeroDays > 0) {
+    warnReasons.push(
+      uplifted
+        ? `Usage may be understated - at zero ${zeroDays} of 7 days; those days were filled with the rest of the week's average.`
+        : `At zero ${zeroDays} of 7 days in the usage week.`
+    );
+  }
+  if (runOutBeforeDelivery) warnReasons.push('Likely to run out before the next delivery lands.');
+
+  const hugeValue = [recordedTotal, effectiveStock, projected, suggested].some(
+    x => typeof x === 'number' && Number.isFinite(x) && Math.abs(x) >= ORDER_VIEW_HUGE_VALUE_THRESHOLD
+  );
+
+  return {
+    recordedTotal,
+    pattern,
+    zeroDays,
+    uplifted,
+    needsCount,
+    ageDays,
+    stale,
+    stockPick,
+    countedQty,
+    effectiveStock,
+    rawNeed,
+    projected,
+    suggested,
+    daysOut,
+    missingBaseline: false,
+    hugeValue,
+    runOutPrimary: runOut.runOutPrimary,
+    runOutSecondary: runOut.runOutSecondary,
+    runOutTitle: runOut.title,
+    runOutUrgent,
+    warnReasons
+  };
+}
+
+function reapplyOrderViewBuffer() {
+  if (!lastOrderViewSnapshot?.rows?.length) {
+    if (currentTask === 'order-view') loadOrderViewData();
+    return;
+  }
+
+  const today = new Date();
+  const applyBuffer = orderDemandBuffer;
+
+  for (const row of lastOrderViewSnapshot.rows) {
+    for (const slice of row.branches) {
+      if (slice.needsCount || slice.rawNeed == null) continue;
+      const projected = applyBuffer ? slice.rawNeed * (1 + DEFAULT_BUFFER_PCT) : slice.rawNeed;
+      const suggested = computeSuggestedOrder(projected, slice.effectiveStock, 0);
+      Object.assign(
+        slice,
+        decorateOrderViewQty({ ...slice, projected, suggested }, row.item, today)
+      );
+    }
+
+    const branchSlices = row.branches;
+    const projected = branchSlices.every(b => b.projected == null)
+      ? null
+      : branchSlices.reduce((s, b) => s + (Number(b.projected) || 0), 0);
+    const suggested = branchSlices.every(b => b.suggested == null)
+      ? null
+      : branchSlices.reduce((s, b) => s + (Number(b.suggested) || 0), 0);
+    const aggregate = decorateOrderViewQty(
+      {
+        ...row,
+        projected,
+        suggested,
+        hugeValue: [row.recordedTotal, row.effectiveStock, projected, suggested].some(
+          x => typeof x === 'number' && Number.isFinite(x) && Math.abs(x) >= ORDER_VIEW_HUGE_VALUE_THRESHOLD
+        )
+      },
+      row.item,
+      today
+    );
+    row.projected = aggregate.projected;
+    row.suggested = aggregate.suggested;
+    row.projectedDisplay = aggregate.projectedDisplay;
+    row.suggestedDisplay = aggregate.suggestedDisplay;
+    row.hugeValue = aggregate.hugeValue;
+  }
+
+  lastOrderViewSnapshot.meta.orderDemandBuffer = orderDemandBuffer;
+  refreshOrderViewControls(today);
+  renderOrderView(lastOrderViewSnapshot);
+}
+
+function pickNewestStockPick(branchSlices) {
+  let best = null;
+  for (const slice of branchSlices) {
+    const pick = slice.stockPick;
+    if (!pick?.date) continue;
+    if (!best || pick.date > best.date) {
+      best = pick;
+      continue;
+    }
+    if (pick.date.getTime() === best.date.getTime() && pick.kind === 'closing' && best.kind === 'opening') {
+      best = pick;
+    }
+  }
+  return best;
+}
+
+function formatStockAsOfLabel(stockPick, ageDays) {
+  if (!stockPick?.date) return null;
+  const short = stockPick.date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const kind = stockPick.kind === 'opening' ? 'Opening' : 'Closing';
+  let label = `${short} ${kind}`;
+  if (ageDays >= 2) label += ` \u00b7 ${ageDays}d ago`;
+  return label;
+}
+
+function computeCommonStockAsOf(rows) {
+  const labels = [];
+  for (const row of rows) {
+    if (row.needsCount || !row.stockPick?.date) return null;
+    labels.push(formatStockAsOfLabel(row.stockPick, row.ageDays));
+  }
+  if (!labels.length) return null;
+  return labels.every(l => l === labels[0]) ? labels[0] : null;
+}
+
+function formatOrderViewStockSub({
+  needsCount,
+  stockPick,
+  ageDays,
+  extras = [],
+  commonAsOf = null
+}) {
+  if (needsCount || !stockPick?.date) {
+    return extras.length ? extras.join(' \u00b7 ') : 'No count';
+  }
+  const parts = [];
+  const asOf = formatStockAsOfLabel(stockPick, ageDays);
+  if (asOf && asOf !== commonAsOf) parts.push(asOf);
+  if (extras.length) parts.push(...extras);
+  return parts.join(' \u00b7 ');
+}
+
+function applyOrderViewStockSubs(rows, commonAsOf) {
+  for (const row of rows) {
+    const extras = [];
+    if (row.needsCount && row.branches?.some(b => !b.needsCount)) extras.push('missing a location');
+    row.stockSub = formatOrderViewStockSub({
+      needsCount: row.needsCount && row.branches?.every(b => b.needsCount),
+      stockPick: row.stockPick,
+      ageDays: row.ageDays,
+      extras,
+      commonAsOf
+    });
+    if (row.branches) {
+      for (const slice of row.branches) {
+        slice.stockSub = formatOrderViewStockSub({
+          needsCount: slice.needsCount,
+          stockPick: slice.stockPick,
+          ageDays: slice.ageDays,
+          commonAsOf
+        });
+      }
+    }
+  }
+}
+
+function decorateOrderViewQty(metrics, item, today, commonAsOf = null) {
+  const stockDisplay = metrics.needsCount ? '-' : orderViewFormatQty(metrics.effectiveStock, item);
+  const stockSub = formatOrderViewStockSub({ ...metrics, commonAsOf });
+
+  const projectedDisplay =
+    metrics.projected == null ? '-' : orderViewFormatQty(metrics.projected, item);
+  const suggestedDisplay =
+    metrics.suggested == null ? '-' : orderViewFormatQty(metrics.suggested, item);
+  const baselineTotalDisplay = orderViewFormatQty(metrics.recordedTotal, item);
+
+  return {
+    ...metrics,
+    stockDisplay,
+    stockSub,
+    projectedDisplay,
+    suggestedDisplay,
+    baselineTotalDisplay
+  };
+}
+
+function orderViewDateKeysFor(today) {
+  const baselineWeekStarts = baselineWeekStartsFor(today);
+  const dateKeys = new Set();
+  for (const weekStart of baselineWeekStarts) {
+    for (const date of weekDates(weekStart)) dateKeys.add(getDateKey(date));
+  }
+  for (let i = 0; i <= STOCK_LOOKBACK_DAYS; i++) {
+    dateKeys.add(getDateKey(addDays(today, -i)));
+  }
+  return dateKeys;
+}
+
+function sliceFetchedFromCache(branchesInScope, dateKeys) {
+  const fetched = {};
+  for (const branch of branchesInScope) {
+    fetched[branch] = {};
+    for (const dateStr of dateKeys) {
+      const cached = orderViewQuantityCache[branch]?.[dateStr];
+      if (cached === undefined) return null;
+      fetched[branch][dateStr] = cached;
+    }
+  }
+  return fetched;
+}
+
+async function fetchOrderViewQuantities(branchesInScope, dateKeys) {
+  return fetchOrderViewQuantitiesCore(branchesInScope, dateKeys, orderViewQuantityCache, db);
+}
+
+function patchOrderViewColumnHeaderSubs(today = new Date()) {
+  const container = document.getElementById('orderTable');
+  if (!container) return;
+  const baselineWeekStarts = baselineWeekStartsFor(today);
+  const coverageDates = coverageDatesForHorizon(today, orderHorizon);
+  const oldestBaseline = baselineWeekStarts[baselineWeekStarts.length - 1];
+  const newestBaselineEnd = addDays(baselineWeekStarts[0], 6);
+  const needRange = formatDateRange(
+    dateFromKey(coverageDates[0] ? getDateKey(coverageDates[0]) : ''),
+    dateFromKey(coverageDates.length ? getDateKey(coverageDates[coverageDates.length - 1]) : '')
+  );
+  const usageRange = formatDateRange(oldestBaseline, newestBaselineEnd);
+  const needSub = container.querySelector('[data-order-col="need"] .order-view-th-sub');
+  const usageSub = container.querySelector('[data-order-col="usage"] .order-view-th-sub');
+  if (needSub) needSub.textContent = needRange || '-';
+  if (usageSub) usageSub.textContent = usageRange;
+}
+
+function beginOrderViewRefresh(today = new Date()) {
+  const container = document.getElementById('orderTable');
+  if (!container) return false;
+  refreshOrderViewControls(today);
+  if (container.querySelector('.inv-table')) {
+    container.classList.add('order-view-refreshing');
+    patchOrderViewColumnHeaderSubs(today);
+    return true;
+  }
+  container.innerHTML =
+    '<div style="text-align:center;padding:20px;color:#666;font-style:italic;">Loading order suggestions...</div>';
+  return false;
+}
+
+function endOrderViewRefresh() {
+  document.getElementById('orderTable')?.classList.remove('order-view-refreshing');
+}
+
+function buildOrderViewSnapshot(fetched, today, branchesInScope, orderItems) {
+  const snapshot = buildOrderViewSnapshotCore(fetched, today, branchesInScope, orderItems, {
+    orderHorizon,
+    orderDemandBuffer,
+    orderUsageBaseline,
+  });
+  // Preserve builder-specific rowTitle used by Order View tooltips.
+  for (const row of snapshot.rows) {
+    const parts = [];
+    if ((row.warnReasons || []).join(' ')) parts.push(row.warnReasons.join(' '));
+    if (row.hugeValue) parts.push('Unusually large values - check usage/stock data for this item.');
+    row.rowTitle = parts.join(' ');
+  }
+  return snapshot;
+}
+
+
+function reapplyOrderViewHorizon() {
+  const today = new Date();
+  syncOrderViewBranchSelectionFromStorage();
+  const branchesInScope = orderViewBranchSelection.filter(b => availableBranches.includes(b));
+  if (branchesInScope.length === 0) {
+    loadOrderViewData();
+    return;
+  }
+  const dateKeys = orderViewDateKeysFor(today);
+  const fetched = sliceFetchedFromCache(branchesInScope, dateKeys);
+  if (!fetched || masterItems.length === 0) {
+    loadOrderViewData();
+    return;
+  }
+  refreshOrderViewControls(today);
+  const orderItems = filterOrderViewItems(masterItems, branchesInScope);
+  orderItems.sort(compareOrderViewMasterItems);
+  lastOrderViewSnapshot = buildOrderViewSnapshot(fetched, today, branchesInScope, orderItems);
+  renderOrderView(lastOrderViewSnapshot);
 }
 
 async function loadOrderViewData() {
   const container = document.getElementById('orderTable');
   if (!container) return;
 
-  container.innerHTML = '<div style="text-align: center; padding: 20px; color: #666; font-style: italic;">Loading order suggestions…</div>';
+  const loadGen = ++orderViewLoadGen;
+  const today = new Date();
+  const keepingTable = beginOrderViewRefresh(today);
 
   try {
+    await ensureCategoriesLoaded();
     if (masterItems.length === 0) {
       await loadMasterItems(false, true);
     }
-
-    const today = new Date();
-    const todayKey = getDateKey(today);
-    const thisWeekStart = startOfWeekMonday(today);
-    // Stock = sum of checked closings on the previous calendar day (local “yesterday”).
-    const stockAsOfDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    stockAsOfDate.setDate(stockAsOfDate.getDate() - 1);
-    const stockDateKey = getDateKey(stockAsOfDate);
-
-    const baselineWeekStart = new Date(thisWeekStart);
-    if (orderUsageBaseline === 'two-weeks-ago') {
-      baselineWeekStart.setDate(baselineWeekStart.getDate() - 14);
-    } else {
-      baselineWeekStart.setDate(baselineWeekStart.getDate() - 7);
-    }
-
-    const baselineDates = [];
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(baselineWeekStart);
-      d.setDate(baselineWeekStart.getDate() + i);
-      baselineDates.push(d);
-    }
+    if (loadGen !== orderViewLoadGen) return;
 
     syncOrderViewBranchSelectionFromStorage();
     const branchesInScope = orderViewBranchSelection.filter(b => availableBranches.includes(b));
@@ -2734,217 +3717,84 @@ async function loadOrderViewData() {
 
     const orderItems = filterOrderViewItems(masterItems, branchesInScope);
     orderItems.sort(compareOrderViewMasterItems);
-    const itemIds = new Set(orderItems.map(i => i.id));
 
     if (orderItems.length === 0) {
+      const baselineWeekStarts = baselineWeekStartsFor(today);
+      const coverageDates = coverageDatesForHorizon(today, orderHorizon);
+      const oldestBaseline = baselineWeekStarts[baselineWeekStarts.length - 1];
+      const newestBaselineEnd = addDays(baselineWeekStarts[0], 6);
       lastOrderViewSnapshot = {
         rows: [],
         meta: {
-          baselineMatchKey: '',
-          todayKey,
-          stockDateKey,
-          baselineWeekStart,
-          baselineLabelStart: '',
-          baselineLabelEnd: '',
-          orderHorizon
+          todayKey: getDateKey(today),
+          baselineLabelStart: getDateKey(oldestBaseline),
+          baselineLabelEnd: getDateKey(newestBaselineEnd),
+          coverageLabelStart: coverageDates[0] ? getDateKey(coverageDates[0]) : '',
+          coverageLabelEnd: coverageDates.length ? getDateKey(coverageDates[coverageDates.length - 1]) : '',
+          planWeekStart: getDateKey(planWeekStart(today)),
+          planWeekEnd: getDateKey(addDays(planWeekStart(today), 6)),
+          orderHorizon,
+          orderDemandBuffer,
+          rollingAvg: orderUsageBaseline === 'rolling-avg'
         }
       };
+      if (loadGen !== orderViewLoadGen) return;
       renderOrderView(lastOrderViewSnapshot);
       return;
     }
 
-    const baselineFetches = [];
-    for (const date of baselineDates) {
-      const dateStr = getDateKey(date);
-      for (const branch of branchesInScope) {
-        baselineFetches.push(
-          fetchDailyQuantitiesForBranchDate(branch, dateStr).then(q => ({ dateStr, branch, quantities: q }))
-        );
-      }
-    }
-    const baselineResults = await Promise.all(baselineFetches);
+    const dateKeys = orderViewDateKeysFor(today);
+    const fetched = await fetchOrderViewQuantities(branchesInScope, dateKeys);
+    if (loadGen !== orderViewLoadGen) return;
+    if (!fetched) throw new Error('Failed to load order view quantities');
 
-    const usageByItemId = {};
-    orderItems.forEach(it => {
-      usageByItemId[it.id] = {};
-    });
-
-    for (const { dateStr, branch, quantities } of baselineResults) {
-      for (const itemId of itemIds) {
-        const master = masterItems.find(m => m.id === itemId);
-        if (!master || !isMasterItemEnabledForBranch(master, branch)) {
-          continue;
-        }
-        const iq = quantities[itemId];
-        const { used, hasClosingData } = computeDayUsageFromItemQuantities(iq);
-        if (!usageByItemId[itemId][dateStr]) {
-          usageByItemId[itemId][dateStr] = { used: 0, hasClosingData: false };
-        }
-        usageByItemId[itemId][dateStr].used += used;
-        usageByItemId[itemId][dateStr].hasClosingData = usageByItemId[itemId][dateStr].hasClosingData || hasClosingData;
-      }
-    }
-
-    const baselineTotalByItemId = {};
-    for (const itemId of itemIds) {
-      let total = 0;
-      for (const date of baselineDates) {
-        const ds = getDateKey(date);
-        const day = usageByItemId[itemId][ds];
-        total += day ? day.used : 0;
-      }
-      baselineTotalByItemId[itemId] = total;
-    }
-
-    const idxMon = getIndexFromMondayForDate(today);
-    const baselineDayForTodayWeekday = baselineDates[idxMon];
-    const baselineMatchKey = getDateKey(baselineDayForTodayWeekday);
-
-    const baselineRemainderByItemId = {};
-    for (const itemId of itemIds) {
-      let remainder = 0;
-      for (let i = idxMon; i < 7; i++) {
-        const ds = getDateKey(baselineDates[i]);
-        const day = usageByItemId[itemId][ds];
-        remainder += day ? day.used : 0;
-      }
-      baselineRemainderByItemId[itemId] = remainder;
-    }
-
-    const stockFetches = branchesInScope.map(branch =>
-      fetchDailyQuantitiesForBranchDate(branch, stockDateKey).then(q => ({ branch, quantities: q }))
-    );
-    const stockResults = await Promise.all(stockFetches);
-    const stockByItemId = {};
-    for (const itemId of itemIds) {
-      let s = 0;
-      const master = masterItems.find(m => m.id === itemId);
-      for (const { branch, quantities } of stockResults) {
-        if (!master || !isMasterItemEnabledForBranch(master, branch)) {
-          continue;
-        }
-        const iq = quantities[itemId];
-        if (iq && iq.closing && iq.closing.checked) {
-          s += Number(iq.closing.value) || 0;
-        }
-      }
-      stockByItemId[itemId] = s;
-    }
-
-    const orderRows = [];
-    for (const item of orderItems) {
-      const bid = item.id;
-      const baselineTotal = baselineTotalByItemId[bid] ?? 0;
-      const baselineRemainder = baselineRemainderByItemId[bid] ?? 0;
-      const daySlice = usageByItemId[bid][baselineMatchKey];
-      const todayDayUsed = daySlice ? daySlice.used : 0;
-      const todayHasData = daySlice ? daySlice.hasClosingData : false;
-
-      let projected = null;
-      let projectedDisplay = '';
-      let missingBaseline = false;
-
-      if (orderHorizon === 'week') {
-        projected = baselineRemainder;
-        projectedDisplay = orderViewFormatQty(projected, item);
-      } else if (orderHorizon === 'buffered') {
-        projected = baselineRemainder * ORDER_VIEW_BUFFER_MULTIPLIER;
-        projectedDisplay = orderViewFormatQty(projected, item);
-      } else {
-        if (!todayHasData) {
-          projected = null;
-          projectedDisplay = '—';
-          missingBaseline = true;
-        } else {
-          projected = todayDayUsed;
-          projectedDisplay = orderViewFormatQty(projected, item);
-        }
-      }
-
-      let suggested = 0;
-      let suggestedDisplay = '';
-      if (projected === null) {
-        suggestedDisplay = '—';
-      } else {
-        const stock = stockByItemId[bid] ?? 0;
-        suggested = Math.max(0, Math.ceil(projected - stock));
-        suggestedDisplay = orderViewFormatQty(suggested, item);
-      }
-
-      const stockVal = stockByItemId[bid] ?? 0;
-      const baselineForHuge =
-        orderHorizon === 'today' ? (todayHasData ? todayDayUsed : 0) : baselineRemainder;
-      const hugeValue = [baselineForHuge, stockVal, projected, suggested].some(
-        x => typeof x === 'number' && Number.isFinite(x) && Math.abs(x) >= ORDER_VIEW_HUGE_VALUE_THRESHOLD
-      );
-
-      const pattern = baselineDates.map(d => {
-        const ds = getDateKey(d);
-        const day = usageByItemId[bid][ds];
-        return day ? day.used : 0;
-      });
-      const runRaw = computeOrderViewRunOutDate(stockVal, pattern, today);
-      const { runOutPrimary, runOutSecondary, title: runOutTitle } = formatOrderViewRunOutCell(runRaw);
-      const runOutUrgent =
-        !!runRaw &&
-        (runRaw.outNow === true ||
-          (runRaw.date &&
-            typeof runRaw.daysUntil === 'number' &&
-            runRaw.daysUntil <= 3));
-
-      const rowTitleParts = [];
-      if (missingBaseline) {
-        rowTitleParts.push('No closing for matching weekday in baseline week (Plan for: Today).');
-      }
-      if (hugeValue) {
-        rowTitleParts.push('Unusually large values — check usage/stock data for this item.');
-      }
-      const rowTitle = rowTitleParts.join(' ');
-
-      let baselineTotalDisplay = orderViewFormatQty(baselineTotal, item);
-      if (orderHorizon === 'today') {
-        baselineTotalDisplay = todayHasData ? orderViewFormatQty(todayDayUsed, item) : '—';
-      }
-
-      orderRows.push({
-        item,
-        baselineTotal,
-        baselineTotalDisplay,
-        stock: stockVal,
-        stockDisplay: orderViewFormatQty(stockVal, item),
-        projected,
-        projectedDisplay,
-        suggested,
-        suggestedDisplay,
-        missingBaseline,
-        hugeValue,
-        baselineMatchKey,
-        runOutPrimary,
-        runOutSecondary,
-        runOutTitle,
-        runOutUrgent,
-        rowTitle
-      });
-    }
-
-    lastOrderViewSnapshot = {
-      rows: orderRows,
-      meta: {
-        baselineMatchKey,
-        todayKey,
-        stockDateKey,
-        baselineWeekStart,
-        baselineLabelStart: getDateKey(baselineDates[0]),
-        baselineLabelEnd: getDateKey(baselineDates[6]),
-        orderHorizon
-      }
-    };
+    lastOrderViewSnapshot = buildOrderViewSnapshot(fetched, today, branchesInScope, orderItems);
     renderOrderView(lastOrderViewSnapshot);
   } catch (err) {
     console.error('loadOrderViewData', err);
-    lastOrderViewSnapshot = null;
-    container.innerHTML = '<div style="text-align: center; padding: 20px; color: #d32f2f;">Error loading order view</div>';
+    if (!keepingTable) {
+      lastOrderViewSnapshot = null;
+      container.innerHTML = '<div style="text-align: center; padding: 20px; color: #d32f2f;">Error loading order view</div>';
+    }
+  } finally {
+    if (loadGen === orderViewLoadGen) endOrderViewRefresh();
   }
+}
+
+function dateFromKey(key) {
+  if (!key) return null;
+  const [y, m, day] = String(key).split('-').map(Number);
+  if (!y || !m || !day) return null;
+  return new Date(y, m - 1, day);
+}
+
+function orderViewQtyCell(display, sub, extraClass = '') {
+  const subHtml = sub ? `<div class="order-view-cell-sub">${escapeHtml(sub)}</div>` : '';
+  const classes = ['quantity-cell', extraClass].filter(Boolean).join(' ');
+  return `<td class="${classes}" style="text-align:right;">${display}${subHtml}</td>`;
+}
+
+function renderOrderViewItemCells(row, itemLabel, { indent = false, expandHtml = '' } = {}) {
+  const needsOrder = typeof row.suggested === 'number' && row.suggested > 0;
+  const runOutDays = row.runOutSecondary
+    ? `<div class="order-view-runout-days">${escapeHtml(row.runOutSecondary)}</div>`
+    : '';
+  const runOutUrgentClass = row.runOutUrgent ? ' order-view-runout-urgent' : '';
+  const runTitle = [row.runOutTitle, ...(row.warnReasons || [])].filter(Boolean).join(' ');
+  let html = '';
+  html += `<td class="order-view-expand-col">${expandHtml}</td>`;
+  html += `<td class="order-view-col-item${indent ? ' order-view-branch-name' : ''}">${itemLabel}</td>`;
+  html += `<td class="order-view-col-desc">${indent ? '' : escapeHtml(row.item.description || '')}</td>`;
+  html += orderViewQtyCell(row.stockDisplay, row.stockSub, 'order-view-col-stock');
+  html += orderViewQtyCell(row.baselineTotalDisplay, '', 'order-view-col-usage');
+  html += orderViewQtyCell(row.projectedDisplay, '', 'order-view-col-need');
+  html += orderViewQtyCell(
+    row.suggestedDisplay,
+    '',
+    `order-view-col-suggested${needsOrder ? ' order-view-suggested-cell' : ' order-view-suggested-empty'}`
+  );
+  html += `<td class="quantity-cell order-view-runout-cell${runOutUrgentClass}" style="text-align:right;" title="${escapeHtml(runTitle)}"><div class="order-view-runout-date">${escapeHtml(row.runOutPrimary)}</div>${runOutDays}</td>`;
+  return html;
 }
 
 function renderOrderView({ rows, meta }) {
@@ -2973,7 +3823,9 @@ function renderOrderView({ rows, meta }) {
     ? sortedCategories
         .map(([category, catRows]) => [
           category,
-          catRows.filter(r => typeof r.suggested === 'number' && r.suggested > 0)
+          catRows.filter(
+            r => (typeof r.suggested === 'number' && r.suggested > 0) || r.needsCount
+          )
         ])
         .filter(([, catRows]) => catRows.length > 0)
     : sortedCategories;
@@ -2984,22 +3836,30 @@ function renderOrderView({ rows, meta }) {
     return;
   }
 
-  const planIsToday = (meta.orderHorizon || 'week') === 'today';
+  const needRange = formatDateRange(dateFromKey(meta.coverageLabelStart), dateFromKey(meta.coverageLabelEnd));
+  const usageRange = formatDateRange(dateFromKey(meta.baselineLabelStart), dateFromKey(meta.baselineLabelEnd));
 
+  const stockHeaderSub = meta.commonStockAsOf || 'Latest count';
   let html = '<table class="inv-table">';
+  html += '<colgroup>';
+  html += '<col class="order-view-col-expand">';
+  html += '<col class="order-view-col-item">';
+  html += '<col class="order-view-col-desc">';
+  html += '<col class="order-view-col-num">';
+  html += '<col class="order-view-col-num">';
+  html += '<col class="order-view-col-num">';
+  html += '<col class="order-view-col-num">';
+  html += '<col class="order-view-col-runout">';
+  html += '</colgroup>';
   html += '<thead><tr>';
-  html += '<th class="order-view-th-photo">Photo</th>';
-  html += '<th class="order-view-th-item">Item</th>';
-  html += '<th class="order-view-th-desc">Description</th>';
-  html += '<th class="order-view-th-num">Stock</th>';
-  html += '<th class="order-view-th-num">Projected<br>need</th>';
-  if (planIsToday) {
-    html += '<th class="order-view-th-num">Usage</th>';
-  } else {
-    html += '<th class="order-view-th-num">Weekly<br>usage</th>';
-  }
-  html += '<th class="order-view-th-num">Suggested<br>order</th>';
-  html += '<th class="order-view-th-num order-view-th-runout">Run out</th>';
+  html += '<th class="order-view-expand-col order-view-col-expand"></th>';
+  html += '<th class="order-view-th-item order-view-col-item">Item</th>';
+  html += '<th class="order-view-th-desc order-view-col-desc">Description</th>';
+  html += `<th class="order-view-th-num order-view-th-stock order-view-col-num">Stock<span class="order-view-th-sub">${escapeHtml(stockHeaderSub)}</span></th>`;
+  html += `<th class="order-view-th-num order-view-th-usage order-view-col-num" data-order-col="usage">Usage<span class="order-view-th-sub">${escapeHtml(usageRange)}</span></th>`;
+  html += `<th class="order-view-th-num order-view-th-need order-view-col-num" data-order-col="need">Need<span class="order-view-th-sub">${escapeHtml(needRange || '-')}</span></th>`;
+  html += '<th class="order-view-th-num order-view-th-suggested order-view-col-num">Suggested<br>order</th>';
+  html += '<th class="order-view-th-num order-view-th-runout order-view-col-runout">Run out</th>';
   html += '</tr></thead><tbody>';
 
   categoriesToRender.forEach(([category, catRows]) => {
@@ -3017,27 +3877,33 @@ function renderOrderView({ rows, meta }) {
       </div>
     </td></tr>`;
     catRows.forEach(row => {
-      const photo = row.item.photo
-        ? `<img src="${escapeHtml(row.item.photo)}" alt="" style="width:40px;height:40px;border-radius:8px;object-fit:cover;border:1px solid #eee;">`
-        : '<div class="photo-placeholder"></div>';
       const trTitle = row.rowTitle ? ` title="${escapeHtml(row.rowTitle)}"` : '';
       const rowHidden = isCollapsed ? ' style="display:none;"' : '';
       const needsOrder = typeof row.suggested === 'number' && row.suggested > 0;
       const needsOrderClass = needsOrder ? ' order-view-row-needs-order' : '';
-      html += `<tr class="inventory-row category-item-row${needsOrderClass}" data-category="${escapeHtml(category)}"${rowHidden}${trTitle}>`;
-      html += `<td style="text-align:center;padding:4px;">${photo}</td>`;
-      html += `<td>${escapeHtml(row.item.name)}</td>`;
-      html += `<td>${escapeHtml(row.item.description || '')}</td>`;
-      html += `<td class="quantity-cell" style="text-align:right;">${row.stockDisplay}</td>`;
-      html += `<td class="quantity-cell" style="text-align:right;">${row.projectedDisplay}</td>`;
-      html += `<td class="quantity-cell" style="text-align:right;">${row.baselineTotalDisplay}</td>`;
-      html += `<td class="quantity-cell order-view-suggested-cell" style="text-align:right;">${row.suggestedDisplay}</td>`;
-      const runOutDays = row.runOutSecondary
-        ? `<div class="order-view-runout-days">${escapeHtml(row.runOutSecondary)}</div>`
+      const canExpand = Array.isArray(row.branches) && row.branches.length > 1;
+      const expanded = canExpand && orderViewExpandedItems.has(row.item.id);
+      const expandHtml = canExpand
+        ? `<button type="button" class="order-view-expand-btn" data-item-id="${escapeHtml(row.item.id)}" aria-expanded="${expanded ? 'true' : 'false'}" aria-label="${expanded ? 'Hide' : 'Show'} locations">${expanded ? '\u25BC' : '\u25B6'}</button>`
         : '';
-      const runOutUrgentClass = row.runOutUrgent ? ' order-view-runout-urgent' : '';
-      html += `<td class="quantity-cell order-view-runout-cell${runOutUrgentClass}" style="text-align:right;" title="${escapeHtml(row.runOutTitle)}"><div class="order-view-runout-date">${escapeHtml(row.runOutPrimary)}</div>${runOutDays}</td>`;
+      html += `<tr class="inventory-row category-item-row${needsOrderClass}" data-category="${escapeHtml(category)}" data-item-id="${escapeHtml(row.item.id)}"${rowHidden}${trTitle}>`;
+      html += renderOrderViewItemCells(row, escapeHtml(row.item.name), { expandHtml });
       html += '</tr>';
+      if (canExpand) {
+        row.branches.forEach(slice => {
+          const childHidden = isCollapsed || !expanded ? ' style="display:none;"' : '';
+          const childNeeds = typeof slice.suggested === 'number' && slice.suggested > 0;
+          const childClass = childNeeds ? ' order-view-row-needs-order' : '';
+          const childTitle = slice.warnReasons?.length ? ` title="${escapeHtml(slice.warnReasons.join(' '))}"` : '';
+          html += `<tr class="inventory-row order-view-branch-row${childClass}" data-category="${escapeHtml(category)}" data-parent-item="${escapeHtml(row.item.id)}"${childHidden}${childTitle}>`;
+          html += renderOrderViewItemCells(
+            { ...slice, item: row.item },
+            escapeHtml(slice.branchLabel),
+            { indent: true }
+          );
+          html += '</tr>';
+        });
+      }
     });
   });
 
@@ -3045,7 +3911,6 @@ function renderOrderView({ rows, meta }) {
   container.innerHTML = html;
   setupOrderViewCategoryCollapse();
 }
-
 
 function setupOrderViewCategoryCollapse() {
   const table = document.querySelector('#orderTable .inv-table');
@@ -3066,6 +3931,38 @@ function setupOrderViewCategoryCollapse() {
       if (cat) toggleOrderViewCategoryCollapse(cat);
     });
   });
+
+  table.querySelectorAll('.order-view-expand-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const id = btn.dataset.itemId;
+      if (id) toggleOrderViewItemExpand(id);
+    });
+  });
+}
+
+function syncOrderViewRowVisibility() {
+  document.querySelectorAll('#orderTable tr.category-item-row').forEach(tr => {
+    const collapsed = orderViewCollapsedCategories.includes(tr.dataset.category);
+    tr.style.display = collapsed ? 'none' : '';
+  });
+  document.querySelectorAll('#orderTable tr.order-view-branch-row').forEach(tr => {
+    const collapsed = orderViewCollapsedCategories.includes(tr.dataset.category);
+    const expanded = orderViewExpandedItems.has(tr.dataset.parentItem);
+    tr.style.display = collapsed || !expanded ? 'none' : '';
+  });
+}
+
+function toggleOrderViewItemExpand(itemId) {
+  if (orderViewExpandedItems.has(itemId)) orderViewExpandedItems.delete(itemId);
+  else orderViewExpandedItems.add(itemId);
+  const btn = document.querySelector(`#orderTable .order-view-expand-btn[data-item-id="${CSS.escape(itemId)}"]`);
+  if (btn) {
+    const expanded = orderViewExpandedItems.has(itemId);
+    btn.textContent = expanded ? '\u25BC' : '\u25B6';
+    btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+  }
+  syncOrderViewRowVisibility();
 }
 
 function toggleOrderViewCategoryCollapse(category) {
@@ -3078,11 +3975,7 @@ function toggleOrderViewCategoryCollapse(category) {
   localStorage.setItem('order-view-collapsed-categories', JSON.stringify(orderViewCollapsedCategories));
 
   const collapsed = orderViewCollapsedCategories.includes(category);
-  document.querySelectorAll('#orderTable tr.category-item-row').forEach(tr => {
-    if (tr.dataset.category === category) {
-      tr.style.display = collapsed ? 'none' : '';
-    }
-  });
+  syncOrderViewRowVisibility();
 
   document.querySelectorAll('#orderTable tr.category-header').forEach(h => {
     if (h.dataset.category !== category) return;
@@ -3129,7 +4022,7 @@ function renderWeeklyView() {
   }
 
   // Build table headers with dates
-  const headers = ['Photo', 'Item', 'Description'];
+  const headers = ['Item', 'Description'];
   dates.forEach(date => {
     const dayOfWeek = date.toLocaleDateString('en-US', { weekday: 'short' });
     const monthDay = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -3144,7 +4037,7 @@ function renderWeeklyView() {
 
   // Group items by category
   const categoryMap = new Map();
-  dashboardItems.forEach(item => {
+  getWeeklyViewItems().forEach(item => {
     const category = item.category || 'Other';
     if (!categoryMap.has(category)) {
       categoryMap.set(category, []);
@@ -3152,13 +4045,17 @@ function renderWeeklyView() {
     categoryMap.get(category).push(item);
   });
 
-  // Sort categories
+  // Sort categories using the same Master Items order
   const sortedCategories = Array.from(categoryMap.entries())
-    .sort((a, b) => a[0].localeCompare(b[0]));
+    .sort((a, b) => compareCategoryNamesDashboardOrder(a[0], b[0]));
 
   // Build table rows
   const rows = [];
+  if (weeklyQuantityType === 'used') {
+    rows.push(buildWeeklySalesRow(dates, true));
+  }
   sortedCategories.forEach(([category, categoryItems]) => {
+    categoryItems.sort((a, b) => (a.displayOrder ?? a.order ?? 0) - (b.displayOrder ?? b.order ?? 0));
     // Category header row
     rows.push({
       type: 'category-header',
@@ -3173,11 +4070,7 @@ function renderWeeklyView() {
         item: item,
         category: category,
         cells: [
-          // Photo
-          item.photo ? `<img src="${item.photo}" alt="${item.name}" style="width: 40px; height: 40px; border-radius: 8px; object-fit: cover; border: 1px solid #eee;">` : '<div class="photo-placeholder"></div>',
-          // Item name
           item.name,
-          // Description
           item.description || '',
         ]
       };
@@ -3245,23 +4138,30 @@ function renderWeeklyView() {
   // Setup category collapse functionality
   setupWeeklyCategoryCollapse();
 
-  console.log('🎨 Weekly view render completed');
+  console.log('ðŸŽ¨ Weekly view render completed');
 }
 
 function buildWeeklyTable(headers, rows) {
-  let html = '<table class="inv-table weekly-table">';
+  const hasTotal = weeklyQuantityType === 'used';
+  const dayCount = hasTotal ? headers.length - 3 : headers.length - 2;
+  let html = '<table class="inv-table weekly-table" id="weeklyViewTable">';
+  html += '<colgroup>';
+  html += '<col class="weekly-col-item">';
+  html += '<col class="weekly-col-desc">';
+  for (let i = 0; i < dayCount; i++) html += '<col class="weekly-col-day">';
+  if (hasTotal) html += '<col class="weekly-col-total">';
+  html += '</colgroup>';
   
   // Header row
   html += '<thead><tr>';
   headers.forEach((header, index) => {
-    const isDateColumn = index >= 3 && index < headers.length - (headers[headers.length - 1].includes('Total') ? 1 : 0);
     const isTotalColumn = header.includes('Total');
-    let align = 'left';
-    if (isDateColumn || isTotalColumn) {
-      align = 'center';
-    }
-    const headerClass = isTotalColumn ? 'total-column-header' : '';
-    html += `<th style="text-align: ${align};" class="${headerClass}">${header}</th>`;
+    const isDateColumn = index >= 2 && !isTotalColumn;
+    const headerClass = [
+      isTotalColumn ? 'total-column-header' : '',
+      isDateColumn ? 'weekly-day-col' : ''
+    ].filter(Boolean).join(' ');
+    html += `<th class="${headerClass}">${header}</th>`;
   });
   html += '</tr></thead>';
 
@@ -3269,33 +4169,42 @@ function buildWeeklyTable(headers, rows) {
   html += '<tbody>';
   rows.forEach(row => {
     if (row.type === 'category-header') {
+      const isCollapsed = dashboardCollapsedCategories.includes(row.category);
       html += `<tr class="category-header" data-category="${row.category}">`;
       html += `<td colspan="${row.colspan}" style="padding: 8px 12px;">`;
       html += '<div class="category-header-container">';
       html += '<div class="category-header-left">';
-      html += `<button class="category-collapse-btn" data-category="${row.category}">`;
+      html += `<button type="button" class="category-collapse-btn ${isCollapsed ? 'collapsed' : ''}" data-category="${row.category}">`;
       html += '<svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">';
       html += '<path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>';
       html += '</svg></button>';
       html += `<span class="category-name">${row.category}</span>`;
       html += '</div></div></td></tr>';
-    } else if (row.type === 'item') {
-      html += `<tr class="inventory-row category-item-row" data-category="${row.category}">`;
+    } else if (row.type === 'sales-total') {
+      html += '<tr class="weekly-sales-row">';
       row.cells.forEach((cell, index) => {
-        const isDateColumn = index >= 3 && index < row.cells.length - (weeklyQuantityType === 'used' ? 1 : 0);
-        const isTotalColumn = index === row.cells.length - 1 && weeklyQuantityType === 'used';
-        let align = 'left';
-        if (isDateColumn || isTotalColumn) {
-          align = 'center';
-        }
+        const isTotalColumn = weeklyQuantityType === 'used' && index === row.cells.length - 1;
+        const isDateColumn = index >= 2 && !isTotalColumn;
         let cellClass = '';
-        if (isDateColumn || isTotalColumn) {
-          cellClass = weeklyQuantityType === 'movement' ? 'movement-cell-wrapper' : 'quantity-cell used';
+        if (isDateColumn) cellClass = 'weekly-day-col';
+        if (isTotalColumn) cellClass += ' total-column';
+        html += `<td class="${cellClass}">${cell}</td>`;
+      });
+      html += '</tr>';
+    } else if (row.type === 'item') {
+      const isCollapsed = dashboardCollapsedCategories.includes(row.category);
+      html += `<tr class="inventory-row category-item-row" data-category="${row.category}"${isCollapsed ? ' style="display:none;"' : ''}>`;
+      row.cells.forEach((cell, index) => {
+        const isTotalColumn = weeklyQuantityType === 'used' && index === row.cells.length - 1;
+        const isDateColumn = index >= 2 && !isTotalColumn;
+        let cellClass = '';
+        if (isDateColumn) {
+          cellClass = weeklyQuantityType === 'movement' ? 'movement-cell-wrapper weekly-day-col' : 'quantity-cell used weekly-day-col';
         }
         if (isTotalColumn) {
-          cellClass += ' total-column';
+          cellClass = (weeklyQuantityType === 'movement' ? 'movement-cell-wrapper' : 'quantity-cell used') + ' total-column';
         }
-        html += `<td style="text-align: ${align};" class="${cellClass}">${cell}</td>`;
+        html += `<td class="${cellClass}">${cell}</td>`;
       });
       html += '</tr>';
     }
@@ -3306,18 +4215,11 @@ function buildWeeklyTable(headers, rows) {
 }
 
 function setupWeeklyCategoryCollapse() {
-  const categoryHeaders = document.querySelectorAll('#weeklyTable .category-header');
-  
-  categoryHeaders.forEach(header => {
-    const category = header.dataset.category;
-    const collapseBtn = header.querySelector('.category-collapse-btn');
-    
-    if (collapseBtn) {
-      collapseBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        toggleWeeklyCategoryCollapse(category);
-      });
-    }
+  document.querySelectorAll('#weeklyTable .category-header').forEach(header => {
+    header.addEventListener('click', () => {
+      const category = header.dataset.category;
+      if (category) toggleWeeklyCategoryCollapse(category);
+    });
   });
 }
 
@@ -3334,9 +4236,14 @@ function toggleWeeklyCategoryCollapse(category) {
   
   // Save to localStorage
   localStorage.setItem('dashboard-collapsed-categories', JSON.stringify(dashboardCollapsedCategories));
-  
-  // Re-render table
-  renderWeeklyView();
+
+  const collapsed = dashboardCollapsedCategories.includes(category);
+  document.querySelectorAll(`#weeklyTable tr.category-item-row[data-category="${CSS.escape(category)}"]`).forEach(tr => {
+    tr.style.display = collapsed ? 'none' : '';
+  });
+  document.querySelectorAll(`#weeklyTable tr.category-header[data-category="${CSS.escape(category)}"] .category-collapse-btn`).forEach(btn => {
+    btn.classList.toggle('collapsed', collapsed);
+  });
 }
 
 function renderDashboard() {
@@ -3378,7 +4285,7 @@ function renderDashboard() {
     // Category header
     const header = `
       <tr class="category-header" data-category="${category}">
-        <td colspan="9" style="padding: 8px 12px;">
+        <td colspan="8" style="padding: 8px 12px;">
           <div class="category-header-container">
             <div class="category-header-left">
               <button class="category-collapse-btn ${isCollapsed ? 'collapsed' : ''}" data-category="${category}">
@@ -3426,9 +4333,12 @@ function renderDashboard() {
       const restockLevel = masterItem ? getRestockLevelForBranch(masterItem, currentBranch) : 0;
       
       // Use most recent data available, accounting for added stock
-      const mostRecentQty = hasClosingData ? closingQty : (openingQty + addedQty);
-      const isOutOfStock = mostRecentQty === 0;
-      const isLowStock = mostRecentQty > 0 && mostRecentQty <= restockLevel;
+      const hasAnyStockData = hasClosingData || hasOpeningData;
+      const mostRecentQty = hasClosingData
+        ? closingQty
+        : (hasOpeningData ? openingQty + addedQty : null);
+      const isOutOfStock = hasAnyStockData && mostRecentQty === 0;
+      const isLowStock = hasAnyStockData && mostRecentQty > 0 && mostRecentQty <= restockLevel;
       
       // Apply filter if active
       if (isFilteringLowStocks && !isOutOfStock && !isLowStock) {
@@ -3465,17 +4375,9 @@ function renderDashboard() {
       
       return `
         <tr class="inventory-row category-item-row ${stockColorClass}" data-category="${item.category}" data-item-id="${item.id}" ${isCollapsed ? 'style="display:none;"' : ''}>
-        <td>
-          <div class="photo-container">
-            ${item.photo ? 
-              `<img src="${item.photo}" alt="" onerror="this.style.display='none'"/>` : 
-              `<div class="photo-placeholder"></div>`
-            }
-          </div>
-        </td>
           <td style="width:200px;">${item.name}${stockIcon}</td>
           <td style="width:150px;">${item.description || ''}</td>
-          <td class="quantity-cell opening ${openingClass} ${stockColorClass}">${formatNumberWithCommas(openingQty)} ${item.unit}</td>
+          <td class="quantity-cell opening ${openingClass} ${stockColorClass}">${hasOpeningData ? `${formatNumberWithCommas(openingQty)} ${item.unit}` : '-'}</td>
           <td class="quantity-cell added ${stockColorClass}">${deliveryQty > 0 ? formatNumberWithCommas(deliveryQty) + ' ' + item.unit : '-'}</td>
           <td class="quantity-cell pull-out ${stockColorClass}" style="color: #dc3545;">${pullOutQty > 0 ? formatNumberWithCommas(pullOutQty) + ' ' + item.unit : '-'}</td>
           <td class="quantity-cell closing ${closingClass} ${stockColorClass}">${hasClosingData ? formatNumberWithCommas(closingQty) + ' ' + item.unit : '-'}</td>
@@ -3488,7 +4390,7 @@ function renderDashboard() {
   }).join('');
   
   // Build table
-  const headers = ['Photo', 'Item', 'Description', 'Opening', 'Added', 'Pull Out', 'Closing', 'Used', 'Wastage'];
+  const headers = ['Item', 'Description', 'Opening', 'Added', 'Pull Out', 'Closing', 'Used', 'Wastage'];
   const tableHtml = buildTable(headers, rows, 'dashboardTable');
   
   container.innerHTML = tableHtml;
@@ -3497,43 +4399,26 @@ function renderDashboard() {
   setupDashboardCategoryCollapse();
   
   const renderTime = performance.now() - renderStart;
-  console.log(`🎨 Dashboard render completed in: ${renderTime.toFixed(2)}ms`);
+  console.log(`ðŸŽ¨ Dashboard render completed in: ${renderTime.toFixed(2)}ms`);
 }
 
 function getUniqueCategoriesFromItems(items) {
-  const categoryMap = new Map();
-  items.forEach(item => {
-    if (item.category) {
-      if (!categoryMap.has(item.category)) {
-        categoryMap.set(item.category, {
-          name: item.category,
-          order: item.categoryOrder || 0,
-          itemCount: 0
-        });
-      }
-      categoryMap.get(item.category).itemCount++;
-    }
-  });
-  
-  return Array.from(categoryMap.values())
-    .sort((a, b) => (a.order || 0) - (b.order || 0) || a.name.localeCompare(b.name))
-    .map(cat => cat.name);
+  return uniqueSortedCategoryNames(items, currentCategoryOrderMap());
 }
 
 // Setup dashboard category collapse functionality
 function setupDashboardCategoryCollapse() {
-  // Make entire category headers clickable
-  const categoryHeaders = document.querySelectorAll('#dashboardTable .category-header');
-  
-  categoryHeaders.forEach(header => {
-    header.addEventListener('click', (e) => {
+  const root = document.getElementById('dashboardTable') || document.getElementById('inventoryTable');
+  if (!root) return;
+
+  root.querySelectorAll('.category-header').forEach(header => {
+    header.addEventListener('click', () => {
       const category = header.dataset.category;
-      toggleDashboardCategoryCollapse(category);
+      if (category) toggleDashboardCategoryCollapse(category);
     });
   });
-  
-  // Also keep the collapse button clickable for visual feedback
-  const buttons = document.querySelectorAll('#dashboardTable .category-collapse-btn');
+
+  const buttons = root.querySelectorAll('.category-collapse-btn');
   
   buttons.forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -3785,7 +4670,7 @@ async function checkInventoryItemsForUpdates() {
     const itemsChanged = JSON.stringify(freshItems) !== JSON.stringify(dashboardItems);
     
     if (itemsChanged) {
-      console.log('🔄 Background check: Inventory items have changed, updating');
+      console.log('ðŸ”„ Background check: Inventory items have changed, updating');
       dashboardItems = freshItems;
       
       // Cache the fresh items
@@ -3795,7 +4680,7 @@ async function checkInventoryItemsForUpdates() {
       renderDashboard();
       showSyncIndicator('Inventory items updated from Firebase', 'success');
     } else {
-      console.log('✅ Background check: Inventory items are up to date');
+      console.log('âœ… Background check: Inventory items are up to date');
     }
     
   } catch (error) {
@@ -4013,11 +4898,11 @@ function loadInventoryItemsFromCache() {
   try {
     // Use the EXACT same cache key as the main inventory system
     const cacheKey = `inventory-items-${dashboardBranch}`;
-    console.log('🔍 Dashboard looking for cache with key:', cacheKey);
+    console.log('ðŸ” Dashboard looking for cache with key:', cacheKey);
     const cached = localStorage.getItem(cacheKey);
     if (!cached) {
-      console.log('❌ No cached inventory items found for branch:', dashboardBranch);
-      console.log('🔍 Available localStorage keys:', Object.keys(localStorage).filter(k => k.includes('inventory')));
+      console.log('âŒ No cached inventory items found for branch:', dashboardBranch);
+      console.log('ðŸ” Available localStorage keys:', Object.keys(localStorage).filter(k => k.includes('inventory')));
       return null;
     }
     
@@ -4027,8 +4912,8 @@ function loadInventoryItemsFromCache() {
     
     // Main inventory uses direct array format - use that
     if (Array.isArray(cacheData)) {
-      console.log(`📦 Loading inventory items from main inventory cache (parse: ${parseTime.toFixed(2)}ms)`);
-      console.log('📦 Cached items count:', cacheData.length);
+      console.log(`ðŸ“¦ Loading inventory items from main inventory cache (parse: ${parseTime.toFixed(2)}ms)`);
+      console.log('ðŸ“¦ Cached items count:', cacheData.length);
       
       // Ensure items have proper ordering fields
       return cacheData.map(item => ({
@@ -4037,7 +4922,7 @@ function loadInventoryItemsFromCache() {
         categoryOrder: item.categoryOrder || 0
       }));
     } else {
-      console.log('❌ Cache format is not array - main inventory cache not found');
+      console.log('âŒ Cache format is not array - main inventory cache not found');
       return null;
     }
   } catch (error) {
@@ -4046,14 +4931,23 @@ function loadInventoryItemsFromCache() {
   }
 }
 
+function itemsWithoutPhotos(items) {
+  return (items || []).map((item) => {
+    if (!item || item.photo == null) return item;
+    const { photo, ...rest } = item;
+    return rest;
+  });
+}
+
 function cacheInventoryItems(items) {
   try {
     const cacheKey = `inventory-items-${dashboardBranch}`;
     // Use the SAME format as main inventory - direct array, not wrapped object
-    localStorage.setItem(cacheKey, JSON.stringify(items));
+    localStorage.setItem(cacheKey, JSON.stringify(itemsWithoutPhotos(items)));
     console.log('Inventory items cached for branch:', dashboardBranch, 'items:', items.length);
   } catch (error) {
     console.error('Error caching inventory items:', error);
+    try { localStorage.removeItem(`inventory-items-${dashboardBranch}`); } catch (_) {}
   }
 }
 
@@ -4064,7 +4958,7 @@ function invalidateInventoryCache() {
     branches.forEach(branch => {
       const cacheKey = `inventory-items-${branch}`;
       localStorage.removeItem(cacheKey);
-      console.log(`🗑️ Invalidated inventory cache for branch: ${branch}`);
+      console.log(`ðŸ-‘ï¸ Invalidated inventory cache for branch: ${branch}`);
     });
   } catch (error) {
     console.error('Error invalidating inventory cache:', error);
@@ -4076,14 +4970,14 @@ function loadQuantitiesFromCache() {
     const cacheKey = `quantities-${dashboardBranch}-${getDateKey(dashboardDate)}`;
     const cached = localStorage.getItem(cacheKey);
     if (!cached) {
-      console.log('❌ No cached quantities found for date:', getDateKey(dashboardDate));
+      console.log('âŒ No cached quantities found for date:', getDateKey(dashboardDate));
       return null;
     }
     
     const parseStart = performance.now();
     const cacheData = JSON.parse(cached);
     const parseTime = performance.now() - parseStart;
-    console.log(`📊 Loading quantities from cache for date: ${getDateKey(dashboardDate)} (parse: ${parseTime.toFixed(2)}ms)`);
+    console.log(`ðŸ“Š Loading quantities from cache for date: ${getDateKey(dashboardDate)} (parse: ${parseTime.toFixed(2)}ms)`);
     return cacheData.data;
   } catch (error) {
     console.error('Error loading cached quantities:', error);
@@ -4148,7 +5042,7 @@ window.clearAllInventoryCaches = function() {
 
 // Debug function to test cache loading speed
 window.testCacheSpeed = function() {
-  console.log('🧪 Testing cache loading speed...');
+  console.log('ðŸ§ª Testing cache loading speed...');
   const start = performance.now();
   
   const cachedItems = loadInventoryItemsFromCache();
@@ -4157,9 +5051,9 @@ window.testCacheSpeed = function() {
   const end = performance.now();
   const time = end - start;
   
-  console.log(`⚡ Cache loading took: ${time.toFixed(2)}ms`);
-  console.log(`📦 Items found: ${cachedItems ? cachedItems.length : 'none'}`);
-  console.log(`📊 Quantities found: ${cachedQuantities ? 'yes' : 'no'}`);
+  console.log(`âš¡ Cache loading took: ${time.toFixed(2)}ms`);
+  console.log(`ðŸ“¦ Items found: ${cachedItems ? cachedItems.length : 'none'}`);
+  console.log(`ðŸ“Š Quantities found: ${cachedQuantities ? 'yes' : 'no'}`);
   
   return { time, itemsCount: cachedItems ? cachedItems.length : 0, hasQuantities: !!cachedQuantities };
 };
@@ -4169,7 +5063,7 @@ function loadMasterItemsFromCache() {
   try {
     const cached = localStorage.getItem('inventory-config-items-cache');
     if (!cached) {
-      console.log('❌ No cached master items found');
+      console.log('âŒ No cached master items found');
       return null;
     }
     
@@ -4177,8 +5071,8 @@ function loadMasterItemsFromCache() {
     const cacheData = JSON.parse(cached);
     const parseTime = performance.now() - parseStart;
     
-    console.log('📦 Loading master items from cache (parse:', parseTime.toFixed(2), 'ms)');
-    console.log('📦 Cached master items count:', cacheData.items.length);
+    console.log('ðŸ“¦ Loading master items from cache (parse:', parseTime.toFixed(2), 'ms)');
+    console.log('ðŸ“¦ Cached master items count:', cacheData.items.length);
     return cacheData.items;
   } catch (error) {
     console.error('Error loading cached master items:', error);
@@ -4190,19 +5084,20 @@ function cacheMasterItems(items) {
   try {
     const cacheData = {
       timestamp: Date.now(),
-      items: items
+      items: itemsWithoutPhotos(items)
     };
     localStorage.setItem('inventory-config-items-cache', JSON.stringify(cacheData));
-    console.log('📦 Master items cached:', items.length, 'items');
+    console.log('ðŸ“¦ Master items cached:', items.length, 'items');
   } catch (error) {
     console.error('Error caching master items:', error);
+    try { localStorage.removeItem('inventory-config-items-cache'); } catch (_) {}
   }
 }
 
 // Background sync for master items
 async function syncMasterItemsFromFirebaseInBackground() {
   try {
-    console.log('🔄 Background sync: Loading master items from Firebase (isMovingItems =', isMovingItems, ', isTogglingBranch =', isTogglingBranch, ')');
+    console.log('ðŸ”„ Background sync: Loading master items from Firebase (isMovingItems =', isMovingItems, ', isTogglingBranch =', isTogglingBranch, ')');
     
     const querySnapshot = await getDocs(collection(db, 'inventory', '_config', 'items'));
     const freshItems = querySnapshot.docs.map(d => {
@@ -4211,8 +5106,8 @@ async function syncMasterItemsFromFirebaseInBackground() {
       return { id: d.id, displayOrder: data.displayOrder ?? 0, categoryOrder: data.categoryOrder ?? 0, ...data };
     });
     
-    console.log('🔄 Background sync: Fresh items loaded from Firebase:', freshItems.length, 'items');
-    console.log('🔄 Background sync: Sample fresh item enabledBranches:', freshItems.slice(0, 3).map(item => ({ name: item.name, enabledBranches: item.enabledBranches })));
+    console.log('ðŸ”„ Background sync: Fresh items loaded from Firebase:', freshItems.length, 'items');
+    console.log('ðŸ”„ Background sync: Sample fresh item enabledBranches:', freshItems.slice(0, 3).map(item => ({ name: item.name, enabledBranches: item.enabledBranches })));
     
     // Check if data has changed (including displayOrder, categoryOrder, and enabledBranches)
     const currentItemsJson = JSON.stringify(masterItems.map(item => ({ 
@@ -4232,37 +5127,37 @@ async function syncMasterItemsFromFirebaseInBackground() {
       enabledBranches: item.enabledBranches
     })));
     
-    console.log('🔄 Background sync: Current items enabledBranches:', masterItems.slice(0, 3).map(item => ({ name: item.name, enabledBranches: item.enabledBranches })));
-    console.log('🔄 Background sync: Fresh items enabledBranches:', freshItems.slice(0, 3).map(item => ({ name: item.name, enabledBranches: item.enabledBranches })));
-    console.log('🔄 Background sync: Data changed?', currentItemsJson !== freshItemsJson);
+    console.log('ðŸ”„ Background sync: Current items enabledBranches:', masterItems.slice(0, 3).map(item => ({ name: item.name, enabledBranches: item.enabledBranches })));
+    console.log('ðŸ”„ Background sync: Fresh items enabledBranches:', freshItems.slice(0, 3).map(item => ({ name: item.name, enabledBranches: item.enabledBranches })));
+    console.log('ðŸ”„ Background sync: Data changed?', currentItemsJson !== freshItemsJson);
     
     if (currentItemsJson !== freshItemsJson) {
       // Don't override local changes if we're currently moving items or toggling branches
       if (isMovingItems) {
-        console.log('🔄 Background sync: Skipping update - items are being moved (isMovingItems = true)');
+        console.log('ðŸ”„ Background sync: Skipping update - items are being moved (isMovingItems = true)');
         return;
       }
       if (isTogglingBranch) {
-        console.log('🔄 Background sync: Skipping update - branches are being toggled (isTogglingBranch = true)');
+        console.log('ðŸ”„ Background sync: Skipping update - branches are being toggled (isTogglingBranch = true)');
         return;
       }
       
-      console.log('🔄 Background sync: Master items have changed, updating');
-      console.log('🔄 Background sync: Current items enabledBranches:', masterItems.map(item => ({ name: item.name, enabledBranches: item.enabledBranches })));
-      console.log('🔄 Background sync: Fresh items enabledBranches:', freshItems.map(item => ({ name: item.name, enabledBranches: item.enabledBranches })));
+      console.log('ðŸ”„ Background sync: Master items have changed, updating');
+      console.log('ðŸ”„ Background sync: Current items enabledBranches:', masterItems.map(item => ({ name: item.name, enabledBranches: item.enabledBranches })));
+      console.log('ðŸ”„ Background sync: Fresh items enabledBranches:', freshItems.map(item => ({ name: item.name, enabledBranches: item.enabledBranches })));
       masterItems = freshItems;
-      console.log('🔄 Background sync: masterItems updated to fresh data');
+      console.log('ðŸ”„ Background sync: masterItems updated to fresh data');
       
       // Cache the fresh data
       cacheMasterItems(masterItems);
       
       // Re-render if we're on master items or branch list tab
       if (currentTask === 'master-items') {
-        console.log('🔄 Background sync: Re-rendering master items');
+        console.log('ðŸ”„ Background sync: Re-rendering master items');
         renderMasterItems();
       }
       if (currentTask === 'branch-list') {
-        console.log('🔄 Background sync: Re-rendering branch list');
+        console.log('ðŸ”„ Background sync: Re-rendering branch list');
         renderBranchList();
       }
       
@@ -4277,7 +5172,7 @@ async function syncMasterItemsFromFirebaseInBackground() {
 
 // Debug function to force instant dashboard load (bypass all Firebase)
 window.forceInstantLoad = function() {
-  console.log('🚀 Force instant dashboard load...');
+  console.log('ðŸš€ Force instant dashboard load...');
   const start = performance.now();
   
   // Load cached data directly
@@ -4296,10 +5191,10 @@ window.forceInstantLoad = function() {
     dashboardLoading = false;
     
     const end = performance.now();
-    console.log(`⚡ Force load completed in: ${(end - start).toFixed(2)}ms`);
+    console.log(`âš¡ Force load completed in: ${(end - start).toFixed(2)}ms`);
     showSyncIndicator('Force loaded from cache', 'success');
   } else {
-    console.log('❌ No cached data available');
+    console.log('âŒ No cached data available');
   }
 };
 
@@ -4355,7 +5250,7 @@ function addBulkRow() {
     </td>
     <td><input type="number" class="bulk-item-restock" min="0" value="0" data-row="${rowIndex}"></td>
     <td>
-      <button class="delete-row-btn" onclick="deleteBulkRow(${rowIndex})" ${rowIndex === 1 ? 'disabled' : ''}>×</button>
+      <button class="delete-row-btn" onclick="deleteBulkRow(${rowIndex})" ${rowIndex === 1 ? 'disabled' : ''}>\u00D7</button>
     </td>
   `;
   
@@ -4423,7 +5318,7 @@ function copyLastBulkRow() {
     </td>
     <td><input type="number" class="bulk-item-restock" min="0" value="${restockInput ? restockInput.value : '0'}" data-row="${rowIndex}"></td>
     <td>
-      <button class="delete-row-btn" onclick="deleteBulkRow(${rowIndex})">×</button>
+      <button class="delete-row-btn" onclick="deleteBulkRow(${rowIndex})">\u00D7</button>
     </td>
   `;
   
@@ -4739,12 +5634,8 @@ async function loadQuantitiesForBranch(branch, date) {
 }
 
 function getRestockLevelForBranch(masterItem, branch) {
-  // Check for branch-specific override first
-  if (masterItem.branchOverrides && masterItem.branchOverrides[branch]) {
-    return masterItem.branchOverrides[branch].restockLevel || 0;
-  }
-  
-  // Fall back to default restock level
+  const override = masterItem.branchOverrides?.[branch]?.restockLevel;
+  if (override !== undefined) return override;
   return masterItem.restockAmount || 0;
 }
 

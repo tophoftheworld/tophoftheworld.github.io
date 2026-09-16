@@ -49,28 +49,17 @@ export function createCategoryHeader(category, isCollapsed = false, showControls
 
 // Create inventory row for desktop dashboard
 export function createInventoryRow(item, openingQuantities = {}, closingQuantities = {}, addedQuantities = {}, isCollapsed = false) {
-  console.log('createInventoryRow called with unit:', item.unit);
   const openingQty = openingQuantities[item.id] || 0;
   const closingQty = closingQuantities[item.id] || 0;
   const addedQty = addedQuantities[item.id] || 0;
   const usedQty = openingQty + addedQty - closingQty;
   
-  // Determine which column should be bold based on data availability
-  // If closing data exists, mark closing as bold; otherwise mark opening as bold
   const hasClosingData = closingQuantities[item.id] !== undefined && closingQuantities[item.id] > 0;
   const openingClass = hasClosingData ? '' : 'most-recent';
   const closingClass = hasClosingData ? 'most-recent' : '';
   
   return `
     <tr class="inventory-row category-item-row" data-category="${item.category}" data-item-id="${item.id}" ${isCollapsed ? 'style="display:none;"' : ''}>
-      <td style="width:50px;text-align:center;padding:4px;">
-        <div class="photo-container">
-          ${item.photo ? 
-            `<img src="${item.photo}" alt="" onerror="this.style.display='none'"/>` : 
-            `<div class="photo-placeholder"></div>`
-          }
-        </div>
-      </td>
       <td style="width:250px;">${item.name}</td>
       <td style="width:120px;">${item.description || ''}</td>
       <td class="quantity-cell opening ${openingClass}">${formatNumberWithCommas(openingQty)} ${item.unit}</td>

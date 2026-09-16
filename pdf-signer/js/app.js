@@ -17,18 +17,22 @@ import {
   initAnnotations,
   getAnnotations,
   clearAnnotations,
-  getForPage,
 } from './annotations.js';
 import { initTransform, renderOverlays, clearSelection, getSelectedId } from './transform.js';
 import { exportSignedPdf } from './export.js';
 import { initTools, setActiveTool, cancelActiveTool, setToolsEnabled, refreshToolPreview } from './tools.js';
 import { initPenTool } from './pen-tool.js';
+import {
+  isImageDocument,
+  isPdfDocument,
+  imageFileToPdfBytes,
+} from './image-utils.js';
 
 let selectedSavedId = null;
 
 function refreshUI() {
   const selected = getSelectedId();
-  if (selected && !getForPage(pdfViewer.getCurrentPage()).some((p) => p.id === selected)) {
+  if (selected && !getAnnotations().some((p) => p.id === selected)) {
     clearSelection();
   }
   renderOverlays();
@@ -66,12 +70,30 @@ function updateButtons() {
   setToolsEnabled(hasPdf);
 }
 
-async function loadPdfFile(file) {
-  const items = getAnnotations();
-  if (items.length && !confirm('Replace PDF? All annotations will be cleared.')) return;
+async function loadDocumentFile(file) {
+  const isPdf = isPdfDocument(file);
+  const isImage = isImageDocument(file);
+  if (!isPdf && !isImage) {
+    alert('Please choose a PDF or photo (JPG, PNG, WebP).');
+    return;
+  }
 
-  const buffer = await file.arrayBuffer();
-  await pdfViewer.loadPdf(buffer, file.name);
+  const items = getAnnotations();
+  if (items.length && !confirm('Replace document? All annotations will be cleared.')) return;
+
+  try {
+    let buffer;
+    if (isImage) {
+      buffer = await imageFileToPdfBytes(file);
+    } else {
+      buffer = await file.arrayBuffer();
+    }
+    await pdfViewer.loadPdf(buffer, file.name);
+  } catch (err) {
+    alert('Could not open file: ' + (err.message || err));
+    return;
+  }
+
   clearAnnotations();
   clearSelection();
   cancelPlacementMode();
@@ -85,7 +107,7 @@ async function loadPdfFile(file) {
 
 function clearAll() {
   if (!pdfViewer.getState().pdfDoc) return;
-  if (getAnnotations().length && !confirm('Clear PDF and all annotations?')) return;
+  if (getAnnotations().length && !confirm('Clear document and all annotations?')) return;
 
   pdfViewer.clearPdf();
   clearAnnotations();
@@ -117,7 +139,7 @@ function init() {
     renderOverlays();
   });
 
-  pdfViewer.wireDropzone(loadPdfFile);
+  pdfViewer.wireDropzone(loadDocumentFile);
   pdfViewer.wireViewerControls();
 
   pdfViewer.setOnRenderComplete(() => {

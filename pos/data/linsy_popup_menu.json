@@ -1,10 +1,26 @@
 {
   "oatUpgradePrice": 0,
   "categories": [
-    { "id": "matcha-lattes", "name": "Matcha Lattes (Iced)" },
-    { "id": "hojicha-lattes", "name": "Hōjicha Lattes (Iced)" },
-    { "id": "summer-matcha", "name": "Summer Matcha" },
-    { "id": "summer-matcha-flight", "name": "Summer Matcha Flight" }
+    {
+      "id": "matcha-lattes",
+      "name": "Matcha Lattes (Iced)",
+      "countsAsCup": true
+    },
+    {
+      "id": "hojicha-lattes",
+      "name": "Hōjicha Lattes (Iced)",
+      "countsAsCup": true
+    },
+    {
+      "id": "summer-matcha",
+      "name": "Summer Matcha",
+      "countsAsCup": true
+    },
+    {
+      "id": "summer-matcha-flight",
+      "name": "Summer Matcha Flight",
+      "countsAsCup": true
+    }
   ],
   "items": [
     {
@@ -14,17 +30,29 @@
       "price": 230,
       "type": "Iced",
       "shorthand": "SML",
-      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
     },
     {
       "categoryId": "matcha-lattes",
       "name": "Matchanese Seasalt Latte",
       "description": "Our Signature Matcha Latte topped with Seasalt Cream",
       "price": 260,
-      "tags": ["Best Seller"],
+      "tags": [
+        "Best Seller"
+      ],
       "type": "Iced",
       "shorthand": "MSL",
-      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
     },
     {
       "categoryId": "matcha-lattes",
@@ -33,7 +61,12 @@
       "price": 250,
       "type": "Iced",
       "shorthand": "SPML",
-      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
     },
     {
       "categoryId": "matcha-lattes",
@@ -42,7 +75,12 @@
       "price": 250,
       "type": "Iced",
       "shorthand": "EGML",
-      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
     },
     {
       "categoryId": "matcha-lattes",
@@ -51,7 +89,12 @@
       "price": 260,
       "type": "Iced",
       "shorthand": "STML",
-      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
     },
     {
       "categoryId": "hojicha-lattes",
@@ -60,7 +103,11 @@
       "price": 200,
       "type": "Iced",
       "shorthand": "HL",
-      "customizations": { "sweetness": true, "milk": true, "discount": true }
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "discount": true
+      }
     },
     {
       "categoryId": "hojicha-lattes",
@@ -69,7 +116,11 @@
       "price": 230,
       "type": "Iced",
       "shorthand": "HSL",
-      "customizations": { "sweetness": true, "milk": true, "discount": true }
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "discount": true
+      }
     },
     {
       "categoryId": "summer-matcha",
@@ -78,7 +129,11 @@
       "price": 250,
       "type": "Iced",
       "shorthand": "MCM",
-      "customizations": { "sweetness": true, "strengthLevel": true, "discount": true }
+      "customizations": {
+        "sweetness": true,
+        "strengthLevel": true,
+        "discount": true
+      }
     },
     {
       "categoryId": "summer-matcha",
@@ -87,7 +142,11 @@
       "price": 290,
       "type": "Iced",
       "shorthand": "CPMC",
-      "customizations": { "sweetness": true, "strengthLevel": true, "discount": true }
+      "customizations": {
+        "sweetness": true,
+        "strengthLevel": true,
+        "discount": true
+      }
     },
     {
       "categoryId": "summer-matcha-flight",
@@ -96,7 +155,9 @@
       "price": 550,
       "type": "Iced",
       "shorthand": "TFP",
-      "customizations": { "discount": true }
+      "customizations": {
+        "discount": true
+      }
     }
   ]
 }

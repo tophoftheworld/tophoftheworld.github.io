@@ -1,0 +1,12 @@
+{
+  "name": "mmf-merchant-hub",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate-codes": "node scripts/generate-merchant-codes.mjs",
+    "generate-codes:force": "node scripts/generate-merchant-codes.mjs --force"
+  },
+  "dependencies": {
+    "firebase": "^11.6.0"
+  }
+}

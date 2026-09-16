@@ -1,0 +1,30 @@
+{
+  "hosting": {
+    "target": "hub",
+    "public": ".",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**",
+      "scripts/**",
+      "merchant-codes.csv"
+    ],
+    "headers": [
+      {
+        "source": "**/*.@(js|css|html)",
+        "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+      }
+    ],
+    "redirects": [
+      {
+        "source": "/admin",
+        "destination": "https://mmf-info.web.app/admin",
+        "type": 302
+      }
+    ],
+    "rewrites": [
+      { "source": "/hub-admin", "destination": "/hub-admin.html" },
+      { "source": "/meal-orders", "destination": "/meal-orders.html" }
+    ]
+  }
+}

@@ -1,6 +1,6 @@
-// Import shared utilities with version for cache busting
+﻿// Import shared utilities with version for cache busting
 // Static import with versioned URL to avoid caching issues; keep in sync with index.html
-import * as shared from './shared.js?v=1.5.62';
+import * as shared from './shared.js?v=1.5.88';
 
 // Helper function to get today's date in local timezone (YYYY-MM-DD format)
 function getTodayLocal() {
@@ -129,6 +129,13 @@ document.addEventListener('DOMContentLoaded', async function () {
     initializeDatePicker();
     initializeBranchSelect();
     initializeFormDatePicker();
+    initReceiptUploadArea();
+    initReceiptPanZoom();
+    window.addEventListener('resize', () => syncReceiptExtractOverlayToImage());
+    document.getElementById('mobileSupplierClearBtn')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        clearSelectedSupplier();
+    });
 
     document.addEventListener('visibilitychange', () => {
         if (
@@ -162,6 +169,15 @@ document.addEventListener('DOMContentLoaded', async function () {
         // every receipt here (that was the main cause of slow startup/refresh).
         const hasChanges = await shared.initializeFirebaseSync();
 
+        // POS pop-up events for dashboard filter + form select
+        try {
+            const events = await shared.loadActivePopupEvents();
+            refreshDashboardPopupEventOptions(events);
+            populatePopupEventSelect();
+        } catch (e) {
+            console.warn('Popup events load failed:', e);
+        }
+
         if (hasChanges) {
             // Re-render with updated data
             loadDashboard();
@@ -169,6 +185,15 @@ document.addEventListener('DOMContentLoaded', async function () {
     } else {
         console.log('Running in offline mode - Firebase not available');
         showSyncStatus('⚠ Offline mode', 'error');
+        try {
+            const cached = shared.getCachedPopupEvents();
+            if (cached.length) {
+                refreshDashboardPopupEventOptions(cached);
+                populatePopupEventSelect();
+            }
+        } catch {
+            /* ignore */
+        }
     }
 
     // Set up merge modal close button using event delegation (works even if button is added later)
@@ -215,7 +240,100 @@ document.addEventListener('DOMContentLoaded', async function () {
             true
         );
     }
+
+    bootPurchasingEmbed();
 });
+
+function bootPurchasingEmbed() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('purchasingEmbed') !== '1') return;
+
+    window.__purchasingEmbed = true;
+    window.__purchasingEmbedSaved = false;
+    document.documentElement.classList.add('purchasing-embed');
+    document.body.classList.add('purchasing-embed');
+
+    let prefill = null;
+    try {
+        const raw = params.get('prefill');
+        if (raw) prefill = JSON.parse(raw);
+    } catch (err) {
+        console.warn('Invalid purchasing prefill', err);
+    }
+    window.__purchasingPrefill = prefill;
+
+    const dash = document.getElementById('dashboardPage');
+    if (dash) dash.style.display = 'none';
+    const fab = document.querySelector('.add-expense-fab');
+    if (fab) fab.style.display = 'none';
+
+    showAddExpenseModal();
+    setTimeout(() => applyPurchasingPrefill(prefill), 80);
+}
+
+function applyPurchasingPrefill(prefill) {
+    if (!prefill || typeof prefill !== 'object') return;
+
+    if (prefill.date) setFormExpenseDate(prefill.date);
+
+    const allocationSelect = document.getElementById('allocationSelect');
+    if (allocationSelect && prefill.allocation) {
+        allocationSelect.value = prefill.allocation;
+        if (typeof handleAllocationChange === 'function') handleAllocationChange();
+    }
+
+    const formBranchSelect = document.getElementById('formBranchSelect');
+    if (formBranchSelect && prefill.branch) {
+        formBranchSelect.value = prefill.branch;
+    }
+
+    if (prefill.eventName) {
+        const eventInput = document.getElementById('eventName');
+        if (eventInput) eventInput.value = prefill.eventName;
+    }
+
+    const supplierInput = document.getElementById('supplierName');
+    if (supplierInput && prefill.supplierName) {
+        supplierInput.value = prefill.supplierName;
+        if (prefill.supplierId) {
+            supplierInput.setAttribute('data-supplier-id', prefill.supplierId);
+        }
+        const hiddenName = document.getElementById('supplierNameHidden');
+        if (hiddenName) hiddenName.value = prefill.supplierName;
+    }
+
+    const notesEl = document.getElementById('notes');
+    if (notesEl && prefill.notes) notesEl.value = prefill.notes;
+
+    if (prefill.itemName || prefill.totalAmount != null) {
+        const container = document.getElementById('itemsContainer');
+        if (container) {
+            container.innerHTML = '';
+            addItemRow();
+            const row = container.querySelector('.item-row');
+            if (row) {
+                const nameInput = row.querySelector('[name="itemName"]');
+                const qtyInput = row.querySelector('[name="itemQuantity"]');
+                const priceInput = row.querySelector('[name="itemPrice"]');
+                if (nameInput) nameInput.value = prefill.itemName || '';
+                const qty = Number(prefill.quantity) || 1;
+                if (qtyInput) qtyInput.value = String(qty);
+                let price = Number(prefill.price);
+                if (!(price > 0) && prefill.totalAmount != null && qty > 0) {
+                    price = Number(prefill.totalAmount) / qty;
+                }
+                if (priceInput && price > 0) {
+                    priceInput.value = String(Math.round(price * 100) / 100);
+                }
+            }
+            if (typeof updateFromItems === 'function') updateFromItems();
+        }
+        const totalAmountInput = document.getElementById('totalAmountInput');
+        if (totalAmountInput && prefill.totalAmount != null) {
+            totalAmountInput.value = String(Math.round(Number(prefill.totalAmount) || 0));
+        }
+    }
+}
 
 // Force sync before page unload - now handled by shared.js
 
@@ -321,6 +439,7 @@ function showAddExpenseModal() {
 
     resetForm();
 }
+window.showAddExpenseModal = showAddExpenseModal;
 
 function closeExpenseModal() {
     document.getElementById('expenseModalOverlay').classList.remove('show');
@@ -335,7 +454,17 @@ function closeExpenseModal() {
     if (scrollY) {
         window.scrollTo(0, parseInt(scrollY || '0') * -1);
     }
+
+    if (window.__purchasingEmbed && !window.__purchasingEmbedSaved) {
+        try {
+            window.parent.postMessage({ type: 'purchasing-expense-cancelled' }, '*');
+        } catch (_) {
+            /* ignore */
+        }
+    }
+    window.__purchasingEmbedSaved = false;
 }
+window.closeExpenseModal = closeExpenseModal;
 
 // Dashboard functions
 async function refreshDashboardFeed() {
@@ -404,30 +533,39 @@ function loadDashboard() {
     const expenseList = document.getElementById('expenseList');
     const allExpenses = shared.getExpenses(); // Get expenses from shared module
     
-    // Filter by selected date and branch/allocation
-    // The selectedBranch variable now contains either a branch name or an allocation
-    const branches = ['SM North', 'Podium', 'Mall of Asia'];
-    const isBranchSelected = branches.includes(selectedBranch);
-    
-    const filteredExpenses = allExpenses.filter(expense => {
+    // Filter by selected date and branch / allocation / pop-up event
+    const STORE_BRANCHES = ['SM North', 'Podium', 'Mall of Asia'];
+    const ALLOCATION_FILTERS = ['General', 'Workshop', 'Popup', 'Bar Service'];
+    const isBranchSelected = STORE_BRANCHES.includes(selectedBranch);
+    const isAllocationFilter = ALLOCATION_FILTERS.includes(selectedBranch);
+
+    const filteredExpenses = allExpenses.filter((expense) => {
         if (expense.date !== selectedDate) return false;
-        
+
         if (isBranchSelected) {
-            // If a branch is selected, match by branch and allocation should be 'Store'
-            return expense.branch === selectedBranch && (expense.allocation === 'Store' || !expense.allocation);
-        } else {
-            // If an allocation is selected, match by allocation (branch should be null or not set)
+            return (
+                expense.branch === selectedBranch &&
+                (expense.allocation === 'Store' || !expense.allocation)
+            );
+        }
+        if (isAllocationFilter) {
             return expense.allocation === selectedBranch;
         }
+        // Specific pop-up event from POS list
+        return expense.allocation === 'Popup' && (expense.eventName || '') === selectedBranch;
     });
 
-    // Calculate store cash and company expenses separately
+    const viewingPopupScope =
+        selectedBranch === 'Popup' || (!isBranchSelected && !isAllocationFilter);
+    const cashLabel = viewingPopupScope ? 'Pop-up Cash' : 'Store Cash';
+
+    // Calculate cash and company expenses separately
     const storeCashTotal = filteredExpenses
-        .filter(expense => (expense.paidBy || 'Company') === 'Store Cash')
+        .filter((expense) => shared.isCashPaidBy(expense.paidBy || 'Company'))
         .reduce((sum, expense) => sum + expense.totalAmount, 0);
-    
+
     const companyTotal = filteredExpenses
-        .filter(expense => (expense.paidBy || 'Company') === 'Company')
+        .filter((expense) => (expense.paidBy || 'Company') === 'Company')
         .reduce((sum, expense) => sum + expense.totalAmount, 0);
 
     const summaryTitle = formatDateDisplay(selectedDate) + " Expenses";
@@ -438,7 +576,7 @@ function loadDashboard() {
                 <div class="summary-title">${summaryTitle}</div>
                 <div class="summary-amounts">
                     <div class="summary-amount-item">
-                        <div class="summary-amount-label">Store Cash</div>
+                        <div class="summary-amount-label">${cashLabel}</div>
                         <div class="summary-amount-value">₱0.00</div>
                     </div>
                     <div class="summary-amount-item">
@@ -449,7 +587,7 @@ function loadDashboard() {
                 <div class="summary-count">0 transactions</div>
             </div>
             <div class="empty-state">
-                <p>No expenses recorded for ${formatDateDisplay(selectedDate)} at ${selectedBranch}</p>
+                <p>No expenses at ${selectedBranch}${formatDateDisplay(selectedDate) === "Today's" ? ' for today' : ` for ${formatDateDisplay(selectedDate)}`}</p>
             </div>
         `;
         return;
@@ -461,7 +599,7 @@ function loadDashboard() {
                 <div class="summary-title">${summaryTitle}</div>
                 <div class="summary-amounts">
                     <div class="summary-amount-item">
-                        <div class="summary-amount-label">Store Cash</div>
+                        <div class="summary-amount-label">${cashLabel}</div>
                         <div class="summary-amount-value">₱0.00</div>
                     </div>
                     <div class="summary-amount-item">
@@ -487,7 +625,7 @@ function loadDashboard() {
         <div class="summary-title">${summaryTitle}</div>
         <div class="summary-amounts">
             <div class="summary-amount-item">
-                <div class="summary-amount-label">Store Cash</div>
+                <div class="summary-amount-label">${cashLabel}</div>
                 <div class="summary-amount-value">₱${storeCashTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
             </div>
             <div class="summary-amount-item">
@@ -504,13 +642,12 @@ function loadDashboard() {
             ? `${expense.items.slice(0, 3).map(item => item.name).join(', ')} + ${expense.items.length - 3} more`
             : expense.items.map(item => item.name).join(', ');
 
-        const isToday = expense.date === getTodayLocal();
-
         const isPending = shared.isExpensePendingSync(expense.id);
         const pendingClass = isPending ? ' expense-card--pending-sync' : '';
         const syncBadge = isPending
             ? `<div class="expense-sync-badge">${shared.isSyncInProgress() ? 'Syncing…' : 'Not synced'}</div>`
             : '';
+        const paidByLabel = shared.isCashPaidBy(expense.paidBy) ? shared.cashPaidByLabel(expense.allocation) : (expense.paidBy || 'Company');
 
         return `
             <div class="expense-card${pendingClass}">
@@ -542,15 +679,11 @@ function loadDashboard() {
                     </div>
                 </div>
                 <div class="expense-footer" onclick="viewExpense('${expense.id}')">
-                   <div class="expense-branch">${[
-                        expense.branch,
-                        expense.paidBy || 'Company',
-                        expense.paymentMethod,
-                        expense.invoiceNumber ? '#' + expense.invoiceNumber : null,
-                        expense.isVatRegistered && expense.vatAmount > 0 ? 'VAT' : null
-                    ].filter(Boolean).join(' • ')}</div>
-                    <div class="expense-date">${isToday ? 'Today' : formatDate(expense.date)}</div>
-                    ${syncBadge}
+                    <div class="expense-branch">${shared.formatExpenseBranchOrEvent(expense) || ''}</div>
+                    <div class="expense-footer-right">
+                        <div class="expense-paid-by">Paid by ${paidByLabel}</div>
+                        ${syncBadge}
+                    </div>
                 </div>
             </div>
         `;
@@ -669,6 +802,33 @@ function updateDateDisplay() {
             nextBtn.style.cursor = 'pointer';
             nextBtn.disabled = false;
         }
+    }
+}
+
+function refreshDashboardPopupEventOptions(events) {
+    const group = document.getElementById('dashboardPopupEventsGroup');
+    const branchSelect = document.getElementById('dashboardBranchSelect');
+    if (!group || !branchSelect) return;
+
+    const prev = selectedBranch;
+    group.innerHTML = '<option value="Popup">All pop-ups</option>';
+    (events || []).forEach((ev) => {
+        const opt = document.createElement('option');
+        opt.value = ev.name;
+        opt.textContent = ev.name;
+        group.appendChild(opt);
+    });
+
+    const values = [...branchSelect.options].map((o) => o.value);
+    if (values.includes(prev)) {
+        branchSelect.value = prev;
+        selectedBranch = prev;
+    } else if (!values.includes(selectedBranch)) {
+        branchSelect.value = 'SM North';
+        selectedBranch = 'SM North';
+        localStorage.setItem('expense-selected-branch', selectedBranch);
+    } else {
+        branchSelect.value = selectedBranch;
     }
 }
 
@@ -911,22 +1071,32 @@ function showExpenseDetailModal(expense) {
                     <div class="expense-detail-cell-label">Date</div>
                     <div class="expense-detail-cell-value">${formattedDate}</div>
                 </div>
-                ${expense.allocation === 'Store' && expense.branch ? `
-                <div class="expense-detail-cell">
-                    <div class="expense-detail-cell-label">Branch</div>
-                    <div class="expense-detail-cell-value">${expense.branch}</div>
-                </div>
-                ` : ''}
                 ${expense.allocation ? `
                 <div class="expense-detail-cell">
                     <div class="expense-detail-cell-label">Allocation</div>
                     <div class="expense-detail-cell-value">${expense.allocation}</div>
                 </div>
                 ` : ''}
-                ${expense.allocation === 'Store' && expense.paidBy ? `
+                ${expense.allocation === 'Store' && expense.branch ? `
+                <div class="expense-detail-cell">
+                    <div class="expense-detail-cell-label">Branch</div>
+                    <div class="expense-detail-cell-value">${expense.branch}</div>
+                </div>
+                ` : ''}
+                ${shared.isEventAllocation(expense.allocation) && expense.eventName ? `
+                <div class="expense-detail-cell">
+                    <div class="expense-detail-cell-label">${expense.allocation === 'Popup' ? 'Pop-up event' : 'Event name'}</div>
+                    <div class="expense-detail-cell-value">${expense.eventName}</div>
+                </div>
+                ` : ''}
+                ${shared.allocationUsesPaidBy(expense.allocation) && expense.paidBy ? `
                 <div class="expense-detail-cell">
                     <div class="expense-detail-cell-label">Paid By</div>
-                    <div class="expense-detail-cell-value">${expense.paidBy}</div>
+                    <div class="expense-detail-cell-value">${
+                        shared.isCashPaidBy(expense.paidBy)
+                            ? shared.cashPaidByLabel(expense.allocation)
+                            : expense.paidBy
+                    }</div>
                 </div>
                 ` : ''}
                 ${expense.expenseCategory ? `
@@ -1188,7 +1358,7 @@ window.handleReceiptImageErrorMobile = function(expenseId) {
 async function loadReceiptImageForEditMobile(expenseId) {
     const preview = document.getElementById('receiptPreview');
     const uploadText = document.getElementById('receiptUploadText');
-    const uploadArea = document.querySelector('.receipt-upload');
+    const uploadArea = document.getElementById('receiptUploadArea') || document.querySelector('.receipt-upload');
     const removeBtn = document.getElementById('removeReceiptBtn');
     
     if (!preview || !expenseId) return;
@@ -1203,66 +1373,29 @@ async function loadReceiptImageForEditMobile(expenseId) {
                     : expense
             );
             shared.setExpenses(nextExpenses);
-            // Show receipt image
-            preview.src = receiptImage;
-            preview.style.display = 'block';
-            preview.onerror = () => {
-                const expense = shared.getExpenses().find((e) => e.id === expenseId);
-                if (expense?.hasReceiptImage && preview.dataset.receiptRetry !== '1') {
-                    preview.dataset.receiptRetry = '1';
-                    loadReceiptImageForEditMobile(expenseId);
-                    return;
-                }
-                // If image fails to load, show error state
-                preview.style.display = 'none';
-                if (uploadText) {
-                    uploadText.textContent = 'Failed to load receipt';
-                    uploadText.style.display = 'block';
-                }
-                if (uploadArea) {
-                    uploadArea.classList.remove('has-file');
-                }
-            };
-            
-            if (uploadText) {
-                uploadText.textContent = 'Receipt attached';
-            }
-            delete preview.dataset.receiptRetry;
-            if (uploadArea) {
-                uploadArea.classList.add('has-file');
-            }
-            if (removeBtn) {
-                removeBtn.style.display = 'block';
-            }
+            showReceiptPreview(receiptImage, { phase: 'ready' });
             window.currentReceiptData = receiptImage;
+            window.currentReceiptImageForAi = String(receiptImage).startsWith('data:image/')
+                ? receiptImage
+                : null;
         } else {
-            // No receipt found - show upload area
+            setReceiptFormPhase('empty');
             preview.style.display = 'none';
             if (uploadText) {
-                uploadText.textContent = 'Tap to add receipt photo';
-                uploadText.style.display = 'block';
+                uploadText.textContent = 'Tap to add photo';
             }
-            if (uploadArea) {
-                uploadArea.classList.remove('has-file');
-            }
-            if (removeBtn) {
-                removeBtn.style.display = 'none';
-            }
+            if (uploadArea) uploadArea.classList.remove('has-file');
+            if (removeBtn) removeBtn.style.display = 'none';
             window.currentReceiptData = null;
         }
     } catch (error) {
         console.error('Failed to load receipt image:', error);
-        preview.style.display = 'none';
+        setReceiptFormPhase('empty');
         if (uploadText) {
             uploadText.textContent = 'Failed to load receipt. Tap to upload new one.';
-            uploadText.style.display = 'block';
         }
-        if (uploadArea) {
-            uploadArea.classList.remove('has-file');
-        }
-        if (removeBtn) {
-            removeBtn.style.display = 'none';
-        }
+        if (uploadArea) uploadArea.classList.remove('has-file');
+        if (removeBtn) removeBtn.style.display = 'none';
         window.currentReceiptData = null;
     }
 }
@@ -1282,27 +1415,51 @@ function resetForm() {
     // Reset date field - use currently selected dashboard date
     setFormExpenseDate(selectedDate);
 
-    // Reset allocation and branch fields
+    // Prefill allocation/branch from home filter (selectedBranch may be a branch or allocation)
+    const STORE_BRANCHES = ['SM North', 'Podium', 'Mall of Asia'];
+    const ALLOCATION_FILTERS = ['General', 'Workshop', 'Popup', 'Bar Service'];
     const allocationSelect = document.getElementById('allocationSelect');
     if (allocationSelect) {
-        allocationSelect.value = 'Store';
+        if (STORE_BRANCHES.includes(selectedBranch)) {
+            allocationSelect.value = 'Store';
+        } else if (ALLOCATION_FILTERS.includes(selectedBranch)) {
+            allocationSelect.value = selectedBranch;
+        } else {
+            // Specific pop-up event selected on home
+            allocationSelect.value = 'Popup';
+        }
         handleAllocationChange();
     }
     
     const formBranchSelect = document.getElementById('formBranchSelect');
     if (formBranchSelect) {
-        const branches = ['SM North', 'Podium', 'Mall of Asia'];
-        formBranchSelect.value = branches.includes(selectedBranch) ? selectedBranch : 'SM North';
+        formBranchSelect.value = STORE_BRANCHES.includes(selectedBranch)
+            ? selectedBranch
+            : 'SM North';
     }
-    
-    // Update Paid By visibility
+
+    const eventNameInput = document.getElementById('eventName');
+    if (eventNameInput) eventNameInput.value = '';
+    const eventNameSelect = document.getElementById('eventNameSelect');
+    if (eventNameSelect) eventNameSelect.value = '';
+
     handleAllocationChange();
+
+    if (
+        allocationSelect?.value === 'Popup' &&
+        !ALLOCATION_FILTERS.includes(selectedBranch) &&
+        !STORE_BRANCHES.includes(selectedBranch)
+    ) {
+        setFormEventNameValue(selectedBranch);
+    }
 
     const pettyCb = document.getElementById('isPettyCash');
     if (pettyCb) {
         pettyCb.checked = false;
         handlePettyCashChange();
     }
+
+    leaveMobileSupplierVerifiedMode({ clearFields: true });
 
     // Clear containers
     const itemsContainer = document.getElementById('itemsContainer');
@@ -1362,104 +1519,710 @@ function resetForm() {
     // Clear receipt data
     removeReceipt({ stopPropagation: () => { } });
     window.currentReceiptData = null;
+    window.currentReceiptImageForAi = null;
+    setReceiptFormPhase('empty');
+}
+
+function jumpDashboardToExpense(expense) {
+    if (!expense) return;
+    if (expense.date) {
+        selectedDate = expense.date;
+        updateDateDisplay();
+    }
+    if (expense.allocation === 'Store' && expense.branch) {
+        selectedBranch = expense.branch;
+    } else if (expense.allocation === 'Popup' && expense.eventName) {
+        selectedBranch = expense.eventName;
+    } else if (expense.allocation) {
+        selectedBranch = expense.allocation;
+    }
+    localStorage.setItem('expense-selected-branch', selectedBranch);
+    const branchSelect = document.getElementById('dashboardBranchSelect');
+    if (branchSelect) {
+        branchSelect.value = selectedBranch;
+    }
+}
+
+const RECEIPT_PHASE_CLASSES = ['receipt-empty', 'receipt-extracting', 'receipt-ready'];
+
+function syncReceiptExtractOverlayToImage() {
+    const overlay = document.getElementById('receiptExtractOverlay');
+    const img = document.getElementById('receiptPreview');
+    const area = document.getElementById('receiptUploadArea');
+    if (!overlay || !img || !area) return;
+    if (overlay.hidden || !img.getAttribute('src') || img.style.display === 'none') {
+        overlay.style.left = '';
+        overlay.style.top = '';
+        overlay.style.width = '';
+        overlay.style.height = '';
+        return;
+    }
+
+    const areaRect = area.getBoundingClientRect();
+    const imgRect = img.getBoundingClientRect();
+    if (!imgRect.width || !imgRect.height || !areaRect.width) {
+        requestAnimationFrame(() => syncReceiptExtractOverlayToImage());
+        return;
+    }
+
+    overlay.style.left = `${Math.max(0, imgRect.left - areaRect.left)}px`;
+    overlay.style.top = `${Math.max(0, imgRect.top - areaRect.top)}px`;
+    overlay.style.width = `${imgRect.width}px`;
+    overlay.style.height = `${imgRect.height}px`;
+}
+
+function setReceiptFormPhase(phase) {
+    const form = document.getElementById('expenseForm');
+    if (!form) return;
+    const prevPhase = RECEIPT_PHASE_CLASSES.find((c) => form.classList.contains(c))?.replace('receipt-', '');
+    RECEIPT_PHASE_CLASSES.forEach((c) => form.classList.remove(c));
+    form.classList.add(`receipt-${phase}`);
+
+    const fields = document.getElementById('expenseFormFields');
+    const uploadArea = document.getElementById('receiptUploadArea');
+    const overlay = document.getElementById('receiptExtractOverlay');
+    const preview = document.getElementById('receiptPreview');
+    const src = (preview?.getAttribute('src') || '').trim();
+    const hasImage = Boolean(src) && preview.style.display !== 'none';
+
+    if (fields) {
+        // Only show details after extract completes (or on edit ready)
+        fields.hidden = phase !== 'ready';
+    }
+
+    if (uploadArea) {
+        uploadArea.classList.toggle('has-file', hasImage);
+        uploadArea.setAttribute('aria-label', hasImage ? 'Receipt preview' : 'Add receipt photo');
+    }
+    if (overlay) {
+        overlay.hidden = phase !== 'extracting';
+    }
+    if (phase === 'empty') {
+        setReceiptAiStatus('');
+        resetReceiptPanZoom();
+        syncReceiptExtractOverlayToImage();
+        return;
+    }
+
+    // extracting → ready keeps the same photo band; skip refit to avoid scale jump
+    const skipRefit = prevPhase === 'extracting' && phase === 'ready' && hasImage;
+    requestAnimationFrame(() => {
+        if (!skipRefit) fitReceiptToViewport({ force: prevPhase === 'empty' || !prevPhase });
+        syncReceiptExtractOverlayToImage();
+        if (!skipRefit) {
+            requestAnimationFrame(() => {
+                fitReceiptToViewport();
+                syncReceiptExtractOverlayToImage();
+            });
+        } else {
+            syncReceiptExtractOverlayToImage();
+        }
+    });
+}
+
+function showReceiptPreview(src, { phase = 'ready' } = {}) {
+    const preview = document.getElementById('receiptPreview');
+    const viewport = document.getElementById('receiptViewport');
+    const removeBtn = document.getElementById('removeReceiptBtn');
+    const uploadArea = document.getElementById('receiptUploadArea');
+    if (!preview || !src) return;
+
+    const refit = () => {
+        requestAnimationFrame(() => {
+            fitReceiptToViewport({ force: true });
+            syncReceiptExtractOverlayToImage();
+            requestAnimationFrame(() => {
+                fitReceiptToViewport({ force: true });
+                syncReceiptExtractOverlayToImage();
+            });
+        });
+    };
+
+    preview.style.opacity = '0';
+    preview.onload = () => refit();
+    preview.src = src;
+    preview.style.display = 'block';
+    if (viewport) viewport.hidden = false;
+    if (removeBtn) removeBtn.style.display = 'block';
+    if (uploadArea) uploadArea.classList.add('has-file');
+    setReceiptFormPhase(phase);
+    if (uploadArea) uploadArea.classList.add('has-file');
+    if (preview.complete && preview.naturalWidth) {
+        refit();
+    }
+}
+
+function initReceiptUploadArea() {
+    const area = document.getElementById('receiptUploadArea');
+    if (!area || area.dataset.boundUpload) return;
+    area.dataset.boundUpload = '1';
+
+    const openPicker = () => {
+        const area = document.getElementById('receiptUploadArea');
+        if (area?.classList.contains('has-file')) return;
+        document.getElementById('receiptInput')?.click();
+    };
+
+    area.addEventListener('click', (e) => {
+        if (e.target.closest('.remove-receipt-btn')) return;
+        openPicker();
+    });
+    area.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openPicker();
+        }
+    });
+}
+
+// --- Receipt pan / zoom ---
+const receiptPanZoom = {
+    scale: 1,
+    minScale: 1,
+    maxScale: 4,
+    x: 0,
+    y: 0,
+    dragging: false,
+    pointers: new Map(),
+    lastTap: 0,
+    pinchStartDist: 0,
+    pinchStartScale: 1,
+    lastFitKey: ''
+};
+
+function getReceiptViewportEl() {
+    return document.getElementById('receiptViewport');
+}
+
+function getReceiptPreviewEl() {
+    return document.getElementById('receiptPreview');
+}
+
+function applyReceiptTransform() {
+    const img = getReceiptPreviewEl();
+    if (!img) return;
+    clampReceiptPan();
+    img.style.transform = `translate(${receiptPanZoom.x}px, ${receiptPanZoom.y}px) scale(${receiptPanZoom.scale})`;
+}
+
+function resetReceiptPanZoom() {
+    receiptPanZoom.scale = 1;
+    receiptPanZoom.minScale = 1;
+    receiptPanZoom.maxScale = 4;
+    receiptPanZoom.x = 0;
+    receiptPanZoom.y = 0;
+    receiptPanZoom.dragging = false;
+    receiptPanZoom.pointers.clear();
+    receiptPanZoom.lastFitKey = '';
+    const img = getReceiptPreviewEl();
+    if (img) {
+        img.style.transform = 'translate(0px, 0px) scale(1)';
+        img.style.width = '';
+        img.style.height = '';
+        img.style.maxWidth = '';
+        img.style.maxHeight = '';
+        img.style.opacity = '';
+    }
+}
+
+function fitReceiptToViewport({ force = false } = {}) {
+    const viewport = getReceiptViewportEl();
+    const img = getReceiptPreviewEl();
+    if (!viewport || !img || !img.naturalWidth || viewport.hidden) return;
+
+    const vw = viewport.clientWidth;
+    const vh = viewport.clientHeight;
+    if (!vw || !vh) {
+        // Layout not ready yet — retry next frame
+        requestAnimationFrame(() => fitReceiptToViewport({ force }));
+        return;
+    }
+
+    const fitKey = `${Math.round(vw)}x${Math.round(vh)}:${img.naturalWidth}x${img.naturalHeight}`;
+    if (!force && receiptPanZoom.lastFitKey === fitKey && receiptPanZoom.scale > 0) {
+        applyReceiptTransform();
+        img.style.opacity = '1';
+        return;
+    }
+
+    // Size from natural pixels so transform scale is not double-applied on CSS-fitted layout
+    img.style.maxWidth = 'none';
+    img.style.maxHeight = 'none';
+    img.style.width = `${img.naturalWidth}px`;
+    img.style.height = `${img.naturalHeight}px`;
+
+    const fit = Math.min(vw / img.naturalWidth, vh / img.naturalHeight);
+    receiptPanZoom.minScale = fit;
+    receiptPanZoom.maxScale = Math.max(fit * 4, fit + 0.01);
+    receiptPanZoom.scale = fit;
+    receiptPanZoom.x = 0;
+    receiptPanZoom.y = 0;
+    receiptPanZoom.lastFitKey = fitKey;
+    applyReceiptTransform();
+    img.style.opacity = '1';
+}
+
+function clampReceiptPan() {
+    const viewport = getReceiptViewportEl();
+    const img = getReceiptPreviewEl();
+    if (!viewport || !img || !img.naturalWidth) return;
+
+    const scaledW = img.naturalWidth * receiptPanZoom.scale;
+    const scaledH = img.naturalHeight * receiptPanZoom.scale;
+    const maxX = Math.max(0, (scaledW - viewport.clientWidth) / 2);
+    const maxY = Math.max(0, (scaledH - viewport.clientHeight) / 2);
+    receiptPanZoom.x = Math.min(maxX, Math.max(-maxX, receiptPanZoom.x));
+    receiptPanZoom.y = Math.min(maxY, Math.max(-maxY, receiptPanZoom.y));
+}
+
+function pointerDistance(a, b) {
+    const dx = a.clientX - b.clientX;
+    const dy = a.clientY - b.clientY;
+    return Math.hypot(dx, dy);
+}
+
+function initReceiptPanZoom() {
+    const viewport = getReceiptViewportEl();
+    if (!viewport || viewport.dataset.panBound) return;
+    viewport.dataset.panBound = '1';
+
+    viewport.addEventListener(
+        'wheel',
+        (e) => {
+            if (viewport.hidden) return;
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? 0.9 : 1.1;
+            receiptPanZoom.scale = Math.min(
+                receiptPanZoom.maxScale,
+                Math.max(receiptPanZoom.minScale, receiptPanZoom.scale * delta)
+            );
+            applyReceiptTransform();
+        },
+        { passive: false }
+    );
+
+    viewport.addEventListener('pointerdown', (e) => {
+        if (viewport.hidden) return;
+        if (e.target.closest?.('.remove-receipt-btn')) return;
+        viewport.setPointerCapture?.(e.pointerId);
+        receiptPanZoom.pointers.set(e.pointerId, e);
+
+        const now = Date.now();
+        if (receiptPanZoom.pointers.size === 1 && now - receiptPanZoom.lastTap < 300) {
+            fitReceiptToViewport();
+            receiptPanZoom.lastTap = 0;
+            return;
+        }
+        receiptPanZoom.lastTap = now;
+
+        if (receiptPanZoom.pointers.size === 2) {
+            const pts = [...receiptPanZoom.pointers.values()];
+            receiptPanZoom.pinchStartDist = pointerDistance(pts[0], pts[1]);
+            receiptPanZoom.pinchStartScale = receiptPanZoom.scale;
+            receiptPanZoom.dragging = false;
+        } else {
+            receiptPanZoom.dragging = true;
+        }
+    });
+
+    viewport.addEventListener('pointermove', (e) => {
+        if (!receiptPanZoom.pointers.has(e.pointerId)) return;
+        const prev = receiptPanZoom.pointers.get(e.pointerId);
+        receiptPanZoom.pointers.set(e.pointerId, e);
+
+        if (receiptPanZoom.pointers.size === 2) {
+            const pts = [...receiptPanZoom.pointers.values()];
+            const dist = pointerDistance(pts[0], pts[1]);
+            if (receiptPanZoom.pinchStartDist > 0) {
+                const next =
+                    receiptPanZoom.pinchStartScale * (dist / receiptPanZoom.pinchStartDist);
+                receiptPanZoom.scale = Math.min(
+                    receiptPanZoom.maxScale,
+                    Math.max(receiptPanZoom.minScale, next)
+                );
+                applyReceiptTransform();
+            }
+            return;
+        }
+
+        if (receiptPanZoom.dragging && prev) {
+            receiptPanZoom.x += e.clientX - prev.clientX;
+            receiptPanZoom.y += e.clientY - prev.clientY;
+            applyReceiptTransform();
+        }
+    });
+
+    const endPointer = (e) => {
+        receiptPanZoom.pointers.delete(e.pointerId);
+        if (receiptPanZoom.pointers.size < 2) {
+            receiptPanZoom.pinchStartDist = 0;
+        }
+        if (receiptPanZoom.pointers.size === 0) {
+            receiptPanZoom.dragging = false;
+        }
+    };
+    viewport.addEventListener('pointerup', endPointer);
+    viewport.addEventListener('pointercancel', endPointer);
+    viewport.addEventListener('pointerleave', endPointer);
 }
 
 // Receipt upload
 async function handleReceiptUpload(input) {
     const file = input.files[0];
-    if (file) {
-        // Validate file type
-        if (!file.type.startsWith('image/')) {
-            showToast('Please select an image file');
-            return;
+    if (!file) return;
+
+    if (!shared.isSupportedReceiptImageFile(file)) {
+        showToast('Please select an image file');
+        return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+        showToast('Image size must be less than 20MB');
+        return;
+    }
+
+    const uploadText = document.getElementById('receiptUploadText');
+    if (uploadText) {
+        uploadText.textContent = shared.isHeicLikeFile(file)
+            ? 'Converting HEIC…'
+            : 'Compressing image...';
+    }
+    setReceiptAiStatus('');
+
+    try {
+        const compressedImage = await shared.compressImage(file);
+
+        window.currentReceiptImageForAi = compressedImage;
+        window.currentReceiptData = compressedImage;
+        showReceiptPreview(compressedImage, { phase: 'extracting' });
+
+        if (!window.currentDraftExpenseId && !window.editingExpenseId) {
+            window.currentDraftExpenseId = shared.generateId();
         }
+        const expenseIdForReceipt = window.editingExpenseId || window.currentDraftExpenseId;
 
-        // Validate file size (max 20MB before compression — phone photos are often 3-8MB)
-        if (file.size > 20 * 1024 * 1024) {
-            showToast('Image size must be less than 20MB');
-            return;
-        }
+        shared
+            .uploadReceiptImageToStorage(expenseIdForReceipt, compressedImage)
+            .then((receiptUrl) => {
+                if (!receiptUrl) return;
+                if (window.currentReceiptImageForAi === compressedImage) {
+                    window.currentReceiptData = receiptUrl;
+                    shared.cacheReceiptUrlForExpense(expenseIdForReceipt, receiptUrl);
+                }
+            })
+            .catch(() => {});
 
-        const preview = document.getElementById('receiptPreview');
-        const uploadText = document.getElementById('receiptUploadText');
-        const uploadArea = document.querySelector('.receipt-upload');
-        const removeBtn = document.getElementById('removeReceiptBtn');
-
-        // Show loading state
-        if (uploadText) {
-            uploadText.textContent = 'Compressing image...';
-        }
-
-        try {
-            // Compress to ~800KB at a readable resolution (defaults: 1600px, quality loop)
-            const compressedImage = await shared.compressImage(file);
-            
-            preview.src = compressedImage;
-            preview.style.display = 'block';
-            uploadText.textContent = file.name;
-            uploadArea.classList.add('has-file');
-            removeBtn.style.display = 'block';
-
-            // Upload receipt to Firebase Storage (preferred) and store the download URL in Firestore.
-            // If storage upload fails, fall back to storing the base64 data URL so the user can still save.
-            const expenseIdForReceipt = window.editingExpenseId || window.currentDraftExpenseId;
-            if (!window.currentDraftExpenseId && !window.editingExpenseId) {
-                window.currentDraftExpenseId = shared.generateId();
-            }
-
-            let receiptUrl = null;
-            try {
-                receiptUrl = await shared.uploadReceiptImageToStorage(
-                    expenseIdForReceipt || window.currentDraftExpenseId,
-                    compressedImage
-                );
-            } catch (error) {
-                receiptUrl = null;
-            }
-
-            // Store for saving (URL preferred)
-            window.currentReceiptData = receiptUrl || compressedImage;
-            if (receiptUrl) {
-                shared.cacheReceiptUrlForExpense(
-                    expenseIdForReceipt || window.currentDraftExpenseId,
-                    receiptUrl
-                );
-            }
-            
-            // Show compression info
-            const originalSize = (file.size / 1024 / 1024).toFixed(2);
-            const compressedSize = (compressedImage.length * 3 / 4 / 1024 / 1024).toFixed(2); // Approximate base64 size
-            console.log(`Image compressed: ${originalSize}MB → ${compressedSize}MB`);
-        } catch (error) {
-            console.error('Failed to compress image:', error);
-            showToast('Failed to process image. Please try again.');
-            // Reset upload area
-            preview.style.display = 'none';
-            uploadText.textContent = 'Tap to add receipt photo';
-            uploadArea.classList.remove('has-file');
-            removeBtn.style.display = 'none';
-        }
+        // Auto-extract (no prompt)
+        await handleReceiptAiExtract({ silentSuccess: true });
+    } catch (error) {
+        console.error('Failed to compress image:', error);
+        showToast(error?.message || 'Failed to process image. Please try again.');
+        removeReceipt({ stopPropagation: () => {} });
+    } finally {
+        if (input) input.value = '';
     }
 }
 
 function removeReceipt(event) {
-    event.stopPropagation();
+    event?.stopPropagation?.();
 
     const preview = document.getElementById('receiptPreview');
+    const viewport = document.getElementById('receiptViewport');
     const uploadText = document.getElementById('receiptUploadText');
-    const uploadArea = document.querySelector('.receipt-upload');
+    const uploadArea = document.getElementById('receiptUploadArea');
     const removeBtn = document.getElementById('removeReceiptBtn');
     const input = document.getElementById('receiptInput');
 
-    preview.style.display = 'none';
-    preview.src = '';
-    uploadText.textContent = 'Tap to add receipt photo';
-    uploadArea.classList.remove('has-file');
-    removeBtn.style.display = 'none';
-    input.value = '';
+    if (preview) {
+        preview.onload = null;
+        preview.src = '';
+        preview.style.display = 'none';
+        preview.style.transform = '';
+    }
+    if (viewport) viewport.hidden = true;
+    if (uploadText) uploadText.textContent = 'Tap to add photo';
+    if (uploadArea) uploadArea.classList.remove('has-file');
+    if (removeBtn) removeBtn.style.display = 'none';
+    if (input) input.value = '';
 
-    // Clear stored image data
     window.currentReceiptData = null;
+    window.currentReceiptImageForAi = null;
+    setReceiptAiStatus('');
+    if (window.editingExpenseId) {
+        setReceiptFormPhase('ready');
+        resetReceiptPanZoom();
+    } else {
+        setReceiptFormPhase('empty');
+    }
+}
+
+function setReceiptAiStatus(message, type = '') {
+    const el = document.getElementById('receiptAiStatus');
+    if (!el) return;
+    if (!message) {
+        el.hidden = true;
+        el.style.display = 'none';
+        el.textContent = '';
+        el.classList.remove('is-error', 'is-success');
+        return;
+    }
+    el.hidden = false;
+    el.style.display = 'block';
+    el.textContent = message;
+    el.classList.toggle('is-error', type === 'error');
+    el.classList.toggle('is-success', type === 'success');
+}
+
+async function handleReceiptAiExtract({ silentSuccess = false } = {}) {
+    const imageDataUrl = window.currentReceiptImageForAi;
+    if (!imageDataUrl || !String(imageDataUrl).startsWith('data:image/')) {
+        setReceiptFormPhase(window.currentReceiptData ? 'ready' : 'empty');
+        return;
+    }
+
+    setReceiptFormPhase('extracting');
+    setReceiptAiStatus('');
+
+    try {
+        const parsed = await shared.extractExpenseReceiptFromImage(imageDataUrl);
+        applyReceiptAiExtraction(parsed);
+        setReceiptFormPhase('ready');
+        setReceiptAiStatus('');
+        if (!silentSuccess) showToast('Receipt details filled');
+        else showToast('Details filled — review before saving');
+    } catch (error) {
+        console.error('Receipt AI extract failed:', error);
+        const msg = error?.message || 'Could not extract receipt details';
+        setReceiptFormPhase('ready');
+        setReceiptAiStatus(msg, 'error');
+        showToast(msg);
+    }
+}
+
+function findSupplierMatchForAiName(name) {
+    const key = shared.normalizeSupplierNameKey(name);
+    if (!key) return null;
+    const suppliers = shared.getSuppliers();
+    return (
+        suppliers.find((s) => shared.normalizeSupplierNameKey(s.name) === key) ||
+        suppliers.find((s) => shared.normalizeSupplierNameKey(s.businessName) === key) ||
+        null
+    );
+}
+
+function enterMobileSupplierVerifiedMode(supplier) {
+    if (!supplier) return;
+    const vWrap = document.getElementById('mobileSupplierVerifiedWrap');
+    const mWrap = document.getElementById('mobileSupplierManualWrap');
+    const nameEl = document.getElementById('mobileSupplierVerifiedName');
+    const bizEl = document.getElementById('mobileSupplierVerifiedBiz');
+    const tinRow = document.getElementById('mobileSupplierVerifiedTinRow');
+    const addrRow = document.getElementById('mobileSupplierVerifiedAddrRow');
+    const tinEl = document.getElementById('mobileSupplierVerifiedTin');
+    const addrEl = document.getElementById('mobileSupplierVerifiedAddr');
+    const supplierInput = document.getElementById('supplierName');
+    const hiddenName = document.getElementById('supplierNameHidden');
+    const bizInput = document.getElementById('businessName');
+    const tinInput = document.getElementById('tin');
+    const addrInput = document.getElementById('address');
+
+    if (nameEl) nameEl.textContent = supplier.name || '';
+    if (bizEl) bizEl.textContent = supplier.businessName || '';
+    const tin = (supplier.tin || '').trim();
+    const addr = (supplier.address || '').trim();
+    if (tinRow) tinRow.hidden = !tin;
+    if (addrRow) addrRow.hidden = !addr;
+    if (tinEl) tinEl.textContent = tin;
+    if (addrEl) addrEl.textContent = addr;
+
+    if (supplierInput) {
+        supplierInput.value = supplier.name || '';
+        supplierInput.setAttribute('data-supplier-id', supplier.id || '');
+        supplierInput.classList.add('supplier-selected');
+        supplierInput.removeAttribute('required');
+    }
+    if (hiddenName) hiddenName.value = supplier.name || '';
+    if (bizInput) bizInput.value = supplier.businessName || '';
+    if (tinInput) tinInput.value = supplier.tin || '';
+    if (addrInput) addrInput.value = supplier.address || '';
+
+    if (vWrap) {
+        vWrap.hidden = false;
+    }
+    if (mWrap) mWrap.style.display = 'none';
+
+    const vatSection = document.getElementById('vatSection');
+    const vatToggle = document.getElementById('vatComputationEnabled');
+    const vatToggleTrack = document.getElementById('vatToggleTrack');
+    const vatDetailsSection = document.getElementById('vatDetailsSection');
+    if (vatSection) {
+        if (supplier.isVatRegistered) {
+            vatSection.style.display = 'block';
+            if (vatToggle) vatToggle.checked = true;
+            if (vatToggleTrack) vatToggleTrack.classList.add('active');
+            if (vatDetailsSection) vatDetailsSection.style.display = 'block';
+            updateVatCalculation();
+        } else {
+            vatSection.style.display = 'none';
+        }
+    }
+}
+
+function leaveMobileSupplierVerifiedMode({ clearFields = false } = {}) {
+    const vWrap = document.getElementById('mobileSupplierVerifiedWrap');
+    const mWrap = document.getElementById('mobileSupplierManualWrap');
+    const supplierInput = document.getElementById('supplierName');
+    if (vWrap) vWrap.hidden = true;
+    if (mWrap) mWrap.style.display = '';
+    if (supplierInput) {
+        supplierInput.setAttribute('required', 'required');
+        if (clearFields) {
+            supplierInput.value = '';
+            supplierInput.removeAttribute('data-supplier-id');
+            supplierInput.classList.remove('supplier-selected');
+        }
+    }
+    if (clearFields) {
+        const bizInput = document.getElementById('businessName');
+        const tinInput = document.getElementById('tin');
+        const addrInput = document.getElementById('address');
+        const vatNew = document.getElementById('newSupplierVatRegistered');
+        const hiddenName = document.getElementById('supplierNameHidden');
+        if (bizInput) bizInput.value = '';
+        if (tinInput) tinInput.value = '';
+        if (addrInput) addrInput.value = '';
+        if (vatNew) vatNew.checked = false;
+        if (hiddenName) hiddenName.value = '';
+    }
+}
+
+function applyReceiptAiExtraction(parsed) {
+    if (!parsed || typeof parsed !== 'object') return;
+
+    // Supplier — match existing when possible; else fill manual detail fields
+    const supplierName = String(parsed.supplierName || '').trim();
+    if (supplierName) {
+        const match = findSupplierMatchForAiName(supplierName);
+        if (match) {
+            enterMobileSupplierVerifiedMode(match);
+        } else {
+            leaveMobileSupplierVerifiedMode({ clearFields: false });
+            const supplierInput = document.getElementById('supplierName');
+            const bizInput = document.getElementById('businessName');
+            const tinInput = document.getElementById('tin');
+            const addrInput = document.getElementById('address');
+            const vatNew = document.getElementById('newSupplierVatRegistered');
+            if (supplierInput) {
+                supplierInput.value = supplierName;
+                supplierInput.classList.remove('supplier-selected');
+                supplierInput.removeAttribute('data-supplier-id');
+            }
+            if (bizInput) bizInput.value = String(parsed.businessName || '').trim();
+            if (tinInput) tinInput.value = String(parsed.tin || '').trim();
+            if (addrInput) addrInput.value = String(parsed.address || '').trim();
+            if (vatNew) {
+                vatNew.checked = Boolean(parsed.tin) || Boolean(parsed.printedVat?.vatAmount);
+            }
+            const vatSection = document.getElementById('vatSection');
+            if (vatSection && vatNew?.checked) {
+                vatSection.style.display = 'block';
+                const vatToggle = document.getElementById('vatComputationEnabled');
+                const vatToggleTrack = document.getElementById('vatToggleTrack');
+                const vatDetailsSection = document.getElementById('vatDetailsSection');
+                if (vatToggle) vatToggle.checked = true;
+                if (vatToggleTrack) vatToggleTrack.classList.add('active');
+                if (vatDetailsSection) vatDetailsSection.style.display = 'block';
+            }
+        }
+    }
+
+    if (parsed.date) {
+        setFormExpenseDate(parsed.date);
+    }
+
+    const invoiceInput = document.getElementById('invoiceNumber');
+    if (invoiceInput && parsed.invoiceNumber) {
+        invoiceInput.value = parsed.invoiceNumber;
+    }
+
+    const suggestedCategory = String(parsed.suggestedCategory || '').trim();
+    if (suggestedCategory && shared.EXPENSE_CATEGORY_OPTIONS.includes(suggestedCategory)) {
+        populateMobileExpenseCategorySelect(suggestedCategory);
+    }
+
+    // Items
+    const items = Array.isArray(parsed.items) ? parsed.items.filter((i) => i && i.name) : [];
+    const itemsContainer = document.getElementById('itemsContainer');
+    if (itemsContainer && items.length > 0) {
+        itemsContainer.innerHTML = '';
+        itemCounter = 0;
+        items.forEach((item) => {
+            addItemRow();
+            const itemRows = document.querySelectorAll('.item-row');
+            const currentRow = itemRows[itemRows.length - 1];
+            if (!currentRow) return;
+            const itemNameInput = currentRow.querySelector('[name="itemName"]');
+            const itemQuantityInput = currentRow.querySelector('[name="itemQuantity"]');
+            const itemPriceInput = currentRow.querySelector('[name="itemPrice"]');
+            if (itemNameInput) itemNameInput.value = item.name || '';
+            if (itemQuantityInput && item.quantity != null) itemQuantityInput.value = item.quantity;
+            if (itemPriceInput && item.price > 0) {
+                itemPriceInput.value = shared.formatCurrency(item.price);
+                const breakdown = currentRow.querySelector('.item-breakdown');
+                const priceBtn = currentRow.querySelector('.add-price-btn');
+                if (breakdown) breakdown.style.display = 'flex';
+                if (priceBtn) priceBtn.style.display = 'none';
+            }
+        });
+    } else if (itemsContainer && itemsContainer.children.length === 0) {
+        addItemRow();
+    }
+
+    // Total amount (prefer explicit total; else sum of item totals)
+    const totalInput = document.getElementById('totalAmountInput');
+    let total = Number(parsed.totalAmount) || 0;
+    if (!total && items.length) {
+        total = items.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
+    }
+    if (totalInput && total > 0) {
+        totalInput.value = shared.formatCurrency(total);
+    }
+
+    // VAT exempt / not-subject-to-VAT (service charge, local tax, etc.)
+    const vatExempt = Number(parsed.vatExemptAmount) || 0;
+    const hasPrintedVat =
+        (Number(parsed.printedVat?.vatableSale) || 0) > 0 ||
+        (Number(parsed.printedVat?.vatAmount) || 0) > 0;
+    const vatExemptInput = document.getElementById('vatExemptAmount');
+    if (vatExemptInput && (vatExempt > 0 || hasPrintedVat)) {
+        const vatSection = document.getElementById('vatSection');
+        const vatToggle = document.getElementById('vatComputationEnabled');
+        const vatToggleTrack = document.getElementById('vatToggleTrack');
+        const vatDetailsSection = document.getElementById('vatDetailsSection');
+        if (vatSection) {
+            vatSection.style.display = 'block';
+            if (vatToggle) vatToggle.checked = true;
+            if (vatToggleTrack) vatToggleTrack.classList.add('active');
+            if (vatDetailsSection) vatDetailsSection.style.display = 'block';
+        }
+        if (vatExempt > 0) {
+            vatExemptInput.value = String(vatExempt);
+        }
+    }
+
+    if (typeof updateFromItems === 'function') {
+        try {
+            updateFromItems();
+        } catch {
+            // ignore
+        }
+    }
+    if (typeof updateVatCalculation === 'function') {
+        try {
+            updateVatCalculation();
+        } catch {
+            // ignore
+        }
+    }
 }
 
 function createAutocomplete(inputElement, getMatches, onSelect, showOnFocus = false) {
@@ -1753,81 +2516,17 @@ function selectSupplier(supplierId) {
     const allSuppliers = shared.getSuppliers();
     const supplier = allSuppliers.find(s => s.id === supplierId);
     if (supplier) {
-        const supplierInput = document.getElementById('supplierName');
-        const dropdown = supplierInput.parentElement.querySelector('.autocomplete-dropdown');
-        const formGroup = supplierInput.parentElement;
-
-        supplierInput.value = supplier.name;
-        supplierInput.classList.add('supplier-selected');
-        supplierInput.setAttribute('data-supplier-id', supplier.id);
-
-        if (dropdown) {
-            dropdown.classList.add('hidden');
-        }
-
-        // Show VAT section logic
-        const vatSection = document.getElementById('vatSection');
-        const vatToggle = document.getElementById('vatComputationEnabled');
-        const vatToggleTrack = document.getElementById('vatToggleTrack');
-        const vatDetailsSection = document.getElementById('vatDetailsSection');
-
-        if (vatSection) {
-            if (supplier.isVatRegistered) {
-                // Supplier is VAT registered - show section with toggle enabled by default
-                vatSection.style.display = 'block';
-                vatToggle.checked = true;
-                vatToggleTrack.classList.add('active');
-                vatDetailsSection.style.display = 'block';
-                updateVatCalculation();
-            } else {
-                // Supplier is not VAT registered - hide section completely
-                vatSection.style.display = 'none';
-            }
-        }
-
-        let clearBtn = formGroup.querySelector('.supplier-clear-btn');
-        if (!clearBtn) {
-            clearBtn = document.createElement('button');
-            clearBtn.type = 'button';
-            clearBtn.className = 'supplier-clear-btn';
-            clearBtn.innerHTML = '×';
-            clearBtn.onclick = clearSelectedSupplier;
-            formGroup.appendChild(clearBtn);
-        }
+        enterMobileSupplierVerifiedMode(supplier);
+        const dropdown = document.querySelector('#mobileSupplierManualWrap .autocomplete-dropdown')
+            || document.getElementById('supplierName')?.parentElement?.querySelector('.autocomplete-dropdown');
+        if (dropdown) dropdown.classList.add('hidden');
     }
 }
 
 function clearSelectedSupplier() {
+    leaveMobileSupplierVerifiedMode({ clearFields: true });
     const supplierInput = document.getElementById('supplierName');
-    const formGroup = supplierInput.parentElement;
-    const clearBtn = formGroup.querySelector('.supplier-clear-btn');
-
-    // Clear input and styling
-    supplierInput.value = '';
-    supplierInput.classList.remove('supplier-selected');
-    supplierInput.removeAttribute('data-supplier-id');
-
-    // Remove clear button
-    if (clearBtn) {
-        clearBtn.remove();
-    }
-
-    // Clear other fields if they exist
-    const businessNameInput = document.getElementById('businessName');
-    if (businessNameInput) businessNameInput.value = '';
-
-    const tinInput = document.getElementById('tin');
-    if (tinInput) tinInput.value = '';
-
-    const addressInput = document.getElementById('address');
-    if (addressInput) addressInput.value = '';
-
-    // Hide supplier section if it exists
-    const supplierSection = document.getElementById('supplierSection');
-    if (supplierSection) supplierSection.classList.remove('show');
-
-    // Focus back on input
-    supplierInput.focus();
+    supplierInput?.focus();
 }
 
 function addItemRow() {
@@ -2009,6 +2708,9 @@ async function handleFormSubmission(e) {
     const date = getElementValue('expenseDateValue', selectedDate);
     const allocation = getElementValue('allocationSelect', 'Store');
     const branch = allocation === 'Store' ? getElementValue('formBranchSelect', '') : null;
+    const eventName = shared.isEventAllocation(allocation)
+        ? getFormEventNameValue()
+        : null;
     
     // Validate receipt is uploaded
     const receiptImage = window.currentReceiptData || (existingExpense?.receiptImage || null);
@@ -2045,6 +2747,7 @@ async function handleFormSubmission(e) {
         date: date,
         branch: branch,
         allocation: allocation,
+        eventName: eventName,
         isPettyCash: Boolean(document.getElementById('isPettyCash')?.checked),
         supplierName: supplierNameVal,
         ...(isEditing
@@ -2059,10 +2762,19 @@ async function handleFormSubmission(e) {
         expenseCategory: getElementValue('expenseCategory', shared.DEFAULT_EXPENSE_CATEGORY),
         vatExemptAmount: parseFloat(getElementValue('vatExemptAmount')) || 0,
         paymentMethod: getElementValue('paymentMethod', 'Cash'),
-        paidBy: allocation === 'Store' ? getElementValue('paidBy', 'Company') : 'Company',
+        paidBy: shared.allocationUsesPaidBy(allocation)
+            ? getElementValue('paidBy', 'Company')
+            : 'Company',
         notes: getElementValue('notes'),
         receiptImage: receiptImage,
-        vatComputationEnabled: document.getElementById('vatComputationEnabled')?.checked || false
+        vatComputationEnabled: document.getElementById('vatComputationEnabled')?.checked || false,
+        isVatRegistered: Boolean(
+            document.getElementById('newSupplierVatRegistered')?.checked ||
+                resolvedByName?.isVatRegistered ||
+                (dataSupplierId
+                    ? shared.getSuppliers().find((s) => s.id === dataSupplierId)?.isVatRegistered
+                    : false)
+        )
     };
 
     // Create expense using shared function
@@ -2071,7 +2783,8 @@ async function handleFormSubmission(e) {
         isEditing: isEditing,
         calculateTotalFromItems: false, // Mobile app uses separate total input
         autoCalculateVAT: true,
-        validate: true
+        validate: true,
+        recorderContext: isEditing ? null : 'staff'
     });
 
     // Check for validation errors
@@ -2111,7 +2824,32 @@ async function handleFormSubmission(e) {
         showToast(isNewSupplier ? 'Expense saved and supplier created!' : 'Expense saved!');
     }
 
-    // Optimistic UX: close modal and refresh feed immediately. Upload runs in background.
+    // Optimistic UX: close modal and jump home view to where this expense lives
+    if (window.__purchasingEmbed) {
+        window.__purchasingEmbedSaved = true;
+        try {
+            window.parent.postMessage(
+                {
+                    type: 'purchasing-expense-saved',
+                    expense: {
+                        id: expense.id,
+                        totalAmount: expense.totalAmount,
+                        supplierName: expense.supplierName,
+                        date: expense.date,
+                        items: expense.items || [],
+                    },
+                },
+                '*'
+            );
+        } catch (err) {
+            console.warn('Could not notify purchasing parent', err);
+        }
+        closeExpenseModal();
+        releaseSubmitLock();
+        return;
+    }
+
+    jumpDashboardToExpense(expense);
     closeExpenseModal();
     loadDashboard();
     releaseSubmitLock();
@@ -2871,7 +3609,7 @@ function parseMatchaneseFormatCSV(data, headers, values) {
     }
 
     // Parse amount - remove peso sign, commas, and any other currency symbols
-    const amountStr = (data.amount || '').replace(/[₱,â‚±]/g, '');
+    const amountStr = (data.amount || '').replace(/[₱,]/g, '');
     const amount = parseFloat(amountStr) || 0;
 
     if (amount === 0) {
@@ -2976,7 +3714,7 @@ function parseStandardFormatCSV(data) {
     }
 
     // Parse amount - remove peso sign, commas, and any other currency symbols
-    const amountStr = (data.amount || '').replace(/[₱,â‚±]/g, '');
+    const amountStr = (data.amount || '').replace(/[₱,]/g, '');
     const amount = parseFloat(amountStr) || 0;
 
     if (amount === 0) {
@@ -3434,25 +4172,34 @@ function populateExpenseForm(expense) {
     setFormExpenseDate(expense.date);
     
     const supplierName = document.getElementById('supplierName');
-    if (supplierName) {
-        supplierName.value = expense.supplierName;
-        const allSuppliersEarly = shared.getSuppliers();
-        if (expense.supplierId) {
-            supplierName.setAttribute('data-supplier-id', expense.supplierId);
-        } else {
-            const sup = allSuppliersEarly.find(
-                (s) => s.name.toLowerCase() === (expense.supplierName || '').toLowerCase()
-            );
-            if (sup) supplierName.setAttribute('data-supplier-id', sup.id);
-            else supplierName.removeAttribute('data-supplier-id');
-        }
+    const allSuppliersEarly = shared.getSuppliers();
+    let matchedSupplier = null;
+    if (expense.supplierId) {
+        matchedSupplier = allSuppliersEarly.find((s) => s.id === expense.supplierId) || null;
+    }
+    if (!matchedSupplier && expense.supplierName) {
+        matchedSupplier = allSuppliersEarly.find(
+            (s) => s.name.toLowerCase() === (expense.supplierName || '').toLowerCase()
+        ) || null;
+    }
+    if (matchedSupplier) {
+        enterMobileSupplierVerifiedMode(matchedSupplier);
+    } else if (supplierName) {
+        leaveMobileSupplierVerifiedMode({ clearFields: false });
+        supplierName.value = expense.supplierName || '';
+        supplierName.removeAttribute('data-supplier-id');
+        const biz = document.getElementById('businessName');
+        const tin = document.getElementById('tin');
+        const addr = document.getElementById('address');
+        if (biz) biz.value = expense.businessName || '';
+        if (tin) tin.value = expense.tin || '';
+        if (addr) addr.value = expense.address || '';
+        const vatNew = document.getElementById('newSupplierVatRegistered');
+        if (vatNew) vatNew.checked = Boolean(expense.isVatRegistered);
     }
     
     const paymentMethod = document.getElementById('paymentMethod');
     if (paymentMethod) paymentMethod.value = expense.paymentMethod || '';
-    
-    const paidBy = document.getElementById('paidBy');
-    if (paidBy) paidBy.value = expense.paidBy || '';
     
     const notes = document.getElementById('notes');
     if (notes) notes.value = expense.notes || '';
@@ -3512,40 +4259,35 @@ function populateExpenseForm(expense) {
     }
 
     // Handle receipt if exists
-    const preview = document.getElementById('receiptPreview');
-    const uploadText = document.getElementById('receiptUploadText');
-    const uploadArea = document.querySelector('.receipt-upload');
-    const removeBtn = document.getElementById('removeReceiptBtn');
-    
     if (expense.receiptImage) {
-        // Receipt image is directly available
-        if (preview) preview.src = expense.receiptImage;
-        if (preview) preview.style.display = 'block';
-        if (uploadText) uploadText.textContent = 'Receipt attached';
-        if (uploadArea) uploadArea.classList.add('has-file');
-        if (removeBtn) removeBtn.style.display = 'block';
+        showReceiptPreview(expense.receiptImage, { phase: 'ready' });
         window.currentReceiptData = expense.receiptImage;
+        window.currentReceiptImageForAi = String(expense.receiptImage).startsWith('data:image/')
+            ? expense.receiptImage
+            : null;
     } else if (expense.hasReceiptImage) {
-        // Has receipt flag but no image - fetch from Firebase
-        if (preview) preview.style.display = 'none';
-        if (uploadText) {
-            uploadText.textContent = 'Loading receipt...';
-            uploadText.style.display = 'block';
-        }
-        if (uploadArea) {
-            uploadArea.classList.remove('has-file');
-        }
-        if (removeBtn) removeBtn.style.display = 'none';
-        
-        // Fetch receipt from Firebase
+        setReceiptFormPhase('ready');
+        const uploadText = document.getElementById('receiptUploadText');
+        if (uploadText) uploadText.textContent = 'Loading receipt...';
         loadReceiptImageForEditMobile(expense.id);
     } else {
-        // No receipt
-        if (preview) preview.style.display = 'none';
-        if (uploadText) uploadText.textContent = 'Tap to add receipt photo';
-        if (uploadArea) uploadArea.classList.remove('has-file');
+        // Edit without receipt — still show form fields
+        setReceiptFormPhase('ready');
+        const preview = document.getElementById('receiptPreview');
+        const viewport = document.getElementById('receiptViewport');
+        const removeBtn = document.getElementById('removeReceiptBtn');
+        const uploadText = document.getElementById('receiptUploadText');
+        if (preview) {
+            preview.src = '';
+            preview.style.display = 'none';
+        }
+        if (viewport) viewport.hidden = true;
         if (removeBtn) removeBtn.style.display = 'none';
+        if (uploadText) uploadText.textContent = 'Tap to add photo';
+        const uploadArea = document.getElementById('receiptUploadArea');
+        if (uploadArea) uploadArea.classList.remove('has-file');
         window.currentReceiptData = null;
+        window.currentReceiptImageForAi = null;
     }
 
     populateMobileExpenseCategorySelect(expense.expenseCategory);
@@ -3560,6 +4302,26 @@ function populateExpenseForm(expense) {
     const formBranchSelect = document.getElementById('formBranchSelect');
     if (formBranchSelect && expense.branch) {
         formBranchSelect.value = expense.branch;
+    }
+
+    const eventNameInput = document.getElementById('eventName');
+    if (eventNameInput) {
+        eventNameInput.value = expense.eventName || '';
+    }
+    if (expense.allocation === 'Popup') {
+        populatePopupEventSelect(expense.eventName || '');
+        setFormEventNameValue(expense.eventName || '');
+    }
+
+    // Paid By options depend on allocation — set after handleAllocationChange
+    const paidBy = document.getElementById('paidBy');
+    if (paidBy && shared.allocationUsesPaidBy(expense.allocation)) {
+        const raw = expense.paidBy || '';
+        if (shared.isCashPaidBy(raw)) {
+            paidBy.value = shared.cashPaidByValue(expense.allocation);
+        } else {
+            paidBy.value = raw || 'Company';
+        }
     }
 
     const pettyCb = document.getElementById('isPettyCash');
@@ -3587,9 +4349,8 @@ function populateExpenseForm(expense) {
     // Ensure receipt uploads during edit use the correct expense ID.
     window.currentDraftExpenseId = expense.id;
 
-    // Update modal title
-    const modalTitle = document.querySelector('.modal-title');
-    if (modalTitle) modalTitle.textContent = 'Edit Expense';
+    const editModalTitle = document.querySelector('#expenseModalOverlay .modal-title');
+    if (editModalTitle) editModalTitle.textContent = 'Edit Expense';
 }
 
 function deleteExpense(expenseId, event) {
@@ -4238,10 +4999,83 @@ function handlePettyCashChange() {
 
 window.handlePettyCashChange = handlePettyCashChange;
 
-// Handle allocation change - show/hide branch field and paidBy field
+// Handle allocation change - show/hide branch, event name, and paidBy fields
+function getFormEventNameValue() {
+    const allocation = document.getElementById('allocationSelect')?.value;
+    if (allocation === 'Popup') {
+        return (document.getElementById('eventNameSelect')?.value || '').trim();
+    }
+    return (document.getElementById('eventName')?.value || '').trim();
+}
+
+function setFormEventNameValue(name) {
+    const allocation = document.getElementById('allocationSelect')?.value;
+    const select = document.getElementById('eventNameSelect');
+    const input = document.getElementById('eventName');
+    const value = String(name || '').trim();
+    if (allocation === 'Popup' && select) {
+        if (value && ![...select.options].some((o) => o.value === value)) {
+            const opt = document.createElement('option');
+            opt.value = value;
+            opt.textContent = value;
+            select.appendChild(opt);
+        }
+        select.value = value;
+        if (input) input.value = value;
+        return;
+    }
+    if (input) input.value = value;
+}
+
+function populatePopupEventSelect(preferredValue = '') {
+    const select = document.getElementById('eventNameSelect');
+    if (!select) return;
+    const events = shared.getCachedPopupEvents();
+    const current = preferredValue || select.value || '';
+    select.innerHTML = '<option value="">Select event…</option>';
+    events.forEach((ev) => {
+        const opt = document.createElement('option');
+        opt.value = ev.name;
+        opt.textContent = ev.serviceType === 'package' ? `[Package] ${ev.name}` : ev.name;
+        select.appendChild(opt);
+    });
+    if (current) {
+        if (![...select.options].some((o) => o.value === current)) {
+            const opt = document.createElement('option');
+            opt.value = current;
+            opt.textContent = current;
+            select.appendChild(opt);
+        }
+        select.value = current;
+    }
+}
+
+function updatePaidByOptionsForAllocation(allocation) {
+    const paidBySelect = document.getElementById('paidBy');
+    if (!paidBySelect) return;
+    const prev = paidBySelect.value;
+    const cashValue = shared.cashPaidByValue(allocation);
+    const cashLabel = shared.cashPaidByLabel(allocation);
+    paidBySelect.innerHTML = `
+        <option value="${cashValue}">${cashLabel}</option>
+        <option value="Company">Company</option>
+    `;
+    if (prev === 'Company') {
+        paidBySelect.value = 'Company';
+    } else if (shared.isCashPaidBy(prev) || prev === cashValue) {
+        paidBySelect.value = cashValue;
+    } else {
+        paidBySelect.value = cashValue;
+    }
+}
+
 function handleAllocationChange() {
     const allocationSelect = document.getElementById('allocationSelect');
     const branchFieldGroup = document.getElementById('branchFieldGroup');
+    const eventNameFieldGroup = document.getElementById('eventNameFieldGroup');
+    const eventNameInput = document.getElementById('eventName');
+    const eventNameSelect = document.getElementById('eventNameSelect');
+    const eventNameLabel = document.getElementById('eventNameLabel');
     const paidBySection = document.getElementById('paidBySection');
     const paidBySelect = document.getElementById('paidBy');
     
@@ -4249,17 +5083,52 @@ function handleAllocationChange() {
     
     const allocation = allocationSelect.value;
     const isStore = allocation === 'Store';
+    const isPopup = allocation === 'Popup';
+    const isEvent = shared.isEventAllocation(allocation);
     
-    // Show/hide branch field based on allocation
     if (branchFieldGroup) {
         branchFieldGroup.style.display = isStore ? 'block' : 'none';
     }
+
+    if (eventNameFieldGroup) {
+        eventNameFieldGroup.style.display = isEvent ? 'block' : 'none';
+    }
+    if (eventNameLabel) {
+        eventNameLabel.textContent = isPopup ? 'Pop-up event' : 'Event name';
+        eventNameLabel.setAttribute('for', isPopup ? 'eventNameSelect' : 'eventName');
+    }
+    if (eventNameSelect && eventNameInput) {
+        if (isPopup) {
+            populatePopupEventSelect(eventNameSelect.value || eventNameInput.value);
+            eventNameSelect.style.display = '';
+            eventNameSelect.required = true;
+            eventNameInput.style.display = 'none';
+            eventNameInput.required = false;
+            eventNameInput.value = eventNameSelect.value || '';
+            eventNameSelect.onchange = () => {
+                eventNameInput.value = eventNameSelect.value;
+            };
+        } else if (isEvent) {
+            eventNameSelect.style.display = 'none';
+            eventNameSelect.required = false;
+            eventNameInput.style.display = '';
+            eventNameInput.required = true;
+            eventNameInput.placeholder = 'Event name';
+        } else {
+            eventNameSelect.style.display = 'none';
+            eventNameSelect.required = false;
+            eventNameInput.style.display = 'none';
+            eventNameInput.required = false;
+            eventNameInput.value = '';
+            eventNameSelect.value = '';
+        }
+    }
     
-    // Show/hide Paid By field based on allocation
     if (paidBySection && paidBySelect) {
-        if (isStore) {
+        if (shared.allocationUsesPaidBy(allocation)) {
             paidBySection.style.display = 'block';
             paidBySelect.required = true;
+            updatePaidByOptionsForAllocation(allocation);
         } else {
             paidBySection.style.display = 'none';
             paidBySelect.required = false;

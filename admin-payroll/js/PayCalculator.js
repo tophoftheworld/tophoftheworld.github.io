@@ -26,7 +26,7 @@ class PayCalculator {
         // Configuration constants
         this.DAILY_MEAL_ALLOWANCE = 150;
         this.LATE_THRESHOLD_MINUTES = 30;
-        this.UNDERTIME_THRESHOLD_MINUTES = 30;
+        this.UNDERTIME_THRESHOLD_MINUTES = 0;
         this.STANDARD_WORK_HOURS = 8;
         this.HALF_DAY_HOURS = 4;
 
@@ -187,6 +187,47 @@ class PayCalculator {
             };
         }
 
+        // Hybrid: daily attendance pay + fixed amount per cutoff
+        if (normalizedEmployee.payType === 'hybrid') {
+            const arr = Array.isArray(dateEntries) ? dateEntries : [];
+            const periodFixedAmount = Number(normalizedEmployee.periodFixedAmount) || 0;
+            const results = arr.map(entry => {
+                const dailyResult = this.calculateDailyPay(entry, employee, 'detailed');
+                return {
+                    date: entry.date,
+                    total: dailyResult.total,
+                    breakdown: dailyResult.breakdown
+                };
+            });
+            const dailyAttendanceTotal = results.reduce((sum, result) => sum + result.total, 0);
+            const total = dailyAttendanceTotal + periodFixedAmount;
+            if (outputMode === 'simple') {
+                return total;
+            }
+            const summaryBreakdown = {
+                totalDays: results.length,
+                workingDays: results.filter(r => r.total > 0).length,
+                totalBasePay: results.reduce((sum, r) => sum + (r.breakdown.adjustedBaseRate || 0), 0),
+                totalMealAllowance: results.reduce((sum, r) => sum + (r.breakdown.mealAllowance || 0), 0),
+                totalDeductions: results.reduce((sum, r) => {
+                    const deductions = r.breakdown.deductions || {};
+                    return sum + (deductions.late?.amount || 0) + (deductions.undertime?.amount || 0);
+                }, 0),
+                totalBonuses: results.reduce((sum, r) => {
+                    const bonuses = r.breakdown.bonuses || {};
+                    return sum + Object.values(bonuses).reduce((bonusSum, bonus) => bonusSum + (bonus || 0), 0);
+                }, 0),
+                payType: 'hybrid_daily_plus_fixed',
+                dailyAttendanceTotal,
+                periodFixedAmount
+            };
+            return {
+                total,
+                entries: results,
+                breakdown: summaryBreakdown
+            };
+        }
+
         if (!Array.isArray(dateEntries) || dateEntries.length === 0) {
             return outputMode === 'simple' ? 0 : { total: 0, entries: [], breakdown: {} };
         }
@@ -265,7 +306,10 @@ class PayCalculator {
             salesBonusEligible: employee.salesBonusEligible || employee.sales_bonus_eligible || employee.salesBonus || false,
             payType: employee.payType || employee.pay_type || 'hourly',
             monthlySalary: employee.monthlySalary != null ? employee.monthlySalary : (employee.monthly_salary != null ? employee.monthly_salary : 0),
-            periodGross: employee.periodGross != null ? employee.periodGross : (employee.period_gross != null ? employee.period_gross : null)
+            periodGross: employee.periodGross != null ? employee.periodGross : (employee.period_gross != null ? employee.period_gross : null),
+            periodFixedAmount: employee.periodFixedAmount != null
+                ? employee.periodFixedAmount
+                : (employee.period_fixed_amount != null ? employee.period_fixed_amount : 0)
         };
     }
 
@@ -358,7 +402,7 @@ class PayCalculator {
 
         const hourlyRate = employee.baseRate / this.STANDARD_WORK_HOURS;
         
-        // Check if scheduled times are provided (for grace period and late policy)
+        // Scheduled times: late uses a 30-min grace; undertime has none
         const hasScheduledTimes = dateEntry.scheduledIn && dateEntry.scheduledOut;
         
         let workHours;
@@ -367,7 +411,7 @@ class PayCalculator {
 
         if (hasScheduledTimes) {
             // If scheduled times exist, calculate like regular shifts with deductions
-            // Calculate deductions (late/undertime) with grace period
+            // Calculate deductions (late 30-min grace; undertime none)
             const deductionHours = this.calculateDeductions(
                 dateEntry.timeIn,
                 dateEntry.timeOut,

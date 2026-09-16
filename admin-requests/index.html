@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>Payroll Requests - Matchanese Admin</title>
+    <title>Requests - Matchanese Admin</title>
     <link rel="icon" href="data:,">
     
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css?v=20260514-1">
+    <link rel="stylesheet" href="css/style.css?v=20260914-1">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
@@ -17,14 +17,24 @@
         <div class="header">
             <div class="logo-section">
                 <img src="../admin-payroll/img/matchanese-logo.png" class="logo" alt="Matchanese Logo">
-                <h1 class="app-title">Payroll Requests</h1>
+                <h1 class="app-title">Requests</h1>
             </div>
             <div class="controls">
+                <div class="control-item">
+                    <label class="control-label">Payday</label>
+                    <div class="payday-range-toggle" role="group" aria-label="Current or past payday">
+                        <button type="button" class="payday-range-btn active" data-payday-range="current" title="Covered by this or the upcoming payday">Current</button>
+                        <button type="button" class="payday-range-btn" data-payday-range="past" title="Covered by an earlier payday">Past</button>
+                    </div>
+                </div>
                 <div class="control-item">
                     <label class="control-label">Type</label>
                     <select id="requestTypeFilter">
                         <option value="all">All</option>
                         <option value="payroll">Payroll</option>
+                        <option value="leave">Leave</option>
+                        <option value="cash_advance">Cash Advance</option>
+                        <option value="reimbursement">Reimbursement</option>
                         <option value="reliever">Reliever</option>
                     </select>
                 </div>
@@ -74,11 +84,21 @@
         </div>
         
         <div class="mobile-controls">
+            <div class="control-item payday-range-control">
+                <label class="control-label">Payday</label>
+                <div class="payday-range-toggle" role="group" aria-label="Current or past payday">
+                    <button type="button" class="payday-range-btn active" data-payday-range="current" title="Covered by this or the upcoming payday">Current</button>
+                    <button type="button" class="payday-range-btn" data-payday-range="past" title="Covered by an earlier payday">Past</button>
+                </div>
+            </div>
             <div class="control-item">
                 <label class="control-label">Type</label>
                 <select id="requestTypeFilterMobile">
                     <option value="all">All</option>
                     <option value="payroll">Payroll</option>
+                    <option value="leave">Leave</option>
+                    <option value="cash_advance">Cash Advance</option>
+                    <option value="reimbursement">Reimbursement</option>
                     <option value="reliever">Reliever</option>
                 </select>
             </div>
@@ -134,9 +154,11 @@
                 </label>
                 <span class="selected-count" id="selectedCount">0 selected</span>
             </div>
-            <div class="loading-state" id="loadingState">
-                <div class="spinner"></div>
-                <p>Loading requests...</p>
+            <div class="requests-list" id="requestsList">
+                <div class="loading-state" id="loadingState">
+                    <div class="spinner"></div>
+                    <p>Loading requests...</p>
+                </div>
             </div>
         </div>
     </div>
@@ -241,7 +263,7 @@
     </div>
 
     <script src="../shared/js/PayCalculator.js"></script>
-    <script type="module" src="js/script.js?v=20260514-1"></script>
+    <script type="module" src="js/script.js?v=20260915-3"></script>
 </body>
 </html>
 

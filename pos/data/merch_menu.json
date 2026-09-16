@@ -2,19 +2,23 @@
   "categories": [
     {
       "id": "matcha-tools",
-      "name": "Matcha Tools"
+      "name": "Matcha Tools",
+      "countsAsCup": false
     },
     {
       "id": "apparel",
-      "name": "Apparel"
+      "name": "Apparel",
+      "countsAsCup": false
     },
     {
       "id": "accessories",
-      "name": "Accessories"
+      "name": "Accessories",
+      "countsAsCup": false
     },
     {
       "id": "matcha-powder",
-      "name": "Matcha Powder"
+      "name": "Matcha Powder",
+      "countsAsCup": false
     }
   ],
   "items": [

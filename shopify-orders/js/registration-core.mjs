@@ -78,6 +78,7 @@ export function extractAttendeesFromProperties(props) {
     const participants = [];
     const contacts = [];
     const emails = [];
+    const milks = [];
     for (const p of props || []) {
         const name = String(p.name || "");
         const entry = { suffix: propertySuffix(name), value: String(p.value || "").trim() };
@@ -85,16 +86,19 @@ export function extractAttendeesFromProperties(props) {
         if (/participant/i.test(name)) participants.push(entry);
         else if (/contact number/i.test(name)) contacts.push(entry);
         else if (/e-mail address/i.test(name)) emails.push(entry);
+        else if (/milk/i.test(name)) milks.push(entry);
     }
     const bySuffix = (a, b) => a.suffix - b.suffix;
     participants.sort(bySuffix);
     contacts.sort(bySuffix);
     emails.sort(bySuffix);
+    milks.sort(bySuffix);
 
     const count = Math.max(
         participants.length,
         contacts.length,
         emails.length,
+        milks.length,
         0
     );
     if (!count) return null;
@@ -105,8 +109,9 @@ export function extractAttendeesFromProperties(props) {
             participant: participants[i]?.value || "",
             contact: contacts[i]?.value || "",
             email: emails[i]?.value || "",
+            milk: milks[i]?.value || "",
         };
-        if (row.participant || row.contact || row.email) list.push(row);
+        if (row.participant || row.contact || row.email || row.milk) list.push(row);
     }
     return list.length ? list : null;
 }
@@ -227,6 +232,11 @@ export function parseRegistrationFromLineItem(lineItem) {
 
     const workshopDisplay = formatWorkshopDisplayName(workshopRaw);
 
+    const pass =
+        propertyValueByPattern(props, /pass|ticket|tier/i) ||
+        String(lineItem.variant_title || "").trim();
+    const fallbackMilk = propertyValueByPattern(props, /milk/i);
+
     return {
         workshop: workshopRaw,
         workshopDisplay,
@@ -242,6 +252,8 @@ export function parseRegistrationFromLineItem(lineItem) {
         participant: fallbackParticipant,
         contact: fallbackContact,
         email: fallbackEmail,
+        pass,
+        milk: fallbackMilk,
     };
 }
 
@@ -312,12 +324,17 @@ export function expandRegistrationToSeatRows(reg, orderMeta) {
                 (specific.email || "").trim() ||
                 (primary.email || "").trim() ||
                 (reg.email || "").trim(),
+            milk:
+                (specific.milk || "").trim() ||
+                (reg.milk || "").trim(),
         };
         rows.push({
             ...orderMeta,
             participant: att.participant || "—",
             contact: att.contact,
             email: att.email,
+            pass: reg.pass || "",
+            milk: att.milk,
             seatLabel: `${i + 1} of ${qty}`,
             seatIndex: i + 1,
             seatTotal: qty,
@@ -587,5 +604,6 @@ export function workshopManagementUrl(reg, fromOrderId) {
         session_date: reg.sessionDateIso,
     });
     if (fromOrderId) qs.set("from_order", String(fromOrderId));
+    qs.set("v", "54");
     return `workshop.html?${qs.toString()}`;
 }

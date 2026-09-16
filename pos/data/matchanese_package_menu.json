@@ -1,8 +1,20 @@
 {
   "categories": [
-    { "id": "matcha", "name": "MATCHA" },
-    { "id": "hojicha", "name": "HOJICHA" },
-    { "id": "coffee", "name": "COFFEE" }
+    {
+      "id": "matcha",
+      "name": "MATCHA",
+      "countsAsCup": true
+    },
+    {
+      "id": "hojicha",
+      "name": "HOJICHA",
+      "countsAsCup": true
+    },
+    {
+      "id": "coffee",
+      "name": "COFFEE",
+      "countsAsCup": true
+    }
   ],
   "items": [
     {
@@ -12,7 +24,11 @@
       "price": 0,
       "type": "",
       "shorthand": "MT",
-      "customizations": { "serving": true, "sweetness": true, "strengthLevel": true }
+      "customizations": {
+        "serving": true,
+        "sweetness": true,
+        "strengthLevel": true
+      }
     },
     {
       "categoryId": "matcha",
@@ -61,7 +77,11 @@
       "price": 0,
       "type": "",
       "shorthand": "CA",
-      "customizations": { "serving": true, "sweetness": true, "strengthLevel": true }
+      "customizations": {
+        "serving": true,
+        "sweetness": true,
+        "strengthLevel": true
+      }
     },
     {
       "categoryId": "coffee",

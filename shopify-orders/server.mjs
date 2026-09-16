@@ -1005,6 +1005,30 @@ async function proxyWorkshopRoster(searchParams) {
     };
 }
 
+/** Workshop day(s) (event + date) a given order touches, from booked line items. */
+export function workshopDaysForOrder(order) {
+    const days = [];
+    const seen = new Set();
+    for (const li of order?.line_items || []) {
+        const reg = parseRegistrationFromLineItem(li);
+        if (!reg?.eventId || !reg?.sessionDateIso) continue;
+        const key = `${reg.eventId}|${reg.sessionDateIso}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        days.push({ eventId: reg.eventId, sessionDate: reg.sessionDateIso });
+    }
+    return days;
+}
+
+/** Reusable roster fetch for server-side consumers (e.g. Google Sheets sync). */
+export async function getWorkshopRosterData(eventId, sessionDate) {
+    const searchParams = new URLSearchParams({
+        event_id: String(eventId || ""),
+        session_date: String(sessionDate || ""),
+    });
+    return proxyWorkshopRoster(searchParams);
+}
+
 function needsListFulfillmentEnrichment(order, products = []) {
     if (order.cancelled_at) return false;
     const fin = (order.financial_status || "").toLowerCase();

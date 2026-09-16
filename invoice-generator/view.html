@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en" prefix="og: https://ogp.me/ns#">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invoice | Matchanese Matcha Bar</title>
+    <meta name="description" content="View your Matchanese invoice, booking details, and payment schedule.">
+    <meta name="theme-color" content="#2b9348">
+    <base href="/i/">
+
+    <!-- Open Graph — og:url is injected server-side per token for crawlers. -->
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Matchanese">
+    <meta property="og:title" content="Invoice | Matchanese Matcha Bar">
+    <meta property="og:description" content="View your Matchanese invoice, booking details, and payment schedule.">
+    <meta property="og:image" content="https://matchanese-invoice.web.app/og-social.jpg">
+    <meta property="og:image:secure_url" content="https://matchanese-invoice.web.app/og-social.jpg">
+    <meta property="og:image:alt" content="Matchanese iced matcha drinks">
+    <meta property="og:image:type" content="image/jpeg">
+    <meta property="og:image:width" content="1024">
+    <meta property="og:image:height" content="576">
+    <meta property="og:locale" content="en_PH">
+    <script>
+      (function () {
+        var url = location.href.split("#")[0];
+        var tags = [
+          ["property", "og:url", url],
+          ["property", "og:image", "https://matchanese-invoice.web.app/og-social.jpg"],
+          ["name", "twitter:image", "https://matchanese-invoice.web.app/og-social.jpg"]
+        ];
+        for (var i = 0; i < tags.length; i++) {
+          var t = tags[i], el = document.querySelector('meta[' + t[0] + '="' + t[1] + '"]');
+          if (!el) {
+            el = document.createElement("meta");
+            el.setAttribute(t[0], t[1]);
+            document.head.appendChild(el);
+          }
+          el.setAttribute("content", t[2]);
+        }
+        var link = document.querySelector('link[rel="canonical"]');
+        if (!link) {
+          link = document.createElement("link");
+          link.rel = "canonical";
+          document.head.appendChild(link);
+        }
+        link.href = url;
+      })();
+    </script>
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Invoice | Matchanese Matcha Bar">
+    <meta name="twitter:description" content="View your Matchanese invoice, booking details, and payment schedule.">
+    <meta name="twitter:image" content="https://matchanese-invoice.web.app/og-social.jpg">
+
+    <link rel="stylesheet" href="css/invoice-view.css?v=20260915-extrawt">
+    <link rel="stylesheet" href="css/invoice-pdf-document.css?v=20260914-pdf-vcenter">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
+</head>
+<body class="invoice-web-page">
+    <header class="inv-topbar">
+        <div class="inv-topbar-inner">
+            <div class="inv-brand">
+                <img src="img/matchanese-logo-full.png" alt="Matchanese" class="inv-brand-logo">
+            </div>
+            <button type="button" id="downloadPDF" class="inv-btn inv-btn-secondary" disabled>Download PDF</button>
+        </div>
+    </header>
+
+    <main class="inv-shell">
+        <div id="loadingState" class="inv-state">Loading invoice…</div>
+        <div id="errorState" class="inv-state is-hidden" hidden>
+            <h1>Invoice not found</h1>
+            <p>This link may be incomplete or no longer available. Please ask Matchanese for a new invoice link.</p>
+        </div>
+        <div id="invoicePageRoot" class="inv-page is-hidden" hidden></div>
+    </main>
+
+    <div id="pdfCaptureRoot" class="pdf-capture-root" aria-hidden="true"></div>
+
+    <div id="choiceModal" class="inv-choice-modal-overlay is-hidden" hidden>
+      <div class="inv-choice-modal" role="dialog" aria-modal="true" aria-labelledby="choiceModalTitle">
+        <div class="inv-choice-modal-header">
+          <div>
+            <h2 id="choiceModalTitle">Choose your drinks</h2>
+            <p class="inv-choice-modal-count" id="choiceModalCount">0 of 0 selected</p>
+          </div>
+          <button type="button" id="choiceModalClose" class="inv-choice-modal-close" aria-label="Close">&times;</button>
+        </div>
+        <div class="inv-choice-modal-list" id="choiceModalList"></div>
+        <p class="inv-choice-modal-error is-hidden" id="choiceModalError" hidden></p>
+        <div class="inv-choice-modal-actions">
+          <button type="button" id="choiceModalCancel" class="inv-btn inv-btn-secondary">Cancel</button>
+          <button type="button" id="choiceModalSave" class="inv-btn inv-btn-primary">Save choices</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="qrModal" class="inv-qr-modal-overlay is-hidden" hidden>
+      <div class="inv-qr-modal" role="dialog" aria-modal="true" aria-labelledby="qrModalTitle">
+        <button type="button" id="qrModalClose" class="inv-qr-modal-close" aria-label="Close">&times;</button>
+        <h2 id="qrModalTitle" class="inv-qr-modal-title">QR</h2>
+        <img id="qrModalImage" class="inv-qr-modal-image" alt="">
+      </div>
+    </div>
+
+    <div id="paymentReceivedModal" class="inv-choice-modal-overlay is-hidden" hidden>
+      <div class="inv-choice-modal inv-received-modal" role="dialog" aria-modal="true" aria-labelledby="paymentReceivedModalTitle">
+        <div class="inv-choice-modal-header">
+          <div>
+            <h2 id="paymentReceivedModalTitle">Payment screenshot received</h2>
+          </div>
+          <button type="button" id="paymentReceivedModalClose" class="inv-choice-modal-close" aria-label="Close">&times;</button>
+        </div>
+        <div class="inv-received-body">
+          <p class="inv-received-copy" id="paymentReceivedCopy">Thanks — we got your payment screenshot. Our team will also manually verify it.</p>
+          <div class="inv-received-pending is-hidden" id="paymentReceivedPending" hidden></div>
+        </div>
+        <div class="inv-choice-modal-actions">
+          <button type="button" id="paymentReceivedModalOk" class="inv-btn inv-btn-primary">OK</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="js/invoice-page-render.js?v=20260915-extrawt"></script>
+    <script src="js/invoice-pdf-legacy.js?v=20260914-pdf-vcenter"></script>
+    <script src="js/invoice-view.js?v=20260911-recvmodal"></script>
+</body>
+</html>

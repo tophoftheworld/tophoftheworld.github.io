@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Matchanese Pop-up Sales Dashboard</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/dashboard.css?v=20">
+    <link rel="stylesheet" href="css/dashboard.css?v=32">
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"
@@ -39,24 +39,29 @@
 
         <div class="stats-grid">
             <div class="stat-card">
-                <h3>Total Sales</h3>
+                <h3 id="salesStatLabel">Total Sales</h3>
                 <div class="stat-value" id="todaySales">₱0.00</div>
             </div>
             <div class="stat-card">
                 <h3>Total Orders</h3>
                 <div class="stat-value" id="todayOrders">0</div>
             </div>
-            <div class="stat-card">
-                <h3>Cups Sold</h3>
+            <div class="stat-card" id="cupsStatCard">
+                <h3 id="cupsStatLabel">Cups Sold</h3>
                 <div class="stat-value" id="todayCups">0</div>
+                <div class="stat-note" id="todayCupsNote"></div>
+            </div>
+            <div class="stat-card" id="profitStatCard">
+                <h3>Est. Profit</h3>
+                <div class="stat-value" id="estProfit">—</div>
+                <div class="stat-note" id="estProfitNote"></div>
             </div>
         </div>
         
-        <!-- Add proper spacing and structure for EOD section -->
         <div id="eodDashboardSection" class="eod-dashboard-section" style="display: none;">
             <h3>End of Day Summary</h3>
             <div id="eodContent">
-                <div class="loading">No end of day summary available</div>
+                <div class="loading">No POS sales submission for this day</div>
             </div>
         </div>
 
@@ -102,17 +107,45 @@
                 </div>
             </div>
 
-            <div class="top-items">
-                <h3 id="topItemsSectionTitle">Top Items (Selected Day)</h3>
-                <div class="items-list" id="topItemsList">
-                    <div class="loading">Loading items...</div>
+            <div class="customization-breakdown" id="milkBreakdownSection">
+                <h3 id="milkSectionTitle">Milk</h3>
+                <div class="customization-stats" id="milkStats">
+                    <div class="loading">Loading...</div>
+                </div>
+            </div>
+
+            <div class="customization-breakdown" id="strengthBreakdownSection">
+                <h3 id="strengthSectionTitle">Strength</h3>
+                <div class="customization-stats" id="strengthStats">
+                    <div class="loading">Loading...</div>
+                </div>
+            </div>
+
+            <div class="customization-breakdown" id="matchaOptionBreakdownSection">
+                <h3 id="matchaOptionSectionTitle">Matcha Option</h3>
+                <div class="customization-stats" id="matchaOptionStats">
+                    <div class="loading">Loading...</div>
+                </div>
+            </div>
+
+            <div class="customization-breakdown" id="sugarBreakdownSection">
+                <h3 id="sugarSectionTitle">Sweetness</h3>
+                <div class="customization-stats" id="sugarStats">
+                    <div class="loading">Loading...</div>
+                </div>
+            </div>
+
+            <div class="customization-breakdown" id="discountBreakdownSection">
+                <h3 id="discountSectionTitle">Discounts (Selected Day)</h3>
+                <div class="customization-stats" id="discountStats">
+                    <div class="loading">Loading...</div>
                 </div>
             </div>
         </div>
 
         <div id="salesByItemReportSection" class="sales-by-item-section">
             <div class="sales-by-item-header">
-                <h3 id="salesByItemTitle">Sales by Item Report (Selected Day)</h3>
+                <h3 id="salesByItemTitle">Sales by Item Report</h3>
                 <button id="downloadSalesReportBtn" class="download-report-btn" type="button">Download Screenshot</button>
             </div>
             <div id="salesByItemReport" class="sales-by-item-report">
@@ -123,7 +156,11 @@
         <div class="data-section">
             <div class="data-section-header">
                 <h3 id="dailySalesHistoryTitle">Daily Sales History</h3>
-                <button id="exportHistoryPdfBtn" class="download-report-btn" type="button">Export PDF</button>
+                <div class="export-actions">
+                    <button id="exportHistoryPdfBtn" class="download-report-btn" type="button">Export PDF</button>
+                    <button id="exportTransactionsCsvBtn" class="download-report-btn secondary" type="button">Export Transactions CSV</button>
+                    <button id="exportDailyBreakdownCsvBtn" class="download-report-btn secondary" type="button">Export Daily Breakdown CSV</button>
+                </div>
             </div>
             <div class="sales-table-container" id="eventsGrid">
                 <div class="loading">Loading events data...</div>
@@ -131,7 +168,7 @@
         </div>
     </div>
 
-    <script type="module" src="js/dashboard.js?v=21"></script>
+    <script type="module" src="js/dashboard.js?v=37"></script>
 </body>
 
 </html>

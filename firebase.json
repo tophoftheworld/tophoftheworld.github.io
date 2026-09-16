@@ -8,5 +8,25 @@
   },
   "functions": {
     "source": "functions"
+  },
+  "hosting": {
+    "target": "staff",
+    "public": "hosting-staff",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "headers": [
+      {
+        "source": "**/*.@(js|css|html|webmanifest)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      }
+    ]
   }
 }

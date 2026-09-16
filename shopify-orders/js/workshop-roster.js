@@ -3,6 +3,7 @@
  */
 
 import {
+    extractWorkshopLocation,
     formatWorkshopDisplayName,
     normalizeOrderSeatLabels,
     parseTimeSortKey,
@@ -13,8 +14,18 @@ import {
     confirmCancelOrder,
     postCancelOrder,
 } from "./order-cancel.js";
+import { showConfirmDialog } from "./confirm-dialog.js";
 import { paidIconHtml, paymentCellHtml } from "./payment-method.js";
-import { isMobileViewport } from "./viewport.js";
+import {
+    applyNameOverrides,
+    certificateParticipantNames,
+    seatNameKey,
+} from "./workshop-certificate-core.mjs";
+import { downloadWorkshopCertificatesPdf } from "./workshop-certificates.js?v=2";
+import {
+    loadWorkshopRosterMeta,
+    saveWorkshopRosterMeta,
+} from "./workshop-roster-meta.js";
 
 const params = new URLSearchParams(window.location.search);
 const eventId = (params.get("event_id") || "").trim();
@@ -30,6 +41,9 @@ const els = {
     tbody: document.getElementById("rosterBody"),
     rosterCardList: document.getElementById("rosterCardList"),
     table: document.getElementById("rosterTable"),
+    btnExportExcel: document.getElementById("btnExportExcel"),
+    btnDownloadCertificates: document.getElementById("btnDownloadCertificates"),
+    btnGoogleSheet: document.getElementById("btnGoogleSheet"),
     participantModal: document.getElementById("participantModal"),
     participantModalBackdrop: document.getElementById("participantModalBackdrop"),
     participantModalHeader: document.getElementById("participantModalHeader"),
@@ -52,6 +66,9 @@ const state = {
     sortDir: null,
     sessionPillClasses: new Map(),
     selectedRowKey: null,
+    sheet: { configured: false, exists: false, url: null },
+    meta: { venue: "", names: {} },
+    certificatesBusy: false,
 };
 
 function isLiveHost() {
@@ -79,6 +96,10 @@ function parseOrderNum(name) {
 function adminOrderUrl(orderId) {
     if (!state.shopHandle || !orderId) return null;
     return `https://admin.shopify.com/store/${state.shopHandle}/orders/${orderId}`;
+}
+
+function shopifyDashboardOrderUrl(orderId) {
+    return `/shopify/index.html?order=${encodeURIComponent(orderId)}`;
 }
 
 function sortHeaderArrow(dir) {
@@ -258,6 +279,26 @@ function participantRowKey(r) {
     return `${r.sessionKey}|${r.orderId}|${r.seatIndex ?? 0}`;
 }
 
+function passPillHtml(pass) {
+    if (!pass) return "—";
+    const tier = /premium/i.test(pass) ? "premium" : "basic";
+    return `<span class="pass-pill" data-tier="${tier}">${escapeHtml(pass)}</span>`;
+}
+
+function editNameButtonHtml(r) {
+    return `<button type="button" class="roster-edit-name" data-edit-name data-row-key="${escapeHtml(participantRowKey(r))}" title="Edit participant name" aria-label="Edit participant name">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+    </button>`;
+}
+
+function participantNameHtml(r) {
+    const edited = r.nameOverridden ? " roster-name-text--edited" : "";
+    return `<span class="roster-name-cell">
+        <span class="roster-name-text${edited}">${escapeHtml(r.participant || "—")}</span>
+        ${editNameButtonHtml(r)}
+    </span>`;
+}
+
 function renderSessionBadge(r) {
     if (r.noBooking) {
         return '<span class="roster-badge roster-badge--no-booking">No booking</span>';
@@ -285,7 +326,7 @@ function renderParticipantCard(r) {
             <span class="entity-card__title">${escapeHtml(r.orderName)}</span>
             ${renderSessionBadge(r)}
         </div>
-        <p class="entity-card__primary">${escapeHtml(r.participant || "—")}</p>
+        <p class="entity-card__primary">${participantNameHtml(r)}${r.pass ? ` ${passPillHtml(r.pass)}` : ""}</p>
         <p class="entity-card__sub">Seat ${escapeHtml(r.seatLabel || "1 of 1")} · #${escapeHtml(String(r.rowNum ?? ""))}</p>
         <div class="entity-card__detail-grid">
             <div><span class="entity-card__label">Contact</span>${contactLine}</div>
@@ -298,11 +339,9 @@ function renderParticipantCard(r) {
 }
 
 function renderParticipantRow(r) {
-    const dashboardUrl = `index.html?order=${encodeURIComponent(r.orderId)}`;
-    const shopifyUrl = adminOrderUrl(r.orderId);
-    const orderCell = shopifyUrl
-        ? `<a href="${escapeHtml(shopifyUrl)}" target="_blank" rel="noopener">${escapeHtml(r.orderName)}</a>`
-        : escapeHtml(r.orderName);
+    const selected =
+        state.selectedRowKey === participantRowKey(r) ? " roster-row--selected" : "";
+    const orderCell = escapeHtml(r.orderName);
     const emailCell = r.email
         ? `<a href="mailto:${escapeHtml(r.email)}">${escapeHtml(r.email)}</a>`
         : "—";
@@ -317,11 +356,12 @@ function renderParticipantRow(r) {
     const rowClass = r.isSeatFollower
         ? "roster-row roster-row--seat-follow"
         : "roster-row";
-    return `<tr class="${rowClass}${r.noBooking ? " roster-row--no-booking" : ""}" data-order-id="${r.orderId}" data-row-key="${escapeHtml(participantRowKey(r))}" tabindex="0">
+    return `<tr class="${rowClass}${selected}${r.noBooking ? " roster-row--no-booking" : ""}" data-order-id="${r.orderId}" data-row-key="${escapeHtml(participantRowKey(r))}" tabindex="0">
         <td class="col-num">${escapeHtml(String(r.rowNum ?? ""))}</td>
         <td class="col-session">${renderSessionBadge(r)}</td>
-        <td class="col-order">${orderCell} <a class="roster-open-dashboard" href="${escapeHtml(dashboardUrl)}" title="Open in dashboard">↗</a></td>
-        <td class="col-customer">${escapeHtml(r.participant || "—")}</td>
+        <td class="col-order">${orderCell}</td>
+        <td class="col-customer">${participantNameHtml(r)}</td>
+        <td class="col-pass">${passPillHtml(r.pass)}</td>
         <td class="col-contact">${contactCell}</td>
         <td class="col-email">${emailCell}</td>
         <td class="col-items">${escapeHtml(r.seatLabel || "1 of 1")}</td>
@@ -339,15 +379,20 @@ function renderWorkshopInfo(day) {
     els.infoDate.textContent = day.dateLabel || day.sessionDate || "";
 }
 
-function renderTable() {
+function getSortedRows() {
     const rows = [...state.rows];
     sortRowsInPlace(rows, state.sortKey, state.sortDir);
     assignSessionRowNumbers(rows);
+    return rows;
+}
+
+function renderTable() {
+    const rows = getSortedRows();
     updateSortHeaderIndicators();
 
     if (!rows.length) {
         els.tbody.innerHTML =
-            '<tr><td colspan="9" class="muted">No participants found for this day.</td></tr>';
+            '<tr><td colspan="10" class="muted">No participants found for this day.</td></tr>';
         if (els.rosterCardList) {
             els.rosterCardList.innerHTML =
                 '<p class="entity-card-empty muted">No participants found for this day.</p>';
@@ -358,6 +403,271 @@ function renderTable() {
     els.tbody.innerHTML = rows.map(renderParticipantRow).join("");
     if (els.rosterCardList) {
         els.rosterCardList.innerHTML = rows.map(renderParticipantCard).join("");
+    }
+}
+
+const EXPORT_HEADERS = [
+    "Order ID",
+    "Name",
+    "Checked-In",
+    "Pass",
+    "Email",
+    "Contact Number",
+    "Time Slot",
+    "Milk Options",
+    "Payment Method",
+    "Notes",
+];
+
+function exportRowValues(r) {
+    return [
+        r.orderName || "",
+        r.participant === "—" ? "" : r.participant || "",
+        "",
+        r.pass || "",
+        r.email || "",
+        r.contact || "",
+        r.noBooking ? "" : r.timeLabel || "",
+        r.milk || "",
+        r.paymentMethod === "—" ? "" : r.paymentMethod || "",
+        "",
+    ];
+}
+
+function exportFileBase() {
+    const name = formatWorkshopDisplayName(state.day?.workshop || "Workshop");
+    const date = state.day?.dateLabel || state.day?.sessionDate || "";
+    const raw = [name, date].filter(Boolean).join(" - ");
+    return (raw || "workshop-roster").replace(/[\\/:*?"<>|]+/g, " ").trim();
+}
+
+function updateExportButton() {
+    const hasRows = state.rows.length > 0;
+    if (els.btnExportExcel) els.btnExportExcel.hidden = !hasRows;
+    if (els.btnDownloadCertificates) {
+        els.btnDownloadCertificates.hidden = !hasRows;
+        els.btnDownloadCertificates.disabled = state.certificatesBusy;
+    }
+}
+
+function suggestedVenue() {
+    const saved = String(state.meta.venue || "").trim();
+    if (saved) return saved;
+    return extractWorkshopLocation(
+        state.day?.workshop || "",
+        state.day?.workshop || ""
+    );
+}
+
+async function persistMeta() {
+    try {
+        await saveWorkshopRosterMeta(eventId, sessionDate, state.meta);
+    } catch (e) {
+        setStatus(e.message || "Saved on this device only. Cloud save failed.", true);
+    }
+}
+
+async function handleEditName(row) {
+    if (!row) return;
+    const current = String(row.participant || "").trim();
+    const original = String(row.originalParticipant || row.participant || "").trim();
+    const result = await showConfirmDialog({
+        title: "Edit participant name",
+        message: "This name is used on the roster and certificates. Leave blank to restore the original booking name.",
+        confirmLabel: "Save",
+        cancelLabel: "Cancel",
+        input: {
+            label: "Participant name",
+            value: current === "—" ? "" : current,
+            placeholder: original === "—" ? "Full name" : original,
+        },
+    });
+    if (!result.confirmed) return;
+
+    const next = String(result.value || "").trim();
+    const key = seatNameKey(row.orderId, row.seatIndex);
+    if (!next || next === original) {
+        delete state.meta.names[key];
+    } else {
+        state.meta.names[key] = next;
+    }
+    applyNameOverrides(state.rows, state.meta.names);
+    renderTable();
+    if (state.selectedRowKey === participantRowKey(row)) {
+        const updated = state.rows.find((r) => participantRowKey(r) === state.selectedRowKey);
+        if (updated) openParticipantModal(updated);
+    }
+    await persistMeta();
+    backgroundSyncSheet();
+}
+
+async function handleDownloadCertificates() {
+    if (state.certificatesBusy) return;
+    const rows = getSortedRows();
+    const names = certificateParticipantNames(rows);
+    if (!names.length) {
+        setStatus("No participant names to print.", true);
+        return;
+    }
+
+    const result = await showConfirmDialog({
+        title: "Download certificates",
+        message: `This will create a PDF with ${names.length} certificate${names.length === 1 ? "" : "s"}.`,
+        confirmLabel: "Download PDF",
+        cancelLabel: "Cancel",
+        input: {
+            label: "Full venue",
+            value: suggestedVenue(),
+            placeholder: formatWorkshopDisplayName(state.day?.workshop || "") ||
+                "e.g. Marikina Sports Center, Marikina City",
+            hint: "Printed on every certificate. Include the place name and city.",
+        },
+    });
+    if (!result.confirmed) return;
+
+    const venue = String(result.value || "").trim();
+    if (!venue) {
+        setStatus("Enter the full venue before downloading certificates.", true);
+        return;
+    }
+
+    state.meta.venue = venue;
+    await persistMeta();
+
+    const btn = els.btnDownloadCertificates;
+    const originalLabel = btn?.textContent || "Download Certificates";
+    state.certificatesBusy = true;
+    updateExportButton();
+    setStatus("Generating certificates…");
+    try {
+        await downloadWorkshopCertificatesPdf({
+            names,
+            dateIso: sessionDate,
+            venue,
+            fileBase: `Certificates - ${exportFileBase()}`,
+            onProgress: (i, total) => {
+                if (btn) btn.textContent = `Generating ${i}/${total}…`;
+                setStatus(`Generating certificate ${i} of ${total}…`);
+            },
+        });
+        setStatus("");
+    } catch (e) {
+        setStatus(e.message || String(e), true);
+    } finally {
+        state.certificatesBusy = false;
+        if (btn) btn.textContent = originalLabel;
+        updateExportButton();
+    }
+}
+
+function exportToExcel() {
+    if (typeof XLSX === "undefined") {
+        setStatus("Excel export library not loaded. Check your connection.", true);
+        return;
+    }
+    const rows = getSortedRows();
+    if (!rows.length) {
+        setStatus("Nothing to export for this day.", true);
+        return;
+    }
+
+    const aoa = [EXPORT_HEADERS, ...rows.map(exportRowValues)];
+    const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+    worksheet["!cols"] = [
+        { wch: 10 },
+        { wch: 24 },
+        { wch: 10 },
+        { wch: 14 },
+        { wch: 30 },
+        { wch: 16 },
+        { wch: 16 },
+        { wch: 12 },
+        { wch: 16 },
+        { wch: 20 },
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Roster");
+    XLSX.writeFile(workbook, `${exportFileBase()}.xlsx`);
+}
+
+function sheetDayParams() {
+    return new URLSearchParams({
+        event_id: eventId,
+        session_date: sessionDate,
+    });
+}
+
+function updateGoogleSheetButton() {
+    const btn = els.btnGoogleSheet;
+    if (!btn) return;
+    if (!state.sheet.configured || !state.rows.length) {
+        btn.hidden = true;
+        return;
+    }
+    btn.hidden = false;
+    btn.disabled = false;
+    btn.textContent = state.sheet.exists
+        ? "Open Google Sheet"
+        : "Export to Google Sheets";
+}
+
+async function fetchSheetInfo() {
+    state.sheet = { configured: false, exists: false, url: null };
+    if (!isLiveHost() || !eventId || !sessionDate) return;
+    try {
+        const res = await fetch(`/api/workshop-sheet?${sheetDayParams()}`);
+        if (!res.ok) return;
+        const info = await res.json();
+        state.sheet = {
+            configured: Boolean(info.configured),
+            exists: Boolean(info.exists),
+            url: info.url || null,
+        };
+    } catch (_) {
+        /* leave defaults */
+    }
+}
+
+/** Fire-and-forget refresh so the sheet reflects the current roster on view. */
+function backgroundSyncSheet() {
+    if (!state.sheet.configured || !state.sheet.exists) return;
+    fetch(`/api/workshop-sheet/sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event_id: eventId, session_date: sessionDate }),
+    }).catch(() => {});
+}
+
+async function handleGoogleSheetClick() {
+    const btn = els.btnGoogleSheet;
+    if (state.sheet.exists && state.sheet.url) {
+        window.open(state.sheet.url, "_blank", "noopener");
+        return;
+    }
+    btn.disabled = true;
+    btn.textContent = "Creating sheet…";
+    setStatus("Creating Google Sheet…");
+    try {
+        const res = await fetch(`/api/workshop-sheet/export`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ event_id: eventId, session_date: sessionDate }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            throw new Error(data.message || "Export failed");
+        }
+        state.sheet.exists = true;
+        state.sheet.url = data.url || null;
+        setStatus("");
+        updateGoogleSheetButton();
+        if (data.url) window.open(data.url, "_blank", "noopener");
+    } catch (e) {
+        setStatus(e.message || String(e), true);
+    } finally {
+        btn.disabled = false;
+        updateGoogleSheetButton();
     }
 }
 
@@ -378,7 +688,7 @@ function openParticipantModal(r) {
     state.selectedRowKey = participantRowKey(r);
     renderTable();
 
-    const dashboardUrl = `index.html?order=${encodeURIComponent(r.orderId)}`;
+    const dashboardUrl = shopifyDashboardOrderUrl(r.orderId);
     const shopifyUrl = adminOrderUrl(r.orderId);
     const contactLine = r.contact
         ? `<a href="tel:${escapeHtml(r.contact.replace(/[^\d+]/g, ""))}">${escapeHtml(r.contact)}</a>`
@@ -406,11 +716,13 @@ function openParticipantModal(r) {
         <section class="detail-card">
             <div class="entity-card__detail-grid entity-card__detail-grid--modal">
                 <div><span class="entity-card__label">Seat</span><p>${escapeHtml(r.seatLabel || "1 of 1")}</p></div>
+                <div><span class="entity-card__label">Pass</span><p>${r.pass ? escapeHtml(r.pass) : "—"}</p></div>
                 <div><span class="entity-card__label">Payment</span><p>${paymentCellHtml(r.financialStatus, escapeHtml(r.paymentMethod || "—"))}</p></div>
                 <div><span class="entity-card__label">Contact</span><p>${contactLine}</p></div>
                 <div><span class="entity-card__label">Email</span><p>${emailLine}</p></div>
             </div>
             <div class="detail-actions detail-actions--stack">
+                <button type="button" class="action-btn secondary" id="btnEditParticipantName">Edit name</button>
                 <a class="action-btn primary" href="${escapeHtml(dashboardUrl)}">Open full order</a>
                 ${shopifyUrl ? `<a class="action-btn secondary" href="${escapeHtml(shopifyUrl)}" target="_blank" rel="noopener">Open in Shopify</a>` : ""}
                 ${showCancel ? `<div class="detail-cancel-row"><button type="button" class="detail-cancel-link" id="btnCancelRegistration">Cancel registration</button></div>` : ""}
@@ -418,6 +730,9 @@ function openParticipantModal(r) {
         </section>`;
 
     document.getElementById("btnParticipantClose")?.addEventListener("click", closeParticipantModal);
+    document.getElementById("btnEditParticipantName")?.addEventListener("click", () => {
+        handleEditName(r);
+    });
     document.getElementById("btnCancelRegistration")?.addEventListener("click", async () => {
         const choice = await confirmCancelOrder({
             type: "workshop",
@@ -436,12 +751,10 @@ function openParticipantModal(r) {
         }
     });
 
-    if (isMobileViewport()) {
-        document.body.classList.add("detail-modal-open");
-        if (els.participantModalBackdrop) {
-            els.participantModalBackdrop.classList.remove("hidden");
-            els.participantModalBackdrop.setAttribute("aria-hidden", "false");
-        }
+    document.body.classList.add("detail-modal-open");
+    if (els.participantModalBackdrop) {
+        els.participantModalBackdrop.classList.remove("hidden");
+        els.participantModalBackdrop.setAttribute("aria-hidden", "false");
     }
     els.participantModal?.classList.remove("hidden");
 }
@@ -452,11 +765,7 @@ function openParticipantFromTarget(target) {
     const key = el.getAttribute("data-row-key");
     const row = state.rows.find((r) => participantRowKey(r) === key);
     if (!row) return;
-    if (isMobileViewport()) {
-        openParticipantModal(row);
-    } else {
-        window.location.href = `index.html?order=${encodeURIComponent(row.orderId)}`;
-    }
+    openParticipantModal(row);
 }
 
 function setupSortHeaders() {
@@ -478,15 +787,33 @@ function setupSortHeaders() {
 function setupRowClicks() {
     const activate = (ev) => {
         if (ev.type === "keydown" && ev.key !== "Enter") return;
+        if (ev.target.closest("[data-edit-name]")) return;
         openParticipantFromTarget(ev.target);
     };
+    const onEditClick = (ev) => {
+        const btn = ev.target.closest("[data-edit-name]");
+        if (!btn) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        const key = btn.getAttribute("data-row-key");
+        const row = state.rows.find((r) => participantRowKey(r) === key);
+        handleEditName(row);
+    };
     els.tbody.addEventListener("click", (ev) => {
+        if (ev.target.closest("[data-edit-name]")) {
+            onEditClick(ev);
+            return;
+        }
         if (ev.target.closest("a")) return;
         activate(ev);
     });
     els.tbody.addEventListener("keydown", activate);
     if (els.rosterCardList) {
         els.rosterCardList.addEventListener("click", (ev) => {
+            if (ev.target.closest("[data-edit-name]")) {
+                onEditClick(ev);
+                return;
+            }
             if (ev.target.closest("a")) return;
             activate(ev);
         });
@@ -551,15 +878,30 @@ async function loadWorkshopDay() {
         renderWorkshopInfo(state.day);
         setStatus("");
         renderTable();
+        updateExportButton();
+
+        const loaded = await loadWorkshopRosterMeta(eventId, sessionDate);
+        state.meta = {
+            venue: state.meta.venue || loaded.venue,
+            names: { ...loaded.names, ...state.meta.names },
+        };
+        applyNameOverrides(state.rows, state.meta.names);
+        renderTable();
+
+        await fetchSheetInfo();
+        updateGoogleSheetButton();
+        backgroundSyncSheet();
     } catch (e) {
         setStatus(e.message || String(e), true);
         els.tbody.innerHTML = "";
+        updateExportButton();
+        updateGoogleSheetButton();
     }
 }
 
 function initBackLink() {
     if (fromOrder) {
-        els.btnBackShopify.href = `index.html?order=${encodeURIComponent(fromOrder)}`;
+        els.btnBackShopify.href = shopifyDashboardOrderUrl(fromOrder);
     }
 }
 
@@ -568,6 +910,9 @@ async function boot() {
     setupSortHeaders();
     setupRowClicks();
     setupParticipantModalBackdrop();
+    els.btnExportExcel?.addEventListener("click", exportToExcel);
+    els.btnDownloadCertificates?.addEventListener("click", handleDownloadCertificates);
+    els.btnGoogleSheet?.addEventListener("click", handleGoogleSheetClick);
     await fetchConfig();
     await loadWorkshopDay();
 }

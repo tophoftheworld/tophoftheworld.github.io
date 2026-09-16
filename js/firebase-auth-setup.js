@@ -258,6 +258,7 @@ function isAdmin(userData) {
 
 // Export functions and objects
 export { 
+    app,
     auth, 
     db, 
     signInUser, 

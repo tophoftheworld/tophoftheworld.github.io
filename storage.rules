@@ -7,6 +7,16 @@ service firebase.storage {
       allow read, write: if true;
     }
 
+    // Staff GoTyme QR codes (payroll transfers)
+    match /staff-gotyme-qr/{employeeId} {
+      allow read, write: if true;
+    }
+
+    // Staff BDO QR codes (payroll transfers)
+    match /staff-bdo-qr/{employeeId} {
+      allow read, write: if true;
+    }
+
     match /menu-creator-photos/{fileName} {
       allow read, write: if true;
     }
@@ -18,6 +28,11 @@ service firebase.storage {
 
     // Admin payroll v2 payment screenshots (canonical admin-payroll)
     match /payroll_periods_v2_screenshots/{allPaths=**} {
+      allow read, write: if true;
+    }
+
+    // Admin payroll v2 payment statement PDFs (email download links)
+    match /payroll_periods_v2_statements/{allPaths=**} {
       allow read, write: if true;
     }
 
@@ -53,6 +68,40 @@ service firebase.storage {
 
     // Expense tracker receipt photos
     match /expense-receipts/{allPaths=**} {
+      allow read, write: if true;
+    }
+
+    // Customer invoice payment screenshots (Admin SDK writes; public read for staff thumbs)
+    match /invoice-payment-proofs/{allPaths=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Staff reimbursement claim receipts (payroll requests)
+    match /reimbursement-receipts/{allPaths=**} {
+      allow read, write: if true;
+    }
+
+    // Story giveaway entry screenshots
+    match /story-giveaway/{allPaths=**} {
+      allow read, write: if true;
+    }
+
+    // Digital photobooth captures (QR download)
+    match /photobooth/{allPaths=**} {
+      allow read, write: if true;
+    }
+
+    // MMF 2026 merchant registration uploads
+    match /mmf-merchant-proofs/{allPaths=**} {
+      allow read, write: if true;
+    }
+
+    match /mmf-merchant-docs/{allPaths=**} {
+      allow read, write: if true;
+    }
+
+    match /mmf-merchant-requirements/{allPaths=**} {
       allow read, write: if true;
     }
 

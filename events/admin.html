@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <title>Events · Matchanese</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/events.css?v=21" />
+</head>
+<body class="events-app">
+  <div class="container">
+    <header class="app-chrome">
+      <div>
+        <div class="logo-section">
+          <img src="../shared/assets/images/matchanese-logo.png" class="logo" alt="Matchanese" />
+          <h1 class="app-title">Events</h1>
+        </div>
+        <p class="app-sub">Plan holds, promote leads &amp; invoices, confirm bookings</p>
+      </div>
+      <button type="button" class="inv-btn inv-btn-primary" id="addEventBtn">+ Event</button>
+    </header>
+
+    <section class="main-controls">
+      <div class="cal-nav">
+        <button type="button" class="inv-btn-icon" id="prevMonthBtn" aria-label="Previous month">‹</button>
+        <div class="cal-month-label" id="monthLabel">—</div>
+        <button type="button" class="inv-btn-icon" id="nextMonthBtn" aria-label="Next month">›</button>
+        <button type="button" class="inv-btn inv-btn-secondary inv-btn-sm" id="todayBtn">Today</button>
+      </div>
+
+      <div class="mode-toggle" role="tablist" aria-label="Calendar layers">
+        <button type="button" class="mode-toggle-btn is-active" data-filter="all">All</button>
+        <button type="button" class="mode-toggle-btn" data-filter="events">Events</button>
+        <button type="button" class="mode-toggle-btn" data-filter="leads">Leads</button>
+        <button type="button" class="mode-toggle-btn" data-filter="drafts">Drafts</button>
+      </div>
+
+      <div class="cal-actions">
+        <span class="status-line" id="syncStatus" role="status">Loading…</span>
+      </div>
+    </section>
+
+    <section class="cal-panel">
+      <div class="cal-weekdays" aria-hidden="true">
+        <div class="cal-weekday">Mon</div>
+        <div class="cal-weekday">Tue</div>
+        <div class="cal-weekday">Wed</div>
+        <div class="cal-weekday">Thu</div>
+        <div class="cal-weekday">Fri</div>
+        <div class="cal-weekday">Sat</div>
+        <div class="cal-weekday">Sun</div>
+      </div>
+      <div class="cal-grid" id="calGrid" role="grid" aria-label="Month calendar"></div>
+    </section>
+
+    <section class="unscheduled-panel">
+      <button type="button" class="unscheduled-toggle" id="unscheduledToggle" aria-expanded="false">
+        <span>Unscheduled <span class="subtle" id="unscheduledCount">(0)</span></span>
+        <span id="unscheduledChevron">▸</span>
+      </button>
+      <div class="unscheduled-list" id="unscheduledList" hidden></div>
+    </section>
+  </div>
+
+  <div class="drawer-backdrop" id="drawerBackdrop" hidden></div>
+  <aside class="drawer" id="drawer" aria-hidden="true">
+    <div class="drawer-header">
+      <h2 id="drawerTitle">Event</h2>
+      <button type="button" class="inv-btn inv-btn-secondary inv-btn-sm" id="drawerCloseBtn">Close</button>
+    </div>
+    <div class="drawer-body" id="drawerBody"></div>
+    <div class="drawer-footer" id="drawerFooter"></div>
+  </aside>
+
+  <div id="composerRoot"></div>
+
+  <script type="module" src="js/app.js?v=21"></script>
+</body>
+</html>

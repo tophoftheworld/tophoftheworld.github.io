@@ -96,7 +96,12 @@
         <div class="split-detail" id="conversation-detail">
           <p id="detail-empty" class="detail-empty">Select a conversation to read messages.</p>
           <div id="detail-content" class="detail-content" hidden>
-            <h2 id="conversation-title" class="conversation-heading"></h2>
+            <div class="detail-header-row">
+              <h2 id="conversation-title" class="conversation-heading"></h2>
+              <button type="button" id="inbox-summary-email-btn" class="inbox-summary-email-btn" hidden>
+                Send test email
+              </button>
+            </div>
             <div id="conversation-meta" class="conversation-meta"></div>
             <div id="messages" class="messages"></div>
           </div>
@@ -218,6 +223,7 @@
             </section>
             <p id="lead-detail-doc-id" class="lead-detail-doc-id subtle"></p>
             <div class="lead-detail-actions">
+              <button type="button" id="lead-detail-add-calendar" class="btn btn-secondary" disabled>Add to calendar</button>
               <button type="button" id="lead-detail-download-invoice" class="btn btn-primary" disabled>Download invoice</button>
               <button type="button" id="lead-detail-view-conversation" class="btn btn-secondary">View conversation</button>
               <button type="button" id="lead-detail-delete" class="btn btn-danger">Delete lead</button>

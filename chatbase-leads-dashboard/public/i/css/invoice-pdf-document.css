@@ -1,0 +1,789 @@
+/* Legacy A4 invoice document styles for PDF capture (subset of style.css). */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+.pdf-capture-root,
+.pdf-capture-root * {
+    box-sizing: border-box;
+}
+
+.pdf-capture-root {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: #333;
+    line-height: 1.6;
+}
+
+.invoice {
+    width: 210mm; /* A4 width */
+    min-height: 297mm; /* A4 height */
+    margin: 0;
+    padding: 10mm 10mm 50mm 10mm; /* Reduced margins, extra bottom padding for footer */
+    background: white;
+    color: #333;
+    position: relative;
+    box-sizing: border-box;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    display: block;
+    flex-shrink: 0;
+    overflow: visible;
+    max-width: 210mm; /* Ensure it doesn't exceed A4 width */
+}
+
+.invoice.pdf-capture {
+    /* Pixel size is set on the clone; don't force 210mm over that. */
+    overflow: hidden !important;
+    margin: 0 !important;
+    box-shadow: none;
+}
+
+.invoice.pdf-capture .invoice-footer {
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+}
+
+.invoice-continued-page {
+    page-break-before: always;
+}
+
+/* Same left logo as page 1 */
+.invoice-continued-page .invoice-header-logo {
+    text-align: left;
+    margin-bottom: 1.25rem;
+}
+
+.invoice-continued-page .items-section {
+    margin-top: 0;
+    width: 100%;
+    max-width: 100%;
+}
+
+.invoice-continued-page .items-table {
+    width: 100%;
+    max-width: 100%;
+    margin: 0 auto;
+    table-layout: fixed;
+}
+
+/*
+ * Final PDF capture only: vertically center the items table in the
+ * space between the logo and the footer (not applied while packing).
+ */
+.invoice.pdf-capture.invoice-continued-page.pdf-continued-vcenter {
+    display: flex !important;
+    flex-direction: column;
+}
+
+.invoice.pdf-capture.invoice-continued-page.pdf-continued-vcenter .invoice-header-logo {
+    flex: 0 0 auto;
+}
+
+.invoice.pdf-capture.invoice-continued-page.pdf-continued-vcenter .items-section {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: stretch;
+    min-height: 0;
+}
+
+.invoice.pdf-capture.invoice-continued-page.pdf-continued-vcenter .items-table {
+    width: 100%;
+    margin: 0;
+}
+
+.payment-terms-page {
+    margin-top: 0;
+    page-break-before: always;
+    display: block;
+    flex-shrink: 0;
+}
+
+/* Header with Logo */
+.invoice-header-logo {
+    margin-bottom: 1rem;
+    text-align: left;
+}
+
+.company-logo {
+    max-width: 250px;
+    height: auto;
+}
+
+/* Company Info */
+.company-info {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+.company-name {
+    font-size: 1.25rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 0;
+    line-height: 1.2;
+    color: #000;
+}
+
+.company-address {
+    font-size: 0.875rem;
+    color: #333;
+    margin-bottom: 0;
+    line-height: 1.2;
+}
+
+.company-tin {
+    font-size: 0.875rem;
+    color: #333;
+    line-height: 1.2;
+}
+
+/* Invoice Title Section */
+.invoice-title-section {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+.invoice-title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: 0;
+}
+
+.invoice-title-left {
+    flex: 1;
+}
+
+.invoice-title {
+    font-size: 1.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 0;
+    line-height: 1;
+    color: #000;
+}
+
+.client-details {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    line-height: 1.2;
+    margin-top: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.client-line {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    line-height: 1.2;
+    margin-bottom: 0;
+}
+
+.client-label {
+    font-weight: 500;
+    min-width: 80px;
+}
+
+.client-value {
+    flex: 1;
+    min-width: 200px;
+}
+
+.invoice-title-right {
+    text-align: right;
+    display: flex;
+    align-items: flex-end;
+    align-self: flex-end;
+}
+
+.invoice-date {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    line-height: 1;
+}
+
+.date-label {
+    font-weight: 500;
+}
+
+.date-value {
+    min-width: 150px;
+    display: inline-block;
+}
+
+/* Items Table */
+.items-section {
+    margin-top: 1rem;
+    margin-bottom: 2rem;
+}
+
+.items-table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+    border: 0.5px solid #000;
+}
+
+.items-table thead {
+    background: transparent;
+}
+
+.items-table th {
+    padding: 0.75rem;
+    text-align: center;
+    font-weight: 700;
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border: 0.5px solid #000;
+    color: #000;
+}
+
+.items-table td {
+    padding: 0.75rem;
+    border: 0.5px solid #000;
+    font-size: 0.9375rem;
+    vertical-align: top;
+}
+
+.col-description {
+    width: 50%;
+    text-align: left;
+}
+
+.col-unit-cost,
+.col-qty,
+.col-line-subtotal {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.col-unit-cost {
+    width: 21%;
+}
+
+.col-qty {
+    width: 8%;
+    min-width: 2.75rem;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+}
+
+.items-table th.col-qty,
+.items-table td.col-qty {
+    text-align: center;
+}
+
+.col-line-subtotal {
+    width: 21%;
+    min-width: 6.5rem;
+}
+
+.package-section-participants .package-section-label {
+    margin-bottom: 0.25rem;
+}
+
+.package-participant-count {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #000;
+    line-height: 1.3;
+}
+
+.text-right {
+    text-align: right;
+}
+
+.empty-state {
+    text-align: center;
+    color: #999;
+    font-style: italic;
+    padding: 2rem;
+}
+
+.total-row {
+    border-top: 0.5px solid #000;
+}
+
+.total-row td {
+    padding: 0.75rem;
+    border: 0.5px solid #000;
+}
+
+.total-label {
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.total-amount {
+    font-weight: 700;
+    font-size: 0.9375rem;
+    white-space: nowrap;
+    word-break: keep-all;
+}
+
+.total-amount strong {
+    white-space: nowrap;
+}
+
+/* Package Description Styling */
+.package-name {
+    font-weight: 700;
+    margin-bottom: 0.15rem;
+    color: #000;
+}
+
+.package-cups-subtitle {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 0.5rem;
+}
+
+.package-details-visual {
+    margin: 0.35rem 0 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+}
+
+.package-details-mobile {
+    gap: 0.4rem;
+}
+
+.package-menu-line {
+    font-size: 0.875rem;
+    color: #222;
+    line-height: 1.35;
+}
+
+.package-serving-line {
+    font-size: 0.8125rem;
+    color: #555;
+    line-height: 1.35;
+}
+
+.event-meta {
+    margin-top: 0.5rem;
+    font-size: 0.8125rem;
+    color: #333;
+    line-height: 1.4;
+}
+
+.event-meta-sep {
+    color: #999;
+}
+
+.package-details-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    align-items: start;
+}
+
+.package-column-left,
+.package-column-right {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+/* Package Sections */
+.package-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+}
+
+.package-section-inline {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: baseline;
+}
+
+.package-section-inline .package-section-label {
+    margin-bottom: 0;
+}
+
+.package-section-inline .package-section-value {
+    font-weight: 600;
+}
+
+.package-section-label {
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: #2b9348;
+    margin-bottom: 0.125rem;
+}
+
+.package-section-value {
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: #000;
+}
+
+/* Package Lists */
+.package-section-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-left: 0.5rem;
+}
+
+.package-list-item {
+    font-size: 0.875rem;
+    color: #333;
+    line-height: 1.4;
+    position: relative;
+    padding-left: 1rem;
+}
+
+.package-list-item::before {
+    content: "\2022";
+    position: absolute;
+    left: 0;
+    color: #666;
+}
+
+/* Inline Items */
+.package-inline-item {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.5rem;
+}
+
+.package-inline-label {
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: #2b9348;
+}
+
+.package-inline-value {
+    font-size: 0.875rem;
+    color: #333;
+}
+
+/* Custom line item description block (below name in invoice preview) */
+.custom-line-item-description {
+    margin-top: 0.35rem;
+}
+
+.custom-line-item-description p {
+    margin: 0.15rem 0 0 0;
+    font-size: 0.875rem;
+    color: #333;
+    line-height: 1.4;
+}
+
+.custom-line-item-description p:first-child {
+    margin-top: 0;
+}
+
+/* Custom line item description bullets (invoice preview) */
+.custom-line-item-bullets {
+    margin: 0.35rem 0 0 0;
+    padding-left: 1.25rem;
+    font-size: 0.875rem;
+    color: #333;
+    line-height: 1.4;
+    list-style: disc;
+}
+
+.custom-line-item-bullets li {
+    margin-bottom: 0.15rem;
+}
+
+.event-details {
+    margin-top: 0;
+    padding-top: 0;
+    line-height: 1.2;
+}
+
+.event-details strong {
+    font-weight: 700;
+}
+
+/* Footer */
+.invoice-footer {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    background: #2b9348;
+    color: white;
+    padding: 1rem 10mm;
+    margin: 0;
+    box-sizing: border-box;
+}
+
+.footer-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.footer-company {
+    font-weight: 700;
+    font-size: 0.9375rem;
+    margin-bottom: 0;
+    line-height: 1.2;
+}
+
+.footer-address {
+    font-size: 0.875rem;
+    line-height: 1.2;
+    margin-top: 0;
+}
+
+/* Payment Terms Page */
+.payment-terms-section {
+    margin-bottom: 2rem;
+}
+
+.section-title {
+    font-size: 1.125rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 1rem;
+    color: #000;
+}
+
+.payment-table {
+    width: 100%;
+    border-collapse: collapse;
+    border: 0.5px solid #000;
+    margin-bottom: 1rem;
+}
+
+.payment-table th,
+.payment-table td {
+    padding: 0.75rem;
+    border: 0.5px solid #000;
+    text-align: left;
+    font-size: 0.875rem;
+}
+
+.payment-table th {
+    font-weight: 700;
+    text-transform: uppercase;
+    background: transparent;
+    color: #000;
+    text-align: center;
+}
+
+.payment-table td {
+    text-align: center;
+}
+
+.payment-table td:last-child {
+    text-align: right;
+}
+
+.highlight-amount {
+    background: #ffeb3b;
+}
+
+/* Paid milestone row in the preview */
+.milestone-row-paid td {
+    color: #6b8a6f;
+}
+
+.paid-status,
+.unpaid-status {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.paid-status {
+    background: #d7efdb;
+    color: #2e7d32;
+}
+
+.unpaid-status {
+    background: #fdeaea;
+    color: #c1121f;
+}
+
+/* Payment Details */
+.payment-details-section {
+    margin-bottom: 2rem;
+}
+
+.payment-subtitle {
+    font-size: 0.9375rem;
+    margin-bottom: 1rem;
+    color: #333;
+}
+
+.bank-details {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    margin-bottom: 1rem;
+}
+
+.bank-column {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.bank-item {
+    font-size: 0.875rem;
+    line-height: 1.6;
+}
+
+.bank-item strong {
+    font-weight: 700;
+    color: #000;
+}
+
+.paypal-note {
+    font-size: 0.875rem;
+    font-style: italic;
+    color: #666;
+    margin-top: 1rem;
+}
+
+/* Signature blocks (client confirm + prepared by) */
+.prepared-by-section {
+    margin-top: 3rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 2rem;
+    text-align: left;
+}
+
+.prepared-by-content {
+    display: inline-block;
+    text-align: center;
+    min-width: 200px;
+}
+
+.prepared-by-label {
+    font-size: 0.875rem;
+    margin: 0 0 0.5rem;
+}
+
+.signature-space {
+    width: 200px;
+    height: 60px;
+    margin: 0 auto 0.35rem auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.signature-blank {
+    border-bottom: 1px solid #333;
+}
+
+.signature-image {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.prepared-by-name {
+    font-size: 0.9375rem;
+    margin: 0;
+    line-height: 1.25;
+}
+
+.prepared-by-company {
+    font-size: 0.875rem;
+    color: #666;
+    margin: 0;
+    line-height: 1.25;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+    .container {
+        flex-direction: column;
+        height: 100vh;
+        overflow: hidden;
+    }
+
+    .controls-panel {
+        flex: 0 0 auto;
+        height: 42vh;
+        max-height: 42vh;
+        overflow: hidden;
+    }
+    
+    .invoice-preview {
+        flex: 1;
+        max-height: 58vh;
+        overflow-y: auto;
+    }
+
+    .invoice {
+        width: 100%;
+        max-width: 210mm;
+        padding: 10mm 10mm 50mm 10mm;
+    }
+
+    .invoice-footer {
+        left: 0;
+        right: 0;
+        width: 100%;
+        padding: 1rem 10mm;
+        box-sizing: border-box;
+    }
+}
+
+@media print {
+    .controls-panel {
+        display: none;
+    }
+
+    .invoice-preview {
+        box-shadow: none;
+        padding: 0;
+    }
+
+    .invoice {
+        box-shadow: none;
+        margin: 0;
+        padding: 10mm 10mm 50mm 10mm;
+        width: 210mm;
+        height: 297mm;
+        min-height: 297mm;
+        overflow: hidden;
+        page-break-after: always;
+        break-after: page;
+    }
+
+    /* Last page must not force a trailing blank page */
+    .invoice.payment-terms-page {
+        page-break-after: auto;
+        break-after: auto;
+        page-break-before: always;
+        break-before: page;
+    }
+
+    .invoice-footer {
+        left: 0;
+        right: 0;
+        width: 100%;
+        padding: 1rem 10mm;
+        box-sizing: border-box;
+    }
+}

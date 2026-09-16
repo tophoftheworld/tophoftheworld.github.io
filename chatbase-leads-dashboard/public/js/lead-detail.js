@@ -1,6 +1,5 @@
 import {
   formatActivityDate,
-  formatPesoAmount,
   formatServiceLabel,
   formatTargetDate,
   SERVICE_OPTIONS
@@ -60,7 +59,6 @@ function formatHistoryValue(field, value) {
   if (field === "service") return formatServiceLabel(value);
   if (field === "pipelineStatus") return pipelineStatusLabel(value);
   if (field === "targetDate") return formatTargetDate(value);
-  if (field === "quotedPrice") return formatPesoAmount(value);
   return String(value);
 }
 
@@ -129,7 +127,7 @@ function renderDetailFields(row, mode) {
     detailRow("Target date", escapeHtml(formatTargetDate(row.targetDate))),
     detailRow("Pax / cups", escapeHtml(row.targetPax || "—")),
     detailRow("Venue", escapeHtml(row.targetVenue || "—")),
-    detailRow("Quoted price", escapeHtml(formatPesoAmount(row.quotedPrice)))
+    detailRow("Quoted price", escapeHtml(row.quotedPrice || "—"))
   ].join("");
 }
 
@@ -213,6 +211,7 @@ export function renderLeadDetailPanel(row, elements, options = {}) {
     viewConversationBtn,
     deleteBtn,
     downloadInvoiceBtn,
+    addCalendarBtn,
     notesViewEl,
     notesEditEl,
     editBtn,
@@ -297,6 +296,28 @@ export function renderLeadDetailPanel(row, elements, options = {}) {
     downloadInvoiceBtn.disabled = actionsDisabled || !can;
     downloadInvoiceBtn.title = can ? "Generate and download formal invoice PDF" : invoiceDisabledReason(row);
     downloadInvoiceBtn.dataset.leadId = row.id;
+  }
+
+  if (addCalendarBtn) {
+    addCalendarBtn.hidden = false;
+    addCalendarBtn.disabled = actionsDisabled;
+    addCalendarBtn.dataset.leadId = row.id;
+    if (row.opsEventId) {
+      addCalendarBtn.textContent = "View on calendar";
+      addCalendarBtn.dataset.opsEventId = row.opsEventId;
+      addCalendarBtn.dataset.mode = "view";
+      addCalendarBtn.title = "Open linked event in Events planner";
+      addCalendarBtn.disabled = actionsDisabled;
+    } else {
+      addCalendarBtn.textContent = "Add to calendar";
+      addCalendarBtn.dataset.opsEventId = "";
+      addCalendarBtn.dataset.mode = "promote";
+      const hasDate = Boolean(String(row.targetDate || "").trim());
+      addCalendarBtn.disabled = actionsDisabled || !hasDate;
+      addCalendarBtn.title = hasDate
+        ? "Create a draft event on the Events calendar"
+        : "Set a target date before adding to the calendar";
+    }
   }
 
   if (saveBtn) saveBtn.dataset.leadId = row.id;

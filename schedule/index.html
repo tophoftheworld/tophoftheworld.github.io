@@ -34,10 +34,18 @@
                         <option value="">Select location</option>
                         <option value="podium">Podium</option>
                         <option value="smnorth">SM North</option>
-                        <option value="popup">Pop-up</option>
-                        <option value="workshop">Workshop</option>
-                        <option value="other">Other Events</option>
+                        <option value="__event__">Event</option>
+                        <option value="other">Other</option>
                     </select>
+                </div>
+                <div class="form-group" id="eventFields" style="display: none;">
+                    <label for="shiftEvent">Event</label>
+                    <select id="shiftEvent">
+                        <option value="">Select event</option>
+                    </select>
+                    <p class="form-hint" id="eventFieldsHint" style="margin: 0.35rem 0 0; font-size: 0.8rem; color: #6b7280;">
+                        Choose a pop-up or workshop, or add a new one.
+                    </p>
                 </div>
                 <div class="form-group">
                     <label for="shiftType">Shift Type</label>
@@ -91,14 +99,14 @@
     <div class="modal" id="addBranchModal">
         <div class="modal-content modal-content--branch">
             <span class="close-modal" id="closeBranchModal">&times;</span>
-            <h2 id="branchModalTitle">Add New Location</h2>
+            <h2 id="branchModalTitle">Add New Event</h2>
             <form id="branchForm">
                 <div class="form-group">
-                    <label for="branchName">Location Name</label>
-                    <input type="text" id="branchName" required placeholder="Enter location name">
+                    <label for="branchName">Event Name</label>
+                    <input type="text" id="branchName" required placeholder="e.g. Mall of Asia Pop-Up">
                 </div>
                 <div class="form-group">
-                    <label for="branchType">Location Type</label>
+                    <label for="branchType">Event Type</label>
                     <select id="branchType" required>
                         <option value="">Select type</option>
                         <option value="popup">Pop-up</option>
@@ -107,7 +115,7 @@
                 </div>
                 <input type="hidden" id="branchKey">
                 <div class="form-actions">
-                    <button type="submit" class="submit-btn" id="branchSubmitBtn">Add Location</button>
+                    <button type="submit" class="submit-btn" id="branchSubmitBtn">Add Event</button>
                     <button type="button" class="cancel-btn" id="cancelBranchBtn">Cancel</button>
                 </div>
             </form>
@@ -160,7 +168,7 @@
                             <option value="smnorth">SM North</option>
                             <option value="popup">Pop-up</option>
                             <option value="workshop">Workshop</option>
-                            <option value="other">Other Events</option>
+                            <option value="other">Other</option>
                         </select>
                     </div>
                     
@@ -289,7 +297,7 @@
     </div>
 
     <div id="scheduleToast" class="schedule-toast" aria-live="polite"></div>
-    <script type="module" src="js/script.js?v=48"></script>
+    <script type="module" src="js/script.js?v=51"></script>
 </body>
 
 </html>

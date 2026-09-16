@@ -5,9 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Workshop Management</title>
     <link rel="icon" href="data:," />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lora:ital,wght@0,600;0,700;1,700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/hub/hub-shell.css" />
-    <link rel="stylesheet" href="css/orders-dashboard.css?v=59" />
+    <link rel="stylesheet" href="css/orders-dashboard.css?v=62" />
+    <link rel="stylesheet" href="css/workshop-certificate.css?v=2" />
     <link rel="stylesheet" href="/hub/hub.css" />
 </head>
 <body>
@@ -20,6 +21,9 @@
                 <h1 class="app-title">Workshop Management</h1>
             </div>
             <div class="header-actions">
+                <button type="button" class="action-btn secondary" id="btnExportExcel" hidden>Export to Excel</button>
+                <button type="button" class="action-btn secondary" id="btnDownloadCertificates">Download Certificates</button>
+                <button type="button" class="action-btn primary" id="btnGoogleSheet" hidden>Export to Google Sheets</button>
                 <a href="/workshops/" class="workshop-nav-back" id="btnBackShopify">← Workshops</a>
             </div>
         </header>
@@ -40,6 +44,7 @@
                         <col class="col-session" />
                         <col class="col-order" />
                         <col class="col-customer" />
+                        <col class="col-pass" />
                         <col class="col-contact" />
                         <col class="col-email" />
                         <col class="col-items" />
@@ -52,6 +57,7 @@
                             <th data-sort="timeLabel" class="col-session">Session</th>
                             <th data-sort="orderName" class="col-order">Order</th>
                             <th data-sort="participant" class="col-customer">Participant</th>
+                            <th data-sort="pass" class="col-pass">Pass</th>
                             <th data-sort="contact" class="col-contact">Contact</th>
                             <th data-sort="email" class="col-email">Email</th>
                             <th data-sort="seatLabel" class="col-items">Seats</th>
@@ -86,6 +92,11 @@
         <div class="confirm-dialog__panel">
             <h2 id="confirmDialogTitle" class="confirm-dialog__title">Confirm</h2>
             <p id="confirmDialogMessage" class="confirm-dialog__message"></p>
+            <label id="confirmDialogInputWrap" class="confirm-dialog__field" hidden>
+                <span id="confirmDialogInputLabel"></span>
+                <input type="text" id="confirmDialogInput" autocomplete="name" />
+                <small id="confirmDialogInputHint" class="confirm-dialog__hint" hidden></small>
+            </label>
             <label id="confirmDialogOptionWrap" class="confirm-dialog__option" hidden>
                 <input type="checkbox" id="confirmDialogCheckbox" />
                 <span id="confirmDialogOptionLabel"></span>
@@ -97,7 +108,10 @@
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="/hub/hub.js" defer></script>
-    <script type="module" src="js/workshop-roster.js?v=47"></script>
+    <script type="module" src="js/workshop-roster.js?v=56"></script>
 </body>
 </html>

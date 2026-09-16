@@ -286,8 +286,9 @@
                 />
             </div>
             <div class="flex items-center gap-2">
-                <div class="mobile-profile-avatar" id="mobileProfileAvatar">
-                    <div class="w-8 h-8 bg-accent rounded-full flex items-center justify-center">
+                <div class="mobile-profile-avatar" id="mobileProfileAvatar" title="View profile">
+                    <div class="w-8 h-8 bg-accent rounded-full flex items-center justify-center overflow-hidden relative">
+                        <img id="mobileUserPhoto" src="" alt="" class="absolute inset-0 w-full h-full object-cover" style="display: none;">
                         <span class="text-white text-sm font-semibold" id="mobileUserInitials">S</span>
                     </div>
                 </div>
@@ -364,7 +365,8 @@
                 aria-label="View profile"
             >
                 <div class="mobile-profile-avatar">
-                    <div class="w-8 h-8 bg-accent rounded-full flex items-center justify-center">
+                    <div class="w-8 h-8 bg-accent rounded-full flex items-center justify-center overflow-hidden relative">
+                        <img data-mobile-user-photo src="" alt="" class="absolute inset-0 w-full h-full object-cover" style="display: none;">
                         <span class="text-white text-sm font-semibold" data-mobile-user-initials>SM</span>
                     </div>
                 </div>
@@ -421,7 +423,49 @@
     </script>
     
     <script>
-        const APP_VERSION = "1.0.0";
+        const APP_VERSION = "1.0.2";
+
+        window.addEventListener('message', function (event) {
+            if (event.origin !== window.location.origin) return;
+            const data = event.data;
+            if (!data || data.type !== 'matchanese-geolocation-request') return;
+            const source = event.source;
+            const id = data.id;
+            const reply = function (payload) {
+                try {
+                    source.postMessage(Object.assign({
+                        type: 'matchanese-geolocation-result',
+                        id: id
+                    }, payload), event.origin);
+                } catch (e) {}
+            };
+            if (!navigator.geolocation) {
+                reply({ status: 'unsupported' });
+                return;
+            }
+            navigator.geolocation.getCurrentPosition(
+                function (pos) {
+                    reply({
+                        status: 'ok',
+                        lat: pos.coords.latitude,
+                        lng: pos.coords.longitude,
+                        accuracy: pos.coords.accuracy,
+                        capturedAt: Date.now()
+                    });
+                },
+                function (err) {
+                    const code = err && err.code;
+                    reply({
+                        status: code === 1 ? 'denied' : code === 3 ? 'timeout' : 'unavailable'
+                    });
+                },
+                {
+                    enableHighAccuracy: data.enableHighAccuracy !== false,
+                    timeout: Number.isFinite(data.timeout) ? data.timeout : 15000,
+                    maximumAge: Number.isFinite(data.maximumAge) ? data.maximumAge : 0
+                }
+            );
+        });
         
         // Simple JavaScript to handle the functionality
         let active = localStorage.getItem('activeStaffApp') || "Attendance";
@@ -444,7 +488,7 @@
                 title: 'Payroll'
             },
             'Schedule': {
-                url: 'schedule/index.html?v=46',
+                url: 'schedule/index.html?v=51',
                 title: 'Schedule'
             },
             'Inventory': {
@@ -558,15 +602,22 @@
             const iframe = document.createElement('iframe');
             
             // Add cache-busting parameter to force reload
-            let iframeUrl = config.url + '?v=' + Date.now();
-            // Pass logged-in user to 2025 Wrapped and Schedule for personalised views
-            if ((appName === '2025 Wrapped' || appName === 'Schedule') && typeof getCurrentUserData === 'function') {
+            let iframeUrl = config.url + (config.url.includes('?') ? '&' : '?') + 'v=' + Date.now() + '&geoBridge=1';
+            // Pass logged-in user to embedded apps that need recorder identity
+            if (
+                (appName === '2025 Wrapped' || appName === 'Schedule' || appName === 'Expense Reporting') &&
+                typeof getCurrentUserData === 'function'
+            ) {
                 const userData = getCurrentUserData();
-                if (userData && userData.employeeCode) {
+                if (userData?.employeeCode) {
                     iframeUrl += '&employeeId=' + encodeURIComponent(userData.employeeCode);
+                }
+                if (userData?.name) {
+                    iframeUrl += '&recorderName=' + encodeURIComponent(userData.name);
                 }
             }
             iframe.src = iframeUrl;
+            iframe.setAttribute('allow', 'geolocation; camera');
             
             iframe.className = 'w-full h-full border-0';
             iframe.setAttribute('width', '100%');

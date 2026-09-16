@@ -1,4 +1,4 @@
-import { listConversationsPage, getConversation, fetchInboxSummary } from "./api.js";
+import { listConversationsPage, getConversation, fetchInboxSummary, sendInboxSummaryEmail } from "./api.js";
 import { getConversationLookupQuery } from "./inbox-query.js";
 import {
   renderConversationPanel,
@@ -34,6 +34,7 @@ const resetBtn = document.getElementById("reset-filters-btn");
 const loadBtn = document.getElementById("load-btn");
 const inboxSummaryBtn = document.getElementById("inbox-summary-btn");
 const inboxSummaryDateInput = document.getElementById("inbox-summary-date");
+const inboxSummaryEmailBtn = document.getElementById("inbox-summary-email-btn");
 const searchInput = document.getElementById("filter-search");
 const searchClearBtn = document.getElementById("filter-search-clear");
 const pagePrevBtns = document.querySelectorAll("#panel-inbox .page-prev");
@@ -48,6 +49,9 @@ const messagesEl = document.getElementById("messages");
 const STORAGE_KEY = "chatbase_conversations_cache";
 const FILTER_STORAGE_KEY = "chatbase_conversations_filters";
 
+let lastSummarySections = null;
+let lastSummaryDate = null;
+let inboxSummaryEmailInProgress = false;
 let allConversations = [];
 let currentPage = 1;
 let selectedConversationId = null;
@@ -261,13 +265,22 @@ async function loadInboxSummary() {
   if (inboxSummaryInProgress) return;
 
   inboxSummaryInProgress = true;
+  lastSummarySections = null;
+  lastSummaryDate = null;
   if (inboxSummaryBtn) {
     inboxSummaryBtn.disabled = true;
     inboxSummaryBtn.classList.add("is-loading");
   }
   if (inboxSummaryDateInput) inboxSummaryDateInput.disabled = true;
+  if (inboxSummaryEmailBtn) {
+    inboxSummaryEmailBtn.hidden = true;
+    inboxSummaryEmailBtn.disabled = true;
+  }
 
   const summaryDate = summaryDateIso();
+  // "Today" uses rolling 24h so overnight activity isn't blank at midnight.
+  // Past dates stay calendar-day for historical review.
+  const windowMode = summaryDate === todayIsoInManila() ? "rolling24h" : "calendar";
 
   selectedConversationId = null;
   syncUrlToSelection();
@@ -292,18 +305,22 @@ async function loadInboxSummary() {
       const { data } = await fetchInboxSummary({
         date: summaryDate,
         filteredSources: query.filteredSources || "",
-        batch
+        batch,
+        windowMode
       });
 
       const dayBatches = data?.meta?.totalBatches ?? 0;
       totalBatches = dayBatches > 0 ? dayBatches : 1;
       mergedSections = mergeSummarySections(mergedSections, data?.sections || emptySummarySections());
       lastMeta = data?.meta || {};
+      lastSummarySections = mergedSections;
+      lastSummaryDate = summaryDate;
 
       renderSummaryPanel({
         titleEl,
         metaEl,
         messagesEl,
+        emailBtnEl: inboxSummaryEmailBtn,
         sections: mergedSections,
         meta: {
           ...lastMeta,
@@ -333,11 +350,14 @@ async function loadInboxSummary() {
       totalPendingBatches = data?.meta?.totalPendingBatches ?? 0;
       mergedSections = mergeSummarySections(mergedSections, data?.sections || emptySummarySections());
       lastMeta = data?.meta || {};
+      lastSummarySections = mergedSections;
+      lastSummaryDate = summaryDate;
 
       renderSummaryPanel({
         titleEl,
         metaEl,
         messagesEl,
+        emailBtnEl: inboxSummaryEmailBtn,
         sections: mergedSections,
         meta: {
           ...lastMeta,
@@ -350,6 +370,7 @@ async function loadInboxSummary() {
   } catch (err) {
     showDetailEmpty(detailEmptyEl, detailContentEl, err.message);
     detailContentEl.hidden = true;
+    if (inboxSummaryEmailBtn) inboxSummaryEmailBtn.hidden = true;
   } finally {
     inboxSummaryInProgress = false;
     if (inboxSummaryBtn) {
@@ -395,7 +416,12 @@ async function selectConversation(conversation) {
     }
   }
 
-  renderConversationPanel(full, { titleEl, metaEl, messagesEl });
+  renderConversationPanel(full, {
+    titleEl,
+    metaEl,
+    messagesEl,
+    emailBtnEl: inboxSummaryEmailBtn
+  });
   renderRows();
 }
 
@@ -729,6 +755,34 @@ loadBtn.addEventListener("click", () => {
 
 inboxSummaryBtn?.addEventListener("click", () => {
   loadInboxSummary();
+});
+
+inboxSummaryEmailBtn?.addEventListener("click", async () => {
+  if (inboxSummaryEmailInProgress || !lastSummarySections) return;
+
+  inboxSummaryEmailInProgress = true;
+  inboxSummaryEmailBtn.disabled = true;
+  inboxSummaryEmailBtn.classList.add("is-loading");
+  const previousLabel = inboxSummaryEmailBtn.textContent;
+  inboxSummaryEmailBtn.textContent = "Sending…";
+
+  try {
+    const result = await sendInboxSummaryEmail({
+      date: lastSummaryDate || summaryDateIso(),
+      sections: lastSummarySections,
+      framing: "test",
+      windowMode: (lastSummaryDate || summaryDateIso()) === todayIsoInManila() ? "rolling24h" : "calendar"
+    });
+    const to = result?.data?.to || "your inbox";
+    metaEl.innerHTML = `<span class="subtle">Test email sent to ${to}</span>`;
+  } catch (err) {
+    metaEl.innerHTML = `<span class="count-error">Email failed: ${err.message}</span>`;
+  } finally {
+    inboxSummaryEmailInProgress = false;
+    inboxSummaryEmailBtn.disabled = false;
+    inboxSummaryEmailBtn.classList.remove("is-loading");
+    inboxSummaryEmailBtn.textContent = previousLabel || "Send test email";
+  }
 });
 
 document.querySelector(".inbox-summary-date-wrap")?.addEventListener("click", (event) => {

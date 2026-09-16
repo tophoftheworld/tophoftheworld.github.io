@@ -55,14 +55,23 @@ test("normalizeQuoteReference rejects invalid codes", () => {
   assert.equal(normalizeQuoteReference("INVALID!"), null);
 });
 
-test("buildMessageForUser includes quote reference for draft create", () => {
+test("buildMessageForUser never includes quote reference", () => {
   const created = buildMessageForUser({
     created: true,
     quoteReference: "K7M2P",
     profileStatus: "draft"
   });
-  assert.match(created, /K7M2P/);
+  assert.doesNotMatch(created, /K7M2P/);
+  assert.doesNotMatch(created, /quote reference/i);
   assert.match(created, /noted what you've shared/i);
+
+  const updated = buildMessageForUser({
+    created: false,
+    quoteReference: "K7M2P",
+    profileStatus: "complete"
+  });
+  assert.doesNotMatch(updated, /K7M2P/);
+  assert.doesNotMatch(updated, /quote reference/i);
 });
 
 test("parseLeadPayload accepts partial body with name only", () => {

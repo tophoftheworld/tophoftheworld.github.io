@@ -1,15 +1,39 @@
-import * as shared from './shared.js?v=1.5.62';
+import * as shared from './shared.js?v=1.5.91';
 import {
     createAutocomplete,
     getItemMatches,
     buildSupplierMatchList,
 } from './autocomplete.js?v=1.5.42';
+import { initAdminBatch } from './admin-batch.js?v=6';
 
-const ADMIN_PAID_BY_OPTIONS = ['Store Cash', 'Company'];
+const ADMIN_STORE_BRANCHES = ['SM North', 'Podium', 'Mall of Asia'];
 
-function normalizeAdminPaidBy(value) {
+function normalizeAdminPaidBy(value, allocation = 'Store') {
     const v = (value || '').trim();
-    return ADMIN_PAID_BY_OPTIONS.includes(v) ? v : 'Company';
+    if (v === 'Company') return 'Company';
+    if (shared.isCashPaidBy(v) || v === 'Store Cash' || v === 'Pop-up Cash') {
+        return shared.cashPaidByValue(allocation);
+    }
+    return 'Company';
+}
+
+function adminUpdatePaidByOptions(allocation, preferredValue = '') {
+    const paidSelect = document.getElementById('adminPaidBy');
+    if (!paidSelect) return;
+    const prev = preferredValue || paidSelect.value;
+    const cashValue = shared.cashPaidByValue(allocation);
+    const cashLabel = shared.cashPaidByLabel(allocation);
+    paidSelect.innerHTML = `
+        <option value="${cashValue}">${cashLabel}</option>
+        <option value="Company">Company</option>
+    `;
+    if (prev === 'Company') {
+        paidSelect.value = 'Company';
+    } else if (shared.isCashPaidBy(prev) || prev === cashValue) {
+        paidSelect.value = cashValue;
+    } else {
+        paidSelect.value = cashValue;
+    }
 }
 
 function adminBuildExpenseCategoryOptionsHtml(expenseCategoryRaw) {
@@ -90,9 +114,13 @@ let adminExpenseModalEl = null;
 let adminSupplierModalEl = null;
 let adminPendingReceiptUrl = null;
 let adminExpenseModalDirty = false;
+/** @type {((result?: { saved?: boolean, deleted?: boolean, expenseId?: string }) => void) | null} */
+let batchAlbumReturnHandler = null;
 let adminSupplierExpenseSort = { column: 'date', direction: 'desc' };
 let adminSupplierExpensePage = 1;
 let adminConfirmationCallback = null;
+/** @type {(() => void) | null} */
+let adminConfirmationCancelCallback = null;
 /** Target supplier id while single-supplier merge modal is open */
 let adminMergeTargetId = null;
 
@@ -479,12 +507,23 @@ function escapeHtml(text) {
     return d.innerHTML;
 }
 
+function formatRecordedByDisplay(expense) {
+    const name = shared.getRecordedByShortLabel(expense);
+    return name || '—';
+}
+
+function formatRecordedByCell(expense) {
+    const name = shared.getRecordedByShortLabel(expense);
+    return name ? escapeHtml(name) : '—';
+}
+
 function closeAdminExpenseModal() {
     if (adminExpenseModalEl?.parentNode) {
         adminExpenseModalEl.parentNode.removeChild(adminExpenseModalEl);
     }
     adminExpenseModalEl = null;
     adminPendingReceiptUrl = null;
+    window.adminReceiptImageForAi = null;
     adminExpenseModalDirty = false;
 }
 
@@ -492,12 +531,34 @@ function markAdminExpenseModalDirty() {
     adminExpenseModalDirty = true;
 }
 
-function requestCloseAdminExpenseModal() {
-    if (adminExpenseModalDirty) {
-        const ok = window.confirm('You have unsaved changes. Close anyway?');
-        if (!ok) return;
-    }
+function finishAdminExpenseModalClose(result = {}) {
+    const returnHandler = batchAlbumReturnHandler;
+    batchAlbumReturnHandler = null;
     closeAdminExpenseModal();
+    if (typeof returnHandler === 'function') {
+        returnHandler(result);
+        return true;
+    }
+    return false;
+}
+
+function requestCloseAdminExpenseModal() {
+    const finish = () => {
+        finishAdminExpenseModalClose({
+            saved: false,
+            expenseId: adminExpenseModalEl?.dataset?.expenseId
+        });
+    };
+    if (adminExpenseModalDirty) {
+        showAdminConfirmation(
+            'Unsaved changes',
+            'You have unsaved changes. Close anyway?',
+            'Close',
+            finish
+        );
+        return;
+    }
+    finish();
 }
 
 function closeAdminSupplierModal() {
@@ -507,20 +568,27 @@ function closeAdminSupplierModal() {
     adminSupplierModalEl = null;
 }
 
+function dismissAdminConfirmation(cancelled) {
+    const overlay = document.getElementById('confirmationModalOverlay');
+    const onCancel = adminConfirmationCancelCallback;
+    adminConfirmationCallback = null;
+    adminConfirmationCancelCallback = null;
+    overlay?.classList.remove('show');
+    document.body.style.overflow = '';
+    if (cancelled && typeof onCancel === 'function') onCancel();
+}
+
 function setupAdminConfirmationModal() {
     if (window._adminConfirmationWired) return;
     window._adminConfirmationWired = true;
     const overlay = document.getElementById('confirmationModalOverlay');
     const cancel = document.getElementById('confirmationCancelBtn');
     const action = document.getElementById('confirmationActionBtn');
-    cancel?.addEventListener('click', () => {
-        adminConfirmationCallback = null;
-        overlay?.classList.remove('show');
-        document.body.style.overflow = '';
-    });
+    cancel?.addEventListener('click', () => dismissAdminConfirmation(true));
     action?.addEventListener('click', async () => {
         const cb = adminConfirmationCallback;
         adminConfirmationCallback = null;
+        adminConfirmationCancelCallback = null;
         overlay?.classList.remove('show');
         document.body.style.overflow = '';
         if (typeof cb !== 'function') return;
@@ -532,41 +600,59 @@ function setupAdminConfirmationModal() {
         }
     });
     overlay?.addEventListener('click', (e) => {
-        if (e.target === overlay) {
-            adminConfirmationCallback = null;
-            overlay.classList.remove('show');
-            document.body.style.overflow = '';
-        }
+        if (e.target === overlay) dismissAdminConfirmation(true);
     });
 }
 
-function showAdminConfirmation(title, message, actionText, callback) {
+function showAdminConfirmation(title, message, actionText, callback, onCancel = null) {
     setupAdminConfirmationModal();
     const overlay = document.getElementById('confirmationModalOverlay');
     const titleEl = document.getElementById('confirmationTitle');
     const messageEl = document.getElementById('confirmationMessage');
     const actionBtn = document.getElementById('confirmationActionBtn');
     if (!overlay || !titleEl || !messageEl || !actionBtn) {
-        if (window.confirm(message)) callback?.();
+        console.warn('Confirmation modal missing; action cancelled');
+        onCancel?.();
         return;
     }
     titleEl.textContent = title;
     messageEl.textContent = message;
     actionBtn.textContent = actionText;
     adminConfirmationCallback = callback;
+    adminConfirmationCancelCallback = onCancel;
     overlay.classList.add('show');
     document.body.style.overflow = 'hidden';
 }
+
+/** @returns {Promise<boolean>} */
+function confirmAdminAsync(title, message, actionText = 'Confirm') {
+    return new Promise((resolve) => {
+        showAdminConfirmation(
+            title,
+            message,
+            actionText,
+            () => resolve(true),
+            () => resolve(false)
+        );
+    });
+}
+
+window.showAdminConfirmation = showAdminConfirmation;
+window.confirmAdminAsync = confirmAdminAsync;
 
 function renderAdminDataSnapshot(contextLabel) {
     const expenses = shared.getExpenses();
     const suppliers = shared.getSuppliers();
     console.log(`[Startup] ${contextLabel}:`, expenses.length, 'expenses,', suppliers.length, 'suppliers');
-    totalFilteredExpenses = [...expenses];
-    renderFilteredTable(expenses);
-    updateFilteredSummary(expenses);
     refreshMonthDropdown();
     populateAdminCategoryFilter();
+    if (dateRangeInput?._flatpickr?.selectedDates?.length === 2) {
+        filterAndRender();
+    } else {
+        totalFilteredExpenses = [...expenses];
+        renderFilteredTable(expenses);
+        updateFilteredSummary(expenses);
+    }
 }
 
 function loadLocalDataAndRender() {
@@ -591,6 +677,11 @@ async function syncRemoteDataInBackground(startedAtMs) {
             return { ok: false, hasData: false };
         }
 
+        await shared.ensureEmployeeRecorderLabels();
+
+        // Prefetch POS pop-up events for expense form dropdown
+        shared.loadActivePopupEvents().catch(() => {});
+
         const hasChanges = await shared.fetchFromFirebase();
         await shared.flushPendingSync();
         if (hasChanges) {
@@ -598,6 +689,7 @@ async function syncRemoteDataInBackground(startedAtMs) {
         } else {
             console.log('[Startup] Firebase sync: no changes');
             populateAdminCategoryFilter();
+            refreshAdminTables();
         }
 
         const vatBackfillUpdated = shared.runLegacyExpenseVatBackfillOnce();
@@ -625,7 +717,7 @@ function showAdminLoadError(message) {
     }
     const tbody = document.getElementById('expenseTableBody');
     if (tbody) {
-        tbody.innerHTML = `<tr><td colspan="9">${message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="11">${message}</td></tr>`;
     }
 }
 
@@ -642,7 +734,7 @@ function renderTable() {
     tbody.innerHTML = '';
 
     if (expenses.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9">No expenses found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11">No expenses found</td></tr>';
         return;
     }
 
@@ -674,8 +766,10 @@ function renderTable() {
             <td title="${escapeHtml(itemsText)}">${escapeHtml(itemsShort)}</td>
             <td>${escapeHtml(expense.expenseCategory || shared.DEFAULT_EXPENSE_CATEGORY)}</td>
             <td>₱${(expense.totalAmount || 0).toLocaleString()}</td>
-            <td>${escapeHtml(expense.branch || 'No branch')}</td>
+            <td>${escapeHtml(expense.allocation || '—')}</td>
+            <td>${escapeHtml(shared.formatExpenseBranchOrEvent(expense) || '—')}</td>
             <td>${paidByCell}</td>
+            <td>${formatRecordedByCell(expense)}</td>
             <td>${vatText}</td>
         `;
 
@@ -786,33 +880,95 @@ function renderSuppliers() {
     setupSuppliersTableSorting();
 }
 
-function updateSummary() {
+/** Parse expense date strings as local calendar dates (avoids UTC day-shift). */
+function parseExpenseLocalDate(dateStr) {
+    if (!dateStr) return null;
+    const s = String(dateStr).trim();
+    const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) {
+        const d = new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+        return isNaN(d.getTime()) ? null : d;
+    }
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? null : d;
+}
+
+function getActiveRangeLabel() {
+    if (!dateRangeInput?._flatpickr) return 'All time';
+    const selected = dateRangeInput._flatpickr.selectedDates;
+    if (selected.length !== 2) return 'All time';
+    const [start, end] = selected;
+    const monthStart = new Date(start.getFullYear(), start.getMonth(), 1);
+    const monthEnd = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+    const isFullMonth =
+        start.getFullYear() === monthStart.getFullYear() &&
+        start.getMonth() === monthStart.getMonth() &&
+        start.getDate() === monthStart.getDate() &&
+        end.getFullYear() === monthEnd.getFullYear() &&
+        end.getMonth() === monthEnd.getMonth() &&
+        end.getDate() === monthEnd.getDate();
+    if (isFullMonth) {
+        return start.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    }
+    return formatDateRange(start, end);
+}
+
+function updateSummaryCards(expenses, rangeLabel) {
     const container = document.getElementById('summaryCards');
     if (!container) return;
 
-    const expenses = shared.getExpenses();
-    const total = expenses.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
-    const supplierCount = new Set(expenses.filter((e) => e.supplierId).map((e) => e.supplierId)).size;
-    const unassignedCount = expenses.filter((e) => !e.supplierId).length;
+    const list = Array.isArray(expenses) ? expenses : [];
+    const label = rangeLabel || getActiveRangeLabel();
+    const total = list.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
+    const companyTotal = list
+        .filter((e) => (e.paidBy || 'Company') === 'Company')
+        .reduce((sum, e) => sum + (e.totalAmount || 0), 0);
+    const cashTotal = list
+        .filter((e) => shared.isCashPaidBy(e.paidBy))
+        .reduce((sum, e) => sum + (e.totalAmount || 0), 0);
+    const unassignedCount = list.filter((e) => !e.supplierId).length;
+    const receiptWord = list.length === 1 ? 'receipt' : 'receipts';
 
-    container.innerHTML = `
+    let html = `
         <div class="summary-card">
-            <div class="card-title">Total Expenses</div>
+            <div class="card-title">Spent</div>
             <div class="card-value">₱${total.toLocaleString()}</div>
+            <div class="card-subtitle">${escapeHtml(label)} · ${list.length} ${receiptWord}</div>
         </div>
         <div class="summary-card">
-            <div class="card-title">Total Transactions</div>
-            <div class="card-value">${expenses.length}</div>
+            <div class="card-title">Company account</div>
+            <div class="card-value">₱${companyTotal.toLocaleString()}</div>
+            <div class="card-subtitle">Bank / GCash</div>
         </div>
         <div class="summary-card">
-            <div class="card-title">Suppliers (by ID)</div>
-            <div class="card-value">${supplierCount}</div>
-        </div>
-        <div class="summary-card">
-            <div class="card-title">Unassigned expenses</div>
-            <div class="card-value" title="No supplierId — run migration tool">${unassignedCount}</div>
+            <div class="card-title">Cash</div>
+            <div class="card-value">₱${cashTotal.toLocaleString()}</div>
+            <div class="card-subtitle">Till / pop-up</div>
         </div>
     `;
+    if (unassignedCount > 0) {
+        html += `
+        <div class="summary-card summary-card-warning">
+            <div class="card-title">Unassigned</div>
+            <div class="card-value">${unassignedCount}</div>
+            <div class="card-subtitle">No supplier ID — run migration</div>
+        </div>`;
+    }
+    container.innerHTML = html;
+}
+
+/** Keep cards on the active filter; never force all-time after a filtered render. */
+function refreshSummaryFromCurrentFilters() {
+    const expenses = getExpensesForCurrentFilters();
+    const label =
+        dateRangeInput?._flatpickr?.selectedDates?.length === 2
+            ? getActiveRangeLabel()
+            : 'All time';
+    updateSummaryCards(expenses, label);
+}
+
+function updateSummary() {
+    refreshSummaryFromCurrentFilters();
 }
 
 // This DOMContentLoaded listener is removed - using the one below instead
@@ -985,45 +1141,89 @@ function refreshMonthDropdown() {
     });
     
     bindMonthDropdownChangeListener(monthDropdown);
-    
+    syncMonthDropdownFromDateRange();
+}
+
+function syncMonthDropdownToDate(monthDate) {
+    const monthDropdown = document.getElementById('monthDropdown');
+    if (!monthDropdown || !monthDate) return;
+    const year = monthDate.getFullYear();
+    const monthNum = monthDate.getMonth() + 1;
+    const value = `${year}-${monthNum.toString().padStart(2, '0')}-01`;
+    const hasOption = [...monthDropdown.options].some((o) => o.value === value);
+    monthDropdown.value = hasOption ? value : '';
+}
+
+function syncMonthDropdownFromDateRange() {
+    if (!dateRangeInput?._flatpickr) return;
+    const selected = dateRangeInput._flatpickr.selectedDates;
+    if (selected.length !== 2) return;
+    const [start, end] = selected;
+    const monthStart = new Date(start.getFullYear(), start.getMonth(), 1);
+    const monthEnd = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+    if (
+        start.getFullYear() === monthStart.getFullYear() &&
+        start.getMonth() === monthStart.getMonth() &&
+        start.getDate() === monthStart.getDate() &&
+        end.getFullYear() === monthEnd.getFullYear() &&
+        end.getMonth() === monthEnd.getMonth() &&
+        end.getDate() === monthEnd.getDate()
+    ) {
+        syncMonthDropdownToDate(start);
+    }
 }
 
 function getMonthsWithData() {
     const expenses = shared.getExpenses();
     const monthMap = new Map();
-    
-    // Group expenses by month/year
-    expenses.forEach(expense => {
-        if (expense.date) {
-            const date = new Date(expense.date);
-            
-            // Check if date is valid
-            if (isNaN(date.getTime())) {
-                return;
-            }
-            
-            const monthKey = `${date.getFullYear()}-${date.getMonth()}`;
-            
-            if (!monthMap.has(monthKey)) {
-                monthMap.set(monthKey, {
-                    date: new Date(date.getFullYear(), date.getMonth(), 1),
-                    count: 0
-                });
-            }
-            monthMap.get(monthKey).count++;
+
+    // Group expenses by local calendar month/year
+    expenses.forEach((expense) => {
+        const date = parseExpenseLocalDate(expense.date);
+        if (!date) return;
+
+        const monthKey = `${date.getFullYear()}-${date.getMonth()}`;
+        if (!monthMap.has(monthKey)) {
+            monthMap.set(monthKey, {
+                date: new Date(date.getFullYear(), date.getMonth(), 1),
+                count: 0
+            });
         }
+        monthMap.get(monthKey).count++;
     });
-    
-    // Convert to array and sort by date (newest first)
-    const months = Array.from(monthMap.values())
-        .map(month => ({
+
+    const now = new Date();
+    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    // Earliest expense month, or current month if no data
+    let earliest = currentMonthStart;
+    let latest = currentMonthStart;
+    for (const entry of monthMap.values()) {
+        if (entry.date < earliest) earliest = entry.date;
+        if (entry.date > latest) latest = entry.date;
+    }
+    // Fill through this month at minimum; also fill gaps up to any future month with data
+    if (latest < currentMonthStart) latest = currentMonthStart;
+
+    const resultMap = new Map();
+    let cursor = new Date(earliest.getFullYear(), earliest.getMonth(), 1);
+    while (cursor <= latest) {
+        const key = `${cursor.getFullYear()}-${cursor.getMonth()}`;
+        const existing = monthMap.get(key);
+        resultMap.set(key, {
+            date: new Date(cursor.getFullYear(), cursor.getMonth(), 1),
+            count: existing?.count || 0
+        });
+        cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+    }
+
+    return Array.from(resultMap.values())
+        .map((month) => ({
             label: month.date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
             date: month.date,
             count: month.count
         }))
         .sort((a, b) => b.date - a.date);
-    
-    return months;
 }
 
 function setDateRangeShortcut(type) {
@@ -1090,6 +1290,7 @@ function setMonthRange(monthDate) {
     });
     setDateFilterActiveMode('month');
     dateRangeInput.classList.remove('custom-range');
+    syncMonthDropdownToDate(monthDate);
 
     filterAndRender();
 }
@@ -1098,16 +1299,15 @@ function findEarliestDataDate() {
     const expenses = shared.getExpenses();
     if (expenses.length === 0) return null;
 
-    // Find the earliest date from expenses
-    const dates = expenses.map(expense => new Date(expense.date)).filter(d => !isNaN(d));
-    
+    const dates = expenses.map((expense) => parseExpenseLocalDate(expense.date)).filter(Boolean);
     if (dates.length === 0) return null;
-    
-    return new Date(Math.min(...dates));
+
+    return new Date(Math.min(...dates.map((d) => d.getTime())));
 }
 
 function setDefaultDateRange() {
-    setDateRangeShortcut("All Data");
+    const now = new Date();
+    setMonthRange(new Date(now.getFullYear(), now.getMonth(), 1));
 }
 
 function startAdminPeriodicRefresh() {
@@ -1175,6 +1375,9 @@ async function initialize() {
         createDateShortcuts();
         console.log('[3/8] ✓ Created date shortcuts');
 
+        setDefaultDateRange();
+        console.log('[3b/8] ✓ Default date range set to current month');
+
         // Paint from local cache when available; Firebase is always the source of truth.
         console.log('[4/8] Loading local data...');
         hasLocalData = loadLocalDataAndRender();
@@ -1219,9 +1422,7 @@ async function initialize() {
         // Set default after a small delay to ensure flatpickr is ready
         await new Promise((resolve) => {
             setTimeout(() => {
-                console.log('[8/8] Setting default date range...');
-                setDefaultDateRange();
-                console.log('[8/8] ✓ Default date range set');
+                console.log('[8/8] ✓ Initialization complete');
                 console.log('=== ✓ INITIALIZATION COMPLETE ===');
 
                 // Start polling after we know the UI and flatpickr are ready.
@@ -1338,6 +1539,14 @@ function setupEventListeners() {
         });
     }
 
+    initAdminBatch({
+        openExpenseEditor: (expense, onReturn) => {
+            batchAlbumReturnHandler = onReturn;
+            showExpenseModal(expense, true);
+        },
+        refreshTables: refreshAdminTables
+    });
+
     // Import CSV button
     const importBtn = document.getElementById('importBtn');
     const fileInput = document.getElementById('fileInput');
@@ -1438,17 +1647,17 @@ function refreshAdminTables() {
         } else {
             const expenses = shared.getExpenses();
             renderFilteredTable(expenses);
-            updateFilteredSummary(expenses);
+            updateSummaryCards(expenses, 'All time');
         }
     } else if (tab === 'suppliers') {
         renderSuppliers();
-        updateSummary();
+        refreshSummaryFromCurrentFilters();
     }
     updateBulkActionBar();
     // Merges/deletes can run while Expenses or Analytics is active; keep supplier table in sync.
+    // Do not call all-time updateSummary here — it overwrites filtered cards.
     if (tab !== 'suppliers' && document.getElementById('supplierTableBody')) {
         renderSuppliers();
-        updateSummary();
     }
 }
 
@@ -1495,9 +1704,9 @@ function clearAllFilters() {
     }
     
     
-    // Reset date range to "All Data"
+    // Reset date range to current month
     if (dateRangeInput && dateRangeInput._flatpickr) {
-        setDateRangeShortcut("All Data");
+        setDefaultDateRange();
     }
     
     console.log('All filters cleared');
@@ -1563,26 +1772,27 @@ function filterAndRender() {
     const expenses = shared.getExpenses();
     console.log('Total expenses loaded:', expenses.length);
     
+    // Normalize range ends to local day boundaries for inclusive compare
+    const rangeStart = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    const rangeEnd = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23, 59, 59, 999);
+
     // Filter expenses by all criteria
-    const filteredExpenses = expenses.filter(expense => {
-        if (!expense.date) return false;
-        
-        // Date filter
-        const expenseDate = new Date(expense.date);
-        const dateMatch = expenseDate >= start && expenseDate <= end;
-        
-        // Branch filter
+    const filteredExpenses = expenses.filter((expense) => {
+        const expenseDate = parseExpenseLocalDate(expense.date);
+        if (!expenseDate) return false;
+
+        const dateMatch = expenseDate >= rangeStart && expenseDate <= rangeEnd;
+
         let branchMatch = true;
         if (selectedBranch !== 'all') {
             branchMatch = expense.branch === selectedBranch;
         }
-        
-        // Category filter
+
         let categoryMatch = true;
         if (selectedCategory !== 'all') {
             categoryMatch = (expense.expenseCategory || shared.DEFAULT_EXPENSE_CATEGORY) === selectedCategory;
         }
-        
+
         return dateMatch && branchMatch && categoryMatch;
     });
 
@@ -1635,7 +1845,7 @@ function renderWeeklyView(filteredExpenses) {
     tbody.innerHTML = '';
     
     if (weeks.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9">No expenses found for this date range</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11">No expenses found for this date range</td></tr>';
         setupPagination('expenses');
         return;
     }
@@ -1655,7 +1865,7 @@ function renderWeeklyView(filteredExpenses) {
             <td colspan="2">${week.weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td>
             <td>${week.expenses.length} expenses</td>
             <td><strong>₱${week.total.toLocaleString()}</strong></td>
-            <td colspan="3">-</td>
+            <td colspan="5">-</td>
             <td><button onclick="alert('View weekly details')">View</button></td>
         `;
         tbody.appendChild(row);
@@ -1697,7 +1907,7 @@ function renderMonthlyView(filteredExpenses) {
     tbody.innerHTML = '';
     
     if (months.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9">No expenses found for this date range</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11">No expenses found for this date range</td></tr>';
         setupPagination('expenses');
         return;
     }
@@ -1714,7 +1924,7 @@ function renderMonthlyView(filteredExpenses) {
             <td colspan="2">${month.date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</td>
             <td>${month.expenses.length} expenses</td>
             <td><strong>₱${month.total.toLocaleString()}</strong></td>
-            <td colspan="3">-</td>
+            <td colspan="5">-</td>
             <td><button onclick="alert('View monthly details')">View</button></td>
         `;
         tbody.appendChild(row);
@@ -1752,7 +1962,18 @@ function renderFilteredTable(filteredExpenses) {
     // Store for pagination
     totalFilteredExpenses = [...filteredExpenses];
 
-    const expenseTableSortColumns = new Set(['date', 'supplier', 'category', 'amount', 'branch', 'payment', 'vat']);
+    const expenseTableSortColumns = new Set([
+        'date',
+        'supplier',
+        'category',
+        'amount',
+        'allocation',
+        'branchevent',
+        'paidby',
+        'recordedby',
+        'payment',
+        'vat'
+    ]);
     if (!currentSort.column || !expenseTableSortColumns.has(currentSort.column)) {
         currentSort = { column: 'date', direction: 'desc' };
         document.querySelectorAll('#expenseTableHeaders th[data-sort]').forEach((h) => {
@@ -1783,13 +2004,21 @@ function renderFilteredTable(filteredExpenses) {
                     aVal = a.totalAmount || 0;
                     bVal = b.totalAmount || 0;
                     break;
-                case 'branch':
-                    aVal = (a.branch || '').toLowerCase();
-                    bVal = (b.branch || '').toLowerCase();
+                case 'allocation':
+                    aVal = (a.allocation || '').toLowerCase();
+                    bVal = (b.allocation || '').toLowerCase();
+                    break;
+                case 'branchevent':
+                    aVal = shared.formatExpenseBranchOrEvent(a).toLowerCase();
+                    bVal = shared.formatExpenseBranchOrEvent(b).toLowerCase();
                     break;
                 case 'paidby':
                     aVal = (a.paidBy || '').toLowerCase();
                     bVal = (b.paidBy || '').toLowerCase();
+                    break;
+                case 'recordedby':
+                    aVal = shared.getRecordedByShortLabel(a).toLowerCase();
+                    bVal = shared.getRecordedByShortLabel(b).toLowerCase();
                     break;
                 case 'vat':
                     aVal = a.vatAmount || 0;
@@ -1810,7 +2039,7 @@ function renderFilteredTable(filteredExpenses) {
     tbody.innerHTML = '';
 
     if (totalFilteredExpenses.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9">No expenses found for this date range</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11">No expenses found for this date range</td></tr>';
         setupPagination('expenses');
         return;
     }
@@ -1841,8 +2070,10 @@ function renderFilteredTable(filteredExpenses) {
             <td title="${escapeHtml(itemsText)}">${escapeHtml(itemsShort)}</td>
             <td>${escapeHtml(expense.expenseCategory || shared.DEFAULT_EXPENSE_CATEGORY)}</td>
             <td>₱${(expense.totalAmount || 0).toLocaleString()}</td>
-            <td>${escapeHtml(expense.branch || 'No branch')}</td>
+            <td>${escapeHtml(expense.allocation || '—')}</td>
+            <td>${escapeHtml(shared.formatExpenseBranchOrEvent(expense) || '—')}</td>
             <td>${paidByCell}</td>
+            <td>${formatRecordedByCell(expense)}</td>
             <td>${vatText}</td>
         `;
 
@@ -1854,33 +2085,7 @@ function renderFilteredTable(filteredExpenses) {
 }
 
 function updateFilteredSummary(filteredExpenses) {
-    const container = document.getElementById('summaryCards');
-    if (!container) return;
-
-    const total = filteredExpenses.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
-    const supplierCount = new Set(
-        filteredExpenses.filter((e) => e.supplierId).map((e) => e.supplierId)
-    ).size;
-    const unassignedCount = filteredExpenses.filter((e) => !e.supplierId).length;
-
-    container.innerHTML = `
-        <div class="summary-card">
-            <div class="card-title">Total Expenses</div>
-            <div class="card-value">₱${total.toLocaleString()}</div>
-        </div>
-        <div class="summary-card">
-            <div class="card-title">Total Transactions</div>
-            <div class="card-value">${filteredExpenses.length}</div>
-        </div>
-        <div class="summary-card">
-            <div class="card-title">Suppliers (by ID)</div>
-            <div class="card-value">${supplierCount}</div>
-        </div>
-        <div class="summary-card">
-            <div class="card-title">Unassigned expenses</div>
-            <div class="card-value" title="No supplierId — run migration tool">${unassignedCount}</div>
-        </div>
-    `;
+    updateSummaryCards(filteredExpenses, getActiveRangeLabel());
 }
 
 // Add sorting functionality
@@ -2068,55 +2273,64 @@ function refreshPagination(viewType = 'expenses') {
 }
 
 // CSV Export Functions
+function getExpensesForCurrentFilters() {
+    const allExpenses = shared.getExpenses();
+    const branchSelector = document.getElementById('branchSelector');
+    const categorySelector = document.getElementById('categorySelector');
+    const selectedBranch = branchSelector ? branchSelector.value : 'all';
+    const selectedCategory = categorySelector ? categorySelector.value : 'all';
+
+    const hasDateRange =
+        dateRangeInput &&
+        dateRangeInput._flatpickr &&
+        dateRangeInput._flatpickr.selectedDates.length === 2;
+
+    const [start, end] = hasDateRange ? dateRangeInput._flatpickr.selectedDates : [null, null];
+    const rangeStart = hasDateRange
+        ? new Date(start.getFullYear(), start.getMonth(), start.getDate())
+        : null;
+    const rangeEnd = hasDateRange
+        ? new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23, 59, 59, 999)
+        : null;
+
+    return allExpenses.filter((expense) => {
+        const expenseDate = parseExpenseLocalDate(expense.date);
+        if (!expenseDate) return false;
+
+        if (hasDateRange) {
+            if (expenseDate < rangeStart || expenseDate > rangeEnd) return false;
+        }
+
+        if (selectedBranch !== 'all' && expense.branch !== selectedBranch) return false;
+
+        if (
+            selectedCategory !== 'all' &&
+            (expense.expenseCategory || shared.DEFAULT_EXPENSE_CATEGORY) !== selectedCategory
+        ) {
+            return false;
+        }
+
+        return true;
+    });
+}
+
 function exportExpensesToCSV() {
-    // Get the currently filtered expenses
-    let expensesToExport = [];
-    
-    if (dateRangeInput && dateRangeInput._flatpickr && dateRangeInput._flatpickr.selectedDates.length === 2) {
-        // Export filtered expenses if date range is selected
-        const [start, end] = dateRangeInput._flatpickr.selectedDates;
-        const branchSelector = document.getElementById('branchSelector');
-        const categorySelector = document.getElementById('categorySelector');
-        
-        const selectedBranch = branchSelector ? branchSelector.value : 'all';
-        const selectedCategory = categorySelector ? categorySelector.value : 'all';
-        
-        const allExpenses = shared.getExpenses();
-        expensesToExport = allExpenses.filter(expense => {
-            if (!expense.date) return false;
-            
-            // Date filter
-            const expenseDate = new Date(expense.date);
-            const dateMatch = expenseDate >= start && expenseDate <= end;
-            
-            // Branch filter
-            let branchMatch = true;
-            if (selectedBranch !== 'all') {
-                branchMatch = expense.branch === selectedBranch;
-            }
-            
-            // Category filter
-            let categoryMatch = true;
-            if (selectedCategory !== 'all') {
-                categoryMatch = (expense.expenseCategory || shared.DEFAULT_EXPENSE_CATEGORY) === selectedCategory;
-            }
-            
-            return dateMatch && branchMatch && categoryMatch;
-        });
-    } else {
-        // Export all expenses if no filters are applied
-        expensesToExport = shared.getExpenses();
-    }
-    
+    // Export currently filtered expenses (selected range + branch/category). No receipt images.
+    const expensesToExport = getExpensesForCurrentFilters().slice().sort((a, b) => {
+        if (!a.date) return 1;
+        if (!b.date) return -1;
+        return b.date.localeCompare(a.date);
+    });
+
     if (expensesToExport.length === 0) {
-        shared.showToast('No expenses to export');
+        shared.showToast('No expenses to export for the selected range');
         return;
     }
-    
-    // Prepare data for CSV export
+
+    // Prepare data for CSV export (text fields only — no receipt images/URLs)
     const csvData = expensesToExport.map(expense => {
         const itemsText = expense.items ? expense.items.map(i => `${i.name} (${i.quantity}x ₱${i.price})`).join('; ') : 'No items';
-        
+
         return {
             'Date': expense.date || '',
             'Supplier Name': expense.isPettyCash ? 'Petty cash voucher' : expense.supplierName || '',
@@ -2133,41 +2347,45 @@ function exportExpensesToCSV() {
             'VAT Registered': expense.isVatRegistered ? 'Yes' : 'No',
             'Branch': expense.branch || '',
             'Allocation': expense.allocation || '',
+            'Event Name': expense.eventName || '',
             'Is Petty Cash': expense.isPettyCash ? 'Yes' : 'No',
             'Payment Method': expense.paymentMethod || '',
             'Paid By': expense.paidBy || '',
+            'Recorded By': shared.getRecordedByShortLabel(expense) || '',
+            'Recorded Via': expense.recordedVia || '',
+            'Recorded By Employee Code': expense.recordedByEmployeeCode || '',
             'Notes': expense.notes || '',
             'Created At': expense.createdAt || '',
             'Updated At': expense.updatedAt || ''
         };
     });
-    
+
     // Generate filename with current date and filter info
     const now = new Date();
     const dateStr = now.toISOString().split('T')[0];
     let filename = `matchanese-expenses-${dateStr}`;
-    
+
     // Add filter info to filename if filters are applied
     const branchSelector = document.getElementById('branchSelector');
     const categorySelector = document.getElementById('categorySelector');
-    
+
     if (branchSelector && branchSelector.value !== 'all') {
         filename += `-${branchSelector.value.replace(/\s+/g, '')}`;
     }
-    
+
     if (categorySelector && categorySelector.value !== 'all') {
         filename += `-${categorySelector.value.replace(/\s+/g, '')}`;
     }
-    
+
     if (dateRangeInput && dateRangeInput._flatpickr && dateRangeInput._flatpickr.selectedDates.length === 2) {
         const [start, end] = dateRangeInput._flatpickr.selectedDates;
         const startStr = start.toISOString().split('T')[0];
         const endStr = end.toISOString().split('T')[0];
         filename += `-${startStr}-to-${endStr}`;
     }
-    
+
     filename += '.csv';
-    
+
     // Export the data
     shared.exportToCSV(csvData, filename);
     shared.showToast(`Exported ${expensesToExport.length} expenses to ${filename}`);
@@ -2313,10 +2531,12 @@ function parseAndImportCSV(csvText) {
         const activeBtn = document.querySelector('.date-shortcut-btn.active');
         if (activeBtn) {
             activeBtn.click();
+        } else if (dateRangeInput && dateRangeInput._flatpickr) {
+            filterAndRender();
         } else {
             const expenses = shared.getExpenses();
             renderFilteredTable(expenses);
-            updateFilteredSummary(expenses);
+            updateSummaryCards(expenses, 'All time');
         }
     } else {
         shared.showToast('No valid expenses found in CSV file');
@@ -2383,18 +2603,36 @@ window.editExpenseFromDetail = function(expenseId) {
 };
 
 window.deleteExpenseFromDetail = function (expenseId) {
+    const existsInStore = shared.getExpenses().some((e) => e.id === expenseId);
+    const isBatchDraft = typeof batchAlbumReturnHandler === 'function' && !existsInStore;
+
     showAdminConfirmation(
-        'Delete expense',
-        'Permanently delete this expense? This cannot be undone.',
-        'Delete',
+        isBatchDraft ? 'Discard draft' : 'Delete expense',
+        isBatchDraft
+            ? 'Remove this unsaved draft from the batch? It was never saved to Firebase.'
+            : 'Permanently delete this expense? This cannot be undone.',
+        isBatchDraft ? 'Discard' : 'Delete',
         async () => {
-            showAdminBusyOverlay('Deleting expense…');
+            showAdminBusyOverlay(isBatchDraft ? 'Discarding…' : 'Deleting expense…');
             try {
+                if (isBatchDraft) {
+                    shared.showToast('Draft discarded');
+                    finishAdminExpenseModalClose({
+                        deleted: true,
+                        expenseId
+                    });
+                    return;
+                }
                 const ok = await shared.deleteExpense(expenseId);
                 if (ok) {
                     shared.showToast('Expense deleted');
-                    closeAdminExpenseModal();
-                    refreshAdminTables();
+                    const returnedToBatch = finishAdminExpenseModalClose({
+                        deleted: true,
+                        expenseId
+                    });
+                    if (!returnedToBatch) {
+                        refreshAdminTables();
+                    }
                 } else shared.showToast('Failed to delete expense');
             } finally {
                 hideAdminBusyOverlay();
@@ -2682,9 +2920,7 @@ function showBulkEditModalDialog(expenses) {
                     <option value="">-- Keep current --</option>
                     <option value="SM North">SM North</option>
                     <option value="Podium">Podium</option>
-                    <option value="BGC">BGC</option>
-                    <option value="Makati">Makati</option>
-                    <option value="Uncategorized">Uncategorized</option>
+                    <option value="Mall of Asia">Mall of Asia</option>
                 </select>
             </div>
             
@@ -2753,10 +2989,12 @@ window.applyBulkEdit = function() {
     const activeBtn = document.querySelector('.date-shortcut-btn.active');
     if (activeBtn) {
         activeBtn.click();
+    } else if (dateRangeInput && dateRangeInput._flatpickr) {
+        filterAndRender();
     } else {
         const expenses = shared.getExpenses();
         renderFilteredTable(expenses);
-        updateFilteredSummary(expenses);
+        updateSummaryCards(expenses, 'All time');
     }
     updateBulkActionBar();
 };
@@ -2925,7 +3163,7 @@ window.viewSupplierDetails = function (supplierName) {
                 <td>${escapeHtml(e.date || '')}</td>
                 <td>${escapeHtml(e.expenseCategory || shared.DEFAULT_EXPENSE_CATEGORY)}</td>
                 <td style="text-align:right">₱${(e.totalAmount || 0).toLocaleString()}</td>
-                <td>${escapeHtml(e.branch || '')}</td>
+                <td>${escapeHtml(shared.formatExpenseBranchOrEvent(e) || '')}</td>
                 <td>${escapeHtml((e.invoiceNumber || '').slice(0, 24))}</td>
             </tr>`
             )
@@ -3106,11 +3344,13 @@ window.viewExpense = function(expenseId) {
         return;
     }
 
+    batchAlbumReturnHandler = null;
     showExpenseModal(expense, false);
 };
 
 // Add new expense function
 window.addExpense = function() {
+    batchAlbumReturnHandler = null;
     const newExpense = {
         id: shared.generateId(),
         date: new Date().toISOString().split('T')[0],
@@ -3291,6 +3531,125 @@ function wireAdminExpenseAutocompletes(modalBody) {
     });
 }
 
+function findAdminSupplierMatchForExtract(name) {
+    const key = shared.normalizeSupplierNameKey(name);
+    if (!key) return null;
+    const suppliers = shared.getSuppliers();
+    return (
+        suppliers.find((s) => shared.normalizeSupplierNameKey(s.name) === key) ||
+        suppliers.find((s) => shared.normalizeSupplierNameKey(s.businessName) === key) ||
+        null
+    );
+}
+
+function applyAdminReceiptExtraction(parsed) {
+    if (!parsed || typeof parsed !== 'object') return;
+
+    const supplierName = String(parsed.supplierName || '').trim();
+    if (supplierName) {
+        const match = findAdminSupplierMatchForExtract(supplierName);
+        if (match) {
+            adminApplySupplierRecord(match);
+        } else {
+            const vWrap = document.getElementById('adminSupplierVerifiedWrap');
+            const inVerified = vWrap && !vWrap.classList.contains('admin-hidden');
+            if (inVerified) adminLeaveSupplierVerifiedMode();
+            const mSn = document.getElementById('adminSupplierName');
+            const mBn = document.getElementById('adminBusinessName');
+            const mTin = document.getElementById('adminTin');
+            const mAd = document.getElementById('adminAddress');
+            if (mSn) {
+                mSn.value = supplierName;
+                mSn.blur();
+            }
+            if (mBn && parsed.businessName) mBn.value = String(parsed.businessName).trim();
+            if (mTin && parsed.tin) mTin.value = String(parsed.tin).trim();
+            if (mAd && parsed.address) mAd.value = String(parsed.address).trim();
+        }
+    }
+
+    const dateInput = document.querySelector('#expenseForm input[name="date"]');
+    if (dateInput && parsed.date) {
+        dateInput.value = parsed.date;
+    }
+
+    const invoiceInput = document.querySelector('#expenseForm input[name="invoiceNumber"]');
+    if (invoiceInput && parsed.invoiceNumber) {
+        invoiceInput.value = String(parsed.invoiceNumber).trim();
+    }
+
+    const suggestedCategory = String(parsed.suggestedCategory || '').trim();
+    if (suggestedCategory && shared.EXPENSE_CATEGORY_OPTIONS.includes(suggestedCategory)) {
+        const catSelect = document.querySelector('#expenseForm select[name="expenseCategory"]');
+        if (catSelect) {
+            const hasOpt = [...catSelect.options].some((o) => o.value === suggestedCategory);
+            if (!hasOpt) {
+                const opt = document.createElement('option');
+                opt.value = suggestedCategory;
+                opt.textContent = suggestedCategory;
+                catSelect.appendChild(opt);
+            }
+            catSelect.value = suggestedCategory;
+        }
+    }
+
+    const items = Array.isArray(parsed.items) ? parsed.items.filter((i) => i && i.name) : [];
+    const container = document.getElementById('itemsContainer');
+    if (container && items.length > 0) {
+        container.innerHTML = '';
+        items.forEach((item) => {
+            window.addItem();
+            const rows = container.querySelectorAll('.item-row');
+            const row = rows[rows.length - 1];
+            if (!row) return;
+            const nameInput = row.querySelector('input[name^="itemName_"]');
+            const qtyInput = row.querySelector('input[name^="itemQty_"]');
+            const priceInput = row.querySelector('input[name^="itemPrice_"]');
+            if (nameInput) nameInput.value = item.name || '';
+            if (qtyInput && item.quantity != null) qtyInput.value = String(item.quantity);
+            if (priceInput && item.price != null && Number(item.price) > 0) {
+                priceInput.value = String(item.price);
+            }
+        });
+        const hasPrices = items.some((i) => Number(i.price) > 0);
+        if (hasPrices && typeof window.adminShowAllItemBreakdowns === 'function') {
+            window.adminShowAllItemBreakdowns();
+        }
+    }
+
+    const totalInput = document.getElementById('adminTotalAmountInput');
+    let total = Number(parsed.totalAmount) || 0;
+    if (!total && items.length) {
+        total = items.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
+    }
+    if (totalInput && total > 0) {
+        totalInput.value = shared.formatCurrency(total);
+        if (typeof adminSetManualTotalInputState === 'function') {
+            adminSetManualTotalInputState(totalInput);
+        }
+    }
+
+    const vatExempt = Number(parsed.vatExemptAmount) || 0;
+    const hasPrintedVat =
+        (Number(parsed.printedVat?.vatableSale) || 0) > 0 ||
+        (Number(parsed.printedVat?.vatAmount) || 0) > 0;
+    const vatExemptInput = document.getElementById('adminVatExemptAmount');
+    if (vatExemptInput && (vatExempt > 0 || hasPrintedVat)) {
+        if (vatExempt > 0) vatExemptInput.value = String(vatExempt);
+        const cb = document.getElementById('adminVatComputationEnabled');
+        const track = document.getElementById('adminVatToggleTrack');
+        const shell = document.getElementById('adminVatToggleShell');
+        if (cb) cb.checked = true;
+        if (track) track.classList.add('active');
+        if (shell) shell.setAttribute('aria-checked', 'true');
+    }
+
+    if (typeof adminSyncVatSection === 'function') adminSyncVatSection();
+    if (typeof adminUpdateTotalsFromItems === 'function') adminUpdateTotalsFromItems();
+    if (typeof adminUpdateVatPreview === 'function') adminUpdateVatPreview();
+    markAdminExpenseModalDirty();
+}
+
 function initAdminReceiptPanel(expense, isEditing, expenseId) {
     const mount = document.getElementById('adminReceiptPanelMount');
     if (!mount) return;
@@ -3348,10 +3707,16 @@ function initAdminReceiptPanel(expense, isEditing, expenseId) {
         <div class="admin-receipt-editor-wrap">
             <div class="admin-receipt-upload-stack">
                 <div class="admin-receipt-upload" id="adminReceiptDrop">
-                    <input type="file" id="adminReceiptInput" accept="image/*" style="display:none" />
+                    <input type="file" id="adminReceiptInput" accept="image/*,.heic,.heif,image/heic,image/heif,application/pdf,.pdf" style="display:none" />
                     <div class="admin-receipt-upload-content">Click or drag to upload / replace receipt</div>
                     <img id="adminReceiptPreview" class="admin-receipt-preview" style="display:none" alt="" />
+                    <div id="adminReceiptExtractOverlay" class="admin-receipt-extract-overlay" hidden>
+                        <div class="admin-receipt-ai-shimmer" aria-hidden="true"></div>
+                        <div class="admin-receipt-extract-spinner" aria-hidden="true"></div>
+                        <p class="admin-receipt-extract-label">Reading receipt…</p>
+                    </div>
                 </div>
+                <p id="adminReceiptExtractStatus" class="admin-receipt-extract-status" style="display:none"></p>
             </div>
             <div class="admin-receipt-actions" id="adminReceiptActions" style="display:none">
                 <button type="button" class="action-btn secondary admin-receipt-rotate-btn" id="adminReceiptRotateLeft" title="Rotate left">↺</button>
@@ -3367,6 +3732,7 @@ function initAdminReceiptPanel(expense, isEditing, expenseId) {
     const rm = document.getElementById('adminRemoveReceiptBtn');
     const rotL = document.getElementById('adminReceiptRotateLeft');
     const rotR = document.getElementById('adminReceiptRotateRight');
+    const extractOverlay = document.getElementById('adminReceiptExtractOverlay');
 
     const showPreview = (src, userAction = false) => {
         if (!src) return;
@@ -3397,22 +3763,114 @@ function initAdminReceiptPanel(expense, isEditing, expenseId) {
         if (fallbackUrl) showPreview(fallbackUrl, false);
     });
 
-    const processReceiptFile = async (f) => {
-        if (!f || !f.type?.startsWith('image/')) {
-            shared.showToast('Please choose an image file');
+    const setExtractStatus = (message, type = '') => {
+        const el = document.getElementById('adminReceiptExtractStatus');
+        if (!el) return;
+        if (!message) {
+            el.style.display = 'none';
+            el.textContent = '';
+            el.classList.remove('is-error', 'is-success');
             return;
         }
+        el.style.display = 'block';
+        el.textContent = message;
+        el.classList.toggle('is-error', type === 'error');
+        el.classList.toggle('is-success', type === 'success');
+    };
+
+    const syncAdminExtractOverlayToImage = () => {
+        if (!extractOverlay || !preview || !drop) return;
+        if (extractOverlay.hidden || preview.style.display === 'none' || !preview.getAttribute('src')) {
+            extractOverlay.style.left = '';
+            extractOverlay.style.top = '';
+            extractOverlay.style.width = '';
+            extractOverlay.style.height = '';
+            return;
+        }
+        const dropRect = drop.getBoundingClientRect();
+        const imgRect = preview.getBoundingClientRect();
+        if (!imgRect.width || !imgRect.height || !dropRect.width) {
+            requestAnimationFrame(syncAdminExtractOverlayToImage);
+            return;
+        }
+        extractOverlay.style.left = `${Math.max(0, imgRect.left - dropRect.left)}px`;
+        extractOverlay.style.top = `${Math.max(0, imgRect.top - dropRect.top)}px`;
+        extractOverlay.style.width = `${imgRect.width}px`;
+        extractOverlay.style.height = `${imgRect.height}px`;
+    };
+
+    const setExtracting = (busy) => {
+        if (!extractOverlay) return;
+        extractOverlay.hidden = !busy;
+        drop?.classList.toggle('is-extracting', !!busy);
+        requestAnimationFrame(() => {
+            syncAdminExtractOverlayToImage();
+            requestAnimationFrame(syncAdminExtractOverlayToImage);
+        });
+    };
+
+    const runAdminReceiptExtract = async (imageDataUrl) => {
+        if (!imageDataUrl || !String(imageDataUrl).startsWith('data:image/')) return;
+        setExtracting(true);
+        setExtractStatus('');
         try {
-            const dataUrl = await shared.compressImage(f);
-            const url = await shared.uploadReceiptImageToStorage(expenseId, dataUrl);
-            showPreview(url || dataUrl, true);
-        } catch (err) {
-            console.warn(err);
-            shared.showToast('Receipt upload failed');
+            const parsed = await shared.extractExpenseReceiptFromImage(imageDataUrl);
+            if (window.adminReceiptImageForAi !== imageDataUrl) return;
+            applyAdminReceiptExtraction(parsed);
+            setExtractStatus('Details filled — review before saving.', 'success');
+            shared.showToast('Receipt details filled');
+        } catch (error) {
+            if (window.adminReceiptImageForAi !== imageDataUrl) return;
+            console.error('Admin receipt extract failed:', error);
+            const msg = error?.message || 'Could not extract receipt details';
+            setExtractStatus(msg, 'error');
+            shared.showToast(msg);
+        } finally {
+            if (window.adminReceiptImageForAi === imageDataUrl) setExtracting(false);
         }
     };
 
-    drop.addEventListener('click', () => input?.click());
+    window.adminReceiptImageForAi = null;
+    setExtractStatus('');
+    setExtracting(false);
+
+    const processReceiptFile = async (f) => {
+        if (!f || !shared.isSupportedReceiptImageFile(f)) {
+            shared.showToast('Please choose an image or PDF file');
+            return;
+        }
+        try {
+            if (shared.isPdfFile(f)) {
+                setExtractStatus('Reading PDF…');
+            } else if (shared.isHeicLikeFile(f)) {
+                setExtractStatus('Converting HEIC…');
+            }
+            const dataUrl = await shared.compressImage(f);
+            window.adminReceiptImageForAi = dataUrl;
+            showPreview(dataUrl, true);
+            runAdminReceiptExtract(dataUrl);
+            shared
+                .uploadReceiptImageToStorage(expenseId, dataUrl)
+                .then((url) => {
+                    if (url && window.adminReceiptImageForAi === dataUrl) {
+                        showPreview(url, true);
+                    }
+                })
+                .catch(() => {});
+        } catch (err) {
+            console.warn(err);
+            shared.showToast(err?.message || 'Receipt upload failed');
+            window.adminReceiptImageForAi = null;
+            setExtracting(false);
+            setExtractStatus('');
+        }
+    };
+
+    drop.addEventListener('click', (e) => {
+        if (e.target.closest('.admin-receipt-extract-overlay')) return;
+        if (drop.classList.contains('is-extracting')) return;
+        input?.click();
+    });
     input?.addEventListener('change', async () => {
         const f = input.files?.[0];
         if (!f) return;
@@ -3441,6 +3899,7 @@ function initAdminReceiptPanel(expense, isEditing, expenseId) {
         setRotateBusy(true);
         try {
             const dataUrl = await shared.rotateReceiptImage(src, direction);
+            window.adminReceiptImageForAi = dataUrl;
             const url = await shared.uploadReceiptImageToStorage(expenseId, dataUrl);
             showPreview(url || dataUrl, true);
         } catch (err) {
@@ -3465,6 +3924,9 @@ function initAdminReceiptPanel(expense, isEditing, expenseId) {
         preview.style.display = 'none';
         adminPendingReceiptUrl = null;
         window.adminReceiptRemove = true;
+        window.adminReceiptImageForAi = null;
+        setExtracting(false);
+        setExtractStatus('');
         if (actionsRow) actionsRow.style.display = 'none';
         drop.classList.remove('has-file');
         if (input) input.value = '';
@@ -3472,18 +3934,116 @@ function initAdminReceiptPanel(expense, isEditing, expenseId) {
     });
 }
 
+function populateAdminPopupEventSelect(preferredValue = '', { forService = false } = {}) {
+    const select = document.getElementById('adminEventNameSelect');
+    if (!select) return;
+    const events = forService ? shared.getCachedServiceEvents() : shared.getCachedPopupEvents();
+    const input = document.getElementById('adminEventName');
+    const current = preferredValue || select.value || input?.value || '';
+    select.innerHTML = '<option value="">Select event…</option>';
+    events.forEach((ev) => {
+        const opt = document.createElement('option');
+        opt.value = ev.name;
+        opt.textContent = ev.serviceType === 'package' ? `[Package] ${ev.name}` : ev.name;
+        select.appendChild(opt);
+    });
+    if (current) {
+        if (![...select.options].some((o) => o.value === current)) {
+            const opt = document.createElement('option');
+            opt.value = current;
+            opt.textContent = current;
+            select.appendChild(opt);
+        }
+        select.value = current;
+    }
+    if (input) input.value = select.value || current || '';
+}
+
 function adminSyncAllocationBranchPaidUI() {
     const allocationSelect = document.getElementById('adminAllocationSelect');
+    const branchFieldGroup = document.getElementById('adminBranchFieldGroup');
+    const paidByFieldGroup = document.getElementById('adminPaidByFieldGroup');
     const branchPaidRow = document.getElementById('adminBranchPaidRow');
+    const eventNameRow = document.getElementById('adminEventNameRow');
+    const eventNameInput = document.getElementById('adminEventName');
+    const eventNameSelect = document.getElementById('adminEventNameSelect');
+    const eventNameLabel = document.getElementById('adminEventNameLabel');
     const branchSelect = document.querySelector('#adminBranchFieldGroup select[name="branch"]');
     const paidSelect = document.getElementById('adminPaidBy');
     if (!allocationSelect) return;
-    const isStore = allocationSelect.value === 'Store';
-    if (branchPaidRow) branchPaidRow.style.display = isStore ? '' : 'none';
-    if (branchSelect) branchSelect.required = isStore;
+
+    const allocation = allocationSelect.value;
+    const isStore = allocation === 'Store';
+    const isPopup = allocation === 'Popup';
+    const isBarService = allocation === 'Bar Service';
+    const isEvent = shared.isEventAllocation(allocation);
+    const usesPaidBy = shared.allocationUsesPaidBy(allocation);
+    const usesEventSelect = isPopup || isBarService;
+
+    if (branchFieldGroup) branchFieldGroup.style.display = isStore ? '' : 'none';
+    if (paidByFieldGroup) paidByFieldGroup.style.display = usesPaidBy ? '' : 'none';
+    if (branchPaidRow) {
+        if (isStore || usesPaidBy) {
+            branchPaidRow.style.display = '';
+            branchPaidRow.style.gridTemplateColumns = isStore && usesPaidBy ? '' : '1fr';
+        } else {
+            branchPaidRow.style.display = 'none';
+        }
+    }
+    if (eventNameRow) eventNameRow.style.display = isEvent ? '' : 'none';
+
+    if (branchSelect) {
+        branchSelect.required = isStore;
+        if (!isStore) branchSelect.value = '';
+    }
+
+    if (eventNameLabel) {
+        eventNameLabel.textContent = isPopup
+            ? 'Pop-up event'
+            : isBarService
+              ? 'Bar service event'
+              : 'Event name';
+        eventNameLabel.setAttribute('for', usesEventSelect ? 'adminEventNameSelect' : 'adminEventName');
+    }
+
+    if (eventNameSelect && eventNameInput) {
+        if (usesEventSelect) {
+            populateAdminPopupEventSelect(eventNameSelect.value || eventNameInput.value, {
+                forService: isBarService
+            });
+            eventNameSelect.style.display = '';
+            eventNameSelect.required = true;
+            eventNameInput.style.display = 'none';
+            eventNameInput.required = false;
+            eventNameInput.value = eventNameSelect.value || '';
+            eventNameSelect.onchange = () => {
+                eventNameInput.value = eventNameSelect.value;
+                markAdminExpenseModalDirty();
+            };
+        } else if (isEvent) {
+            eventNameSelect.style.display = 'none';
+            eventNameSelect.required = false;
+            eventNameSelect.value = '';
+            eventNameInput.style.display = '';
+            eventNameInput.required = true;
+            eventNameInput.placeholder = 'Event name';
+        } else {
+            eventNameSelect.style.display = 'none';
+            eventNameSelect.required = false;
+            eventNameSelect.value = '';
+            eventNameInput.style.display = 'none';
+            eventNameInput.required = false;
+            eventNameInput.value = '';
+        }
+    } else if (eventNameInput) {
+        eventNameInput.required = isEvent;
+    }
+
     if (paidSelect) {
-        if (isStore) paidSelect.required = true;
-        else {
+        if (usesPaidBy) {
+            paidSelect.required = true;
+            adminUpdatePaidByOptions(allocation, paidSelect.value);
+        } else {
             paidSelect.required = false;
             paidSelect.value = 'Company';
         }
@@ -3721,23 +4281,35 @@ function showExpenseModal(expense, isNew = false) {
     window.adminReceiptRemove = false;
 
     const isEditing = isNew;
+    const fromBatch = typeof batchAlbumReturnHandler === 'function';
     const matchedSupplierForModal = shared.getSuppliers().find(
         (s) => (s.name || '').toLowerCase() === (expense.supplierName || '').toLowerCase()
     );
-    const modalTitle = isNew ? 'Add New Expense' : 'Expense Details';
+    const modalTitle = fromBatch ? 'Edit expense' : isNew ? 'Add New Expense' : 'Expense Details';
 
     const shell = document.createElement('div');
     shell.className = 'admin-expense-modal-overlay';
+    shell.dataset.expenseId = expense.id || '';
+    if (fromBatch) shell.classList.add('from-batch-album');
     adminExpenseModalEl = shell;
 
     shell.innerHTML = `
         <div class="admin-expense-modal-shell">
+            <div class="admin-expense-modal-receipt">
+                <h3 class="admin-receipt-heading">Receipt</h3>
+                <div id="adminReceiptPanelMount" class="admin-receipt-panel-inner"></div>
+            </div>
             <div class="admin-expense-modal-main">
                 <div class="admin-expense-modal-header">
                     <h2 class="admin-expense-modal-title">${escapeHtml(modalTitle)}</h2>
                     <div class="admin-expense-modal-actions">
                         ${
-                            !isNew
+                            fromBatch
+                                ? `<button type="button" class="action-btn secondary admin-batch-back-btn" data-batch-back>← Back</button>`
+                                : ''
+                        }
+                        ${
+                            !isNew && !fromBatch
                                 ? `<button type="button" class="admin-modal-icon-btn admin-edit-exp" title="Edit" data-expense-id="${escapeHtml(expense.id)}">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="m18.5 2.5 a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z"></path></svg>
                         </button>
@@ -3746,16 +4318,16 @@ function showExpenseModal(expense, isNew = false) {
                         </button>`
                                 : ''
                         }
-                        <button type="button" class="admin-modal-icon-btn" data-close-exp-modal aria-label="Close">&times;</button>
+                        ${
+                            fromBatch
+                                ? ''
+                                : `<button type="button" class="admin-modal-icon-btn" data-close-exp-modal aria-label="Close">&times;</button>`
+                        }
                     </div>
                 </div>
                 <div class="admin-expense-modal-body">
                     ${generateExpenseForm(expense, isEditing)}
                 </div>
-            </div>
-            <div class="admin-expense-modal-receipt">
-                <h3 class="admin-receipt-heading">Receipt</h3>
-                <div id="adminReceiptPanelMount" class="admin-receipt-panel-inner"></div>
             </div>
         </div>`;
 
@@ -3770,13 +4342,19 @@ function showExpenseModal(expense, isNew = false) {
     });
 
     shell.querySelector('[data-close-exp-modal]')?.addEventListener('click', requestCloseAdminExpenseModal);
+    shell.querySelector('[data-batch-back]')?.addEventListener('click', requestCloseAdminExpenseModal);
     shell.addEventListener('click', (e) => {
         if (e.target === shell) requestCloseAdminExpenseModal();
     });
     shell.querySelector('.admin-edit-exp')?.addEventListener('click', () => {
         toggleEditMode(expense.id);
     });
-    shell.querySelector('[data-del]')?.addEventListener('click', () => {
+    shell.querySelectorAll('[data-del]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            deleteExpenseFromDetail(expense.id);
+        });
+    });
+    shell.querySelector('[data-batch-delete-expense]')?.addEventListener('click', () => {
         deleteExpenseFromDetail(expense.id);
     });
 
@@ -3786,6 +4364,11 @@ function showExpenseModal(expense, isNew = false) {
         wireAdminExpenseAutocompletes(modalBody);
         wireAdminSupplierClearButton();
         applyAdminSupplierFieldNameMode(Boolean(matchedSupplierForModal));
+        const preferredEventName = expense.eventName || '';
+        shared.loadActivePopupEvents().then(() => {
+            populateAdminPopupEventSelect(preferredEventName);
+            adminSyncAllocationBranchPaidUI();
+        });
         adminSyncAllocationBranchPaidUI();
         adminSyncPettyCashUI();
         document.getElementById('adminAllocationSelect')?.addEventListener('change', adminSyncAllocationBranchPaidUI);
@@ -3816,6 +4399,9 @@ function generateExpenseForm(expense, isEditing) {
     const fmtMoney = (n) =>
         (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+    const fromBatch = typeof batchAlbumReturnHandler === 'function';
+    const expensePersisted = Boolean(shared.getExpenses().find((e) => e.id === expense.id));
+
     const matchedSupplier = shared.getSuppliers().find(
         (s) => (s.name || '').toLowerCase() === (expense.supplierName || '').toLowerCase()
     );
@@ -3823,10 +4409,19 @@ function generateExpenseForm(expense, isEditing) {
     const isPetty = Boolean(expense.isPettyCash);
     const supplierFieldRequired = true;
 
-    const paidByNorm = normalizeAdminPaidBy(expense.paidBy);
+    const paidByNorm = normalizeAdminPaidBy(expense.paidBy, expense.allocation || 'Store');
     const allocationViewer = expense.allocation || 'Store';
-    const paidByViewer =
-        allocationViewer !== 'Store' ? 'Company' : paidByNorm === 'Company' ? 'Company' : 'Store Cash';
+    const paidByViewer = shared.allocationUsesPaidBy(allocationViewer)
+        ? paidByNorm === 'Company'
+            ? 'Company'
+            : shared.cashPaidByLabel(allocationViewer)
+        : 'Company';
+    const showBranchInitially = isEditing && allocationViewer === 'Store';
+    const showPaidByInitially = isEditing && shared.allocationUsesPaidBy(allocationViewer);
+    const showEventInitially = isEditing && shared.isEventAllocation(allocationViewer);
+    const isPopupInitially = allocationViewer === 'Popup';
+    const cashPaidByValue = shared.cashPaidByValue(allocationViewer);
+    const cashPaidByLabel = shared.cashPaidByLabel(allocationViewer);
 
     const hSnAttr = supplierVerifiedInitially
         ? supplierFieldRequired
@@ -4015,8 +4610,8 @@ function generateExpenseForm(expense, isEditing) {
                 <div id="adminVatBreakdownPanel" class="admin-vat-breakdown">
                     <div class="admin-vat-row"><span>Total amount</span><span id="adminVatDispTotal">—</span></div>
                     <div class="admin-vat-row admin-vat-row--exempt">
-                        <label class="admin-vat-exempt-label" for="adminVatExemptAmount">Less: VAT-exempt</label>
-                        <input type="number" name="vatExemptAmount" id="adminVatExemptAmount" class="admin-vat-exempt-input" min="0" step="0.01" value="${vatExemptVal}" inputmode="decimal" placeholder="0" />
+                        <label class="admin-vat-exempt-label" for="adminVatExemptAmount">Less: not subject to VAT</label>
+                        <input type="number" name="vatExemptAmount" id="adminVatExemptAmount" class="admin-vat-exempt-input" min="0" step="0.01" value="${vatExemptVal}" inputmode="decimal" placeholder="0" title="Service charge, local tax, and other post-VAT add-ons" />
                     </div>
                     <div class="admin-vat-row"><span>Taxable amount</span><span id="adminVatDispTaxable">—</span></div>
                     <div class="admin-vat-row"><span>VATable sale</span><span id="adminVatDispVatable">—</span></div>
@@ -4077,7 +4672,12 @@ function generateExpenseForm(expense, isEditing) {
                         <span class="admin-exp-view-label">Branch</span>
                         <span class="admin-exp-view-value">${branchLabel}</span>
                     </div>`
-                            : ''
+                            : shared.isEventAllocation(allocationViewer)
+                              ? `<div class="admin-exp-view-field">
+                        <span class="admin-exp-view-label">${allocationViewer === 'Popup' ? 'Pop-up event' : 'Event name'}</span>
+                        <span class="admin-exp-view-value">${escapeHtml(expense.eventName || '—')}</span>
+                    </div>`
+                              : ''
                     }
                     <div class="admin-exp-view-field">
                         <span class="admin-exp-view-label">Expense category</span>
@@ -4086,6 +4686,10 @@ function generateExpenseForm(expense, isEditing) {
                     <div class="admin-exp-view-field">
                         <span class="admin-exp-view-label">Paid by</span>
                         <span class="admin-exp-view-value">${escapeHtml(paidByViewer)}</span>
+                    </div>
+                    <div class="admin-exp-view-field">
+                        <span class="admin-exp-view-label">Recorded by</span>
+                        <span class="admin-exp-view-value">${escapeHtml(formatRecordedByDisplay(expense))}</span>
                     </div>
                     <div class="admin-exp-view-field">
                         <span class="admin-exp-view-label">Invoice number</span>
@@ -4120,23 +4724,37 @@ function generateExpenseForm(expense, isEditing) {
                         </select>
                     </div>
                 </div>
-                <div class="admin-field-row" id="adminBranchPaidRow">
-                    <div class="admin-field" id="adminBranchFieldGroup">
+                <div class="admin-field-row" id="adminBranchPaidRow" style="display: ${showBranchInitially || showPaidByInitially ? '' : 'none'};">
+                    <div class="admin-field" id="adminBranchFieldGroup" style="display: ${showBranchInitially ? '' : 'none'};">
                         <label>Branch</label>
-                        <select name="branch">
-                            <option value="SM North" ${branchSel('SM North')}>SM North</option>
-                            <option value="Podium" ${branchSel('Podium')}>Podium</option>
-                            <option value="Mall of Asia" ${branchSel('Mall of Asia')}>Mall of Asia</option>
-                            <option value="BGC" ${branchSel('BGC')}>BGC</option>
-                            <option value="Makati" ${branchSel('Makati')}>Makati</option>
+                        <select name="branch" ${showBranchInitially ? 'required' : ''}>
+                            <option value="">Select branch…</option>
+                            ${ADMIN_STORE_BRANCHES.map(
+                                (b) =>
+                                    `<option value="${escapeHtml(b)}" ${branchSel(b)}>${escapeHtml(b)}</option>`
+                            ).join('')}
+                            ${
+                                expense.branch && !ADMIN_STORE_BRANCHES.includes(expense.branch)
+                                    ? `<option value="${escapeHtml(expense.branch)}" selected>${escapeHtml(expense.branch)}</option>`
+                                    : ''
+                            }
                         </select>
                     </div>
-                    <div class="admin-field" id="adminPaidByFieldGroup">
+                    <div class="admin-field" id="adminPaidByFieldGroup" style="display: ${showPaidByInitially ? '' : 'none'};">
                         <label>Paid By</label>
-                        <select id="adminPaidBy" name="paidBy" required>
-                            <option value="Store Cash" ${paidByNorm === 'Store Cash' ? 'selected' : ''}>Store Cash</option>
+                        <select id="adminPaidBy" name="paidBy" ${showPaidByInitially ? 'required' : ''}>
+                            <option value="${escapeHtml(cashPaidByValue)}" ${paidByNorm !== 'Company' ? 'selected' : ''}>${escapeHtml(cashPaidByLabel)}</option>
                             <option value="Company" ${paidByNorm === 'Company' ? 'selected' : ''}>Company</option>
                         </select>
+                    </div>
+                </div>
+                <div class="admin-field-row" id="adminEventNameRow" style="display: ${showEventInitially ? '' : 'none'};">
+                    <div class="admin-field">
+                        <label for="${isPopupInitially ? 'adminEventNameSelect' : 'adminEventName'}" id="adminEventNameLabel">${isPopupInitially ? 'Pop-up event' : 'Event name'}</label>
+                        <select id="adminEventNameSelect" style="display: ${isPopupInitially ? '' : 'none'};" ${isPopupInitially ? 'required' : ''}>
+                            <option value="">Select event…</option>
+                        </select>
+                        <input type="text" name="eventName" id="adminEventName" value="${escapeHtml(expense.eventName || '')}" placeholder="Event name" autocomplete="off" style="display: ${showEventInitially && !isPopupInitially ? '' : 'none'};" ${showEventInitially && !isPopupInitially ? 'required' : ''}>
                     </div>
                 </div>
                 <div class="admin-field-row">
@@ -4216,7 +4834,7 @@ function generateExpenseForm(expense, isEditing) {
                                             <div class="admin-item-line-total-display" aria-live="polite">${escapeHtml(shared.formatCurrency(lineT))}</div>
                                         </div>
                                     </div>
-                                    <button type="button" class="admin-item-remove" onclick="removeItem(this)" aria-label="Remove item">×</button>
+                                    <button type="button" class="admin-item-remove" onclick="removeItem(this)" aria-label="Remove item"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
                                 </div>
                             </div>`;
                   }
@@ -4281,6 +4899,11 @@ function generateExpenseForm(expense, isEditing) {
             ${
                 isEditing
                     ? `<div class="admin-form-actions">
+                ${
+                    fromBatch && expensePersisted
+                        ? `<button type="button" class="action-btn danger-outline" data-batch-delete-expense>Delete</button>`
+                        : ''
+                }
                 <button type="button" class="action-btn secondary" onclick="requestCloseAdminExpenseModal()">Cancel</button>
                 <button type="submit" class="action-btn primary">Save Expense</button>
             </div>`
@@ -4335,7 +4958,7 @@ window.addItem = function () {
                     <div class="admin-item-line-total-display" aria-live="polite">${shared.formatCurrency(0)}</div>
                 </div>
             </div>
-            <button type="button" class="admin-item-remove" onclick="removeItem(this)" aria-label="Remove item">×</button>
+            <button type="button" class="admin-item-remove" onclick="removeItem(this)" aria-label="Remove item"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
         </div>`;
 
     container.appendChild(itemRow);
@@ -4413,6 +5036,9 @@ window.saveExpense = async function(event, expenseId) {
         date: formData.get('date'),
         allocation,
         branch: allocation === 'Store' ? formData.get('branch') : null,
+        eventName: shared.isEventAllocation(allocation)
+            ? String(formData.get('eventName') || '').trim()
+            : null,
         isPettyCash,
         supplierName: supplierNameRaw.trim(),
         ...(isPettyCash || !resolvedSupplier ? {} : { supplierId: resolvedSupplier.id }),
@@ -4425,7 +5051,9 @@ window.saveExpense = async function(event, expenseId) {
         totalAmount,
         vatExemptAmount,
         vatComputationEnabled,
-        paidBy: allocation === 'Store' ? normalizeAdminPaidBy(formData.get('paidBy')) : 'Company',
+        paidBy: shared.allocationUsesPaidBy(allocation)
+            ? normalizeAdminPaidBy(formData.get('paidBy'), allocation)
+            : 'Company',
         notes: formData.get('notes'),
         receiptImage: (() => {
             if (window.adminReceiptRemove) return null;
@@ -4439,7 +5067,8 @@ window.saveExpense = async function(event, expenseId) {
         isEditing: !isNew,
         calculateTotalFromItems: false,
         autoCalculateVAT: true,
-        validate: true
+        validate: true,
+        recorderContext: isNew ? 'admin' : null
     });
 
     if (!result.success || !result.expense) {
@@ -4471,8 +5100,13 @@ window.saveExpense = async function(event, expenseId) {
 
     await shared.flushPendingSync();
 
-    closeAdminExpenseModal();
-    refreshAdminTables();
+    const returnedToBatch = finishAdminExpenseModalClose({
+        saved: true,
+        expenseId
+    });
+    if (!returnedToBatch) {
+        refreshAdminTables();
+    }
 };
 
 // Make shared functions available globally for the modal

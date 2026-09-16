@@ -1,0 +1,167 @@
+#workshopCertificateStage {
+    position: fixed;
+    left: -12000px;
+    top: 0;
+    width: 21cm;
+    height: 14.8cm;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: -1;
+}
+
+#workshopCertificateStage .certificate {
+    width: 21cm;
+    height: 14.8cm;
+    max-width: none;
+    max-height: none;
+    background: linear-gradient(135deg, #34bc01 0%, #1c5901 100%);
+    position: relative;
+    border-radius: 10px;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+#workshopCertificateStage .certificate-background {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-size: cover;
+    background-position: center;
+    opacity: 0.1;
+    z-index: 1;
+}
+
+#workshopCertificateStage .certificate-content {
+    position: relative;
+    z-index: 2;
+    width: calc(100% - 48px);
+    height: calc(100% - 48px);
+    margin: 24px;
+    background: white;
+    border-radius: 10px;
+    padding: 10px 48px 135px 48px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    box-sizing: border-box;
+}
+
+#workshopCertificateStage .main-content-area {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+#workshopCertificateStage .certificate-title {
+    font-family: "Lora", serif;
+    font-size: 52px;
+    font-weight: 700;
+    font-style: italic;
+    color: #1d8a00;
+    margin: 50px 0 25px;
+    line-height: 1.1;
+}
+
+#workshopCertificateStage .certificate-intro {
+    font-family: "Poppins", sans-serif;
+    font-size: 13px;
+    color: #333;
+    margin: 0 0 25px;
+    letter-spacing: 0.8px;
+    font-weight: 600;
+}
+
+#workshopCertificateStage .participant-name {
+    font-family: "Lora", serif;
+    font-size: 38px;
+    font-weight: 600;
+    color: #1d8a00;
+    margin: 0 0 25px;
+    line-height: 1.2;
+    min-height: 46px;
+}
+
+#workshopCertificateStage .recognition-text {
+    font-family: "Poppins", sans-serif;
+    font-size: 13px;
+    color: #333;
+    line-height: 1.7;
+    width: 95%;
+    margin: 15px 0 50px;
+    font-weight: 500;
+}
+
+#workshopCertificateStage .signatures-section {
+    position: absolute;
+    bottom: 70px;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    padding: 0 70px;
+    box-sizing: border-box;
+    z-index: 3;
+}
+
+#workshopCertificateStage .signature-block {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    max-width: 200px;
+}
+
+#workshopCertificateStage .signature-image {
+    width: auto;
+    height: auto;
+    max-width: 130px;
+    max-height: 50px;
+    object-fit: contain;
+    object-position: center;
+    margin-bottom: -8px;
+}
+
+#workshopCertificateStage .signature-name {
+    font-family: "Lora", serif;
+    font-size: 15px;
+    font-weight: 700;
+    color: #333;
+    margin: -5px 0 1px;
+}
+
+#workshopCertificateStage .signature-title {
+    font-family: "Poppins", sans-serif;
+    font-size: 11px;
+    color: #666;
+    margin: 0 0 1px;
+}
+
+#workshopCertificateStage .signature-company {
+    font-family: "Poppins", sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    color: #333;
+    margin: 1px 0 0;
+}
+
+#workshopCertificateStage .logo-container {
+    position: absolute;
+    bottom: 15px;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: center;
+    z-index: 3;
+}
+
+#workshopCertificateStage .company-logo {
+    height: 45px;
+    width: auto;
+    max-width: 200px;
+    object-fit: contain;
+}

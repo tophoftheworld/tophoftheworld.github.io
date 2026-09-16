@@ -1,5 +1,5 @@
 // firebase-config.js
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
 import {
     getFirestore,
     collection,
@@ -27,7 +27,7 @@ const firebaseConfig = {
     measurementId: "G-YEK4GML6SJ"
 };
 
-const app = initializeApp(firebaseConfig);
+const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-export { db, collection, addDoc, updateDoc, doc, getDocs, query, orderBy, limit, setDoc, getDoc, deleteDoc, serverTimestamp, onSnapshot };
+export { app, db, collection, addDoc, updateDoc, doc, getDocs, query, orderBy, limit, setDoc, getDoc, deleteDoc, serverTimestamp, onSnapshot };

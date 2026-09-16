@@ -2,7 +2,8 @@
   "categories": [
     {
       "id": "matcha-tones",
-      "name": "Matcha Tones"
+      "name": "Matcha Tones",
+      "countsAsCup": true
     }
   ],
   "items": [

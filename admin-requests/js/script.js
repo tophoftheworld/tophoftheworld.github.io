@@ -10,16 +10,272 @@ import {
     deleteDoc,
     query, 
     orderBy,
+    where,
+    addDoc,
     Timestamp 
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+import { loadBranchesFromFirebase, populateAttendanceBranchSelect } from '../../shared/js/branches.js';
+import {
+    generatePayrollPeriods,
+    getPeriodForClosestPayDayOffset,
+    getPeriodContainingDate,
+    getPeriodDatesFromId,
+    getPayDay
+} from '../../shared/js/payrollPeriods.js?v=20260914-1';
+import { markPeriodEarningPrepaid } from '../../shared/js/payrollPayments.js?v=20260915-1';
 
 let allRequests = [];
 let currentFilter = 'pending';
 let currentRequestTypeFilter = 'all';
+const PAYDAY_RANGE_KEY = 'requests-payday-range';
+let paydayRangeFilter = localStorage.getItem(PAYDAY_RANGE_KEY) === 'past' ? 'past' : 'current';
 let currentAdminId = 'admin'; // Will be set from auth
 let selectedRequests = new Set(); // Track selected request IDs
 const ATTENDANCE_COLLECTION = 'attendance_v2';
+const PERIOD_EARNINGS_COLLECTION = 'payroll_period_earnings_v2';
 const APPLY_VERSION = 'v2-apply-2026-04-15';
+const REQUESTS_PAGE_SIZE = 50;
+let visibleCount = REQUESTS_PAGE_SIZE;
+let loadMoreObserver = null;
+let loadMoreLock = false;
+
+function isCashAdvanceRequest(request) {
+    return request?.type === 'cash_advance' || request?._sourceCollection === 'cash_advance_requests';
+}
+
+function isReimbursementRequest(request) {
+    return request?.type === 'reimbursement' || request?._sourceCollection === 'reimbursement_requests';
+}
+
+function isLeaveRequest(request) {
+    return request?.type === 'leave' || request?._sourceCollection === 'leave_requests';
+}
+
+function formatMoneyPhp(amount) {
+    return `₱${Number(amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function formatPayDayShort(date) {
+    if (!date) return '—';
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function resolveCashAdvanceTargetPeriod(asOfDate = new Date(), which = 'this') {
+    return getPeriodForClosestPayDayOffset(which === 'next' ? 'next' : 'this', asOfDate, generatePayrollPeriods());
+}
+
+function payDayIsoFromPeriod(target) {
+    if (!target) return null;
+    const payDay = target.payDay || (target.end ? getPayDay(target.end) : null);
+    if (!payDay) return null;
+    return `${payDay.getFullYear()}-${String(payDay.getMonth() + 1).padStart(2, '0')}-${String(payDay.getDate()).padStart(2, '0')}`;
+}
+
+function startOfLocalDay(date) {
+    if (!date || Number.isNaN(date.getTime())) return null;
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function parseRequestDate(value) {
+    if (!value) return null;
+    if (value instanceof Date) return startOfLocalDay(value);
+    if (typeof value.toDate === 'function') {
+        try {
+            return startOfLocalDay(value.toDate());
+        } catch (_) {
+            return null;
+        }
+    }
+    const s = String(value);
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) {
+        return new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
+    }
+    const parsed = new Date(s);
+    return Number.isNaN(parsed.getTime()) ? null : startOfLocalDay(parsed);
+}
+
+function payDayFromPeriodId(periodId) {
+    const dates = getPeriodDatesFromId(periodId);
+    if (!dates?.endDate) return null;
+    return startOfLocalDay(getPayDay(dates.endDate));
+}
+
+function getRequestCoverageDate(request) {
+    if (isCashAdvanceRequest(request)) return null;
+    if (isReimbursementRequest(request)) return parseRequestDate(request.spendDate);
+    if (isLeaveRequest(request) || request.type === 'substitution' || request._sourceCollection === 'substitution_requests') {
+        return parseRequestDate(request.date);
+    }
+    return parseRequestDate(request.requestedData?.date || request.currentData?.date || request.date);
+}
+
+function getRequestCoveringPayDay(request) {
+    const applied = parseRequestDate(request.appliedPayDay) || payDayFromPeriodId(request.appliedPeriodId);
+    if (applied) return applied;
+
+    if (isCashAdvanceRequest(request) || isReimbursementRequest(request)) {
+        const target = resolveCashAdvanceTargetPeriod(new Date(), 'this');
+        return target?.payDay ? startOfLocalDay(target.payDay) : null;
+    }
+
+    const coverageDate = getRequestCoverageDate(request);
+    if (coverageDate) {
+        const period = getPeriodContainingDate(coverageDate);
+        if (period?.payDay) return startOfLocalDay(period.payDay);
+    }
+
+    const requestedAt = parseRequestDate(request.requestedAt);
+    if (requestedAt) {
+        const period = getPeriodContainingDate(requestedAt);
+        if (period?.payDay) return startOfLocalDay(period.payDay);
+    }
+    return null;
+}
+
+function isRequestOnCurrentPayday(request) {
+    const payDay = getRequestCoveringPayDay(request);
+    if (!payDay) return true;
+    const today = startOfLocalDay(new Date());
+    return payDay.getTime() >= today.getTime();
+}
+
+function setPaydayRangeFilter(range) {
+    paydayRangeFilter = range === 'past' ? 'past' : 'current';
+    localStorage.setItem(PAYDAY_RANGE_KEY, paydayRangeFilter);
+    document.querySelectorAll('.payday-range-btn').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.paydayRange === paydayRangeFilter);
+    });
+}
+
+/** Ask admin whether to deduct on this payday or next cutoff. Returns 'this' | 'next' | null if cancelled. */
+async function promptCashAdvanceDeductTiming(request) {
+    const thisPeriod = resolveCashAdvanceTargetPeriod(new Date(), 'this');
+    const nextPeriod = resolveCashAdvanceTargetPeriod(new Date(), 'next');
+    const thisLabel = thisPeriod?.payDay ? formatPayDayShort(thisPeriod.payDay) : 'this payday';
+    const nextLabel = nextPeriod?.payDay ? formatPayDayShort(nextPeriod.payDay) : 'next cutoff';
+
+    const modal = document.getElementById('confirmModal');
+    const titleEl = document.getElementById('confirmTitle');
+    const messageEl = document.getElementById('confirmMessage');
+    const okBtn = document.getElementById('confirmOk');
+    const cancelBtn = document.getElementById('confirmCancel');
+    if (!modal || !titleEl || !messageEl || !okBtn || !cancelBtn) return 'this';
+
+    titleEl.textContent = 'Approve Cash Advance';
+    messageEl.innerHTML = `
+        <p style="margin:0 0 0.75rem;">Approve ${formatMoneyPhp(request?.amount)} for ${escapeHtml(request?.employeeName || 'employee')}?</p>
+        <p style="margin:0 0 0.5rem;font-size:0.9rem;color:#555;">Deduct on which paycheck?</p>
+        <label style="display:flex;align-items:center;gap:0.5rem;margin:0.4rem 0;cursor:pointer;">
+            <input type="radio" name="caDeductTiming" value="this" checked>
+            <span>This payday (${escapeHtml(thisLabel)})</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:0.5rem;margin:0.4rem 0;cursor:pointer;">
+            <input type="radio" name="caDeductTiming" value="next">
+            <span>Next cutoff (${escapeHtml(nextLabel)})</span>
+        </label>
+    `;
+    okBtn.textContent = 'Approve';
+    okBtn.className = 'modal-btn modal-btn-approve';
+    cancelBtn.style.display = 'block';
+    modal.classList.add('show');
+
+    return new Promise((resolve) => {
+        const cleanup = () => {
+            okBtn.removeEventListener('click', handleOk);
+            cancelBtn.removeEventListener('click', handleCancel);
+            modal.removeEventListener('click', handleOutsideClick);
+            modal.classList.remove('show');
+            messageEl.textContent = '';
+            cancelBtn.style.display = 'block';
+        };
+        const handleOk = () => {
+            const selected = messageEl.querySelector('input[name="caDeductTiming"]:checked');
+            const which = selected?.value === 'next' ? 'next' : 'this';
+            cleanup();
+            resolve(which);
+        };
+        const handleCancel = () => {
+            cleanup();
+            resolve(null);
+        };
+        const handleOutsideClick = (e) => {
+            if (e.target === modal) handleCancel();
+        };
+        okBtn.addEventListener('click', handleOk);
+        cancelBtn.addEventListener('click', handleCancel);
+        modal.addEventListener('click', handleOutsideClick);
+    });
+}
+
+/**
+ * Ask which paycheck gets the reimbursement, and whether it was already paid out.
+ * Returns { payTiming: 'this'|'next', alreadyPaidOut: boolean } or null if cancelled.
+ */
+async function promptReimbursementPayTiming(request) {
+    const thisPeriod = resolveCashAdvanceTargetPeriod(new Date(), 'this');
+    const nextPeriod = resolveCashAdvanceTargetPeriod(new Date(), 'next');
+    const thisLabel = thisPeriod?.payDay ? formatPayDayShort(thisPeriod.payDay) : 'this payday';
+    const nextLabel = nextPeriod?.payDay ? formatPayDayShort(nextPeriod.payDay) : 'next cutoff';
+
+    const modal = document.getElementById('confirmModal');
+    const titleEl = document.getElementById('confirmTitle');
+    const messageEl = document.getElementById('confirmMessage');
+    const okBtn = document.getElementById('confirmOk');
+    const cancelBtn = document.getElementById('confirmCancel');
+    if (!modal || !titleEl || !messageEl || !okBtn || !cancelBtn) {
+        return { payTiming: 'this', alreadyPaidOut: false };
+    }
+
+    titleEl.textContent = 'Approve Reimbursement';
+    messageEl.innerHTML = `
+        <p style="margin:0 0 0.75rem;"><strong>${formatMoneyPhp(request?.amount)}</strong> · ${escapeHtml(request?.employeeName || 'employee')}</p>
+        <label style="display:flex;align-items:center;gap:0.5rem;margin:0.35rem 0;cursor:pointer;">
+            <input type="radio" name="reimbPayTiming" value="this" checked>
+            <span>This payday (${escapeHtml(thisLabel)})</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:0.5rem;margin:0.35rem 0;cursor:pointer;">
+            <input type="radio" name="reimbPayTiming" value="next">
+            <span>Next cutoff (${escapeHtml(nextLabel)})</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:0.5rem;margin:0.85rem 0 0;cursor:pointer;">
+            <input type="checkbox" name="reimbAlreadyPaidOut">
+            <span>Already paid out</span>
+        </label>
+    `;
+    okBtn.textContent = 'Approve';
+    okBtn.className = 'modal-btn modal-btn-approve';
+    cancelBtn.style.display = 'block';
+    modal.classList.add('show');
+
+    return new Promise((resolve) => {
+        const cleanup = () => {
+            okBtn.removeEventListener('click', handleOk);
+            cancelBtn.removeEventListener('click', handleCancel);
+            modal.removeEventListener('click', handleOutsideClick);
+            modal.classList.remove('show');
+            messageEl.textContent = '';
+            cancelBtn.style.display = 'block';
+        };
+        const handleOk = () => {
+            const selected = messageEl.querySelector('input[name="reimbPayTiming"]:checked');
+            const which = selected?.value === 'next' ? 'next' : 'this';
+            const alreadyPaidOut = !!messageEl.querySelector('input[name="reimbAlreadyPaidOut"]')?.checked;
+            cleanup();
+            resolve({ payTiming: which, alreadyPaidOut });
+        };
+        const handleCancel = () => {
+            cleanup();
+            resolve(null);
+        };
+        const handleOutsideClick = (e) => {
+            if (e.target === modal) handleCancel();
+        };
+        okBtn.addEventListener('click', handleOk);
+        cancelBtn.addEventListener('click', handleCancel);
+        modal.addEventListener('click', handleOutsideClick);
+    });
+}
 
 // PayCalculator and dependencies for amount preview
 let HOLIDAYS_2025 = {};
@@ -76,6 +332,191 @@ function buildAttendancePayload(timeIn, timeOut, branch, shift, includeOT = fals
         attendanceData.hasOTPay = true;
     }
     return attendanceData;
+}
+
+async function applyLeaveRequestToV2(request) {
+    const leaveDate = request.date;
+    if (!leaveDate || !request.employeeId) {
+        throw new Error('Missing leave date or employee');
+    }
+
+    const employeeRef = doc(db, 'employees_v2', request.employeeId);
+    const employeeSnap = await getDoc(employeeRef);
+    if (!employeeSnap.exists() || employeeSnap.data().leaveEligible !== true) {
+        throw new Error('Employee is not eligible for paid leave');
+    }
+
+    const attendanceRef = doc(db, ATTENDANCE_COLLECTION, request.employeeId, 'dates', leaveDate);
+    const attendanceSnap = await getDoc(attendanceRef);
+    if (attendanceSnap.exists()) {
+        const attendanceData = attendanceSnap.data();
+        if (attendanceData.isPaidLeave) {
+            return;
+        }
+        if (attendanceData.clockIn) {
+            throw new Error('Date already has attendance data');
+        }
+    }
+
+    await setDoc(attendanceRef, {
+        isPaidLeave: true,
+        hasMealAllowance: false,
+        notes: 'Paid leave',
+        leaveRequestId: request.id
+    }, { merge: true });
+}
+
+async function applyCashAdvanceRequestToV2(request, options = {}) {
+    const { deductTiming = 'this' } = options;
+    const amount = Number(request.amount);
+    if (!request.employeeId || !Number.isFinite(amount) || amount <= 0) {
+        throw new Error('Missing employee or invalid cash advance amount');
+    }
+
+    const employeeRef = doc(db, 'employees_v2', request.employeeId);
+    const employeeSnap = await getDoc(employeeRef);
+    if (!employeeSnap.exists() || employeeSnap.data().cashAdvanceEligible !== true) {
+        throw new Error('Employee is not eligible for cash advances');
+    }
+
+    // Idempotent: already applied
+    if (request.appliedTarget === PERIOD_EARNINGS_COLLECTION && request.appliedPeriodId) {
+        return {
+            periodId: request.appliedPeriodId,
+            payDay: request.appliedPayDay || null,
+            earningsDocId: request.appliedEarningsId || null
+        };
+    }
+
+    // Skip duplicate if earnings already exist for this request
+    const existingQ = query(
+        collection(db, PERIOD_EARNINGS_COLLECTION),
+        where('sourceRequestId', '==', request.id)
+    );
+    const existingSnap = await getDocs(existingQ);
+    if (!existingSnap.empty) {
+        const existing = existingSnap.docs[0];
+        const data = existing.data();
+        return {
+            periodId: data.periodId,
+            payDay: data.payDay || null,
+            earningsDocId: existing.id
+        };
+    }
+
+    const target = resolveCashAdvanceTargetPeriod(new Date(), deductTiming);
+    if (!target?.id) {
+        throw new Error('Could not resolve target pay day');
+    }
+
+    const payDayIso = payDayIsoFromPeriod(target);
+    const note = `Cash advance: ${(request.reason || '').trim() || 'Approved'}`.slice(0, 200);
+    const requestedAt = request.requestedAt || Timestamp.now();
+    const earningsRef = await addDoc(collection(db, PERIOD_EARNINGS_COLLECTION), {
+        periodId: target.id,
+        originPeriodId: target.id,
+        employeeId: request.employeeId,
+        amount: -Math.abs(amount),
+        note,
+        kind: 'cash_advance',
+        status: 'open',
+        sourceRequestId: request.id,
+        payDay: payDayIso,
+        requestedAt,
+        createdAt: Timestamp.now()
+    });
+
+    return {
+        periodId: target.id,
+        payDay: payDayIso,
+        earningsDocId: earningsRef.id,
+        periodLabel: target.label || target.id
+    };
+}
+
+async function applyReimbursementRequestToV2(request, options = {}) {
+    const { payTiming = 'this', alreadyPaidOut = false } = options;
+    const amount = Number(request.amount);
+    if (!request.employeeId || !Number.isFinite(amount) || amount <= 0) {
+        throw new Error('Missing employee or invalid reimbursement amount');
+    }
+
+    let applied = null;
+
+    // Idempotent: already applied
+    if (request.appliedTarget === PERIOD_EARNINGS_COLLECTION && request.appliedPeriodId) {
+        applied = {
+            periodId: request.appliedPeriodId,
+            payDay: request.appliedPayDay || null,
+            earningsDocId: request.appliedEarningsId || null,
+            periodLabel: request.appliedPeriodId
+        };
+    } else {
+        const existingQ = query(
+            collection(db, PERIOD_EARNINGS_COLLECTION),
+            where('sourceRequestId', '==', request.id)
+        );
+        const existingSnap = await getDocs(existingQ);
+        if (!existingSnap.empty) {
+            const existing = existingSnap.docs[0];
+            const data = existing.data();
+            applied = {
+                periodId: data.periodId,
+                payDay: data.payDay || null,
+                earningsDocId: existing.id,
+                periodLabel: data.periodId
+            };
+        }
+    }
+
+    if (!applied) {
+        const target = resolveCashAdvanceTargetPeriod(new Date(), payTiming);
+        if (!target?.id) {
+            throw new Error('Could not resolve target pay day');
+        }
+
+        const payDayIso = payDayIsoFromPeriod(target);
+        const spendNote = request.spendDate ? ` (${request.spendDate})` : '';
+        const note = `Reimbursement${spendNote}: ${(request.reason || '').trim() || 'Approved'}`.slice(0, 200);
+        const requestedAt = request.requestedAt || Timestamp.now();
+        const earningsRef = await addDoc(collection(db, PERIOD_EARNINGS_COLLECTION), {
+            periodId: target.id,
+            originPeriodId: target.id,
+            employeeId: request.employeeId,
+            amount: Math.abs(amount),
+            note,
+            kind: 'reimbursement',
+            status: 'open',
+            sourceRequestId: request.id,
+            sourceCollection: 'reimbursement_requests',
+            spendDate: request.spendDate || null,
+            receiptUrl: request.receiptUrl || null,
+            payDay: payDayIso,
+            requestedAt,
+            createdAt: Timestamp.now()
+        });
+
+        applied = {
+            periodId: target.id,
+            payDay: payDayIso,
+            earningsDocId: earningsRef.id,
+            periodLabel: target.label || target.id
+        };
+    }
+
+    if (alreadyPaidOut && applied.earningsDocId) {
+        await markPeriodEarningPrepaid(db, {
+            earningsDocId: applied.earningsDocId,
+            employeeId: request.employeeId,
+            periodId: applied.periodId,
+            amount: Math.abs(amount),
+            sourceRequestId: request.id,
+            note: 'Already paid out (separate transfer)'
+        });
+        applied.alreadyPaidOut = true;
+    }
+
+    return applied;
 }
 
 async function applyPayrollRequestToV2(request, options = {}) {
@@ -442,6 +883,20 @@ async function fetchRequests() {
         const substitutionRef = collection(db, "substitution_requests");
         const substitutionSnap = await getDocs(substitutionRef);
 
+        const leaveRef = collection(db, "leave_requests");
+        const leaveQ = query(leaveRef, orderBy("requestedAt", "desc"));
+        const leaveSnap = await getDocs(leaveQ);
+
+        const cashAdvanceRef = collection(db, "cash_advance_requests");
+        const cashAdvanceQ = query(cashAdvanceRef, orderBy("requestedAt", "desc"));
+        let cashAdvanceSnap;
+        try {
+            cashAdvanceSnap = await getDocs(cashAdvanceQ);
+        } catch (caErr) {
+            console.warn("cash_advance_requests orderBy failed, falling back:", caErr);
+            cashAdvanceSnap = await getDocs(cashAdvanceRef);
+        }
+
         const payroll = [];
         payrollSnap.forEach(d => {
             payroll.push({ id: d.id, ...d.data(), _sourceCollection: "payroll_requests" });
@@ -456,13 +911,51 @@ async function fetchRequests() {
                 _sourceCollection: "substitution_requests"
             });
         });
+        const leave = [];
+        leaveSnap.forEach(d => {
+            leave.push({
+                id: d.id,
+                ...d.data(),
+                type: d.data().type || 'leave',
+                _sourceCollection: 'leave_requests'
+            });
+        });
+        const cashAdvances = [];
+        cashAdvanceSnap.forEach(d => {
+            cashAdvances.push({
+                id: d.id,
+                ...d.data(),
+                type: d.data().type || 'cash_advance',
+                _sourceCollection: 'cash_advance_requests'
+            });
+        });
 
-        allRequests = [...payroll, ...substitution].sort((a, b) => {
+        const reimbursementRef = collection(db, "reimbursement_requests");
+        const reimbursementQ = query(reimbursementRef, orderBy("requestedAt", "desc"));
+        let reimbursementSnap;
+        try {
+            reimbursementSnap = await getDocs(reimbursementQ);
+        } catch (reErr) {
+            console.warn("reimbursement_requests orderBy failed, falling back:", reErr);
+            reimbursementSnap = await getDocs(reimbursementRef);
+        }
+        const reimbursements = [];
+        reimbursementSnap.forEach(d => {
+            reimbursements.push({
+                id: d.id,
+                ...d.data(),
+                type: d.data().type || 'reimbursement',
+                _sourceCollection: 'reimbursement_requests'
+            });
+        });
+
+        allRequests = [...payroll, ...substitution, ...leave, ...cashAdvances, ...reimbursements].sort((a, b) => {
             const ta = a.requestedAt?.toMillis?.() ?? (a.requestedAt ? new Date(a.requestedAt).getTime() : 0);
             const tb = b.requestedAt?.toMillis?.() ?? (b.requestedAt ? new Date(b.requestedAt).getTime() : 0);
             return tb - ta;
         });
 
+        resetVisibleCount();
         renderRequests();
     } catch (error) {
         console.error("Error fetching requests:", error);
@@ -475,6 +968,15 @@ function getRequestTypeLabel(request) {
     const isSubstitution = request.type === 'substitution' || request._sourceCollection === 'substitution_requests';
     if (isSubstitution) {
         return { label: 'Schedule Reliever', cssClass: 'request-type-reliever' };
+    }
+    if (request.type === 'leave' || request._sourceCollection === 'leave_requests') {
+        return { label: 'Paid Leave', cssClass: 'request-type-leave' };
+    }
+    if (isCashAdvanceRequest(request)) {
+        return { label: 'Cash Advance', cssClass: 'request-type-cash-advance' };
+    }
+    if (isReimbursementRequest(request)) {
+        return { label: 'Reimbursement', cssClass: 'request-type-reimbursement' };
     }
     if (request.type === 'new_date') {
         return {
@@ -512,7 +1014,7 @@ function escapeHtml(s) {
 }
 
 function isPayrollRequestRecord(request) {
-    return request._sourceCollection !== 'substitution_requests' && request.type !== 'substitution';
+    return request._sourceCollection === 'payroll_requests';
 }
 
 /** Approved payroll not yet stamped appliedTarget === attendance_v2 */
@@ -526,9 +1028,19 @@ function getFilteredRequestsList() {
     let filtered = allRequests;
     if (currentRequestTypeFilter === 'payroll') {
         filtered = filtered.filter(r => r._sourceCollection === 'payroll_requests');
+    } else if (currentRequestTypeFilter === 'leave') {
+        filtered = filtered.filter(r => r._sourceCollection === 'leave_requests');
+    } else if (currentRequestTypeFilter === 'cash_advance') {
+        filtered = filtered.filter(r => r._sourceCollection === 'cash_advance_requests');
+    } else if (currentRequestTypeFilter === 'reimbursement') {
+        filtered = filtered.filter(r => r._sourceCollection === 'reimbursement_requests');
     } else if (currentRequestTypeFilter === 'reliever') {
         filtered = filtered.filter(r => r._sourceCollection === 'substitution_requests');
     }
+    filtered = filtered.filter((r) => {
+        const onCurrent = isRequestOnCurrentPayday(r);
+        return paydayRangeFilter === 'past' ? !onCurrent : onCurrent;
+    });
     return currentFilter === 'all'
         ? filtered
         : filtered.filter(r => r.status === currentFilter);
@@ -554,22 +1066,79 @@ function getBulkSelectionMode() {
     return 'none';
 }
 
-// Render requests based on current filter
-function renderRequests() {
-    const container = document.getElementById('requestsContainer');
-    if (!container) return;
+function getRequestsListEl() {
+    return document.getElementById('requestsList') || document.getElementById('requestsContainer');
+}
 
+function disconnectLoadMoreObserver() {
+    if (loadMoreObserver) {
+        loadMoreObserver.disconnect();
+        loadMoreObserver = null;
+    }
+}
+
+function resetVisibleCount() {
+    visibleCount = REQUESTS_PAGE_SIZE;
+}
+
+function buildRequestsLoadMoreHtml(shown, total) {
+    if (total <= REQUESTS_PAGE_SIZE) return '';
+    const hasMore = shown < total;
+    const cls = hasMore ? 'requests-load-more' : 'requests-load-more requests-load-more-end';
+    const label = hasMore
+        ? `Showing ${shown} of ${total} — scroll for more`
+        : `Showing all ${total} requests`;
+    return `<div class="${cls}" id="requestsLoadMore" role="status">${label}</div>`;
+}
+
+function observeRequestsLoadMore(total) {
+    disconnectLoadMoreObserver();
+    const sentinel = document.getElementById('requestsLoadMore');
+    if (!sentinel || visibleCount >= total) return;
+    loadMoreObserver = new IntersectionObserver((entries) => {
+        if (entries.some(entry => entry.isIntersecting)) {
+            loadMoreRequests();
+        }
+    }, { root: null, rootMargin: '280px 0px', threshold: 0 });
+    loadMoreObserver.observe(sentinel);
+}
+
+function loadMoreRequests() {
+    if (loadMoreLock) return;
+    const total = getFilteredRequestsList().length;
+    if (visibleCount >= total) return;
+    loadMoreLock = true;
+    visibleCount = Math.min(visibleCount + REQUESTS_PAGE_SIZE, total);
+    renderRequests({ preserveScroll: true });
+    loadMoreLock = false;
+    const sentinel = document.getElementById('requestsLoadMore');
+    if (sentinel && visibleCount < getFilteredRequestsList().length) {
+        const rect = sentinel.getBoundingClientRect();
+        if (rect.top < window.innerHeight + 280) {
+            loadMoreRequests();
+        }
+    }
+}
+
+// Render requests based on current filter
+function renderRequests({ preserveScroll = false } = {}) {
+    const listEl = getRequestsListEl();
+    if (!listEl) return;
+
+    const scrollY = preserveScroll ? window.scrollY : null;
     const filteredRequests = getFilteredRequestsList();
     
     if (filteredRequests.length === 0) {
+        disconnectLoadMoreObserver();
         const statusWord = currentFilter === 'all' ? '' : currentFilter;
         const typeWord = currentRequestTypeFilter === 'all' ? '' : currentRequestTypeFilter;
-        const parts = [typeWord, statusWord].filter(Boolean);
+        const paydayWord = paydayRangeFilter === 'past' ? 'past' : 'current';
+        const parts = [paydayWord, typeWord, statusWord].filter(Boolean);
         const label = parts.length ? parts.join(' ') + ' requests' : 'requests';
-        const subtext = (currentFilter !== 'all' || currentRequestTypeFilter !== 'all')
-            ? 'Try changing the type or status filter to see other requests.'
+        const subtext = (currentFilter !== 'all' || currentRequestTypeFilter !== 'all' || paydayRangeFilter !== 'current')
+            ? 'Try changing the payday, type, or status filter to see other requests.'
             : 'Requests will appear here when employees submit them.';
-        container.innerHTML = `
+        listEl.innerHTML = `
             <div class="empty-state">
                 <div class="empty-state-icon">📭</div>
                 <div class="empty-state-text">No ${label} found</div>
@@ -579,20 +1148,64 @@ function renderRequests() {
         updateBulkActionsUI();
         return;
     }
+
+    if (visibleCount < REQUESTS_PAGE_SIZE) visibleCount = REQUESTS_PAGE_SIZE;
+    const shownRequests = filteredRequests.slice(0, visibleCount);
     
-    container.innerHTML = filteredRequests.map(request => {
+    listEl.innerHTML = shownRequests.map(request => {
         const initials = getInitials(request.employeeName);
         const timeAgo = formatRelativeTime(request.requestedAt);
         const statusClass = `request-status-${request.status}`;
         const typeInfo = getRequestTypeLabel(request);
         const typeBadge = `<span class="request-type-badge ${typeInfo.cssClass}">${typeInfo.label}</span>`;
         const isSubstitution = request.type === 'substitution' || request._sourceCollection === 'substitution_requests';
+        const isLeave = isLeaveRequest(request);
+        const isCashAdvance = isCashAdvanceRequest(request);
+        const isReimbursement = isReimbursementRequest(request);
 
         // Build preview text - only show fields that actually changed
         let previewText = '';
         let dateDisplay = '';
 
-        if (isSubstitution) {
+        if (isReimbursement) {
+            const target = resolveCashAdvanceTargetPeriod(new Date());
+            dateDisplay = `<div class="request-preview-item"><span class="request-preview-label">Amount:</span><span class="request-preview-value">${formatMoneyPhp(request.amount)}</span></div>`;
+            previewText = `
+                <div class="request-preview-item">
+                    <span class="request-preview-label">Spend date:</span>
+                    <span class="request-preview-value">${escapeHtml(request.spendDate || '—')}</span>
+                </div>
+                <div class="request-preview-item">
+                    <span class="request-preview-label">Reason:</span>
+                    <span class="request-preview-value">${escapeHtml(request.reason || '—')}</span>
+                </div>
+                <div class="request-preview-item">
+                    <span class="request-preview-label">Pay day:</span>
+                    <span class="request-preview-value">${target?.payDay ? formatPayDayShort(target.payDay) : '—'}</span>
+                </div>
+            `;
+        } else if (isCashAdvance) {
+            const target = resolveCashAdvanceTargetPeriod(new Date());
+            dateDisplay = `<div class="request-preview-item"><span class="request-preview-label">Amount:</span><span class="request-preview-value">${formatMoneyPhp(request.amount)}</span></div>`;
+            previewText = `
+                <div class="request-preview-item">
+                    <span class="request-preview-label">Reason:</span>
+                    <span class="request-preview-value">${escapeHtml(request.reason || '—')}</span>
+                </div>
+                <div class="request-preview-item">
+                    <span class="request-preview-label">Pay day:</span>
+                    <span class="request-preview-value">${target?.payDay ? formatPayDayShort(target.payDay) : '—'}</span>
+                </div>
+            `;
+        } else if (isLeave) {
+            dateDisplay = `<div class="request-preview-item"><span class="request-preview-label">Date:</span><span class="request-preview-value">${formatDate(request.date)}</span></div>`;
+            previewText = `
+                <div class="request-preview-item">
+                    <span class="request-preview-label">Reason:</span>
+                    <span class="request-preview-value">${escapeHtml(request.reason || '—')}</span>
+                </div>
+            `;
+        } else if (isSubstitution) {
             dateDisplay = `<div class="request-preview-item"><span class="request-preview-label">Date:</span><span class="request-preview-value">${formatDate(request.date)}</span></div>`;
             const branchLabel = (request.branch || '').charAt(0).toUpperCase() + (request.branch || '').slice(1);
             const shiftLabel = ((request.shiftType || '') + '').replace(/^./, c => c.toUpperCase());
@@ -690,8 +1303,8 @@ function renderRequests() {
         // Capitalize status
         const statusText = request.status.charAt(0).toUpperCase() + request.status.slice(1);
 
-        // Build date display (for payroll; substitution already set above)
-        if (!isSubstitution) {
+        // Build date display (for payroll; substitution / cash advance / reimbursement already set above)
+        if (!isSubstitution && !isLeave && !isCashAdvance && !isReimbursement) {
             if (request.type === "new_date") {
                 dateDisplay = `<div class="request-preview-item"><span class="request-preview-label">Date:</span><span class="request-preview-value">${formatDate(request.date)}</span></div>`;
             } else {
@@ -813,10 +1426,10 @@ function renderRequests() {
                 ` : ''}
             </div>
         `;
-    }).join('');
+    }).join('') + buildRequestsLoadMoreHtml(shownRequests.length, filteredRequests.length);
     
     // Add click handlers
-    container.querySelectorAll('.request-item').forEach(item => {
+    listEl.querySelectorAll('.request-item').forEach(item => {
         item.addEventListener('click', (e) => {
             // Don't open modal if clicking on checkbox, quick action buttons or actions area
             if (e.target.closest('.request-checkbox') ||
@@ -833,9 +1446,15 @@ function renderRequests() {
             }
         });
     });
+
+    observeRequestsLoadMore(filteredRequests.length);
     
     // Show/hide bulk actions header and update UI
     updateBulkActionsUI();
+
+    if (preserveScroll && scrollY != null) {
+        window.scrollTo(0, scrollY);
+    }
 }
 
 // Open request detail modal
@@ -848,6 +1467,9 @@ async function openRequestDetail(request) {
     if (!modal || !modalTitle || !modalContent || !modalActions) return;
 
     const isSubstitution = request.type === 'substitution' || request._sourceCollection === 'substitution_requests';
+    const isLeave = isLeaveRequest(request);
+    const isCashAdvance = isCashAdvanceRequest(request);
+    const isReimbursement = isReimbursementRequest(request);
     if (isSubstitution) {
         modalTitle.textContent = `Reliever request from ${request.employeeName}`;
         const branchLabel = ((request.branch || '') + '').replace(/^./, c => c.toUpperCase());
@@ -890,6 +1512,256 @@ async function openRequestDetail(request) {
                     <div>
                         <div class="request-detail-label">Requested</div>
                         <div class="request-detail-value">${formatRelativeTime(request.requestedAt)}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+        modalContent.innerHTML = content;
+        let actionsHtml = '';
+        if (request.status === 'pending') {
+            actionsHtml = `
+                <button class="modal-btn modal-btn-approve modal-btn-primary" onclick="approveRequest('${request.id}')">Approve</button>
+                <div class="modal-actions-row">
+                    <button class="modal-btn modal-btn-reject" onclick="rejectRequest('${request.id}')">Reject</button>
+                </div>
+            `;
+        } else {
+            actionsHtml = `
+                <div class="request-detail-row">
+                    <div>
+                        <div class="request-detail-label">Reviewed</div>
+                        <div class="request-detail-value">${request.reviewedAt ? formatRelativeTime(request.reviewedAt) : 'N/A'}</div>
+                    </div>
+                    <div>
+                        <div class="request-detail-label">Reviewed By</div>
+                        <div class="request-detail-value">${request.reviewedBy || 'N/A'}</div>
+                    </div>
+                </div>
+            `;
+        }
+        modalActions.innerHTML = actionsHtml;
+        modal.classList.add('show');
+        return;
+    }
+
+    if (isReimbursement) {
+        modalTitle.textContent = `Reimbursement from ${request.employeeName}`;
+        const statusText = (request.status || '').charAt(0).toUpperCase() + (request.status || '').slice(1);
+        const target = request.appliedPeriodId
+            ? { id: request.appliedPeriodId, payDay: request.appliedPayDay ? new Date(request.appliedPayDay + 'T00:00:00') : null, label: request.appliedPeriodId }
+            : resolveCashAdvanceTargetPeriod(new Date());
+        const payDayLabel = request.appliedPayDay
+            || (target?.payDay ? formatPayDayShort(target.payDay) : '—');
+        const periodLabel = request.appliedPeriodId || target?.label || target?.id || '—';
+        const receiptHtml = request.receiptUrl
+            ? `<a href="${escapeHtml(request.receiptUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(request.receiptName || 'View receipt')}</a>`
+            : 'None';
+        const content = `
+            <div class="request-detail-section">
+                <h3>Reimbursement Details</h3>
+                <div class="request-detail-row">
+                    <div>
+                        <div class="request-detail-label">Amount</div>
+                        <div class="request-detail-value">${formatMoneyPhp(request.amount)}</div>
+                    </div>
+                    <div>
+                        <div class="request-detail-label">Status</div>
+                        <div class="request-detail-value">${statusText}</div>
+                    </div>
+                </div>
+                <div class="request-detail-row">
+                    <div>
+                        <div class="request-detail-label">Employee</div>
+                        <div class="request-detail-value">${request.employeeName || 'Unknown'}</div>
+                    </div>
+                    <div>
+                        <div class="request-detail-label">Requested</div>
+                        <div class="request-detail-value">${formatRelativeTime(request.requestedAt)}</div>
+                    </div>
+                </div>
+                <div class="request-detail-row">
+                    <div>
+                        <div class="request-detail-label">Date of spend</div>
+                        <div class="request-detail-value">${escapeHtml(request.spendDate || '—')}</div>
+                    </div>
+                    <div>
+                        <div class="request-detail-label">Receipt</div>
+                        <div class="request-detail-value">${receiptHtml}</div>
+                    </div>
+                </div>
+                <div class="request-detail-row">
+                    <div>
+                        <div class="request-detail-label">Target pay day</div>
+                        <div class="request-detail-value">${escapeHtml(String(payDayLabel))}</div>
+                    </div>
+                    <div>
+                        <div class="request-detail-label">Payroll period</div>
+                        <div class="request-detail-value">${escapeHtml(String(periodLabel))}</div>
+                    </div>
+                </div>
+                ${request.status === 'approved' ? `
+                <div class="request-detail-row">
+                    <div style="grid-column: 1 / -1;">
+                        <div class="request-detail-label">Note</div>
+                        <div class="request-detail-value" style="font-size:0.9rem;color:#555;">
+                            ${request.paidOutSeparate
+                                ? 'Marked already paid out at approval — amount is on the payslip but counted toward paid for that period. '
+                                : ''}
+                            To edit, waive, defer, or mark prepaid, use Admin Payroll → Period earnings / employee detail.
+                        </div>
+                    </div>
+                </div>` : ''}
+                <div class="request-detail-row">
+                    <div style="grid-column: 1 / -1;">
+                        <div class="request-detail-label">Reason</div>
+                        <div class="request-detail-value">${escapeHtml(request.reason || '—')}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+        modalContent.innerHTML = content;
+        let actionsHtml = '';
+        if (request.status === 'pending') {
+            actionsHtml = `
+                <button class="modal-btn modal-btn-approve modal-btn-primary" onclick="approveRequest('${request.id}')">Approve</button>
+                <div class="modal-actions-row">
+                    <button class="modal-btn modal-btn-reject" onclick="rejectRequest('${request.id}')">Reject</button>
+                </div>
+            `;
+        } else {
+            actionsHtml = `
+                <div class="request-detail-row">
+                    <div>
+                        <div class="request-detail-label">Reviewed</div>
+                        <div class="request-detail-value">${request.reviewedAt ? formatRelativeTime(request.reviewedAt) : 'N/A'}</div>
+                    </div>
+                    <div>
+                        <div class="request-detail-label">Reviewed By</div>
+                        <div class="request-detail-value">${request.reviewedBy || 'N/A'}</div>
+                    </div>
+                </div>
+            `;
+        }
+        modalActions.innerHTML = actionsHtml;
+        modal.classList.add('show');
+        return;
+    }
+
+    if (isCashAdvance) {
+        modalTitle.textContent = `Cash advance from ${request.employeeName}`;
+        const statusText = (request.status || '').charAt(0).toUpperCase() + (request.status || '').slice(1);
+        const target = request.appliedPeriodId
+            ? { id: request.appliedPeriodId, payDay: request.appliedPayDay ? new Date(request.appliedPayDay + 'T00:00:00') : null, label: request.appliedPeriodId }
+            : resolveCashAdvanceTargetPeriod(new Date());
+        const payDayLabel = request.appliedPayDay
+            || (target?.payDay ? formatPayDayShort(target.payDay) : '—');
+        const periodLabel = request.appliedPeriodId || target?.label || target?.id || '—';
+        const content = `
+            <div class="request-detail-section">
+                <h3>Cash Advance Details</h3>
+                <div class="request-detail-row">
+                    <div>
+                        <div class="request-detail-label">Amount</div>
+                        <div class="request-detail-value">${formatMoneyPhp(request.amount)}</div>
+                    </div>
+                    <div>
+                        <div class="request-detail-label">Status</div>
+                        <div class="request-detail-value">${statusText}</div>
+                    </div>
+                </div>
+                <div class="request-detail-row">
+                    <div>
+                        <div class="request-detail-label">Employee</div>
+                        <div class="request-detail-value">${request.employeeName || 'Unknown'}</div>
+                    </div>
+                    <div>
+                        <div class="request-detail-label">Requested</div>
+                        <div class="request-detail-value">${formatRelativeTime(request.requestedAt)}</div>
+                    </div>
+                </div>
+                <div class="request-detail-row">
+                    <div>
+                        <div class="request-detail-label">Target pay day</div>
+                        <div class="request-detail-value">${escapeHtml(String(payDayLabel))}</div>
+                    </div>
+                    <div>
+                        <div class="request-detail-label">Payroll period</div>
+                        <div class="request-detail-value">${escapeHtml(String(periodLabel))}</div>
+                    </div>
+                </div>
+                ${request.status === 'approved' ? `
+                <div class="request-detail-row">
+                    <div style="grid-column: 1 / -1;">
+                        <div class="request-detail-label">Note</div>
+                        <div class="request-detail-value" style="font-size:0.9rem;color:#555;">To edit, waive, or defer this deduction to another cutoff, use Admin Payroll → open the employee → Cash Advance row actions, or Period earnings.</div>
+                    </div>
+                </div>` : ''}
+                <div class="request-detail-row">
+                    <div style="grid-column: 1 / -1;">
+                        <div class="request-detail-label">Reason</div>
+                        <div class="request-detail-value">${escapeHtml(request.reason || '—')}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+        modalContent.innerHTML = content;
+        let actionsHtml = '';
+        if (request.status === 'pending') {
+            actionsHtml = `
+                <button class="modal-btn modal-btn-approve modal-btn-primary" onclick="approveRequest('${request.id}')">Approve</button>
+                <div class="modal-actions-row">
+                    <button class="modal-btn modal-btn-reject" onclick="rejectRequest('${request.id}')">Reject</button>
+                </div>
+            `;
+        } else {
+            actionsHtml = `
+                <div class="request-detail-row">
+                    <div>
+                        <div class="request-detail-label">Reviewed</div>
+                        <div class="request-detail-value">${request.reviewedAt ? formatRelativeTime(request.reviewedAt) : 'N/A'}</div>
+                    </div>
+                    <div>
+                        <div class="request-detail-label">Reviewed By</div>
+                        <div class="request-detail-value">${request.reviewedBy || 'N/A'}</div>
+                    </div>
+                </div>
+            `;
+        }
+        modalActions.innerHTML = actionsHtml;
+        modal.classList.add('show');
+        return;
+    }
+
+    if (isLeave) {
+        modalTitle.textContent = `Leave request from ${request.employeeName}`;
+        const statusText = (request.status || '').charAt(0).toUpperCase() + (request.status || '').slice(1);
+        const content = `
+            <div class="request-detail-section">
+                <h3>Leave Details</h3>
+                <div class="request-detail-row">
+                    <div>
+                        <div class="request-detail-label">Date</div>
+                        <div class="request-detail-value">${formatDate(request.date)}</div>
+                    </div>
+                    <div>
+                        <div class="request-detail-label">Status</div>
+                        <div class="request-detail-value">${statusText}</div>
+                    </div>
+                </div>
+                <div class="request-detail-row">
+                    <div>
+                        <div class="request-detail-label">Employee</div>
+                        <div class="request-detail-value">${request.employeeName || 'Unknown'}</div>
+                    </div>
+                    <div>
+                        <div class="request-detail-label">Requested</div>
+                        <div class="request-detail-value">${formatRelativeTime(request.requestedAt)}</div>
+                    </div>
+                </div>
+                <div class="request-detail-row">
+                    <div style="grid-column: 1 / -1;">
+                        <div class="request-detail-label">Reason</div>
+                        <div class="request-detail-value">${escapeHtml(request.reason || '—')}</div>
                     </div>
                 </div>
             </div>
@@ -1263,7 +2135,7 @@ function closeModal() {
 }
 
 // Internal function to approve request (without confirmation modal)
-async function _approveRequest(requestId) {
+async function _approveRequest(requestId, options = {}) {
     try {
         const request = allRequests.find(r => r.id === requestId);
         if (!request) {
@@ -1330,6 +2202,109 @@ async function _approveRequest(requestId) {
             return true;
         }
 
+        if (sourceCollection === 'leave_requests') {
+            await applyLeaveRequestToV2(request);
+            await updateDoc(requestRef, {
+                status: 'approved',
+                reviewedAt: Timestamp.now(),
+                reviewedBy: currentAdminId,
+                appliedTarget: ATTENDANCE_COLLECTION,
+                appliedAt: Timestamp.now(),
+                applySource: 'approve',
+                applyVersion: APPLY_VERSION
+            });
+            selectedRequests.delete(requestId);
+            const modal = document.getElementById('requestDetailModal');
+            if (modal && modal.classList.contains('show')) {
+                closeModal();
+            }
+            await showConfirmModal(
+                'Success',
+                'Leave request approved. Paid leave day added to attendance.',
+                'OK',
+                'modal-btn-approve',
+                null,
+                true
+            );
+            await fetchRequests();
+            return true;
+        }
+
+        if (sourceCollection === 'cash_advance_requests') {
+            const deductTiming = options.deductTiming || 'this';
+            const applied = await applyCashAdvanceRequestToV2(request, { deductTiming });
+            await updateDoc(requestRef, {
+                status: 'approved',
+                reviewedAt: Timestamp.now(),
+                reviewedBy: currentAdminId,
+                appliedTarget: PERIOD_EARNINGS_COLLECTION,
+                appliedAt: Timestamp.now(),
+                appliedPeriodId: applied.periodId || null,
+                appliedPayDay: applied.payDay || null,
+                appliedEarningsId: applied.earningsDocId || null,
+                applySource: 'approve',
+                applyVersion: APPLY_VERSION
+            });
+            selectedRequests.delete(requestId);
+            const modal = document.getElementById('requestDetailModal');
+            if (modal && modal.classList.contains('show')) {
+                closeModal();
+            }
+            const payDayMsg = applied.payDay || 'the selected payday';
+            await showConfirmModal(
+                'Success',
+                `Cash advance approved. ₱${Number(request.amount || 0).toFixed(2)} will be deducted from the paycheck on ${payDayMsg}. You can edit, waive, or defer it in Admin Payroll → Period earnings / employee detail.`,
+                'OK',
+                'modal-btn-approve',
+                null,
+                true
+            );
+            await fetchRequests();
+            return true;
+        }
+
+        if (sourceCollection === 'reimbursement_requests') {
+            const payTiming = options.payTiming || 'this';
+            const alreadyPaidOut = !!options.alreadyPaidOut;
+            const applied = await applyReimbursementRequestToV2(request, { payTiming, alreadyPaidOut });
+            const requestPatch = {
+                status: 'approved',
+                reviewedAt: Timestamp.now(),
+                reviewedBy: currentAdminId,
+                appliedTarget: PERIOD_EARNINGS_COLLECTION,
+                appliedAt: Timestamp.now(),
+                appliedPeriodId: applied.periodId || null,
+                appliedPayDay: applied.payDay || null,
+                appliedEarningsId: applied.earningsDocId || null,
+                applySource: 'approve',
+                applyVersion: APPLY_VERSION
+            };
+            if (alreadyPaidOut) {
+                requestPatch.paidOutSeparate = true;
+                requestPatch.paidOutAt = Timestamp.now();
+            }
+            await updateDoc(requestRef, requestPatch);
+            selectedRequests.delete(requestId);
+            const modal = document.getElementById('requestDetailModal');
+            if (modal && modal.classList.contains('show')) {
+                closeModal();
+            }
+            const amt = `₱${Number(request.amount || 0).toFixed(2)}`;
+            const successMsg = alreadyPaidOut
+                ? `Approved · ${amt} prepaid`
+                : `Approved · ${amt}`;
+            await showConfirmModal(
+                'Success',
+                successMsg,
+                'OK',
+                'modal-btn-approve',
+                null,
+                true
+            );
+            await fetchRequests();
+            return true;
+        }
+
         await applyPayrollRequestToV2(request);
 
         await updateDoc(requestRef, {
@@ -1365,7 +2340,7 @@ async function _approveRequest(requestId) {
         console.error("Error approving request:", error);
         await showConfirmModal(
             'Error',
-            'Failed to approve request. Please try again.',
+            error?.message ? `Failed to approve: ${error.message}` : 'Failed to approve request. Please try again.',
             'OK',
             'modal-btn-approve',
             null,
@@ -1377,9 +2352,34 @@ async function _approveRequest(requestId) {
 
 // Approve request (with confirmation modal)
 async function approveRequest(requestId) {
+    const request = allRequests.find(r => r.id === requestId);
+    const isLeave = isLeaveRequest(request);
+    const isCashAdvance = isCashAdvanceRequest(request);
+    const isReimbursement = isReimbursementRequest(request);
+
+    if (isCashAdvance) {
+        const deductTiming = await promptCashAdvanceDeductTiming(request);
+        if (!deductTiming) return;
+        await _approveRequest(requestId, { deductTiming });
+        return;
+    }
+
+    if (isReimbursement) {
+        const choice = await promptReimbursementPayTiming(request);
+        if (!choice) return;
+        const payTiming = typeof choice === 'string' ? choice : choice.payTiming;
+        const alreadyPaidOut = typeof choice === 'object' ? !!choice.alreadyPaidOut : false;
+        await _approveRequest(requestId, { payTiming, alreadyPaidOut });
+        return;
+    }
+
+    let confirmMessage = 'Are you sure you want to approve this request? This will update attendance_v2.';
+    if (isLeave) {
+        confirmMessage = 'Are you sure you want to approve this leave request? This will add a paid leave day to attendance_v2.';
+    }
     const confirmed = await showConfirmModal(
         'Approve Request',
-        'Are you sure you want to approve this request? This will update attendance_v2.',
+        confirmMessage,
         'Approve',
         'modal-btn-approve'
     );
@@ -1465,6 +2465,15 @@ async function openEditModal(requestId) {
     if (request._sourceCollection === 'substitution_requests' || request.type === 'substitution') {
         return;
     }
+    if (request._sourceCollection === 'leave_requests' || request.type === 'leave') {
+        return;
+    }
+    if (isCashAdvanceRequest(request)) {
+        return;
+    }
+    if (isReimbursementRequest(request)) {
+        return;
+    }
 
     const modal = document.getElementById('editRequestModal');
     if (!modal) return;
@@ -1501,7 +2510,15 @@ async function openEditModal(requestId) {
     document.getElementById('editTimeIn').value = timeIn24;
     document.getElementById('editTimeOut').value = timeOut24;
     
-    document.getElementById('editBranch').value = requestedBranch;
+    const editBranchEl = document.getElementById('editBranch');
+    populateAttendanceBranchSelect(editBranchEl, { selectedValue: requestedBranch });
+    if (requestedBranch && ![...editBranchEl.options].some((o) => o.value === requestedBranch)) {
+        const opt = document.createElement('option');
+        opt.value = requestedBranch;
+        opt.textContent = requestedBranch;
+        editBranchEl.appendChild(opt);
+    }
+    editBranchEl.value = requestedBranch || 'Podium';
     document.getElementById('editShift').value = requestedShift;
     document.getElementById('editOT').checked = requestedOT;
     document.getElementById('editReason').value = requestedReason;
@@ -1683,9 +2700,10 @@ async function reapplyApprovedRequest(requestId) {
 
 // Show error message
 function showError(message) {
-    const container = document.getElementById('requestsContainer');
-    if (container) {
-        container.innerHTML = `
+    const listEl = getRequestsListEl();
+    if (listEl) {
+        disconnectLoadMoreObserver();
+        listEl.innerHTML = `
             <div class="empty-state">
                 <div class="empty-state-icon">⚠️</div>
                 <div class="empty-state-text">Error</div>
@@ -1697,15 +2715,22 @@ function showError(message) {
 
 // Quick approve request (with confirmation modal, but no detail modal)
 async function quickApproveRequest(requestId) {
+    const request = allRequests.find(r => r.id === requestId);
+    if (isCashAdvanceRequest(request) || isReimbursementRequest(request)) {
+        // Use full approve flow (payday timing prompt)
+        await approveRequest(requestId);
+        return;
+    }
+
     const confirmed = await showConfirmModal(
         'Approve Request',
         'Are you sure you want to approve this request? This will update attendance_v2.',
         'Approve',
         'modal-btn-approve'
     );
-    
+
     if (!confirmed) return;
-    
+
     // Use the internal approve function directly
     await _approveRequest(requestId);
 }
@@ -1845,14 +2870,16 @@ async function bulkApproveRequests() {
     if (!confirmed) return;
     
     // Show loading state
-    const container = document.getElementById('requestsContainer');
-    const originalContent = container.innerHTML;
-    container.innerHTML = `
+    const listEl = getRequestsListEl();
+    if (listEl) {
+        disconnectLoadMoreObserver();
+        listEl.innerHTML = `
         <div class="loading-state">
             <div class="spinner"></div>
             <p>Approving ${selectedIds.length} request${selectedIds.length > 1 ? 's' : ''}...</p>
         </div>
     `;
+    }
     
     try {
         // Process all approvals
@@ -1916,15 +2943,16 @@ async function bulkRejectRequests() {
     
     if (!confirmed) return;
     
-    // Show loading state
-    const container = document.getElementById('requestsContainer');
-    const originalContent = container.innerHTML;
-    container.innerHTML = `
+    const listEl = getRequestsListEl();
+    if (listEl) {
+        disconnectLoadMoreObserver();
+        listEl.innerHTML = `
         <div class="loading-state">
             <div class="spinner"></div>
             <p>Rejecting ${selectedIds.length} request${selectedIds.length > 1 ? 's' : ''}...</p>
         </div>
     `;
+    }
     
     try {
         // Process all rejections
@@ -1991,13 +3019,16 @@ async function bulkReapplyRequests() {
 
     if (!confirmed) return;
 
-    const container = document.getElementById('requestsContainer');
-    container.innerHTML = `
+    const listEl = getRequestsListEl();
+    if (listEl) {
+        disconnectLoadMoreObserver();
+        listEl.innerHTML = `
         <div class="loading-state">
             <div class="spinner"></div>
             <p>Reapplying ${selectedIds.length} request${selectedIds.length > 1 ? 's' : ''}...</p>
         </div>
     `;
+    }
 
     try {
         const results = await Promise.allSettled(
@@ -2059,11 +3090,25 @@ window.bulkRejectRequests = bulkRejectRequests;
 window.bulkReapplyRequests = bulkReapplyRequests;
 
 // Initialize
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     const statusFilter = document.getElementById('statusFilter');
     const statusFilterMobile = document.getElementById('statusFilterMobile');
     const requestTypeFilter = document.getElementById('requestTypeFilter');
     const requestTypeFilterMobile = document.getElementById('requestTypeFilterMobile');
+
+    await loadBranchesFromFirebase(db, { getDocs, collection });
+    populateAttendanceBranchSelect(document.getElementById('editBranch'));
+
+    document.querySelectorAll('.payday-range-btn').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.paydayRange === paydayRangeFilter);
+        btn.addEventListener('click', () => {
+            if (btn.dataset.paydayRange === paydayRangeFilter) return;
+            setPaydayRangeFilter(btn.dataset.paydayRange);
+            selectedRequests.clear();
+            resetVisibleCount();
+            renderRequests();
+        });
+    });
 
     // Set up request type filter (desktop)
     if (requestTypeFilter) {
@@ -2071,6 +3116,7 @@ document.addEventListener('DOMContentLoaded', () => {
         requestTypeFilter.addEventListener('change', (e) => {
             currentRequestTypeFilter = e.target.value;
             selectedRequests.clear();
+            resetVisibleCount();
             if (requestTypeFilterMobile) requestTypeFilterMobile.value = currentRequestTypeFilter;
             renderRequests();
         });
@@ -2081,6 +3127,7 @@ document.addEventListener('DOMContentLoaded', () => {
         requestTypeFilterMobile.addEventListener('change', (e) => {
             currentRequestTypeFilter = e.target.value;
             selectedRequests.clear();
+            resetVisibleCount();
             if (requestTypeFilter) requestTypeFilter.value = currentRequestTypeFilter;
             renderRequests();
         });
@@ -2092,6 +3139,7 @@ document.addEventListener('DOMContentLoaded', () => {
         statusFilter.addEventListener('change', (e) => {
             currentFilter = e.target.value;
             selectedRequests.clear();
+            resetVisibleCount();
             if (statusFilterMobile) statusFilterMobile.value = currentFilter;
             renderRequests();
         });
@@ -2102,6 +3150,7 @@ document.addEventListener('DOMContentLoaded', () => {
         statusFilterMobile.addEventListener('change', (e) => {
             currentFilter = e.target.value;
             selectedRequests.clear();
+            resetVisibleCount();
             if (statusFilter) statusFilter.value = currentFilter;
             renderRequests();
         });
@@ -2122,6 +3171,14 @@ document.addEventListener('DOMContentLoaded', () => {
             fetchRequests();
         });
     }
+
+    window.addEventListener('scroll', () => {
+        const sentinel = document.getElementById('requestsLoadMore');
+        if (!sentinel || loadMoreLock) return;
+        if (sentinel.getBoundingClientRect().top < window.innerHeight + 280) {
+            loadMoreRequests();
+        }
+    }, { passive: true });
     
     // Close modal on outside click
     const modal = document.getElementById('requestDetailModal');

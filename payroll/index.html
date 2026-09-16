@@ -11,7 +11,7 @@
 
     <link rel="icon" href="data:,">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css?v=2.0.1">
+    <link rel="stylesheet" href="css/style.css?v=2.0.5">
     <meta name="theme-color" content="#2b9348">
     <script type="module" src="../employee-attendance/js/firebase-setup.js"></script>
     <!-- PDF Generation Libraries -->
@@ -34,6 +34,7 @@
                         <p class="summary-value" id="totalPay">₱0.00</p>
                     </div>
                 </div>
+                <div id="payTypeNote" class="pay-type-note" style="display: none;"></div>
 
                 <div class="period-selector">
                     <select id="payrollPeriod">
@@ -47,6 +48,32 @@
                         <!-- This will be populated dynamically -->
                     </div>
                     <div class="bottom-actions-container">
+                        <button id="requestLeaveBtn" class="request-new-date-btn" style="display: none;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                <line x1="16" y1="2" x2="16" y2="6"></line>
+                                <line x1="8" y1="2" x2="8" y2="6"></line>
+                                <line x1="3" y1="10" x2="21" y2="10"></line>
+                            </svg>
+                            Request Leave
+                        </button>
+                        <button id="requestCashAdvanceBtn" class="request-new-date-btn" style="display: none;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="1" x2="12" y2="23"></line>
+                                <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                            </svg>
+                            Request Cash Advance
+                        </button>
+                        <button id="requestReimbursementBtn" class="request-new-date-btn">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                <polyline points="14 2 14 8 20 8"></polyline>
+                                <line x1="16" y1="13" x2="8" y2="13"></line>
+                                <line x1="16" y1="17" x2="8" y2="17"></line>
+                                <polyline points="10 9 9 9 8 9"></polyline>
+                            </svg>
+                            Request Reimbursement
+                        </button>
                         <button id="requestNewDateBtn" class="request-new-date-btn">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -309,10 +336,104 @@
             </div>
         </div>
 
+        <!-- Request Leave Modal -->
+        <div id="requestLeaveModal" class="image-modal" onclick="closeRequestLeaveModal()" style="z-index: 3001;">
+            <div class="modal-content" style="padding: 1.5rem; max-width: 90%; width: 500px; text-align: left;"
+                onclick="event.stopPropagation();">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                    <h2 style="margin: 0; color: #2b9348; font-size: 1.5rem;">Request Leave</h2>
+                    <button onclick="closeRequestLeaveModal()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #666;">&times;</button>
+                </div>
+                <form id="requestLeaveForm">
+                    <div style="margin-bottom: 1rem;">
+                        <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Date</label>
+                        <input type="date" id="leaveRequestDate" required style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem;">
+                        <p id="leaveRequestHint" style="margin: 0.5rem 0 0; font-size: 0.85rem; color: #666;"></p>
+                    </div>
+                    <div style="margin-bottom: 1.5rem;">
+                        <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Reason (optional)</label>
+                        <textarea id="leaveRequestReason" placeholder="Optional note..." rows="3" style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; font-family: inherit; resize: vertical;"></textarea>
+                    </div>
+                    <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+                        <button type="button" onclick="closeRequestLeaveModal()" style="padding: 0.75rem 1.5rem; border: 1px solid #ddd; border-radius: 8px; background: white; color: #333; font-weight: 600; cursor: pointer; font-size: 1rem;">Cancel</button>
+                        <button type="submit" style="padding: 0.75rem 1.5rem; border: none; border-radius: 8px; background: #2b9348; color: white; font-weight: 600; cursor: pointer; font-size: 1rem;">Submit Request</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Request Cash Advance Modal -->
+        <div id="requestCashAdvanceModal" class="image-modal" onclick="closeRequestCashAdvanceModal()" style="z-index: 3001;">
+            <div class="modal-content" style="padding: 1.5rem; max-width: 90%; width: 500px; text-align: left;"
+                onclick="event.stopPropagation();">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h2 style="margin: 0; color: #2b9348; font-size: 1.5rem;">Request Cash Advance</h2>
+                    <button onclick="closeRequestCashAdvanceModal()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #666;">&times;</button>
+                </div>
+                <p style="margin: 0 0 1.25rem; padding: 0.75rem 0.9rem; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; font-size: 0.9rem; line-height: 1.45; color: #166534;">
+                    Cash advance requests should already have been <strong>pre-approved by your manager</strong> before you submit them here.
+                </p>
+                <form id="requestCashAdvanceForm">
+                    <div style="margin-bottom: 1rem;">
+                        <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Amount (₱)</label>
+                        <input type="number" id="cashAdvanceAmount" min="1" step="0.01" required placeholder="e.g. 1000" style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem;">
+                    </div>
+                    <div style="margin-bottom: 1rem;">
+                        <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Reason (required)</label>
+                        <textarea id="cashAdvanceReason" placeholder="Why do you need this advance?" rows="3" required style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; font-family: inherit; resize: vertical;"></textarea>
+                    </div>
+                    <p id="cashAdvanceHint" style="margin: 0 0 1.5rem; font-size: 0.85rem; color: #666;"></p>
+                    <div id="cashAdvanceRecentList" style="margin-bottom: 1.5rem;"></div>
+                    <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+                        <button type="button" onclick="closeRequestCashAdvanceModal()" style="padding: 0.75rem 1.5rem; border: 1px solid #ddd; border-radius: 8px; background: white; color: #333; font-weight: 600; cursor: pointer; font-size: 1rem;">Cancel</button>
+                        <button type="submit" style="padding: 0.75rem 1.5rem; border: none; border-radius: 8px; background: #2b9348; color: white; font-weight: 600; cursor: pointer; font-size: 1rem;">Submit Request</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Request Reimbursement Modal -->
+        <div id="requestReimbursementModal" class="image-modal" onclick="closeRequestReimbursementModal()" style="z-index: 3001;">
+            <div class="modal-content" style="padding: 1.5rem; max-width: 90%; width: 500px; text-align: left; overflow-x: hidden; overflow-y: auto;"
+                onclick="event.stopPropagation();">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h2 style="margin: 0; color: #2b9348; font-size: 1.5rem;">Request Reimbursement</h2>
+                    <button onclick="closeRequestReimbursementModal()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #666;">&times;</button>
+                </div>
+                <p style="margin: 0 0 1.25rem; padding: 0.75rem 0.9rem; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; font-size: 0.9rem; line-height: 1.45; color: #166534;">
+                    Reimbursement requests should already have been <strong>pre-approved by your manager</strong> before you submit them here.
+                </p>
+                <form id="requestReimbursementForm">
+                    <div style="margin-bottom: 1rem;">
+                        <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Amount (₱)</label>
+                        <input type="number" id="reimbursementAmount" min="1" step="0.01" required placeholder="e.g. 350" style="width: 100%; max-width: 100%; box-sizing: border-box; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem;">
+                    </div>
+                    <div style="margin-bottom: 1rem;">
+                        <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Date of spend</label>
+                        <input type="date" id="reimbursementSpendDate" required style="display: block; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem;">
+                    </div>
+                    <div style="margin-bottom: 1rem;">
+                        <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Reason (required)</label>
+                        <textarea id="reimbursementReason" placeholder="What did you pay for out of pocket?" rows="3" required style="width: 100%; max-width: 100%; box-sizing: border-box; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; font-family: inherit; resize: vertical;"></textarea>
+                    </div>
+                    <div style="margin-bottom: 1.5rem;">
+                        <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Receipt (optional)</label>
+                        <input type="file" id="reimbursementReceipt" accept="image/*,.pdf" style="width: 100%; max-width: 100%; box-sizing: border-box; padding: 0.5rem 0; font-size: 0.95rem;">
+                        <p style="margin: 0.35rem 0 0; font-size: 0.8rem; color: #888;">Photo or PDF of the receipt, if you have one.</p>
+                    </div>
+                    <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+                        <button type="button" onclick="closeRequestReimbursementModal()" style="padding: 0.75rem 1.5rem; border: 1px solid #ddd; border-radius: 8px; background: white; color: #333; font-weight: 600; cursor: pointer; font-size: 1rem;">Cancel</button>
+                        <button type="submit" style="padding: 0.75rem 1.5rem; border: none; border-radius: 8px; background: #2b9348; color: white; font-weight: 600; cursor: pointer; font-size: 1rem;">Submit Request</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
     </div>
 
-    <script src="../shared/js/PayCalculator.js?v=2.0.4"></script>
-    <script type="module" src="js/script.js?v=2.0.2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+    <script src="../shared/js/PayCalculator.js?v=2.0.9"></script>
+    <script type="module" src="js/script.js?v=2.0.18"></script>
 </body>
 </html>
 

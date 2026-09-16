@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#111111" />
+  <title>Story Giveaway — Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/admin.css?v=20" />
+</head>
+<body>
+  <div class="admin">
+    <aside class="panel">
+      <header class="panel__header">
+        <div>
+          <h1 class="panel__title">Story Giveaway</h1>
+          <p class="panel__subtitle">Cloud sync · photos + prize batches</p>
+        </div>
+      </header>
+
+      <nav class="panel-tabs" aria-label="Admin sections">
+        <button type="button" class="panel-tab is-active" data-tab="files">Files</button>
+        <button type="button" class="panel-tab" data-tab="giveaway">Giveaway</button>
+      </nav>
+
+      <div id="tabFiles" class="tab-panel is-active">
+        <div class="panel__actions panel__actions--tab">
+          <label class="btn btn--primary">
+            Upload photos
+            <input id="fileInput" type="file" accept="image/*" multiple hidden />
+          </label>
+          <label class="btn btn--ghost">
+            Import entries
+            <input id="entriesInput" type="file" accept=".csv,.json,text/csv,application/json" hidden />
+          </label>
+          <button id="syncCloudBtn" class="btn btn--primary" type="button">Sync to cloud</button>
+          <button id="pullCloudBtn" class="btn btn--ghost" type="button">Pull from cloud</button>
+          <button id="clearBtn" class="btn btn--ghost" type="button">Clear all</button>
+        </div>
+
+        <div id="dropZone" class="drop-zone">
+          <p>Drop images here or use Upload</p>
+          <p class="drop-zone__meta">Then import <code>entries.csv</code> to attach usernames · Sync to cloud for phone</p>
+          <p id="statusLine" class="drop-zone__status">0 photos</p>
+          <p id="syncStatusLine" class="drop-zone__status drop-zone__sync">Ready to sync</p>
+        </div>
+
+        <div class="table-search">
+          <input
+            id="usernameSearchInput"
+            class="table-search__input"
+            type="text"
+            inputmode="search"
+            placeholder="Search username…"
+            aria-label="Search username"
+          />
+        </div>
+
+        <div class="table-wrap">
+          <table class="photo-table">
+            <thead>
+              <tr>
+                <th class="col-thumb"></th>
+                <th>File</th>
+                <th>Username</th>
+                <th class="col-size">Size</th>
+                <th class="col-force">Force</th>
+                <th class="col-actions"></th>
+              </tr>
+            </thead>
+            <tbody id="photoTableBody">
+              <tr class="empty-row">
+                <td colspan="6">No photos uploaded yet</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="tabGiveaway" class="tab-panel">
+        <section class="giveaway-panel" aria-label="Giveaway manager">
+          <div class="giveaway-panel__header">
+            <h2 class="giveaway-panel__title">Prize batches</h2>
+            <button id="resetGiveawayBtn" class="btn btn--ghost" type="button">Start over</button>
+          </div>
+          <p id="giveawayLockHint" class="giveaway-lock-hint hidden">
+            Drawing in progress — Start over to edit prizes again
+          </p>
+          <label class="giveaway-field">
+            <span class="giveaway-field__label">Name</span>
+            <input id="giveawayNameInput" class="giveaway-input" type="text" maxlength="80" placeholder="Story Giveaway" />
+          </label>
+          <p id="giveawayProgress" class="giveaway-progress">No prize batches yet</p>
+          <ul id="batchList" class="batch-list"></ul>
+          <form id="addBatchForm" class="add-batch">
+            <input
+              id="batchPrizeInput"
+              class="giveaway-input"
+              type="text"
+              maxlength="80"
+              placeholder="Prize name (e.g. Matcha Kit)"
+              required
+            />
+            <button id="addBatchBtn" class="btn btn--primary" type="submit">Add batch</button>
+          </form>
+        </section>
+      </div>
+    </aside>
+
+    <section class="preview">
+      <div class="preview__label">Live preview · interact here</div>
+      <div class="phone" id="phoneStage">
+        <div class="phone__notch" aria-hidden="true"></div>
+        <iframe
+          id="appFrame"
+          class="phone__screen"
+          src="index.html?embed=1&v=20"
+          title="Story Giveaway app"
+        ></iframe>
+        <button
+          id="recordDrawBtn"
+          class="phone__shutter-hit"
+          type="button"
+          title="Record & draw"
+          aria-label="Record and draw winners"
+        ></button>
+      </div>
+      <div class="preview__actions">
+        <button id="drawOnlyBtn" class="btn btn--ghost" type="button">Draw</button>
+        <button id="recordDrawBtnAlt" class="btn btn--primary" type="button">Record &amp; draw</button>
+        <a class="preview__link" href="index.html" target="_blank" rel="noopener">Open fullscreen</a>
+        <a class="preview__link" href="convert.html">WebM → MP4</a>
+      </div>
+      <p id="recordHint" class="preview__hint">Crops to the app screen only (no bezel) · hide cursor · share this tab</p>
+    </section>
+  </div>
+
+  <script type="module" src="js/admin.js?v=22"></script>
+</body>
+</html>

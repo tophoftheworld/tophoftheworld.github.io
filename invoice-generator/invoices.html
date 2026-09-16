@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invoices - Matchanese</title>
+    <link rel="stylesheet" href="css/invoices-app.css?v=20260915-calendar">
+    <link rel="stylesheet" href="css/invoice-view.css?v=20260915-extrawt">
+    <link rel="stylesheet" href="css/invoice-pdf-document.css?v=20260914-pdf-vcenter">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap" rel="stylesheet">
+</head>
+<body class="invoices-app">
+    <section id="listScreen" class="invoices-list-screen">
+        <header class="invoices-list-header">
+            <div>
+                <h1>Invoices</h1>
+                <p class="invoices-list-sub">Hosted customer links with live payment status. PDF is optional.</p>
+            </div>
+            <button type="button" id="newInvoiceBtn" class="inv-btn inv-btn-primary">New invoice</button>
+        </header>
+        <div class="invoices-list-toolbar">
+            <input type="search" id="listSearchInput" placeholder="Search by client, invoice #, or venue…" autocomplete="off">
+            <button type="button" id="refreshListBtn" class="inv-btn inv-btn-secondary">Refresh</button>
+        </div>
+        <div id="listStatus" class="invoices-list-status">Loading invoices…</div>
+        <div id="invoiceList" class="invoices-list-grid"></div>
+    </section>
+
+    <section id="editorScreen" class="invoices-editor-screen is-hidden" hidden>
+        <div class="invoices-editor-shell">
+        <div class="invoices-editor-layout">
+            <aside class="invoices-form-pane">
+                <div class="invoices-form-scroll">
+                <div class="invoices-editor-top">
+                    <button type="button" id="backToListBtn" class="inv-btn inv-btn-secondary">← All invoices</button>
+                    <h1>Edit invoice</h1>
+                </div>
+
+                <div class="mode-toggle" role="tablist" aria-label="Editor mode">
+                    <button type="button" id="modeManualBtn" class="mode-toggle-btn is-active" role="tab" aria-selected="true" data-mode="manual">Manual</button>
+                    <button type="button" id="modeAiBtn" class="mode-toggle-btn" role="tab" aria-selected="false" data-mode="ai">AI</button>
+                </div>
+
+                <div id="manualPane" class="editor-pane">
+                    <div class="form-section">
+                        <h2>Invoice</h2>
+                        <div class="form-group">
+                            <label for="invoiceNumber">Invoice number</label>
+                            <input type="text" id="invoiceNumber" readonly tabindex="-1" class="is-locked" aria-readonly="true">
+                        </div>
+                        <div class="form-group">
+                            <label for="invoiceDate">Invoice date</label>
+                            <input type="date" id="invoiceDate">
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h2>Client</h2>
+                        <div class="form-group">
+                            <label for="clientName">Name</label>
+                            <input type="text" id="clientName" placeholder="Contact person (optional)">
+                        </div>
+                        <div class="form-group">
+                            <label for="clientCompany">Company</label>
+                            <input type="text" id="clientCompany" placeholder="Company / organization (optional)">
+                        </div>
+                        <div class="form-group">
+                            <label for="clientAddress">Address</label>
+                            <textarea id="clientAddress" rows="2" placeholder="Optional"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="clientTIN">TIN</label>
+                            <input type="text" id="clientTIN" placeholder="Optional">
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h2>Packages &amp; services</h2>
+                        <div id="invoiceItems"></div>
+                        <button type="button" id="addPackageBtn" class="inv-btn inv-btn-secondary add-package-btn">+ Add package</button>
+                    </div>
+
+                <div class="form-section">
+                    <h2>Extra line items</h2>
+                    <div id="customLineItems"></div>
+                    <button type="button" id="addLineItemBtn" class="inv-btn inv-btn-secondary">+ Add line item</button>
+                </div>
+
+                <div class="form-section">
+                    <h2>Discount</h2>
+                    <div class="form-group">
+                        <label for="invoiceDiscount">Additional discount (₱)</label>
+                        <input type="number" id="invoiceDiscount" min="0" step="0.01" placeholder="0">
+                        <p class="form-hint">Lowering a package amount already counts as a discount. Use this for any extra off the invoice total.</p>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h2>Payment schedule</h2>
+                        <div class="payment-terms-controls">
+                            <div class="form-group">
+                                <label for="paymentStructure">Structure</label>
+                                <select id="paymentStructure">
+                                    <option value="three">3 payments — Reservation / Pre-Event / Completion</option>
+                                    <option value="two">2 payments — Down / Final</option>
+                                </select>
+                            </div>
+                            <label class="customize-toggle">
+                                <input type="checkbox" id="customizeMilestones">
+                                Customize milestones
+                            </label>
+                        </div>
+                        <div id="paymentMilestones"></div>
+                        <button type="button" id="addMilestoneBtn" class="inv-btn inv-btn-secondary" style="display:none">+ Add milestone</button>
+                    </div>
+
+                    <div class="form-section">
+                        <h2>Payments</h2>
+                        <p class="form-hint">Screenshots and receipts stay here when you change the payment structure or amounts.</p>
+                        <div class="invoice-payments-toolbar">
+                            <button type="button" id="openManualPaymentBtn" class="inv-btn inv-btn-secondary">+ Add payment</button>
+                        </div>
+                        <div id="invoicePaymentsList" class="invoice-payments-list"></div>
+                    </div>
+
+                    <div class="form-section">
+                        <h2>Notes</h2>
+                        <div class="form-group">
+                            <label for="notes">Customer-visible notes</label>
+                            <textarea id="notes" rows="3" placeholder="Optional"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="aiPane" class="editor-pane ai-pane is-hidden" hidden>
+                    <div class="ai-chat-toolbar">
+                        <span class="ai-chat-toolbar-label">Chat</span>
+                        <button type="button" id="aiChatClear" class="ai-chat-clear">Clear chat</button>
+                    </div>
+                    <div id="aiChatMessages" class="ai-chat-messages" aria-live="polite">
+                        <div class="ai-chat-empty" id="aiChatEmpty">
+                            Paste a quote or notes — I’ll fill the invoice.
+                        </div>
+                    </div>
+                    <div class="ai-chat-composer">
+                        <textarea id="aiChatInput" rows="2" placeholder="Paste details or ask to change the invoice…"></textarea>
+                        <div class="ai-chat-composer-bar">
+                            <span class="ai-chat-hint">Enter to send</span>
+                            <button type="button" id="aiChatSend" class="ai-chat-send">Send</button>
+                        </div>
+                    </div>
+                </div>
+
+                </div>
+
+                <div class="invoices-actions">
+                    <div class="invoice-share-status" id="invoiceShareStatus">Autosaves as you edit. Copy link to publish.</div>
+                    <div class="invoices-action-row">
+                        <button type="button" id="copyInvoiceLink" class="inv-btn inv-btn-primary">Copy link</button>
+                        <button type="button" id="openInvoiceLink" class="inv-btn inv-btn-secondary" disabled>Customer page</button>
+                    </div>
+                    <div class="invoices-action-row">
+                        <button type="button" id="addToCalendarBtn" class="inv-btn inv-btn-secondary">Add to calendar</button>
+                        <button type="button" id="archiveInvoiceBtn" class="inv-btn inv-btn-secondary">Archive</button>
+                        <button type="button" id="emailInvoiceBtn" class="inv-btn inv-btn-secondary">Email invoice</button>
+                        <button type="button" id="downloadPDF" class="inv-btn inv-btn-secondary">Download PDF</button>
+                    </div>
+                </div>
+            </aside>
+
+            <div class="invoices-preview-pane">
+                <div class="invoices-preview-label">Customer page preview</div>
+                <div id="livePreview" class="inv-page inv-page-preview"></div>
+            </div>
+        </div>
+        </div>
+    </section>
+
+    <!-- Hidden stubs for shared editor helpers -->
+    <div id="cloudModal" class="cloud-modal-overlay" style="display:none" hidden>
+        <div class="cloud-modal">
+            <div class="cloud-modal-header">
+                <h2>Saved</h2>
+                <button type="button" id="closeCloudModal" class="cloud-modal-close">&times;</button>
+            </div>
+            <div class="cloud-modal-search">
+                <input type="text" id="invoiceSearchInput" placeholder="Search…">
+            </div>
+            <div class="cloud-modal-body" id="cloudInvoiceList"></div>
+        </div>
+    </div>
+    <button type="button" id="loadFromCloud" hidden aria-hidden="true"></button>
+    <div id="pdfCaptureRoot" class="pdf-capture-root" aria-hidden="true"></div>
+
+    <div id="qrModal" class="inv-qr-modal-overlay is-hidden" hidden>
+      <div class="inv-qr-modal" role="dialog" aria-modal="true" aria-labelledby="qrModalTitle">
+        <button type="button" id="qrModalClose" class="inv-qr-modal-close" aria-label="Close">&times;</button>
+        <h2 id="qrModalTitle" class="inv-qr-modal-title">QR</h2>
+        <img id="qrModalImage" class="inv-qr-modal-image" alt="">
+      </div>
+    </div>
+
+    <div id="emailInvoiceModal" class="email-invoice-overlay is-hidden" hidden>
+      <div class="email-invoice-modal" role="dialog" aria-modal="true" aria-labelledby="emailInvoiceTitle">
+        <div class="email-invoice-header">
+          <h2 id="emailInvoiceTitle">Email invoice</h2>
+          <button type="button" id="emailInvoiceClose" class="email-invoice-close" aria-label="Close">&times;</button>
+        </div>
+        <div class="email-invoice-body">
+          <div class="form-group">
+            <label for="emailInvoiceTo">Client email</label>
+            <input type="email" id="emailInvoiceTo" placeholder="client@email.com" autocomplete="email">
+          </div>
+          <div class="form-group">
+            <div class="email-invoice-label-row">
+              <label for="emailInvoiceSubject">Subject</label>
+              <button type="button" id="emailInvoiceEditToggle" class="email-invoice-edit-btn" aria-pressed="false" title="Edit subject &amp; message" aria-label="Edit subject and message">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17.5V20h2.5L17.8 8.7l-2.5-2.5L4 17.5zm14.7-9.2c.3-.3.3-.8 0-1.1l-1.9-1.9a.8.8 0 0 0-1.1 0l-1.5 1.5 2.5 2.5 1.9-1z"/></svg>
+              </button>
+            </div>
+            <input type="text" id="emailInvoiceSubject" readonly class="is-locked">
+          </div>
+          <div class="form-group">
+            <label for="emailInvoiceMessage">Message</label>
+            <textarea id="emailInvoiceMessage" rows="12" readonly class="is-locked"></textarea>
+          </div>
+          <p class="email-invoice-error is-hidden" id="emailInvoiceError" hidden></p>
+        </div>
+        <div class="email-invoice-actions">
+          <button type="button" id="emailInvoiceCopy" class="inv-btn inv-btn-secondary">Copy message</button>
+          <button type="button" id="emailInvoiceSend" class="inv-btn inv-btn-primary">Send email</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="manualPaymentModal" class="manual-payment-overlay is-hidden" hidden>
+      <div class="manual-payment-modal" role="dialog" aria-modal="true" aria-labelledby="manualPaymentModalTitle">
+        <div class="manual-payment-header">
+          <h2 id="manualPaymentModalTitle">Add payment</h2>
+          <button type="button" id="manualPaymentModalClose" class="manual-payment-close" aria-label="Close">&times;</button>
+        </div>
+        <form id="staffManualPaymentForm" class="manual-payment-body">
+          <div class="form-group">
+            <label for="manualPaymentAmount">Amount (₱)</label>
+            <input type="number" id="manualPaymentAmount" min="0.01" step="0.01" required placeholder="0.00">
+          </div>
+          <div class="form-group">
+            <label for="manualPaymentMethod">Method</label>
+            <select id="manualPaymentMethod">
+              <option value="bank">Bank</option>
+              <option value="gcash">GCash</option>
+              <option value="maya">Maya</option>
+              <option value="gotyme">GoTyme</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="manualPaymentReference">Reference</label>
+            <input type="text" id="manualPaymentReference" placeholder="Optional">
+          </div>
+          <div class="form-group">
+            <label for="manualPaymentDate">Date paid</label>
+            <input type="date" id="manualPaymentDate">
+          </div>
+          <p class="staff-manual-payment-error is-hidden" id="manualPaymentError" hidden></p>
+          <div class="manual-payment-actions">
+            <button type="button" id="manualPaymentCancel" class="inv-btn inv-btn-secondary">Cancel</button>
+            <button type="submit" id="manualPaymentSubmit" class="inv-btn inv-btn-primary">Add payment</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="js/invoice-payment-alloc.js?v=20260911-paymodal"></script>
+    <script src="js/invoice-page-render.js?v=20260915-extrawt"></script>
+    <script src="js/invoice-pdf-legacy.js?v=20260914-pdf-vcenter"></script>
+    <script src="js/invoices-script.js?v=20260915-unify"></script>
+</body>
+</html>

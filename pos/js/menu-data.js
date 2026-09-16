@@ -2,23 +2,28 @@ export const menuData = {
     categories: [
         {
             id: "matcha-lattes",
-            name: "Matcha Lattes"
+            name: "Matcha Lattes",
+            countsAsCup: true
         },
         {
             id: "matcha-lite",
-            name: "Matcha Lite"
+            name: "Matcha Lite",
+            countsAsCup: true
         },
         {
             id: "specials",
-            name: "Specials"
+            name: "Specials",
+            countsAsCup: true
         },
         {
             id: "beyond-matcha",
-            name: "Beyond Matcha"
+            name: "Beyond Matcha",
+            countsAsCup: true
         },
         {
             id: "desserts",
-            name: "Desserts"
+            name: "Desserts",
+            countsAsCup: false
         }
     ],
     items: [

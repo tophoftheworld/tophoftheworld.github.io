@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MMF 2026 Merchant Registrations — Admin</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="admin-body">
+    <div class="admin-gate" id="adminGate">
+        <div class="card">
+            <h1>Merchant Registrations</h1>
+            <p class="field-hint" style="margin-bottom:1rem;">MMF 2026 — admin access</p>
+            <div class="field">
+                <label for="adminPassword">Password</label>
+                <input class="input" type="password" id="adminPassword" autocomplete="current-password">
+                <div class="field-error" id="adminPassError">Incorrect password</div>
+            </div>
+            <button type="button" class="btn" id="adminLogin" style="width:100%;">Enter</button>
+        </div>
+    </div>
+
+    <div class="admin-app hidden" id="adminApp">
+        <header class="admin-header">
+            <div>
+                <h1>Merchant Dashboard</h1>
+                <p class="muted" style="margin:0.25rem 0 0;font-size:0.85rem;" id="adminCount">Loading…</p>
+            </div>
+            <div class="admin-header-actions">
+                <button type="button" class="btn" id="adminSendHubEmails" title="Temp: announce Merchant Hub to all submitted merchants">Send Merchant Hub emails</button>
+                <a class="btn btn-ghost" href="/admin-sales">Sales tally</a>
+                <div class="admin-view-toggle" id="adminViewToggle" role="group" aria-label="Dashboard view">
+                    <button type="button" class="admin-view-btn active" data-view="split">Cards</button>
+                    <button type="button" class="admin-view-btn" data-view="table">Table</button>
+                </div>
+                <div class="admin-download-wrap">
+                    <button type="button" class="btn btn-ghost admin-icon-btn" id="adminDownload" aria-label="Download" title="Download" aria-haspopup="true" aria-expanded="false">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    </button>
+                    <div class="admin-download-menu hidden" id="adminDownloadMenu" role="menu">
+                        <button type="button" role="menuitem" data-download="payments">Export payment reconciliation (Excel)</button>
+                        <button type="button" role="menuitem" data-download="manpower">Download Manpower List</button>
+                        <button type="button" role="menuitem" data-download="electrical">Download Electrical Load Requirements</button>
+                        <button type="button" role="menuitem" data-download="equipment">Download Equipments and Materials</button>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-ghost admin-icon-btn hidden" id="adminToggleArchived" aria-label="Show archived" title="Show archived">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+                </button>
+                <button type="button" class="btn btn-ghost admin-icon-btn" id="adminRefresh" aria-label="Refresh" title="Refresh">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                </button>
+                <button type="button" class="btn btn-ghost" id="adminLogout">Log out</button>
+            </div>
+        </header>
+
+        <div class="admin-main" id="adminMain" data-view="split">
+            <div class="admin-layout">
+                <div class="admin-panel admin-submissions-panel">
+                    <div class="admin-panel-header admin-panel-header--list">
+                        <span>Submissions</span>
+                        <div class="admin-filters" id="adminToolbar">
+                            <select id="adminFilterEntry" class="admin-filter-select" aria-label="Filter entries">
+                                <option value="submitted">Submitted</option>
+                                <option value="draft">In progress</option>
+                                <option value="all">All</option>
+                            </select>
+                            <select id="adminFilterPayment" class="admin-filter-select" aria-label="Filter payment">
+                                <option value="all">All payments</option>
+                                <option value="paid">Paid</option>
+                                <option value="pending">Unpaid</option>
+                            </select>
+                            <select id="adminSortBy" class="admin-filter-select" aria-label="Sort by">
+                                <option value="updated:desc">Newest</option>
+                                <option value="updated:asc">Oldest</option>
+                                <option value="brand:asc">A–Z</option>
+                                <option value="brand:desc">Z–A</option>
+                                <option value="status:desc">Paid first</option>
+                                <option value="status:asc">Unpaid first</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="admin-list" id="adminList">
+                        <div class="admin-loading">Loading submissions…</div>
+                    </div>
+                    <div class="admin-table-wrap hidden" id="adminTableWrap">
+                        <table class="admin-data-table" id="adminTable">
+                            <thead>
+                                <tr>
+                                    <th class="admin-table-num">#</th>
+                                    <th><button type="button" class="admin-sort-btn" data-sort="brand">Brand <span class="admin-sort-ind" aria-hidden="true"></span></button></th>
+                                    <th>Requirements</th>
+                                    <th><button type="button" class="admin-sort-btn" data-sort="status">Payment <span class="admin-sort-ind" aria-hidden="true"></span></button></th>
+                                    <th><button type="button" class="admin-sort-btn" data-sort="updated">Updated <span class="admin-sort-ind" aria-hidden="true"></span></button></th>
+                                </tr>
+                            </thead>
+                            <tbody id="adminTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="admin-detail-backdrop" id="adminDetailBackdrop" hidden></div>
+                <div class="admin-panel admin-detail-panel" id="adminDetailPanel" role="dialog" aria-modal="false" aria-labelledby="adminDetailTitle">
+                    <div class="admin-panel-header admin-panel-header--detail">
+                        <button type="button" class="admin-detail-back" id="adminDetailClose" aria-label="Back to list">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+                            <span>Back to list</span>
+                        </button>
+                        <div class="admin-detail-heading">
+                            <span id="adminDetailTitle">Detail</span>
+                        </div>
+                        <div class="admin-tabs admin-detail-tabs" id="adminDetailTabs" role="tablist">
+                            <button type="button" class="admin-tab active" id="adminTabRegistration" data-tab="registration" role="tab" aria-selected="true">Merchant Info</button>
+                            <button type="button" class="admin-tab" id="adminTabRequirements" data-tab="requirements" role="tab" aria-selected="false">Requirements <span class="admin-tab-badge hidden" id="adminReqBadge" aria-hidden="true"></span></button>
+                            <button type="button" class="admin-tab" id="adminTabReports" data-tab="reports" role="tab" aria-selected="false">Sales &amp; Freebies <span class="admin-tab-badge hidden" id="adminReportsBadge" aria-hidden="true"></span></button>
+                        </div>
+                    </div>
+                    <div class="admin-detail empty" id="adminDetail">Select a submission to view details.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="admin-file-modal hidden" id="adminFileModal" role="dialog" aria-modal="true" aria-labelledby="adminFileModalTitle" hidden>
+        <div class="admin-file-modal-backdrop" id="adminFileModalBackdrop"></div>
+        <div class="admin-file-modal-card">
+            <div class="admin-file-modal-header">
+                <h2 id="adminFileModalTitle">File preview</h2>
+                <div class="admin-file-modal-actions">
+                    <button type="button" class="btn btn-ghost" id="adminFileModalDownload">Download</button>
+                    <button type="button" class="admin-file-modal-close" id="adminFileModalClose" aria-label="Close preview">×</button>
+                </div>
+            </div>
+            <div class="admin-file-modal-body" id="adminFileModalBody"></div>
+        </div>
+    </div>
+
+    <script type="module" src="js/admin.js"></script>
+</body>
+</html>

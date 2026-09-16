@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pasay - SEPT 5 — POS Event Setup</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 520px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.25rem; }
+    button { padding: 0.6rem 1.2rem; font-size: 1rem; cursor: pointer; }
+    #log { margin-top: 1rem; white-space: pre-wrap; font-size: 0.9rem; line-height: 1.5; }
+    .ok { color: #0a7; }
+    .err { color: #c00; }
+    .muted { color: #666; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <h1>Pasay - SEPT 5 package setup</h1>
+  <p class="muted">Creates the Firebase package event and attaches <code>pasay_sept_5_menu.json</code>. Safe to run again — skips if the event already exists (updates menu only).</p>
+  <button type="button" id="runBtn">Create / update event</button>
+  <div id="log"></div>
+  <script type="module">
+    import { db, collection, addDoc, getDocs, updateDoc, doc } from './js/firebase-setup.js';
+
+    const EVENT_NAME = 'Pasay - SEPT 5';
+    const EVENT_KEY = 'package-pasay-sept-5';
+    const MENU_PATH = './data/pasay_sept_5_menu.json';
+    const logEl = document.getElementById('log');
+
+    function log(msg, cls = '') {
+      const line = document.createElement('div');
+      line.textContent = msg;
+      if (cls) line.className = cls;
+      logEl.appendChild(line);
+    }
+
+    async function findExistingEvent() {
+      const snap = await getDocs(collection(db, 'branches'));
+      let found = null;
+      snap.forEach((d) => {
+        const data = d.data();
+        if (data.key === EVENT_KEY) found = { id: d.id, ...data };
+      });
+      return found;
+    }
+
+    async function runSetup() {
+      logEl.innerHTML = '';
+      const btn = document.getElementById('runBtn');
+      btn.disabled = true;
+      try {
+        log('Loading menu…');
+        const res = await fetch(MENU_PATH);
+        if (!res.ok) throw new Error(`Could not load menu (${res.status}). Serve this folder over HTTP (e.g. live server), not file://`);
+        const menuData = await res.json();
+
+        const existing = await findExistingEvent();
+        let eventId;
+
+        if (existing) {
+          eventId = existing.id;
+          log(`Event already exists (${EVENT_KEY}). Updating menu…`, 'ok');
+          await updateDoc(doc(db, 'branches', eventId), {
+            name: EVENT_NAME,
+            type: 'popup',
+            serviceType: 'package',
+            archived: false,
+            status: 'active',
+            customMenu: menuData,
+            lastModified: new Date().toISOString()
+          });
+          log('Menu attached.', 'ok');
+        } else {
+          log('Creating event in Firebase…');
+          const eventData = {
+            key: EVENT_KEY,
+            name: EVENT_NAME,
+            type: 'popup',
+            serviceType: 'package',
+            archived: false,
+            createdAt: new Date().toISOString(),
+            createdBy: 'pasay-sept-5-setup',
+            status: 'active',
+            customMenu: menuData
+          };
+          const docRef = await addDoc(collection(db, 'branches'), eventData);
+          eventId = docRef.id;
+          log(`Created event: [Package] ${EVENT_NAME} (${EVENT_KEY}) id=${eventId}`, 'ok');
+        }
+
+        log(`\nDone. Open POS and select "[Package] ${EVENT_NAME}".`, 'ok');
+        log(`Categories: ${menuData.categories.length}, items: ${menuData.items.length}`, 'muted');
+        return true;
+      } catch (e) {
+        console.error(e);
+        log(`Error: ${e.message}`, 'err');
+        return false;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    document.getElementById('runBtn').addEventListener('click', runSetup);
+
+    // Auto-run when ?autorun=1 (used by setup scripts / automation)
+    if (new URLSearchParams(location.search).has('autorun')) {
+      runSetup();
+    }
+  </script>
+</body>
+</html>

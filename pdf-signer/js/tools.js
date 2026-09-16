@@ -114,17 +114,17 @@ export function setActiveTool(tool) {
     btn.classList.toggle('active', btn.dataset.tool === tool);
   });
 
-  const overlay = document.getElementById('overlayLayer');
-  overlay.classList.toggle('tool-text', tool === 'text');
-  overlay.classList.toggle('tool-check', tool === 'check');
-  overlay.classList.toggle('tool-pen', tool === 'pen');
-  overlay.classList.toggle('tool-active', tool === 'text' || tool === 'check');
+  pdfViewer.eachPage((els) => {
+    const overlay = els.overlay;
+    overlay.classList.toggle('tool-text', tool === 'text');
+    overlay.classList.toggle('tool-check', tool === 'check');
+    overlay.classList.toggle('tool-pen', tool === 'pen');
+    overlay.classList.toggle('tool-active', tool === 'text' || tool === 'check');
 
-  const penLayer = document.getElementById('penLayer');
-  if (penLayer) {
+    const penLayer = els.penLayer;
     penLayer.style.pointerEvents = tool === 'pen' ? 'auto' : 'none';
     penLayer.style.cursor = tool === 'pen' ? 'crosshair' : 'default';
-  }
+  });
 
   if (tool !== 'pen') {
     import('./pen-tool.js').then((m) => m.clearPenLayer());

@@ -1,5 +1,5 @@
 // Matchanese Staff Portal - Service Worker
-const APP_VERSION = "1.0.1";
+const APP_VERSION = "1.0.3";
 const CACHE_NAME = `matchanese-staff-v${APP_VERSION}`;
 const DYNAMIC_CACHE = `matchanese-staff-dynamic-v${APP_VERSION}`;
 
@@ -133,8 +133,28 @@ self.addEventListener('fetch', event => {
                         return response;
                     })
                     .catch(error => {
-                        console.log('Service Worker: Fetch failed; returning offline page instead.', error);
-                        // Could return a custom offline page here if needed
+                        console.log('Service Worker: Fetch failed; serving offline fallback.', error);
+                        // Must return a Response — undefined triggers
+                        // "Failed to convert value to 'Response'".
+                        if (event.request.mode === 'navigate') {
+                            return caches.match('/index.html').then((page) => {
+                                return (
+                                    page ||
+                                    new Response(
+                                        '<!DOCTYPE html><html><body><h1>Offline</h1><p>Check your connection and refresh.</p></body></html>',
+                                        {
+                                            status: 503,
+                                            statusText: 'Service Unavailable',
+                                            headers: { 'Content-Type': 'text/html; charset=utf-8' },
+                                        }
+                                    )
+                                );
+                            });
+                        }
+                        return new Response('', {
+                            status: 503,
+                            statusText: 'Service Unavailable',
+                        });
                     });
             })
     );

@@ -41,6 +41,61 @@ function toActivityIso(value) {
   return d ? d.toISOString() : value || null;
 }
 
+/** Pull assistant text from v1 (`text`) or v2 (`data.parts`) Chatbase chat payloads. */
+function extractChatText(data) {
+  if (data == null) return "";
+  if (typeof data === "string") return data.trim();
+
+  const direct = data.text ?? data.message ?? data.response ?? data.output ?? data.answer;
+  if (typeof direct === "string" && direct.trim()) return direct.trim();
+
+  const nested = data.data;
+  if (nested && typeof nested === "object") {
+    const nestedDirect = nested.text ?? nested.message ?? nested.response;
+    if (typeof nestedDirect === "string" && nestedDirect.trim()) return nestedDirect.trim();
+    const fromParts = textFromParts(nested.parts);
+    if (fromParts) return fromParts;
+  }
+
+  const fromParts = textFromParts(data.parts);
+  if (fromParts) return fromParts;
+
+  if (Array.isArray(data.messages)) {
+    for (let i = data.messages.length - 1; i >= 0; i -= 1) {
+      const msg = data.messages[i];
+      if (msg?.role === "assistant" || msg?.role === "bot") {
+        const t = extractChatText(msg);
+        if (t) return t;
+      }
+    }
+  }
+
+  return "";
+}
+
+function textFromParts(parts) {
+  if (!Array.isArray(parts) || !parts.length) return "";
+  const chunks = [];
+  for (const part of parts) {
+    if (!part || typeof part !== "object") continue;
+    if (part.type === "text" && typeof part.text === "string" && part.text.trim()) {
+      chunks.push(part.text.trim());
+    } else if (typeof part.text === "string" && part.text.trim()) {
+      chunks.push(part.text.trim());
+    }
+  }
+  return chunks.join("\n").trim();
+}
+
+function summarizeChatPayload(data) {
+  if (data == null) return " (null payload)";
+  if (typeof data !== "object") return ` (payload type ${typeof data})`;
+  const keys = Object.keys(data).slice(0, 8).join(",");
+  const finish = data?.data?.metadata?.finishReason || data?.metadata?.finishReason;
+  const finishBit = finish ? `, finishReason=${finish}` : "";
+  return ` (keys: ${keys || "none"}${finishBit})`;
+}
+
 function resolveLastActivityIso(row, messages) {
   let best = null;
   const consider = (raw) => {
@@ -328,14 +383,31 @@ class ChatbaseClient {
     if (!Array.isArray(messages) || !messages.length) {
       throw new Error("chat requires at least one message");
     }
-    const data = await this.postRequest("/chat", {
-      messages,
-      temperature,
-      stream: false
-    });
-    const text = data?.text ?? data?.message ?? data?.response ?? "";
-    if (!text) throw new Error("Chatbase chat returned empty response");
-    return String(text);
+
+    let lastError = null;
+    for (let attempt = 1; attempt <= DEFAULT_RETRY_COUNT; attempt += 1) {
+      try {
+        const data = await this.postRequest("/chat", {
+          messages,
+          temperature,
+          stream: false
+        });
+        const text = extractChatText(data);
+        if (text) return text;
+
+        lastError = new Error(
+          `Chatbase chat returned empty response${summarizeChatPayload(data)}`
+        );
+      } catch (error) {
+        lastError = error;
+      }
+
+      if (attempt < DEFAULT_RETRY_COUNT) {
+        await new Promise((resolve) => setTimeout(resolve, DEFAULT_RETRY_DELAY_MS * attempt * 2));
+      }
+    }
+
+    throw lastError || new Error("Chatbase chat returned empty response");
   }
 
   async getConversations({ startDate, endDate, page = 1, size = 50, filteredSources = "" } = {}) {
@@ -449,5 +521,6 @@ module.exports = {
   parseActivityTimestamp,
   normalizeConversation,
   normalizeMessages,
-  inferContactName
+  inferContactName,
+  extractChatText
 };

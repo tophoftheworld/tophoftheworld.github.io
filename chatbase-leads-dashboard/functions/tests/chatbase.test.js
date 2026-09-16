@@ -126,3 +126,21 @@ test("inferContactName uses Hello Name from agent", () => {
   );
   assert.equal(name, "Bria");
 });
+
+test("extractChatText reads v1 text field", () => {
+  const { extractChatText } = require("../chatbase");
+  assert.equal(extractChatText({ text: "Hello ops" }), "Hello ops");
+});
+
+test("extractChatText reads v2 parts array", () => {
+  const { extractChatText } = require("../chatbase");
+  assert.equal(
+    extractChatText({
+      data: {
+        role: "assistant",
+        parts: [{ type: "text", text: "Urgent\n- VIP complaint" }]
+      }
+    }),
+    "Urgent\n- VIP complaint"
+  );
+});

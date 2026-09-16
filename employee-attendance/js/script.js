@@ -1,4 +1,4 @@
-const APP_VERSION = "0.98"; 
+const APP_VERSION = "2.0.19"; 
 
 // Shared calculator/cache for attendance app
 let payCalculatorAttendance = null;
@@ -32,6 +32,10 @@ function ALLOW_PAST_CLOCKING() {
 
 let dutyStatus = "in";
 let selfieData = "";
+let pendingPunchLocationPromise = null;
+let verifiedPunchLocation = null;
+let lastPunchLocationAttempt = null;
+let punchSubmitLock = false;
 // Get user from parent portal (iframe context) or fallback to localStorage
 let currentUser = "";
 let currentUserName = "";
@@ -108,6 +112,13 @@ import { db } from './firebase-setup.js';
 import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 import { getDocs, collection, collectionGroup, query, where } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 import { storage, ref as storageRef, uploadBytes, getDownloadURL } from './firebase-setup.js';
+import {
+    loadBranchesFromFirebase,
+    populateAttendanceBranchSelect,
+    scheduleKeyToAttendanceValue,
+    getBranchDisplayName,
+    getBranchCategoryFromKey
+} from '../../shared/js/branches.js';
 
 let employees = {}; // Will be populated from Firebase
 let employeesLoaded = false;
@@ -491,7 +502,244 @@ async function updateSummaryUI() {
 //     updateSummaryUI();
 // }
 
-function startPhotoSequence() {
+function isUsablePunchLocation(location) {
+    return !!(location && Number.isFinite(Number(location.lat)) && Number.isFinite(Number(location.lng)));
+}
+
+function isEmbeddedInPortal() {
+    try {
+        return !!(window.parent && window.parent !== window);
+    } catch (e) {
+        return true;
+    }
+}
+
+function useParentGeoBridge() {
+    try {
+        const params = new URLSearchParams(window.location.search);
+        return params.get("geoBridge") === "1" && isEmbeddedInPortal();
+    } catch (e) {
+        return false;
+    }
+}
+
+function locationBlocksPunch(location) {
+    if (isUsablePunchLocation(location)) return false;
+    const status = location && location.status;
+    if (status === "timeout" || status === "unavailable") return false;
+    return true;
+}
+
+function rememberPunchLocation(location) {
+    lastPunchLocationAttempt = location || lastPunchLocationAttempt;
+    if (isUsablePunchLocation(location)) {
+        verifiedPunchLocation = location;
+    }
+    return location;
+}
+
+function resetPunchLocationCapture() {
+    pendingPunchLocationPromise = null;
+    verifiedPunchLocation = null;
+    lastPunchLocationAttempt = null;
+}
+
+function capturePunchLocationOnce(options = {}) {
+    return new Promise((resolve) => {
+        const geo = (typeof navigator !== "undefined" && navigator.geolocation) ? navigator.geolocation : null;
+        if (!geo) {
+            resolve({ status: "unsupported" });
+            return;
+        }
+        geo.getCurrentPosition(
+            (pos) => {
+                resolve({
+                    lat: pos.coords.latitude,
+                    lng: pos.coords.longitude,
+                    accuracy: pos.coords.accuracy,
+                    capturedAt: Date.now(),
+                    status: "ok"
+                });
+            },
+            (err) => {
+                const code = err && err.code;
+                resolve({
+                    status: code === 1 ? "denied" : code === 3 ? "timeout" : "unavailable"
+                });
+            },
+            {
+                enableHighAccuracy: options.enableHighAccuracy !== false,
+                timeout: Number.isFinite(options.timeout) ? options.timeout : 15000,
+                maximumAge: Number.isFinite(options.maximumAge) ? options.maximumAge : 0
+            }
+        );
+    });
+}
+
+function capturePunchLocationViaParent(options = {}) {
+    return new Promise((resolve) => {
+        const id = `geo-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        let done = false;
+        const finish = (result) => {
+            if (done) return;
+            done = true;
+            window.removeEventListener("message", onMessage);
+            resolve(result);
+        };
+        function onMessage(event) {
+            if (event.origin !== window.location.origin) return;
+            const data = event.data;
+            if (!data || data.type !== "matchanese-geolocation-result" || data.id !== id) return;
+            if (data.status === "ok") {
+                finish({
+                    lat: data.lat,
+                    lng: data.lng,
+                    accuracy: data.accuracy,
+                    capturedAt: data.capturedAt || Date.now(),
+                    status: "ok"
+                });
+                return;
+            }
+            finish({ status: data.status || "unavailable" });
+        }
+        window.addEventListener("message", onMessage);
+        try {
+            window.parent.postMessage({
+                type: "matchanese-geolocation-request",
+                id,
+                enableHighAccuracy: options.enableHighAccuracy !== false,
+                timeout: Number.isFinite(options.timeout) ? options.timeout : 15000,
+                maximumAge: Number.isFinite(options.maximumAge) ? options.maximumAge : 0
+            }, window.location.origin);
+        } catch (e) {
+            finish({ status: "unavailable" });
+            return;
+        }
+        const waitMs = (Number.isFinite(options.timeout) ? options.timeout : 15000) + 2500;
+        setTimeout(() => finish({ status: "timeout" }), waitMs);
+    });
+}
+
+async function capturePunchLocation(options = {}) {
+    const first = await capturePunchLocationOnce(options);
+    if (isUsablePunchLocation(first)) return first;
+    if (first.status === "denied") {
+        if (useParentGeoBridge() && isIosDevice()) {
+            const fromParent = await capturePunchLocationViaParent(options);
+            if (isUsablePunchLocation(fromParent)) return fromParent;
+        }
+        return first;
+    }
+    if (first.status === "unsupported") return first;
+    const retry = await capturePunchLocationOnce({
+        enableHighAccuracy: false,
+        timeout: 20000,
+        maximumAge: 60000
+    });
+    if (isUsablePunchLocation(retry) || retry.status === "denied" || retry.status === "unsupported") {
+        return retry;
+    }
+    return first;
+}
+
+function beginPunchLocationCapture() {
+    if (pendingPunchLocationPromise || isUsablePunchLocation(verifiedPunchLocation) || lastPunchLocationAttempt) return;
+    pendingPunchLocationPromise = capturePunchLocation().then(rememberPunchLocation);
+}
+
+async function resolvePunchLocation() {
+    if (isUsablePunchLocation(verifiedPunchLocation)) return verifiedPunchLocation;
+    if (pendingPunchLocationPromise) {
+        const pending = pendingPunchLocationPromise;
+        pendingPunchLocationPromise = null;
+        try {
+            return rememberPunchLocation(await pending);
+        } catch (e) {
+            return rememberPunchLocation({ status: "unavailable" });
+        }
+    }
+    if (lastPunchLocationAttempt) return lastPunchLocationAttempt;
+    return rememberPunchLocation(await capturePunchLocation());
+}
+
+async function resolvePunchLocationRequired({ fresh = false } = {}) {
+    if (!fresh && isUsablePunchLocation(verifiedPunchLocation)) {
+        return verifiedPunchLocation;
+    }
+    if (!fresh) {
+        return resolvePunchLocation();
+    }
+    resetPunchLocationCapture();
+    return rememberPunchLocation(await capturePunchLocation());
+}
+
+function isIosDevice() {
+    return /iPad|iPhone|iPod/i.test(navigator.userAgent)
+        || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
+function isAndroidDevice() {
+    return /Android/i.test(navigator.userAgent);
+}
+
+function punchRetryLabel() {
+    return dutyStatus === "out" ? "Time Out" : "Time In";
+}
+
+function locationRequiredHint() {
+    const ua = navigator.userAgent || "";
+    const again = `then tap ${punchRetryLabel()} again`;
+    if (isIosDevice()) {
+        if (/CriOS/i.test(ua)) {
+            return `Open the iPhone Settings app → Chrome → Location → While Using the App, ${again}. If it still blocks, open attendance in Safari instead.`;
+        }
+        if (/EdgiOS/i.test(ua)) {
+            return `Open the iPhone Settings app → Edge → Location → While Using the App, ${again}. If it still blocks, open attendance in Safari instead.`;
+        }
+        if (/FxiOS/i.test(ua)) {
+            return `Open the iPhone Settings app → Firefox → Location → While Using the App, ${again}. If it still blocks, open attendance in Safari instead.`;
+        }
+        return `Open the Settings app → Safari, under Settings for Websites tap Location, allow this site, ${again}.`;
+    }
+    if (isAndroidDevice()) {
+        if (/SamsungBrowser/i.test(ua)) {
+            return `In Samsung Internet, tap ⋮ → Settings → Sites and downloads → Site permissions → Location, allow this site, ${again}.`;
+        }
+        if (/EdgA/i.test(ua)) {
+            return `In Edge, tap ⋮ → Settings → Site permissions → Location, allow this site, ${again}.`;
+        }
+        if (/Firefox/i.test(ua)) {
+            return `In Firefox, tap ⋮ → Settings → Site permissions → Location, allow this site, ${again}.`;
+        }
+        return `In Chrome, tap ⋮ → Settings → Site settings → Location, allow this site under Not allowed, ${again}.`;
+    }
+    return `In your browser settings, allow Location for this site, ${again}.`;
+}
+
+function showLocationRequiredModal() {
+    const modal = document.getElementById("locationRequiredModal");
+    const msg = document.getElementById("locationRequiredMessage");
+    const hint = document.getElementById("locationRequiredHint");
+    if (msg) msg.textContent = "Please enable location sharing permissions on your device.";
+    if (hint) hint.textContent = locationRequiredHint();
+    if (modal) modal.style.display = "flex";
+}
+
+function hideLocationRequiredModal() {
+    const modal = document.getElementById("locationRequiredModal");
+    if (modal) modal.style.display = "none";
+}
+
+function cancelLocationRequiredModal() {
+    hideLocationRequiredModal();
+}
+
+async function startPhotoSequence() {
+    const location = await resolvePunchLocation();
+    if (locationBlocksPunch(location)) {
+        showLocationRequiredModal();
+        return;
+    }
     navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
         .then(s => {
             stream = s;
@@ -569,17 +817,28 @@ function retakePhoto() {
     cameraControls.style.display = "none";
 }
 
-function submitPhoto() {
+async function submitPhoto() {
     console.log("📸 Submitting photo... dutyStatus=" + dutyStatus);
-    videoContainer.style.display = "none";
-    if (stream) stream.getTracks().forEach(t => t.stop());
-
+    if (punchSubmitLock) return;
     if (!selfieData) {
         alert("⚠️ No photo captured. Please retake.");
         return;
     }
 
-    saveAttendance();
+    punchSubmitLock = true;
+    try {
+        const location = await resolvePunchLocationRequired();
+        if (locationBlocksPunch(location)) {
+            showLocationRequiredModal();
+            return;
+        }
+
+        const saved = await saveAttendance();
+        if (!saved) return;
+        closeCameraUi();
+    } finally {
+        punchSubmitLock = false;
+    }
 }
 
 async function uploadSelfieToStorage(imageDataUrl, userId, dateKey, actionType) {
@@ -639,9 +898,16 @@ function updateSyncStatusVisual(status, count = 0) {
     }
 }
 
-document.getElementById("closeCameraBtn").addEventListener("click", () => {
+function closeCameraUi() {
     videoContainer.style.display = "none";
-    if (stream) stream.getTracks().forEach(t => t.stop());
+    if (stream) {
+        stream.getTracks().forEach((t) => t.stop());
+        stream = null;
+    }
+}
+
+document.getElementById("closeCameraBtn").addEventListener("click", () => {
+    closeCameraUi();
 });
 
 async function saveAttendance() {
@@ -658,15 +924,40 @@ async function saveAttendance() {
 
     // IMPORTANT: Create a fresh copy of the existing data to avoid reference issues
     const existing = JSON.parse(localStorage.getItem(key) || "{}");
-
-    // Track offline changes
-    let syncQueue = JSON.parse(localStorage.getItem("syncQueue") || "[]");
-
-    // Store current action (in or out) for clarity
     const action = dutyStatus === 'in' ? 'clockIn' : 'clockOut';
+    let location = isUsablePunchLocation(verifiedPunchLocation)
+        ? verifiedPunchLocation
+        : await resolvePunchLocation();
+    if (locationBlocksPunch(location)) {
+        showLocationRequiredModal();
+        return false;
+    }
+
+    let syncQueue = JSON.parse(localStorage.getItem("syncQueue") || "[]");
     console.log(`Current action: ${action}`);
 
     if (action === 'clockIn') {
+        const alreadyIn = existing.clockIn && (existing.clockIn.time || existing.clockIn.timestamp);
+        if (alreadyIn) {
+            console.warn("Refusing to overwrite existing clock-in");
+            dutyStatus = 'out';
+            return false;
+        }
+        if (navigator.onLine) {
+            try {
+                const existingSnap = await getDoc(doc(db, "attendance_v2", currentUser, "dates", dateKey));
+                if (existingSnap.exists() && existingSnap.data().clockIn) {
+                    existing.clockIn = { ...existingSnap.data().clockIn, synced: true };
+                    localStorage.setItem(key, JSON.stringify(existing));
+                    dutyStatus = 'out';
+                    console.warn("Clock-in already exists on server, not overwriting");
+                    return false;
+                }
+            } catch (err) {
+                console.warn("Could not check existing clock-in before save", err);
+            }
+        }
+
         // CLOCK IN LOGIC
         const branch = document.getElementById("branchSelect")?.value || "Podium";
         const shift = document.getElementById("shiftSelect")?.value || "Opening";
@@ -678,6 +969,7 @@ async function saveAttendance() {
             branch,
             shift,
             timestamp: Date.now(),
+            location,
             synced: false // Track sync status for this event specifically
         };
 
@@ -761,17 +1053,17 @@ async function saveAttendance() {
                     } else {
                         // No clockIn found - can't clockOut
                         alert("⚠️ Unable to clock out: No clock-in record found");
-                        return;
+                        return false;
                     }
                 } catch (err) {
                     console.error("Failed to check for clock-in data:", err);
                     alert("⚠️ Unable to clock out: Could not verify clock-in status");
-                    return;
+                    return false;
                 }
             } else {
                 // Offline with no clockIn - can't proceed
                 alert("⚠️ Cannot clock out: No clock-in record found in offline storage");
-                return;
+                return false;
             }
         }
 
@@ -780,6 +1072,7 @@ async function saveAttendance() {
             time,
             selfie: selfieData,
             timestamp: Date.now(),
+            location,
             synced: false // Track sync status for clockOut specifically
         };
 
@@ -846,6 +1139,7 @@ async function saveAttendance() {
     updateOfflineBadges(); // Make sure badges are updated
 
     console.log("🎉 UI updated with time " + action);
+    return true;
 }
 
 
@@ -980,11 +1274,32 @@ async function updateBranchInFirestore(dateKey, branch) {
     }
 }
 
+function minutesSinceClockIn(clockIn) {
+    if (!clockIn) return null;
+    const ts = Number(clockIn.timestamp);
+    if (Number.isFinite(ts) && ts > 0) {
+        return Math.max(0, Math.round((Date.now() - ts) / 60000));
+    }
+    if (!clockIn.time) return null;
+    const now = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    const mins = compareTimes(now, clockIn.time);
+    return Number.isFinite(mins) ? Math.max(0, mins) : null;
+}
+
+function formatMinutesAgo(minutes) {
+    if (!Number.isFinite(minutes) || minutes < 1) return "less than a minute";
+    if (minutes === 1) return "1 minute";
+    return `${minutes} minutes`;
+}
+
 async function handleClock(type) {
     const isToday = formatDate(viewDate) === formatDate(today);
     if (!ALLOW_PAST_CLOCKING() && !isToday) {
         return;
     }
+
+    resetPunchLocationCapture();
+    beginPunchLocationCapture();
 
     const dateKey = formatDate(viewDate);
 
@@ -1027,30 +1342,29 @@ async function handleClock(type) {
 
         const now = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
         const { timeOut } = getScheduledTimes(data);
-        const lateBy = compareTimes(data.clockIn.time, getScheduledTimes(data).timeIn);
+        const displayOutTime = timeOut;
+        const minutesSinceIn = minutesSinceClockIn(data.clockIn);
+        const isQuickOut = Number.isFinite(minutesSinceIn) && minutesSinceIn < 60;
+        const isEarlyOut = displayOutTime && compareTimes(now, displayOutTime) < 0;
 
-        let displayOutTime = timeOut;
-
-        // Adjusted time if late within grace
-        // if (lateBy > 0 && lateBy <= lateGraceLimitMinutes) {
-        //     const [h, m] = timeOut.split(/:|\s/);
-        //     let hour = parseInt(h);
-        //     let min = parseInt(m);
-        //     min += lateBy;
-        //     hour += Math.floor(min / 60);
-        //     min %= 60;
-        //     if (hour > 12) hour -= 12;
-        //     displayOutTime = `${hour}:${min.toString().padStart(2, '0')} ${timeOut.includes("PM") ? "PM" : "AM"}`;
-        // }
-
-        if (compareTimes(now, displayOutTime) < 0) {
-            // Show modal instead of confirm()
+        if (isQuickOut || isEarlyOut) {
             const modal = document.getElementById("earlyOutModal");
+            const msg = document.getElementById("earlyOutMessage");
+            if (msg) {
+                if (isQuickOut && isEarlyOut) {
+                    msg.innerHTML = `You've only been clocked in for ${formatMinutesAgo(minutesSinceIn)}, and it's not yet time to clock out.<br>Are you sure you want to Time Out?`;
+                } else if (isQuickOut) {
+                    msg.innerHTML = `You've only been clocked in for ${formatMinutesAgo(minutesSinceIn)}.<br>Are you sure you want to Time Out?`;
+                } else {
+                    msg.innerHTML = `It's not yet time to clock out.<br>Are you sure you want to proceed?`;
+                }
+            }
             modal.style.display = "flex";
 
             document.getElementById("confirmEarlyOut").onclick = () => {
                 modal.style.display = "none";
-                startPhotoSequence(); // proceed
+                beginPunchLocationCapture();
+                startPhotoSequence();
             };
             document.getElementById("cancelEarlyOut").onclick = () => {
                 modal.style.display = "none";
@@ -1538,15 +1852,6 @@ async function updateBranchAndShiftSelectors(data = {}) {
         try {
             const scheduleData = await fetchScheduleForDate(currentUser, dateStr);
             if (scheduleData) {
-                // Map schedule branch to dropdown values
-                const branchMapping = {
-                    'podium': 'Podium',
-                    'smnorth': 'SM North',
-                    'popup': 'Pop-up',
-                    'workshop': 'Workshop',
-                    'other': 'Other Events'
-                };
-
                 // Map schedule shift type to dropdown values
                 const shiftMapping = {
                     'opening': 'Opening',
@@ -1558,7 +1863,7 @@ async function updateBranchAndShiftSelectors(data = {}) {
                     'custom': 'Custom'
                 };
 
-                selectedBranch = branchMapping[scheduleData.branch] || scheduleData.branch || "Podium";
+                selectedBranch = scheduleKeyToAttendanceValue(scheduleData.branch) || "Podium";
                 selectedShift = shiftMapping[scheduleData.type] || scheduleData.type || "Opening";
 
                 console.log(`Auto-populated from schedule: ${selectedBranch}, ${selectedShift}`);
@@ -1578,6 +1883,9 @@ async function updateBranchAndShiftSelectors(data = {}) {
         selectedBranch = localStorage.getItem(`lastBranch_${currentUser}`) || "Podium";
         selectedShift = localStorage.getItem("lastSelectedShift") || "Opening";
     }
+
+    // Ensure named events are in the dropdown (no-op if already loaded)
+    populateAttendanceBranchSelect(branchSelect, { selectedValue: selectedBranch });
 
     // Set the dropdown values
     if ([...branchSelect.options].some(o => o.value === selectedBranch)) {
@@ -1631,10 +1939,7 @@ async function syncPendingData() {
 
             // Only sync the specific action (clockIn or clockOut)
             if (action === 'clockIn' || !action) {
-                if (localData.clockIn &&
-                    (!serverData.clockIn ||
-                        !serverData.clockIn.timestamp ||
-                        localData.clockIn.timestamp > serverData.clockIn.timestamp)) {
+                if (localData.clockIn && !serverData.clockIn) {
                     const clockInData = { ...localData.clockIn };
                     delete clockInData.synced; // Remove sync flag before saving to Firestore
 
@@ -1777,6 +2082,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupVersionControls();
     updateNetworkStatusUI();
     // checkForUpdates() - disabled, handled by parent portal
+
+    await loadBranchesFromFirebase(db, { getDocs, collection });
+    populateAttendanceBranchSelect(document.getElementById('branchSelect'));
 
     // Set up event listeners
     window.addEventListener('online', () => {
@@ -2009,10 +2317,17 @@ function openPayrollDetailModal(dayData, clickedCard) {
     const baseRate = dayData.baseRate || 750;
     const isHalfDay = dayData.shift === "Closing Half-Day";
     const dailyRate = isHalfDay ? baseRate / 2 : baseRate;
-    const mealAllowance = isHalfDay ? 75 : 150;
+    const mealAllowance = employeeIncludesMealAllowance(attendanceEmployeeContext)
+        ? (isHalfDay ? 75 : 150)
+        : 0;
 
     document.getElementById('modalBaseRate').textContent = `₱${dailyRate.toFixed(2)}`;
-    document.getElementById('modalMealAllow').textContent = `₱${mealAllowance.toFixed(2)}`;
+    const mealEl = document.getElementById('modalMealAllow');
+    if (mealEl) {
+        mealEl.textContent = `₱${mealAllowance.toFixed(2)}`;
+        const mealRow = mealEl.parentElement?.parentElement;
+        if (mealRow) mealRow.style.display = mealAllowance > 0 ? 'grid' : 'none';
+    }
 
     // Calculate deductions and show/hide rows
     const lateDeduction = calculateLateDeduction(dayData);
@@ -2036,7 +2351,7 @@ function openPayrollDetailModal(dayData, clickedCard) {
     const undertimeMinutes = dayData.timeOut && dayData.scheduledOut ?
         compareTimes(dayData.scheduledOut, dayData.timeOut) : 0;
 
-    if (undertimeDeduction > 0 && undertimeMinutes > 30) {
+    if (undertimeDeduction > 0 && undertimeMinutes > 0) {
         const undertimeHours = Math.floor(undertimeMinutes / 60);
         const undertimeRemainingMins = undertimeMinutes % 60;
         const undertimeText = undertimeHours > 0 ?
@@ -2147,7 +2462,7 @@ function calculateUndertimeDeduction(dayData) {
     if (!dayData.timeOut || !dayData.scheduledOut) return 0;
 
     const undertimeMinutes = compareTimes(dayData.scheduledOut, dayData.timeOut);
-    if (undertimeMinutes <= 30) return 0; // Grace period
+    if (undertimeMinutes <= 0) return 0;
 
     const baseRate = dayData.baseRate || 750;
     const isHalfDay = dayData.shift === "Closing Half-Day";
@@ -2187,6 +2502,7 @@ async function fetchAttendancePhotos(userId, dateStr) {
 window.takePhoto = takePhoto;
 window.retakePhoto = retakePhoto;
 window.submitPhoto = submitPhoto;
+window.cancelLocationRequiredModal = cancelLocationRequiredModal;
 window.logoutUser = logoutUser;
 window.clearData = clearData;
 window.openImageModal = openImageModal;
@@ -2996,7 +3312,15 @@ async function fetchPayrollData(dates) {
         try {
             const employeeDoc = await getDoc(doc(db, "employees_v2", currentUser));
             if (employeeDoc.exists()) {
-                baseRate = employeeDoc.data().baseRate || 750;
+                const employeeData = employeeDoc.data();
+                baseRate = employeeData.baseRate || 750;
+                attendanceEmployeeContext = {
+                    id: currentUser,
+                    baseRate,
+                    payType: employeeData.payType || 'hourly',
+                    payScheme: employeeData.payScheme === 'inclusive' ? 'inclusive' : 'standard',
+                    salesBonusEligible: !!employeeData.salesBonusEligible
+                };
             }
         } catch (error) {
             console.error("Failed to get employee base rate:", error);
@@ -3563,7 +3887,7 @@ function getHolidayPayMultiplier(dateStr) {
 
 function calculateDeductions(timeIn, timeOut, scheduledIn, scheduledOut) {
     const LATE_THRESHOLD_MINUTES = 30;
-    const UNDERTIME_THRESHOLD_MINUTES = 30;
+    const UNDERTIME_THRESHOLD_MINUTES = 0;
     let deductions = 0;
 
     if (timeIn && scheduledIn) {
@@ -3585,8 +3909,17 @@ function calculateDeductions(timeIn, timeOut, scheduledIn, scheduledOut) {
     return deductions;
 }
 
+function employeeIncludesMealAllowance(employee) {
+    const emp = employee || attendanceEmployeeContext;
+    if (typeof window.PayCalculator?.includesMealAllowance === 'function') {
+        return window.PayCalculator.includesMealAllowance(emp);
+    }
+    return (emp?.payScheme || 'standard') !== 'inclusive';
+}
+
 function calculateDailyPay(dateObj, baseRate, employee = null) {
     const dailyMealAllowance = 150;
+    employee = employee || attendanceEmployeeContext;
 
     if (!dateObj.timeIn || !dateObj.timeOut) {
         return 0;
@@ -3602,7 +3935,9 @@ function calculateDailyPay(dateObj, baseRate, employee = null) {
 
         const hourlyRate = baseRate / 8;
         const workHours = actualHours > 4 ? actualHours - 1 : actualHours;
-        const mealAllowance = actualHours <= 4 ? dailyMealAllowance / 2 : dailyMealAllowance;
+        const mealAllowance = employeeIncludesMealAllowance(employee)
+            ? (actualHours <= 4 ? dailyMealAllowance / 2 : dailyMealAllowance)
+            : 0;
 
         // Calculate base pay (up to 8 hours)
         const regularHours = Math.min(workHours, 8);
@@ -3618,7 +3953,9 @@ function calculateDailyPay(dateObj, baseRate, employee = null) {
     } else {
         const isHalfDay = dateObj.shift === "Closing Half-Day" || dateObj.shift === "Opening Half-Day";
         const dailyRate = isHalfDay ? baseRate / 2 : baseRate;
-        const mealAllowance = isHalfDay ? dailyMealAllowance / 2 : dailyMealAllowance;
+        const mealAllowance = employeeIncludesMealAllowance(employee)
+            ? (isHalfDay ? dailyMealAllowance / 2 : dailyMealAllowance)
+            : 0;
 
         const deductionHours = calculateDeductions(dateObj.timeIn, dateObj.timeOut, dateObj.scheduledIn, dateObj.scheduledOut);
         const standardHours = isHalfDay ? 4 : 8;
@@ -3696,8 +4033,8 @@ function calculateTotalPay(daysWorked, baseRate, datesWorked = []) {
     let totalDeductions = 0;
 
     if (datesWorked.length === 0) {
-        // If no dates provided, use the old calculation method
-        return (baseRate * daysWorked) + (dailyMealAllowance * daysWorked);
+        const meal = employeeIncludesMealAllowance(attendanceEmployeeContext) ? dailyMealAllowance : 0;
+        return (baseRate * daysWorked) + (meal * daysWorked);
     }
 
     // Calculate pay for each day based on holiday status
@@ -3709,7 +4046,9 @@ function calculateTotalPay(daysWorked, baseRate, datesWorked = []) {
             // Determine if it's a half day based on shift
             const isHalfDay = dateObj.shift === "Closing Half-Day";
             const dailyRate = isHalfDay ? baseRate / 2 : baseRate;
-            const mealAllowance = isHalfDay ? dailyMealAllowance / 2 : dailyMealAllowance;
+            const mealAllowance = employeeIncludesMealAllowance(attendanceEmployeeContext)
+                ? (isHalfDay ? dailyMealAllowance / 2 : dailyMealAllowance)
+                : 0;
 
             // Calculate deductions for late/undertime
             const deductionHours = calculateDeductions(
@@ -4011,30 +4350,24 @@ async function loadScheduleData() {
 
                 try {
                     const schedulesRef = collection(db, "schedules", weekKey, "shifts");
-
-                    // Map "others" to actual branch values
-                    let branchFilter = [];
-                    if (selectedBranch === 'others') {
-                        branchFilter = ['popup', 'workshop', 'other'];
-                    } else {
-                        branchFilter = [selectedBranch];
-                    }
-
-                    // Get all shifts for the selected branches
-                    for (const branch of branchFilter) {
-                        const q = query(schedulesRef, where("branch", "==", branch));
-                        const snapshot = await getDocs(q);
-
-                        snapshot.forEach(doc => {
-                            const shift = doc.data();
-                            const dateStr = shift.date;
-
-                            if (!scheduleData[dateStr]) {
-                                scheduleData[dateStr] = [];
-                            }
-                            scheduleData[dateStr].push(shift);
-                        });
-                    }
+                    // Load all week shifts, then filter by category so named events are included
+                    const snapshot = await getDocs(schedulesRef);
+                    snapshot.forEach((docSnap) => {
+                        const shift = docSnap.data();
+                        const cat = getBranchCategoryFromKey(shift.branch);
+                        let include = false;
+                        if (!selectedBranch || selectedBranch === 'all') {
+                            include = true;
+                        } else if (selectedBranch === 'others') {
+                            include = cat === 'popup' || cat === 'workshop' || cat === 'other';
+                        } else {
+                            include = shift.branch === selectedBranch || cat === selectedBranch;
+                        }
+                        if (!include) return;
+                        const dateStr = shift.date;
+                        if (!scheduleData[dateStr]) scheduleData[dateStr] = [];
+                        scheduleData[dateStr].push(shift);
+                    });
                 } catch (error) {
                     console.error("Error fetching all schedules:", error);
                 }
@@ -4201,14 +4534,6 @@ function createScheduleCard(date, scheduleData, isToday) {
         `;
     }
 
-    const branchNames = {
-        'podium': 'Podium',
-        'smnorth': 'SM North',
-        'popup': 'Pop-up',
-        'workshop': 'Workshop',
-        'other': 'Other Events'
-    };
-
     const shiftTypes = {
         'opening': { name: 'Opening', time: '9:30 AM - 6:30 PM' },
         'adjustedOpening': { name: 'Adjusted Opening', time: '10:30 AM - 7:30 PM' },
@@ -4219,7 +4544,7 @@ function createScheduleCard(date, scheduleData, isToday) {
         'custom': { name: 'Custom', time: 'Custom Hours' }
     };
 
-    const branch = branchNames[scheduleData.branch] || scheduleData.branch;
+    const branch = getBranchDisplayName(scheduleData.branch);
     const shift = shiftTypes[scheduleData.type] || { name: scheduleData.type, time: 'Custom' };
     const shiftTime = scheduleData.type === 'custom' && scheduleData.customStart && scheduleData.customEnd
         ? `${formatTimeTo12Hour(scheduleData.customStart)} - ${formatTimeTo12Hour(scheduleData.customEnd)}`

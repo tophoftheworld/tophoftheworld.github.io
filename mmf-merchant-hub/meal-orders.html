@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crew Meal Orders — Manila Matcha Fest 2026</title>
+    <meta name="robots" content="noindex,nofollow">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="mealGate" class="gate-body">
+        <div class="card gate-card">
+            <img class="gate-logo" src="images/mmf-logo.png" alt="Manila Matcha Fest 2026" width="160" height="160">
+            <h1>Crew meal orders</h1>
+            <p class="muted">Organizer &amp; supplier view</p>
+            <form id="mealLoginForm" autocomplete="off">
+                <div class="field">
+                    <label for="mealPassword">Password</label>
+                    <input class="input" type="password" id="mealPassword" autocomplete="current-password" required>
+                </div>
+                <button type="submit" class="btn" style="width:100%">Enter</button>
+                <p class="gate-status" id="mealGateStatus" aria-live="polite"></p>
+            </form>
+        </div>
+    </div>
+
+    <div id="mealApp" class="admin-body hidden">
+        <header class="admin-header">
+            <div class="admin-header-inner">
+                <div>
+                    <h1>Crew meal orders</h1>
+                    <p class="muted" style="margin:0.2rem 0 0;font-size:0.82rem">By day · by supplier</p>
+                </div>
+                <div class="admin-actions">
+                    <button type="button" class="btn btn-ghost btn-sm" id="mealRefreshBtn">Refresh</button>
+                    <button type="button" class="btn btn-ghost btn-sm" id="mealExportBtn">Export CSV</button>
+                    <button type="button" class="btn btn-ghost btn-sm" id="mealLogoutBtn">Log out</button>
+                </div>
+            </div>
+        </header>
+
+        <main class="admin-main meal-orders-main">
+            <section class="hub-section" style="padding:1.25rem">
+                <div class="hub-section-header" style="margin-bottom:0.75rem">
+                    <div>
+                        <h2>Day</h2>
+                        <p class="muted">Pick a delivery day. Suppliers use this as the cook sheet.</p>
+                    </div>
+                </div>
+                <div class="day-strip" id="mealDayStrip" role="tablist" aria-label="Select day"></div>
+            </section>
+
+            <section class="hub-section" style="padding:1.25rem">
+                <div class="admin-filters">
+                    <div class="field">
+                        <label for="mealFilterSupplier">Supplier</label>
+                        <select class="select" id="mealFilterSupplier">
+                            <option value="">All suppliers</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="mealFilterBrand">Brand</label>
+                        <select class="select" id="mealFilterBrand">
+                            <option value="">All brands</option>
+                        </select>
+                    </div>
+                </div>
+            </section>
+
+            <section class="hub-section" style="padding:1.25rem">
+                <div class="hub-section-header" style="margin-bottom:0.75rem">
+                    <div>
+                        <h2>Day summary</h2>
+                        <p class="muted" id="mealSummaryLabel">Totals for selected day.</p>
+                    </div>
+                </div>
+                <div class="summary-grid" id="mealSummaryGrid">
+                    <div class="summary-card">
+                        <div class="label">Merchant orders</div>
+                        <div class="value" id="mealSumOrders">0</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="label">Total items</div>
+                        <div class="value" id="mealSumItems">0</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="label">Order total</div>
+                        <div class="value" id="mealSumAmount">₱0.00</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="label">Suppliers</div>
+                        <div class="value" id="mealSumSuppliers">0</div>
+                    </div>
+                </div>
+            </section>
+
+            <div id="mealOrdersRoot" class="meal-orders-root"></div>
+            <p class="muted" id="mealLoadStatus" aria-live="polite"></p>
+        </main>
+    </div>
+
+    <script type="module" src="js/meal-orders.js"></script>
+</body>
+</html>

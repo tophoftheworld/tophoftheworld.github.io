@@ -1,6 +1,8 @@
-import { menuData } from './menu-data.js';
-import { syncOrderToFirebase, syncAllPendingOrders, initializeMenuItems, loadEventsFromFirebase, saveEventToFirebase, subscribeToOrders, publishLiveSession, clearLiveSession } from './firebase-sync.js';
-import { db, collection, doc, getDocs, deleteDoc, setDoc, getDoc, serverTimestamp } from './firebase-setup.js';
+import { menuData } from './menu-data.js?v=6';
+import { syncOrderToFirebase, syncAllPendingOrders, initializeMenuItems, loadEventsFromFirebase, saveEventToFirebase, subscribeToOrders, publishLiveSession, clearLiveSession } from './firebase-sync.js?v=10';
+import { app, db, collection, doc, getDocs, deleteDoc, setDoc, getDoc, serverTimestamp } from './firebase-setup.js?v=7';
+
+console.log('[GREETING_DEBUG][POS] MODULE LOADED', { build: 'greeting-fix-2', hasPublishLiveSession: typeof publishLiveSession });
 
 
 // Customization options
@@ -35,6 +37,10 @@ const customizationOptions = {
     '1': 0,
     '2': 40,
     '3': 80
+  },
+  matchaOption: {
+    'aki': 0,
+    'natsu': 30
   }
 };
 
@@ -44,6 +50,7 @@ function getCustomizationOptions() {
   const opts = { ...customizationOptions };
   opts.milk = { ...customizationOptions.milk };
   opts.strengthLevel = { ...customizationOptions.strengthLevel };
+  opts.matchaOption = { ...customizationOptions.matchaOption };
   if (menu) {
     if (typeof menu.oatUpgradePrice === 'number') {
       opts.milk.oat = menu.oatUpgradePrice;
@@ -51,14 +58,108 @@ function getCustomizationOptions() {
     if (menu.strengthLevelPrices && typeof menu.strengthLevelPrices === 'object') {
       Object.assign(opts.strengthLevel, menu.strengthLevelPrices);
     }
+    if (menu.matchaOptionPrices && typeof menu.matchaOptionPrices === 'object') {
+      Object.assign(opts.matchaOption, menu.matchaOptionPrices);
+    }
   }
   return opts;
+}
+
+function matchaOptionSurcharge(option, opts = getCustomizationOptions()) {
+  if (!option || !opts.matchaOption) return 0;
+  const n = Number(opts.matchaOption[option]);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function formatMatchaOptionLabel(option) {
+  if (option === 'natsu') return 'Natsu';
+  if (option === 'aki') return 'Aki';
+  return option ? String(option) : '';
+}
+
+function applyDiscountToUnitPrice(unitPrice, discountOptions) {
+  const discount = discountOptions?.discount;
+  if (!discount || discount === 'none') return unitPrice;
+
+  if (discount === 'custom') {
+    if (discountOptions.customDiscountMode === 'amount') {
+      const amount = Number(discountOptions.customDiscountAmount);
+      if (!isNaN(amount) && amount > 0) {
+        return Math.max(0, unitPrice - amount);
+      }
+      return unitPrice;
+    }
+    const percent = Number(discountOptions.customDiscountPercent);
+    if (!isNaN(percent) && percent >= 0 && percent <= 100) {
+      return unitPrice * (1 - percent / 100);
+    }
+    return unitPrice;
+  }
+
+  const preset = getCustomizationOptions().discount[discount];
+  if (preset) return unitPrice * (1 + preset);
+  return unitPrice;
+}
+
+function getCustomDiscountLabel(customizations) {
+  if (!customizations?.discount || customizations.discount === 'none') return '';
+  if (customizations.discount !== 'custom') {
+    return String(customizations.discount).toUpperCase();
+  }
+  if (customizations.customDiscountMode === 'amount' && customizations.customDiscountAmount) {
+    return `₱${Number(customizations.customDiscountAmount)} OFF`;
+  }
+  if (customizations.customDiscountPercent) {
+    return `${customizations.customDiscountPercent}% OFF`;
+  }
+  return 'CUSTOM';
+}
+
+function readCustomDiscountFromModal() {
+  const wrap = document.querySelector('.custom-discount-input');
+  const input = document.querySelector('#customDiscountValue');
+  const mode = wrap?.dataset.mode === 'amount' ? 'amount' : 'percent';
+  const value = parseFloat(input?.value);
+  if (isNaN(value) || value < 0) return { mode, percent: null, amount: null };
+  if (mode === 'amount') return { mode, amount: value, percent: null };
+  return { mode, percent: Math.min(100, value), amount: null };
+}
+
+function setCustomDiscountMode(wrap, mode) {
+  if (!wrap) return;
+  wrap.dataset.mode = mode;
+  const input = wrap.querySelector('#customDiscountValue');
+  if (!input) return;
+  if (mode === 'amount') {
+    input.removeAttribute('max');
+    input.setAttribute('aria-label', 'Custom discount amount in pesos');
+  } else {
+    input.max = '100';
+    const n = parseFloat(input.value);
+    if (!isNaN(n) && n > 100) input.value = '100';
+    input.setAttribute('aria-label', 'Custom discount percent');
+  }
+  updateItemTotal();
+}
+
+/** Menu default milk: explicit defaultMilk, else oat when oatUpgradePrice is 0, else dairy. */
+function getDefaultMilk() {
+  const menu = currentMenuData || null;
+  if (menu && (menu.defaultMilk === 'oat' || menu.defaultMilk === 'dairy')) {
+    return menu.defaultMilk;
+  }
+  if (menu && typeof menu.oatUpgradePrice === 'number' && menu.oatUpgradePrice === 0) {
+    return 'oat';
+  }
+  return 'dairy';
 }
 
 // Hide size in customization modal (data/logic kept for possible future use)
 const HIDE_SIZE_CUSTOMIZATION = true;
 
 let customerName = '';
+let pendingDiscountIdPhoto = null;
+let pendingDiscountIdDetails = null;
 let liveSessionState = {
   paymentMethod: null,
   showQr: false,
@@ -268,7 +369,8 @@ function updateDisplayMode() {
 function getEventDisplayName(eventKey) {
   const key = eventKey !== undefined ? eventKey : currentEvent;
   const cached = JSON.parse(localStorage.getItem('cachedEvents') || '[]');
-  const found = cached.find(e => e.key === key);
+  const found = cached.find(e => e.key === key && !e.archived)
+    || cached.find(e => e.key === key);
   if (found && found.name) return found.name;
   if (key === 'pop-up') return 'Legacy Data';
   // Remove 'popup-' prefix and format nicely
@@ -454,11 +556,30 @@ function createGridMenuItemElement(item) {
 let currentOrder = [];
 let orderHistory = JSON.parse(localStorage.getItem('orderHistory') || '[]');
 
+// Freeze a copy of whatever is on this device before any Firebase merge/event-switch
+// can hide or overwrite it. Never replace a larger backup with a smaller/empty one.
+(function snapshotOrderHistoryBackup() {
+  try {
+    const raw = localStorage.getItem('orderHistory') || '[]';
+    const current = JSON.parse(raw);
+    if (!Array.isArray(current) || current.length === 0) return;
+
+    const existingRaw = localStorage.getItem('orderHistoryBackup');
+    const existing = existingRaw ? JSON.parse(existingRaw) : [];
+    if (Array.isArray(existing) && existing.length > current.length) return;
+
+    localStorage.setItem('orderHistoryBackup', raw);
+    localStorage.setItem('orderHistoryBackupAt', new Date().toISOString());
+  } catch (error) {
+    console.error('Failed to snapshot orderHistory backup:', error);
+  }
+})();
+
 function sanitizeOrderItemName(name) {
   return (name || '').replace(/<[^>]*>/g, '');
 }
 
-function buildLiveSessionPayload() {
+function buildLiveSessionPayload(extras = {}) {
   const items = currentOrder.map(item => {
     const quantity = Number(item.quantity) || 0;
     const price = Number(item.price) || 0;
@@ -473,9 +594,10 @@ function buildLiveSessionPayload() {
 
   const total = items.reduce((sum, item) => sum + item.lineTotal, 0);
   const hasItems = currentOrder.length > 0;
+  const hasName = Boolean((customerName || '').trim());
   const computedStatus = hasItems
     ? (liveSessionState.status === 'idle' ? 'editing' : liveSessionState.status)
-    : 'idle';
+    : (hasName ? 'editing' : 'idle');
 
   return {
     customerName,
@@ -483,18 +605,19 @@ function buildLiveSessionPayload() {
     total,
     paymentMethod: liveSessionState.paymentMethod,
     showQr: liveSessionState.showQr,
-    status: computedStatus
+    status: computedStatus,
+    ...extras
   };
 }
 
-function scheduleLiveSessionPublish(forceImmediate = false) {
+function scheduleLiveSessionPublish(forceImmediate = false, extras = {}) {
   if (liveSessionPublishTimer) {
     clearTimeout(liveSessionPublishTimer);
     liveSessionPublishTimer = null;
   }
 
   const publish = () => {
-    publishLiveSession(currentEvent, buildLiveSessionPayload());
+    publishLiveSession(currentEvent, buildLiveSessionPayload(extras));
   };
 
   if (forceImmediate) {
@@ -626,6 +749,7 @@ function updateOrderDisplay() {
       if (item.customizations.milk) customDisplay.push(item.customizations.milk);
       if (item.customizations.strengthLevel) customDisplay.push(`Strength ${item.customizations.strengthLevel}`);
       if (item.customizations.matchaStrength) customDisplay.push(`Strength ${String(item.customizations.matchaStrength).replace('Level ', '')}`);
+      if (item.customizations.matchaOption) customDisplay.push(formatMatchaOptionLabel(item.customizations.matchaOption));
 
       if (item.customizations.discount && item.customizations.discount !== 'none') {
         const discountBadge = document.createElement('span');
@@ -636,12 +760,7 @@ function updateOrderDisplay() {
         discountBadge.style.borderRadius = '4px';
         discountBadge.style.marginLeft = '5px';
         
-        // Show custom discount percentage if available
-        if (item.customizations.discount === 'custom' && item.customizations.customDiscountPercent) {
-          discountBadge.textContent = `${item.customizations.customDiscountPercent}% OFF`;
-        } else {
-          discountBadge.textContent = item.customizations.discount.toUpperCase();
-        }
+        discountBadge.textContent = getCustomDiscountLabel(item.customizations);
         
         orderItemName.appendChild(discountBadge);
       }
@@ -983,15 +1102,21 @@ function showItemSummaryModal() {
     modal.appendChild(row);
   });
 
-  // Tally milk types
+  // Tally milk types and matcha option
   let dairyCount = 0;
   let oatCount = 0;
+  let akiCount = 0;
+  let natsuCount = 0;
   ordersForDate.forEach(order => {
     order.items.forEach(item => {
+      const qty = item.quantity || 1;
       if (item.customizations && item.customizations.milk) {
-        const qty = item.quantity || 1;
         if (item.customizations.milk === 'dairy') dairyCount += qty;
         else if (item.customizations.milk === 'oat') oatCount += qty;
+      }
+      if (item.customizations && item.customizations.matchaOption) {
+        if (item.customizations.matchaOption === 'aki') akiCount += qty;
+        else if (item.customizations.matchaOption === 'natsu') natsuCount += qty;
       }
     });
   });
@@ -1007,6 +1132,21 @@ function showItemSummaryModal() {
       const row = document.createElement('div');
       row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #f0f0f0;font-family:Poppins,sans-serif;font-size:13px;color:#444;';
       row.innerHTML = `<span style="text-transform:capitalize;">${label} milk</span><span style="font-weight:700;color:#1d8a00;">${count}</span>`;
+      modal.appendChild(row);
+    });
+  }
+
+  if (akiCount > 0 || natsuCount > 0) {
+    const matchaTitle = document.createElement('h4');
+    matchaTitle.textContent = 'MATCHA OPTION';
+    matchaTitle.style.cssText = 'font-family:Poppins,sans-serif;font-size:11px;font-weight:700;letter-spacing:1px;color:#aaa;margin:16px 0 4px;text-align:center;';
+    modal.appendChild(matchaTitle);
+
+    [['Aki', akiCount], ['Natsu', natsuCount]].forEach(([label, count]) => {
+      if (count === 0) return;
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #f0f0f0;font-family:Poppins,sans-serif;font-size:13px;color:#444;';
+      row.innerHTML = `<span>${label}</span><span style="font-weight:700;color:#1d8a00;">${count}</span>`;
       modal.appendChild(row);
     });
   }
@@ -1066,6 +1206,44 @@ function getQueueLabel(pos) {
   if (pos === 1) return 'NEXT';
   const suffix = pos === 2 ? 'ND' : pos === 3 ? 'RD' : 'TH';
   return `${pos}${suffix}`;
+}
+
+function isOrderFullyPrepared(order) {
+  return Array.isArray(order?.items) &&
+    order.items.length > 0 &&
+    order.items.every(item => Boolean(item.prepared));
+}
+
+function setItemPrepared(orderId, itemIndex, prepared) {
+  const orderIndex = orderHistory.findIndex(order => order.id === orderId);
+  if (orderIndex === -1) return;
+
+  const order = orderHistory[orderIndex];
+  if (!Array.isArray(order.items) || !order.items[itemIndex]) return;
+
+  order.items[itemIndex].prepared = Boolean(prepared);
+
+  const wasReady = Boolean(order.readyAt);
+  const nowReady = isOrderFullyPrepared(order);
+  if (nowReady && !wasReady) {
+    order.readyAt = new Date().toISOString();
+  } else if (!nowReady) {
+    order.readyAt = null;
+  }
+
+  order.lastModified = new Date().toISOString();
+  order.needsSync = true;
+  localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+
+  syncOrderToFirebase(order).then(success => {
+    if (success) {
+      const latestIndex = orderHistory.findIndex(o => o.id === orderId);
+      if (latestIndex > -1) {
+        orderHistory[latestIndex].needsSync = false;
+        localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+      }
+    }
+  });
 }
 
 function createOrderCard(order, isCompleted, isVoided = false, queuePosition = null) {
@@ -1143,7 +1321,7 @@ function createOrderCard(order, isCompleted, isVoided = false, queuePosition = n
   const orderItemsList = document.createElement('div');
   orderItemsList.className = 'order-items-list';
 
-  order.items.forEach(item => {
+  order.items.forEach((item, itemIndex) => {
     const itemDiv = document.createElement('div');
     itemDiv.className = 'order-card-item';
 
@@ -1188,9 +1366,27 @@ function createOrderCard(order, isCompleted, isVoided = false, queuePosition = n
       if (item.customizations.milk) customDisplay.push(item.customizations.milk);
       if (item.customizations.strengthLevel) customDisplay.push(`Strength ${item.customizations.strengthLevel}`);
       if (item.customizations.matchaStrength) customDisplay.push(`Strength ${String(item.customizations.matchaStrength).replace('Level ', '')}`);
+      if (item.customizations.matchaOption) customDisplay.push(formatMatchaOptionLabel(item.customizations.matchaOption));
+      if (item.customizations.discount && item.customizations.discount !== 'none') {
+        customDisplay.push(getCustomDiscountLabel(item.customizations));
+      }
 
       customizations.innerHTML = customDisplay.join(' | ');
       itemContent.appendChild(customizations);
+
+      if (itemHasSavedDiscountId(item)) {
+        const idLink = document.createElement('button');
+        idLink.type = 'button';
+        idLink.className = 'order-id-review-link';
+        idLink.textContent = 'ID';
+        idLink.title = 'View saved ID';
+        idLink.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          showSavedDiscountIdModal(item);
+        });
+        itemContent.appendChild(idLink);
+      }
     }
 
     // Add checkbox for pending orders only
@@ -1199,12 +1395,16 @@ function createOrderCard(order, isCompleted, isVoided = false, queuePosition = n
       itemCheckbox.type = 'checkbox';
       itemCheckbox.className = 'item-checkbox';
       itemCheckbox.setAttribute('data-order-id', order.id);
-      itemCheckbox.setAttribute('data-item-name', nameSpan.textContent);
-      
-      // Add event listener for checkbox toggle
+      itemCheckbox.setAttribute('data-item-index', String(itemIndex));
+      itemCheckbox.checked = Boolean(item.prepared);
+
+      if (item.prepared) {
+        itemDiv.style.opacity = '0.6';
+        itemDiv.style.textDecoration = 'line-through';
+      }
+
       itemCheckbox.addEventListener('change', function() {
         const isChecked = this.checked;
-        // Toggle visual state - you can add more logic here if needed
         if (isChecked) {
           itemDiv.style.opacity = '0.6';
           itemDiv.style.textDecoration = 'line-through';
@@ -1212,6 +1412,7 @@ function createOrderCard(order, isCompleted, isVoided = false, queuePosition = n
           itemDiv.style.opacity = '1';
           itemDiv.style.textDecoration = 'none';
         }
+        setItemPrepared(order.id, itemIndex, isChecked);
       });
 
       itemDiv.appendChild(itemContent);
@@ -1478,6 +1679,72 @@ function getLocalDateString(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
+/** Push this event's orders for a date to Firebase. EOD totals live locally; admin dashboard reads Firebase. */
+async function flushCurrentEventOrdersToFirebase(dateStr) {
+  const orders = orderHistory.filter((order) => {
+    const orderEvent = order.event || 'pop-up';
+    return getLocalDateString(new Date(order.timestamp)) === dateStr
+      && orderEvent === currentEvent
+      && order.status !== 'deleted';
+  });
+
+  let synced = 0;
+  let failed = 0;
+  for (const order of orders) {
+    const success = await syncOrderToFirebase(order);
+    if (success) {
+      const idx = orderHistory.findIndex((o) => o.id === order.id);
+      if (idx > -1) orderHistory[idx].needsSync = false;
+      synced += 1;
+    } else {
+      failed += 1;
+    }
+  }
+  localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+  return { synced, failed, total: orders.length };
+}
+
+async function finalizeEventSalesSubmission({
+  overlay,
+  confirmBtn,
+  record,
+  salesRef,
+  cashFlowKey,
+  cashFlowData,
+  eventName,
+  dateStr,
+  summaryHTML
+}) {
+  const originalText = confirmBtn?.textContent;
+  if (confirmBtn) {
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'SYNCING ORDERS...';
+  }
+
+  try {
+    const flush = await flushCurrentEventOrdersToFirebase(dateStr);
+    await setDoc(salesRef, { ...record, timestamp: serverTimestamp() });
+    sendEventSalesEmail(record, eventName, dateStr).catch((e) => console.error(e));
+    localStorage.setItem(cashFlowKey, JSON.stringify(cashFlowData));
+    const summaries = JSON.parse(localStorage.getItem('eodSummaries') || '[]');
+    const filtered = summaries.filter((s) => !(s.date === dateStr && s.event === currentEvent));
+    filtered.push(cashFlowData);
+    localStorage.setItem('eodSummaries', JSON.stringify(filtered));
+    overlay.remove();
+    showPosSuccessModal(record, eventName, dateStr, summaryHTML);
+    if (flush.failed > 0) {
+      alert(`Sales report saved, but ${flush.failed} of ${flush.total} orders did not reach the admin dashboard. Tap Force Sync on this iPad, then refresh the dashboard.`);
+    }
+  } catch (e) {
+    console.error('Failed to save event sales:', e);
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = originalText || 'Confirm';
+    }
+    alert('Failed to submit. Please try again.');
+  }
+}
+
 
 function completeOrder(orderId) {
   const orderIndex = orderHistory.findIndex(order => order.id === orderId);
@@ -1605,7 +1872,13 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
   }
   
   // Store item data in modal for price calculations
-  modal.dataset.item = JSON.stringify(item);
+  const itemData = { ...item };
+  if (itemData.customizations?.idPhoto) {
+    itemData.customizations = { ...itemData.customizations };
+    delete itemData.customizations.idPhoto;
+    delete itemData.customizations.idDetails;
+  }
+  modal.dataset.item = JSON.stringify(itemData);
 
   // Modal header
   const header = document.createElement('h2');
@@ -1617,8 +1890,19 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
   const optionsGrid = document.createElement('div');
   optionsGrid.className = 'modal-options-grid';
 
-  // Get current customizations if editing
-  const currentCustomizations = editMode && item.customizations ? item.customizations : {};
+  // Get current customizations if editing; otherwise seed milk from menu default
+  const currentCustomizations = editMode && item.customizations
+    ? { ...item.customizations }
+    : {};
+  if (!editMode && !currentCustomizations.milk) {
+    currentCustomizations.milk = getDefaultMilk();
+  }
+  pendingDiscountIdPhoto = isIdDiscountType(currentCustomizations.discount)
+    ? (currentCustomizations.idPhoto || null)
+    : null;
+  pendingDiscountIdDetails = isIdDiscountType(currentCustomizations.discount)
+    ? (currentCustomizations.idDetails || null)
+    : null;
 
   const allowedCustomizations = item.customizations || null;
   const showAll = !allowedCustomizations;
@@ -1629,23 +1913,56 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
     optionsGrid.appendChild(sizeSection);
   }
 
-  // Strength Level (1–3) for all items – drinks, ice cream, etc.
-  const strengthLevelSection = createOptionSection(
-    'Strength Level',
-    ['1', '2', '3'],
-    currentCustomizations.strengthLevel || (currentCustomizations.matchaStrength ? String(currentCustomizations.matchaStrength).replace('Level ', '') : '1')
-  );
-  // Keep strength buttons on one row for clarity
-  const strengthButtons = strengthLevelSection.querySelector('.modal-buttons');
-  if (strengthButtons) {
-    strengthButtons.style.flexWrap = 'nowrap';
-    strengthButtons.style.justifyContent = 'flex-start';
+  // Strength Level (1–3) — only when item enables it (drinks, etc.)
+  if (showAll || allowedCustomizations.strengthLevel) {
+    const strengthLevelSection = createOptionSection(
+      'Strength Level',
+      ['1', '2', '3'],
+      currentCustomizations.strengthLevel || (currentCustomizations.matchaStrength ? String(currentCustomizations.matchaStrength).replace('Level ', '') : '1')
+    );
+    // Keep strength buttons on one row for clarity
+    const strengthButtons = strengthLevelSection.querySelector('.modal-buttons');
+    if (strengthButtons) {
+      strengthButtons.style.flexWrap = 'nowrap';
+      strengthButtons.style.justifyContent = 'flex-start';
+    }
+    const strengthBtns = strengthLevelSection.querySelectorAll('.option-button');
+    strengthBtns.forEach(btn => {
+      btn.style.minWidth = '60px';
+    });
+    optionsGrid.appendChild(strengthLevelSection);
   }
-  const strengthBtns = strengthLevelSection.querySelectorAll('.option-button');
-  strengthBtns.forEach(btn => {
-    btn.style.minWidth = '60px';
-  });
-  optionsGrid.appendChild(strengthLevelSection);
+
+  if (showAll || allowedCustomizations.matchaOption) {
+    if (!editMode && !currentCustomizations.matchaOption) {
+      currentCustomizations.matchaOption = 'aki';
+    }
+    const matchaOptionSection = document.createElement('div');
+    matchaOptionSection.className = 'modal-option';
+    const matchaLabel = document.createElement('div');
+    matchaLabel.className = 'modal-option-label';
+    matchaLabel.textContent = 'Matcha Option';
+    matchaOptionSection.appendChild(matchaLabel);
+
+    const matchaButtons = document.createElement('div');
+    matchaButtons.className = 'modal-buttons';
+    const selectedMatcha = currentCustomizations.matchaOption || 'aki';
+    [
+      { id: 'aki', text: 'Aki' },
+      { id: 'natsu', text: 'Natsu' }
+    ].forEach(({ id, text }) => {
+      const btn = document.createElement('button');
+      btn.className = 'option-button';
+      btn.dataset.option = id;
+      btn.dataset.group = 'matcha option';
+      if (selectedMatcha === id) btn.classList.add('active');
+      btn.innerHTML = `<span class="option-text">${text}</span>`;
+      btn.addEventListener('click', () => selectOption(btn));
+      matchaButtons.appendChild(btn);
+    });
+    matchaOptionSection.appendChild(matchaButtons);
+    optionsGrid.appendChild(matchaOptionSection);
+  }
 
   // Don't show serving option for brew bar items since preparation includes hot/iced
   if ((!allowedCustomizations || allowedCustomizations.serving) && !item.customizations?.preparation) {
@@ -1684,6 +2001,7 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
 
   // Create a row that will contain milk and discount side by side
   const milkDiscountRow = document.createElement('div');
+  milkDiscountRow.className = 'milk-discount-row';
   milkDiscountRow.style.display = 'flex';
   milkDiscountRow.style.justifyContent = 'space-between';
   milkDiscountRow.style.gap = '20px';
@@ -1697,6 +2015,7 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
     // Create milk section
     const milkSection = document.createElement('div');
     milkSection.style.flex = '1';
+    milkSection.style.minWidth = '0';
 
     const milkLabel = document.createElement('div');
     milkLabel.className = 'modal-option-label';
@@ -1706,11 +2025,13 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
     const milkButtons = document.createElement('div');
     milkButtons.className = 'modal-buttons';
 
+    const defaultMilk = currentCustomizations.milk || getDefaultMilk();
+
     const dairyBtn = document.createElement('button');
     dairyBtn.className = 'option-button';
     dairyBtn.dataset.option = 'dairy';
     dairyBtn.dataset.group = 'milk';
-    if (!currentCustomizations.milk || currentCustomizations.milk === 'dairy') {
+    if (defaultMilk === 'dairy') {
       dairyBtn.classList.add('active');
     }
     dairyBtn.innerHTML = '<span class="option-text">dairy</span>';
@@ -1720,7 +2041,7 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
     oatBtn.className = 'option-button';
     oatBtn.dataset.option = 'oat';
     oatBtn.dataset.group = 'milk';
-    if (currentCustomizations.milk === 'oat') {
+    if (defaultMilk === 'oat') {
       oatBtn.classList.add('active');
     }
     oatBtn.innerHTML = '<span class="option-text">oat</span>';
@@ -1735,6 +2056,7 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
 
   // Create discount section
   const discountSection = document.createElement('div');
+  discountSection.className = 'discount-section';
   discountSection.style.flex = '1';
 
   const discountLabel = document.createElement('div');
@@ -1743,7 +2065,7 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
   discountSection.appendChild(discountLabel);
 
   const discountButtons = document.createElement('div');
-  discountButtons.className = 'modal-buttons';
+  discountButtons.className = 'modal-buttons discount-button-grid';
 
   // Create toggle buttons for Senior and PWD discounts
   const seniorBtn = document.createElement('button');
@@ -1785,65 +2107,113 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
   discountButtons.appendChild(pwdBtn);
   discountButtons.appendChild(freeBtn);
 
-  // Add custom discount button
-  const customBtn = document.createElement('button');
-  customBtn.className = 'option-button discount-toggle';
+  // CUSTOM is a div so the percent input can live inside the control (invalid inside <button>)
+  const customBtn = document.createElement('div');
+  customBtn.className = 'option-button discount-toggle custom-discount-toggle';
   customBtn.dataset.discount = 'custom';
+  customBtn.setAttribute('role', 'button');
+  customBtn.tabIndex = 0;
 
-  // Check if custom discount is active
   if (currentCustomizations.discount === 'custom') {
     customBtn.classList.add('active');
   }
 
-  customBtn.innerHTML = '<span class="option-text">CUSTOM</span>';
-  customBtn.addEventListener('click', () => toggleCustomDiscount(customBtn));
-
-  discountButtons.appendChild(customBtn);
-  discountSection.appendChild(discountButtons);
-
-  // Add custom discount input field (initially hidden)
-  const customDiscountInput = document.createElement('div');
-  customDiscountInput.className = 'custom-discount-input';
-  customDiscountInput.style.display = 'none';
-  customDiscountInput.style.zIndex = '10';
-  if (window.innerWidth <= 767) {
-    customDiscountInput.style.position = 'static';
-    customDiscountInput.style.marginTop = '8px';
-  } else {
-    customDiscountInput.style.position = 'absolute';
-    customDiscountInput.style.left = '100%';
-    customDiscountInput.style.top = '0';
-    customDiscountInput.style.marginLeft = '10px';
-  }
-  customDiscountInput.innerHTML = `
-    <div style="display: flex; align-items: center; gap: 5px;">
-      <input type="number" id="customDiscountPercent" placeholder="%" min="0" max="100" style="width: 50px; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px;">
-      <span style="font-size: 12px;">%</span>
-    </div>
+  customBtn.innerHTML = `
+    <span class="option-text">CUSTOM</span>
+    <span class="custom-discount-input" data-mode="percent">
+      <span class="custom-discount-prefix" title="Tap to switch to percent">₱</span>
+      <input type="number" id="customDiscountValue" inputmode="numeric" min="0" max="100" step="1" aria-label="Custom discount percent">
+      <span class="custom-discount-suffix" title="Tap to switch to pesos">%</span>
+    </span>
   `;
-  
-  // Make the custom button container relative for positioning
-  customBtn.style.position = 'relative';
-  customBtn.appendChild(customDiscountInput);
 
-  // If editing and item has custom discount, populate the input
-  if (editMode && currentCustomizations.discount === 'custom' && currentCustomizations.customDiscountPercent) {
-    const input = customDiscountInput.querySelector('#customDiscountPercent');
-    if (input) {
-      input.value = currentCustomizations.customDiscountPercent.toString();
+  const customDiscountInput = customBtn.querySelector('.custom-discount-input');
+  const customValueInput = customBtn.querySelector('#customDiscountValue');
+  const initialMode = currentCustomizations.customDiscountMode === 'amount' ? 'amount' : 'percent';
+  if (currentCustomizations.discount === 'custom') {
+    if (initialMode === 'amount' && currentCustomizations.customDiscountAmount) {
+      customValueInput.value = currentCustomizations.customDiscountAmount.toString();
+    } else if (currentCustomizations.customDiscountPercent) {
+      customValueInput.value = currentCustomizations.customDiscountPercent.toString();
     }
   }
+  setCustomDiscountMode(customDiscountInput, initialMode);
+  customValueInput.addEventListener('click', (e) => e.stopPropagation());
+  customValueInput.addEventListener('mousedown', (e) => e.stopPropagation());
+  customDiscountInput.addEventListener('click', (e) => e.stopPropagation());
+  customDiscountInput.querySelector('.custom-discount-prefix').addEventListener('click', (e) => {
+    e.stopPropagation();
+    setCustomDiscountMode(customDiscountInput, 'percent');
+    customValueInput.focus();
+  });
+  customDiscountInput.querySelector('.custom-discount-suffix').addEventListener('click', (e) => {
+    e.stopPropagation();
+    setCustomDiscountMode(customDiscountInput, 'amount');
+    customValueInput.focus();
+  });
+  customValueInput.addEventListener('input', () => {
+    if (customDiscountInput.dataset.mode !== 'amount') {
+      const n = parseFloat(customValueInput.value);
+      if (!isNaN(n) && n > 100) customValueInput.value = '100';
+    }
+    updateItemTotal();
+  });
+  customValueInput.addEventListener('change', updateItemTotal);
 
-  milkDiscountRow.appendChild(discountSection);
+  customBtn.addEventListener('click', (e) => {
+    if (e.target.closest('.custom-discount-input')) return;
+    toggleCustomDiscount(customBtn);
+  });
+  customBtn.addEventListener('keydown', (e) => {
+    if (e.target.closest('input')) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggleCustomDiscount(customBtn);
+    }
+  });
 
-  // Add the combined row to the modal
-  modal.appendChild(milkDiscountRow);
+  discountButtons.appendChild(customBtn);
+
+  const idSavedRow = document.createElement('button');
+  idSavedRow.type = 'button';
+  idSavedRow.className = 'discount-id-saved';
+  idSavedRow.hidden = true;
+  idSavedRow.innerHTML = '<span class="discount-id-saved-check" aria-hidden="true">✓</span><span class="discount-id-saved-text">ID saved</span>';
+  idSavedRow.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!pendingDiscountIdPhoto && !pendingDiscountIdDetails) return;
+    const active = document.querySelector('.discount-toggle.active[data-discount="senior"], .discount-toggle.active[data-discount="pwd"]');
+    const discount = active?.dataset?.discount || 'senior';
+    showSavedDiscountIdModal({
+      idPhoto: pendingDiscountIdPhoto,
+      idDetails: pendingDiscountIdDetails,
+      customizations: {
+        discount,
+        idPhoto: pendingDiscountIdPhoto,
+        idDetails: pendingDiscountIdDetails
+      }
+    });
+  });
+
+  discountSection.appendChild(idSavedRow);
+  discountSection.appendChild(discountButtons);
+
+  if (showAll || allowedCustomizations.discount) {
+    milkDiscountRow.appendChild(discountSection);
+  }
+
+  // Add the combined row only when milk and/or discount are shown
+  if (milkDiscountRow.childElementCount > 0) {
+    modal.appendChild(milkDiscountRow);
+  }
 
   if (item.variants && item.variants.length > 0) {
     const variantNames = item.variants.map(variant => variant.name);
     const defaultVariant = currentCustomizations.variant || variantNames[0];
+    const variantLabel = item.variantLabel || 'Variant';
 
-    const variantSection = createOptionSection('Flavor', variantNames, defaultVariant);
+    const variantSection = createOptionSection(variantLabel, variantNames, defaultVariant);
     modal.appendChild(variantSection);
 
     // Optional: Store price adjustments for variants to use later
@@ -1902,6 +2272,7 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
   if (currentCustomizations.strengthLevel && opts.strengthLevel[currentCustomizations.strengthLevel] !== undefined) {
     basePrice += opts.strengthLevel[currentCustomizations.strengthLevel];
   }
+  basePrice += matchaOptionSurcharge(currentCustomizations.matchaOption, opts);
   if (currentCustomizations.discount && opts.discount[currentCustomizations.discount]) {
     basePrice = basePrice * (1 + opts.discount[currentCustomizations.discount]);
   }
@@ -1944,78 +2315,678 @@ function showCustomizationModal(item, editMode = false, editIndex = -1) {
 
   // Initialize the item total when the modal is first shown
   updateItemTotal();
+  updateDiscountIdPhotoIndicator();
 }
 
-// Updated function to handle discount toggling
-function toggleDiscount(button) {
-  // Get all discount toggle buttons
-  const discountButtons = document.querySelectorAll('.discount-toggle');
+function isIdDiscountType(type) {
+  return type === 'senior' || type === 'pwd';
+}
 
-  // If this button is already active, deactivate it
-  if (button.classList.contains('active')) {
-    button.classList.remove('active');
+function updateDiscountIdPhotoIndicator() {
+  const row = document.querySelector('.discount-id-saved');
+  if (!row) return;
+  const hasSavedId = Boolean(pendingDiscountIdPhoto) && Boolean(
+    document.querySelector('.discount-toggle.active[data-discount="senior"], .discount-toggle.active[data-discount="pwd"]')
+  );
+  row.hidden = !hasSavedId;
+}
+
+const SENIOR_ID_FIELDS = [
+  { key: 'fullName', label: 'Name' },
+  { key: 'idNumber', label: 'ID number' },
+  { key: 'dateOfBirth', label: 'Date of birth' },
+  { key: 'sex', label: 'Sex' },
+  { key: 'address', label: 'Address' },
+  { key: 'issuingLgu', label: 'City / LGU' },
+  { key: 'dateIssued', label: 'Date issued' }
+];
+
+const PWD_ID_FIELDS = [
+  { key: 'fullName', label: 'Name' },
+  { key: 'idNumber', label: 'ID number' },
+  { key: 'dateOfBirth', label: 'Date of birth' },
+  { key: 'sex', label: 'Sex' },
+  { key: 'disabilityType', label: 'Disability' },
+  { key: 'address', label: 'Address' },
+  { key: 'issuingLgu', label: 'City / LGU' },
+  { key: 'dateIssued', label: 'Date issued' }
+];
+
+function idDetailFieldsFor(idType) {
+  return idType === 'pwd' ? PWD_ID_FIELDS : SENIOR_ID_FIELDS;
+}
+
+function renderIdDetailRows(container, details, idType, statusText) {
+  container.hidden = false;
+  container.replaceChildren();
+  if (statusText) {
+    const status = document.createElement('p');
+    status.className = 'id-capture-details-status';
+    status.textContent = statusText;
+    container.appendChild(status);
+  }
+  if (!details && statusText === 'Reading ID…') return;
+  const list = document.createElement('dl');
+  list.className = 'id-capture-details-list';
+  idDetailFieldsFor(idType).forEach(({ key, label }) => {
+    const row = document.createElement('div');
+    row.className = 'id-capture-details-row';
+    const dt = document.createElement('dt');
+    dt.textContent = label;
+    const dd = document.createElement('dd');
+    dd.textContent = (details && details[key]) ? details[key] : '—';
+    row.appendChild(dt);
+    row.appendChild(dd);
+    list.appendChild(row);
+  });
+  container.appendChild(list);
+}
+
+function itemHasSavedDiscountId(item) {
+  const c = item?.customizations;
+  if (!c) return false;
+  return Boolean(c.idPhoto || c.idDetails);
+}
+
+function resolveDiscountIdType(itemOrDetails) {
+  const details = itemOrDetails?.customizations?.idDetails || itemOrDetails?.idDetails || itemOrDetails;
+  const discount = itemOrDetails?.customizations?.discount || details?.idType;
+  if (discount === 'pwd' || details?.idType === 'pwd') return 'pwd';
+  return 'senior';
+}
+
+/** Read-only review of a saved Senior/PWD ID photo + OCR fields. */
+function showSavedDiscountIdModal(itemOrPayload) {
+  const existing = document.querySelector('.id-review-overlay');
+  if (existing) existing.remove();
+
+  const customizations = itemOrPayload?.customizations || {};
+  const photo = itemOrPayload?.idPhoto || customizations.idPhoto || null;
+  const details = itemOrPayload?.idDetails || customizations.idDetails || null;
+  const idType = resolveDiscountIdType(itemOrPayload);
+
+  const overlay = document.createElement('div');
+  overlay.className = 'id-capture-overlay id-review-overlay';
+
+  const card = document.createElement('div');
+  card.className = 'id-capture-card';
+
+  const title = document.createElement('h2');
+  title.className = 'id-capture-title';
+  title.textContent = idType === 'pwd' ? 'PWD ID' : 'Senior ID';
+
+  const hint = document.createElement('p');
+  hint.className = 'id-capture-hint';
+  hint.textContent = 'Saved for this discount.';
+
+  if (photo) {
+    const stage = document.createElement('div');
+    stage.className = 'id-capture-stage is-review';
+    const img = document.createElement('img');
+    img.src = photo;
+    img.alt = 'Saved ID photo';
+    stage.appendChild(img);
+    card.appendChild(title);
+    card.appendChild(hint);
+    card.appendChild(stage);
   } else {
-    // Deactivate all buttons first
-    discountButtons.forEach(btn => btn.classList.remove('active'));
-    // Then activate the clicked button
-    button.classList.add('active');
+    card.appendChild(title);
+    card.appendChild(hint);
   }
 
-  // Hide custom discount input if custom is not selected
-  const customDiscountInput = document.querySelector('.custom-discount-input');
-  if (customDiscountInput) {
-    const customButton = document.querySelector('.discount-toggle[data-discount="custom"]');
-    if (!customButton || !customButton.classList.contains('active')) {
-      customDiscountInput.style.display = 'none';
+  const detailsPanel = document.createElement('div');
+  detailsPanel.className = 'id-capture-details';
+  if (details) {
+    renderIdDetailRows(detailsPanel, details, idType);
+  } else {
+    renderIdDetailRows(detailsPanel, null, idType, 'No extracted details saved.');
+  }
+  card.appendChild(detailsPanel);
+
+  const actions = document.createElement('div');
+  actions.className = 'id-capture-actions';
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'checkout-button id-capture-skip';
+  closeBtn.style.flex = '1';
+  closeBtn.textContent = 'CLOSE';
+  closeBtn.addEventListener('click', () => overlay.remove());
+  actions.appendChild(closeBtn);
+  card.appendChild(actions);
+
+  overlay.appendChild(card);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+  card.addEventListener('click', (e) => e.stopPropagation());
+  document.body.appendChild(overlay);
+}
+
+window.showSavedDiscountIdModal = showSavedDiscountIdModal;
+
+async function extractDiscountIdFromImage(imageDataUrl, idType) {
+  if (!imageDataUrl || !imageDataUrl.startsWith('data:image/')) {
+    throw new Error('ID image is required');
+  }
+  const mimeMatch = imageDataUrl.match(/^data:([^;]+);base64,/);
+  const payload = {
+    imageBase64: imageDataUrl,
+    mimeType: mimeMatch?.[1] || 'image/jpeg',
+    idType: idType === 'pwd' ? 'pwd' : 'senior'
+  };
+
+  const [{ getFunctions, httpsCallable }] = await Promise.all([
+    import('https://www.gstatic.com/firebasejs/11.6.0/firebase-functions.js')
+  ]);
+  const functions = getFunctions(app, 'us-central1');
+  const extract = httpsCallable(functions, 'extractDiscountId', { timeout: 60000 });
+  const response = await extract(payload);
+  const parsed = response?.data?.parsed;
+  if (!parsed) throw new Error('Extraction returned no data');
+  return parsed;
+}
+
+function getIdCardLayout(width, height) {
+  const cardW = width * 0.86;
+  const cardH = Math.min(cardW / 1.586, height * 0.72);
+  const x = (width - cardW) / 2;
+  const y = (height - cardH) / 2;
+  return {
+    card: { x, y, w: cardW, h: cardH, r: Math.min(14, cardH * 0.07) }
+  };
+}
+
+function drawRoundedRectPath(ctx, x, y, w, h, r) {
+  const radius = Math.max(0, Math.min(r, w / 2, h / 2));
+  ctx.beginPath();
+  if (typeof ctx.roundRect === 'function') {
+    ctx.roundRect(x, y, w, h, radius);
+    return;
+  }
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + w, y, x + w, y + h, radius);
+  ctx.arcTo(x + w, y + h, x, y + h, radius);
+  ctx.arcTo(x, y + h, x, y, radius);
+  ctx.arcTo(x, y, x + w, y, radius);
+  ctx.closePath();
+}
+
+function drawIdGuide(canvas) {
+  const dpr = canvas._dpr || 1;
+  const width = canvas.width / dpr;
+  const height = canvas.height / dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+
+  const { card } = getIdCardLayout(width, height);
+
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+  ctx.fillRect(0, 0, width, height);
+  ctx.globalCompositeOperation = 'destination-out';
+  drawRoundedRectPath(ctx, card.x, card.y, card.w, card.h, card.r);
+  ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 2;
+  drawRoundedRectPath(ctx, card.x, card.y, card.w, card.h, card.r);
+  ctx.stroke();
+}
+
+function sizeIdGuideCanvas(canvas, stage) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const width = Math.max(1, stage.clientWidth);
+  const height = Math.max(1, stage.clientHeight);
+  canvas._dpr = dpr;
+  canvas.width = Math.round(width * dpr);
+  canvas.height = Math.round(height * dpr);
+  drawIdGuide(canvas);
+}
+
+function coverSourceRect(srcW, srcH, destW, destH) {
+  const srcRatio = srcW / srcH;
+  const destRatio = destW / destH;
+  if (srcRatio > destRatio) {
+    const sw = srcH * destRatio;
+    return { sx: (srcW - sw) / 2, sy: 0, sw, sh: srcH };
+  }
+  const sh = srcW / destRatio;
+  return { sx: 0, sy: (srcH - sh) / 2, sw: srcW, sh };
+}
+
+function captureIdCardFromSource(source, stage, canvas) {
+  const srcW = source.videoWidth || source.naturalWidth;
+  const srcH = source.videoHeight || source.naturalHeight;
+  if (!srcW || !srcH) return null;
+
+  const stageW = stage.clientWidth;
+  const stageH = stage.clientHeight;
+  const dpr = canvas._dpr || 1;
+  const layout = getIdCardLayout(canvas.width / dpr, canvas.height / dpr);
+  const mapped = coverSourceRect(srcW, srcH, stageW, stageH);
+  const scaleX = mapped.sw / stageW;
+  const scaleY = mapped.sh / stageH;
+
+  const sx = mapped.sx + layout.card.x * scaleX;
+  const sy = mapped.sy + layout.card.y * scaleY;
+  const sw = layout.card.w * scaleX;
+  const sh = layout.card.h * scaleY;
+
+  const out = document.createElement('canvas');
+  out.width = 720;
+  out.height = Math.round(720 / 1.586);
+  const ctx = out.getContext('2d');
+  ctx.drawImage(source, sx, sy, sw, sh, 0, 0, out.width, out.height);
+  return out.toDataURL('image/jpeg', 0.72);
+}
+
+/** Full visible stage (object-fit: cover) for OCR — not cropped to the ID frame. */
+function captureVisibleStageFromSource(source, stage) {
+  const srcW = source.videoWidth || source.naturalWidth;
+  const srcH = source.videoHeight || source.naturalHeight;
+  if (!srcW || !srcH) return null;
+
+  const stageW = Math.max(1, stage.clientWidth);
+  const stageH = Math.max(1, stage.clientHeight);
+  const mapped = coverSourceRect(srcW, srcH, stageW, stageH);
+
+  const out = document.createElement('canvas');
+  out.width = 960;
+  out.height = Math.round(960 * (stageH / stageW));
+  const ctx = out.getContext('2d');
+  ctx.drawImage(source, mapped.sx, mapped.sy, mapped.sw, mapped.sh, 0, 0, out.width, out.height);
+  return out.toDataURL('image/jpeg', 0.78);
+}
+
+function stopMediaStream(stream) {
+  if (!stream) return;
+  stream.getTracks().forEach(track => track.stop());
+}
+
+async function startIdCamera(video, facingMode = 'user') {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error('Camera not supported');
+  }
+  const preferred = facingMode === 'environment' ? 'environment' : 'user';
+  const fallback = preferred === 'user' ? 'environment' : 'user';
+  const attempts = [
+    { audio: false, video: { facingMode: { ideal: preferred }, width: { ideal: 1280 }, height: { ideal: 720 } } },
+    { audio: false, video: { facingMode: preferred } },
+    { audio: false, video: { facingMode: fallback } },
+    { audio: false, video: true }
+  ];
+  let lastError = null;
+  for (const constraints of attempts) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      video.srcObject = stream;
+      video.setAttribute('playsinline', 'true');
+      video.muted = true;
+      await video.play();
+      return stream;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('Camera unavailable');
+}
+
+function showDiscountIdCaptureModal(discountType) {
+  return new Promise((resolve) => {
+    const existing = document.querySelector('.id-capture-overlay');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'id-capture-overlay';
+
+    const card = document.createElement('div');
+    card.className = 'id-capture-card';
+
+    const title = document.createElement('h2');
+    title.className = 'id-capture-title';
+    title.textContent = discountType === 'pwd' ? 'Scan PWD ID' : 'Scan Senior ID';
+
+    const hint = document.createElement('p');
+    hint.className = 'id-capture-hint';
+    hint.textContent = 'Fit the ID in the frame.';
+
+    const stage = document.createElement('div');
+    stage.className = 'id-capture-stage';
+
+    const video = document.createElement('video');
+    video.setAttribute('playsinline', '');
+    video.setAttribute('webkit-playsinline', '');
+    video.setAttribute('autoplay', '');
+    video.muted = true;
+    video.playsInline = true;
+
+    const still = document.createElement('img');
+    still.alt = 'ID preview';
+    still.style.display = 'none';
+
+    const canvas = document.createElement('canvas');
+    const status = document.createElement('div');
+    status.className = 'id-capture-status';
+    status.hidden = true;
+
+    const flipBtn = document.createElement('button');
+    flipBtn.type = 'button';
+    flipBtn.className = 'id-capture-flip';
+    flipBtn.title = 'Switch camera';
+    flipBtn.setAttribute('aria-label', 'Switch camera');
+    flipBtn.textContent = '↻';
+
+    stage.appendChild(video);
+    stage.appendChild(still);
+    stage.appendChild(canvas);
+    stage.appendChild(flipBtn);
+    stage.appendChild(status);
+
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*';
+    fileInput.capture = 'user';
+    fileInput.className = 'id-capture-file';
+
+    const actions = document.createElement('div');
+    actions.className = 'id-capture-actions';
+
+    const skipBtn = document.createElement('button');
+    skipBtn.type = 'button';
+    skipBtn.className = 'checkout-button id-capture-skip';
+    skipBtn.textContent = 'SKIP';
+
+    const captureBtn = document.createElement('button');
+    captureBtn.type = 'button';
+    captureBtn.className = 'checkout-button id-capture-save';
+    captureBtn.textContent = 'CAPTURE';
+
+    actions.appendChild(skipBtn);
+    actions.appendChild(captureBtn);
+
+    card.appendChild(title);
+    card.appendChild(hint);
+    card.appendChild(stage);
+    const detailsPanel = document.createElement('div');
+    detailsPanel.className = 'id-capture-details';
+    detailsPanel.hidden = true;
+    card.appendChild(detailsPanel);
+    card.appendChild(fileInput);
+    card.appendChild(actions);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    card.addEventListener('click', (e) => e.stopPropagation());
+
+    let stream = null;
+    let closed = false;
+    let cameraReady = false;
+    let currentFacing = 'user';
+    let previewSource = video;
+    let capturedPhoto = null;
+    let extractedDetails = null;
+    let extractPromise = null;
+    let extractToken = 0;
+
+    const onResize = () => {
+      if (!closed && !stage.classList.contains('is-review')) sizeIdGuideCanvas(canvas, stage);
+    };
+    const resizeObserver = typeof ResizeObserver === 'function'
+      ? new ResizeObserver(onResize)
+      : null;
+
+    const setStatus = (text) => {
+      if (text) {
+        status.hidden = false;
+        status.textContent = text;
+      } else {
+        status.hidden = true;
+        status.textContent = '';
+      }
+    };
+
+    const setReviewMode = (isReview) => {
+      canvas.style.display = isReview ? 'none' : 'block';
+      stage.classList.toggle('is-review', isReview);
+      flipBtn.hidden = isReview || !cameraReady;
+      skipBtn.textContent = isReview ? 'RETAKE' : 'SKIP';
+      captureBtn.textContent = isReview ? 'SAVE' : (cameraReady ? 'CAPTURE' : 'CHOOSE PHOTO');
+      if (isReview) setStatus('');
+    };
+
+    const switchIdCamera = async () => {
+      if (closed || capturedPhoto) return;
+      flipBtn.disabled = true;
+      const nextFacing = currentFacing === 'user' ? 'environment' : 'user';
+      stopMediaStream(stream);
+      stream = null;
+      try {
+        stream = await startIdCamera(video, nextFacing);
+        if (closed) {
+          stopMediaStream(stream);
+          return;
+        }
+        currentFacing = nextFacing;
+        fileInput.capture = currentFacing;
+        cameraReady = true;
+        video.style.display = 'block';
+        previewSource = video;
+        setStatus('');
+        sizeIdGuideCanvas(canvas, stage);
+      } catch {
+        cameraReady = false;
+        video.style.display = 'none';
+        flipBtn.hidden = true;
+        captureBtn.textContent = 'CHOOSE PHOTO';
+        setStatus('Camera unavailable');
+      }
+      flipBtn.disabled = false;
+    };
+
+    flipBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      switchIdCamera();
+    });
+
+    const startIdRead = (ocrPhoto) => {
+      extractToken += 1;
+      const token = extractToken;
+      extractedDetails = null;
+      renderIdDetailRows(detailsPanel, null, discountType, 'Reading ID…');
+      extractPromise = extractDiscountIdFromImage(ocrPhoto, discountType)
+        .then((parsed) => {
+          if (closed || token !== extractToken) return parsed;
+          extractedDetails = parsed;
+          renderIdDetailRows(detailsPanel, parsed, discountType);
+          return parsed;
+        })
+        .catch((error) => {
+          if (closed || token !== extractToken) return null;
+          extractedDetails = null;
+          renderIdDetailRows(detailsPanel, null, discountType, error?.message || 'Couldn’t read the ID.');
+          return null;
+        });
+      return extractPromise;
+    };
+
+    const finish = async (photo) => {
+      if (closed) return;
+      if (photo && extractPromise) {
+        captureBtn.disabled = true;
+        try {
+          const parsed = await extractPromise;
+          if (parsed) extractedDetails = parsed;
+        } catch {
+          // keep photo even if OCR fails
+        }
+        captureBtn.disabled = false;
+      }
+      if (closed) return;
+      closed = true;
+      window.removeEventListener('resize', onResize);
+      if (resizeObserver) resizeObserver.disconnect();
+      stopMediaStream(stream);
+      overlay.remove();
+      resolve(photo ? { photo, details: extractedDetails } : null);
+    };
+
+    const showStill = (src) => {
+      still.src = src;
+      still.style.display = 'block';
+      video.style.display = 'none';
+      previewSource = still;
+    };
+
+    const showLive = () => {
+      still.style.display = 'none';
+      still.removeAttribute('src');
+      video.style.display = 'block';
+      previewSource = video;
+      capturedPhoto = null;
+      extractedDetails = null;
+      extractPromise = null;
+      extractToken += 1;
+      detailsPanel.hidden = true;
+      detailsPanel.replaceChildren();
+      flipBtn.hidden = !cameraReady;
+      setReviewMode(false);
+    };
+
+    skipBtn.addEventListener('click', () => {
+      if (capturedPhoto) {
+        capturedPhoto = null;
+        if (stream && cameraReady) {
+          showLive();
+          setStatus('');
+        } else {
+          setReviewMode(false);
+          showLive();
+          still.style.display = 'none';
+          video.style.display = 'none';
+          setStatus('Camera unavailable');
+          fileInput.value = '';
+        }
+        return;
+      }
+      finish(null);
+    });
+
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) finish(null);
+    });
+
+    captureBtn.addEventListener('click', () => {
+      if (capturedPhoto) {
+        finish(capturedPhoto);
+        return;
+      }
+      if (!cameraReady && previewSource === video) {
+        fileInput.click();
+        return;
+      }
+      const croppedPhoto = captureIdCardFromSource(previewSource, stage, canvas);
+      const ocrPhoto = captureVisibleStageFromSource(previewSource, stage) || croppedPhoto;
+      if (!croppedPhoto) {
+        setStatus('Could not capture. Try again.');
+        return;
+      }
+      capturedPhoto = croppedPhoto;
+      showStill(croppedPhoto);
+      setReviewMode(true);
+      startIdRead(ocrPhoto);
+    });
+
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        showStill(reader.result);
+        capturedPhoto = null;
+        setReviewMode(false);
+        captureBtn.textContent = 'CAPTURE';
+        setStatus('');
+        still.onload = () => sizeIdGuideCanvas(canvas, stage);
+      };
+      reader.readAsDataURL(file);
+    });
+
+    requestAnimationFrame(() => sizeIdGuideCanvas(canvas, stage));
+    window.addEventListener('resize', onResize, { passive: true });
+    if (resizeObserver) resizeObserver.observe(stage);
+
+    startIdCamera(video, currentFacing).then((mediaStream) => {
+      if (closed) {
+        stopMediaStream(mediaStream);
+        return;
+      }
+      stream = mediaStream;
+      cameraReady = true;
+      flipBtn.hidden = false;
+      captureBtn.textContent = 'CAPTURE';
+      setStatus('');
+      video.addEventListener('loadedmetadata', onResize, { once: true });
+      sizeIdGuideCanvas(canvas, stage);
+    }).catch(() => {
+      if (closed) return;
+      cameraReady = false;
+      video.style.display = 'none';
+      flipBtn.hidden = true;
+      captureBtn.textContent = 'CHOOSE PHOTO';
+      setStatus('Camera unavailable');
+    });
+  });
+}
+
+async function toggleDiscount(button) {
+  const discountButtons = document.querySelectorAll('.discount-toggle');
+  const type = button.dataset.discount;
+
+  if (button.classList.contains('active')) {
+    button.classList.remove('active');
+    if (isIdDiscountType(type)) pendingDiscountIdPhoto = null;
+    if (isIdDiscountType(type)) pendingDiscountIdDetails = null;
+  } else {
+    discountButtons.forEach(btn => btn.classList.remove('active'));
+    button.classList.add('active');
+    if (isIdDiscountType(type)) {
+      const result = await showDiscountIdCaptureModal(type);
+      if (result?.photo) {
+        pendingDiscountIdPhoto = result.photo;
+        pendingDiscountIdDetails = result.details || null;
+      }
+    } else {
+      pendingDiscountIdPhoto = null;
+      pendingDiscountIdDetails = null;
     }
   }
 
-  // Update item total to reflect discount change
   updateItemTotal();
+  updateDiscountIdPhotoIndicator();
 }
 
 function toggleCustomDiscount(button) {
-  // Get all discount toggle buttons
   const discountButtons = document.querySelectorAll('.discount-toggle');
-  const customDiscountInput = button.querySelector('.custom-discount-input');
+  const input = button.querySelector('#customDiscountValue');
 
-  // If this button is already active, deactivate it
   if (button.classList.contains('active')) {
     button.classList.remove('active');
-    if (customDiscountInput) {
-      customDiscountInput.style.display = 'none';
-    }
   } else {
-    // Deactivate all buttons first
     discountButtons.forEach(btn => btn.classList.remove('active'));
-    // Then activate the clicked button
     button.classList.add('active');
-    
-    // Show custom discount input
-    if (customDiscountInput) {
-      customDiscountInput.style.display = 'block';
-      // Focus on the input field
-      const input = customDiscountInput.querySelector('#customDiscountPercent');
-      if (input) {
-        input.focus();
-        // Set default value if empty
-        if (!input.value) {
-          input.value = '10'; // Default 10% discount
-        }
-        
-        // Remove existing event listeners to prevent duplicates
-        input.removeEventListener('input', updateItemTotal);
-        input.removeEventListener('change', updateItemTotal);
-        
-        // Add event listener for real-time price updates
-        input.addEventListener('input', updateItemTotal);
-        input.addEventListener('change', updateItemTotal);
+    pendingDiscountIdPhoto = null;
+    pendingDiscountIdDetails = null;
+    if (input) {
+      if (!input.value) {
+        input.value = '10';
       }
+      input.focus();
+      input.select();
     }
   }
 
-  // Update item total to reflect discount change
   updateItemTotal();
+  updateDiscountIdPhotoIndicator();
 }
 
 function editOrderItem(index) {
@@ -2029,7 +3000,6 @@ function updateCustomizedItemInOrder(baseItem, editIndex, overlay) {
 
   // Calculate additional price and adjustments
   let additionalPrice = 0;
-  let discountMultiplier = 1;
 
   if (!isPackageMode) {
     const opts = getCustomizationOptions();
@@ -2048,6 +3018,8 @@ function updateCustomizedItemInOrder(baseItem, editIndex, overlay) {
       additionalPrice += opts.strengthLevel[options.strengthLevel];
     }
 
+    additionalPrice += matchaOptionSurcharge(options.matchaOption, opts);
+
     // Add preparation adjustment for brew bar items
     if (options.preparation && baseItem.customizations && baseItem.customizations.preparation) {
       const preparationPrice = baseItem.customizations.preparation[options.preparation];
@@ -2057,19 +3029,17 @@ function updateCustomizedItemInOrder(baseItem, editIndex, overlay) {
       }
     }
 
-    // Apply discount if any
-    if (options.discount && options.discount !== 'none') {
-      if (options.discount === 'custom' && options.customDiscountPercent) {
-        const customDiscountMultiplier = -(options.customDiscountPercent / 100);
-        discountMultiplier = 1 + customDiscountMultiplier;
-      } else if (opts.discount[options.discount]) {
-        discountMultiplier = 1 + opts.discount[options.discount];
+    // Apply variant price adjustment if any
+    if (options.variant && baseItem.variants) {
+      const selectedVariant = baseItem.variants.find(v => v.name === options.variant);
+      if (selectedVariant && selectedVariant.price) {
+        additionalPrice += selectedVariant.price;
       }
     }
   }
 
-  // Calculate final price (always 0 for package mode)
-  const finalPrice = ((baseItem.basePrice || baseItem.price) + additionalPrice) * discountMultiplier;
+  const unitPrice = (baseItem.basePrice || baseItem.price) + additionalPrice;
+  const finalPrice = isPackageMode ? 0 : applyDiscountToUnitPrice(unitPrice, options);
 
   // Update item with new customizations
   currentOrder[editIndex] = {
@@ -2162,6 +3132,11 @@ function updateItemTotal() {
     basePrice += opts.strengthLevel[strengthLevelOption.dataset.option];
   }
 
+  const matchaOptionEl = document.querySelector('.option-button.active[data-group="matcha option"]');
+  if (matchaOptionEl) {
+    basePrice += matchaOptionSurcharge(matchaOptionEl.dataset.option, opts);
+  }
+
   // Apply preparation adjustment for brew bar items
   const preparationOption = document.querySelector('.option-button.active[data-group="preparation"]');
   if (preparationOption) {
@@ -2191,15 +3166,13 @@ function updateItemTotal() {
     const discountType = discountOption.dataset.discount;
     
     if (discountType === 'custom') {
-      // Handle custom discount
-      const customDiscountInput = document.querySelector('#customDiscountPercent');
-      if (customDiscountInput && customDiscountInput.value) {
-        const customDiscountPercent = parseFloat(customDiscountInput.value);
-        if (!isNaN(customDiscountPercent) && customDiscountPercent >= 0 && customDiscountPercent <= 100) {
-          const customDiscountMultiplier = -(customDiscountPercent / 100);
-          basePrice = basePrice * (1 + customDiscountMultiplier);
-        }
-      }
+      const custom = readCustomDiscountFromModal();
+      basePrice = applyDiscountToUnitPrice(basePrice, {
+        discount: 'custom',
+        customDiscountMode: custom.mode,
+        customDiscountPercent: custom.percent,
+        customDiscountAmount: custom.amount
+      });
     } else if (opts.discount[discountType]) {
       // Handle predefined discounts (senior, pwd)
       basePrice = basePrice * (1 + opts.discount[discountType]);
@@ -2282,15 +3255,17 @@ function getSelectedOptions() {
   const discountButton = document.querySelector('.discount-toggle.active');
   options.discount = discountButton ? discountButton.dataset.discount : 'none';
   
-  // If custom discount is selected, capture the percentage
   if (options.discount === 'custom') {
-    const customDiscountInput = document.querySelector('#customDiscountPercent');
-    if (customDiscountInput && customDiscountInput.value) {
-      const customDiscountPercent = parseFloat(customDiscountInput.value);
-      if (!isNaN(customDiscountPercent) && customDiscountPercent >= 0 && customDiscountPercent <= 100) {
-        options.customDiscountPercent = customDiscountPercent;
-      }
+    const custom = readCustomDiscountFromModal();
+    options.customDiscountMode = custom.mode;
+    if (custom.mode === 'amount' && custom.amount != null) {
+      options.customDiscountAmount = custom.amount;
+    } else if (custom.percent != null) {
+      options.customDiscountPercent = custom.percent;
     }
+  } else if (isIdDiscountType(options.discount) && pendingDiscountIdPhoto) {
+    options.idPhoto = pendingDiscountIdPhoto;
+    if (pendingDiscountIdDetails) options.idDetails = pendingDiscountIdDetails;
   }
 
   const quantity = document.querySelector('.modal-quantity .quantity-display');
@@ -2301,6 +3276,9 @@ function getSelectedOptions() {
 
   const strengthLevelButton = document.querySelector('.option-button.active[data-group="strength level"]');
   if (strengthLevelButton) options.strengthLevel = strengthLevelButton.dataset.option;
+
+  const matchaOptionButton = document.querySelector('.option-button.active[data-group="matcha option"]');
+  if (matchaOptionButton) options.matchaOption = matchaOptionButton.dataset.option;
 
   // When size is hidden, default to 'large' so price and order logic still work
   if (HIDE_SIZE_CUSTOMIZATION && !options.size) options.size = 'large';
@@ -2314,7 +3292,6 @@ function addCustomizedItemToOrder(baseItem, overlay) {
 
   // Calculate additional price and adjustments
   let additionalPrice = 0;
-  let discountMultiplier = 1;
 
   if (!isPackageMode) {
     const opts = getCustomizationOptions();
@@ -2333,6 +3310,8 @@ function addCustomizedItemToOrder(baseItem, overlay) {
       additionalPrice += opts.strengthLevel[options.strengthLevel];
     }
 
+    additionalPrice += matchaOptionSurcharge(options.matchaOption, opts);
+
     // Add preparation adjustment for brew bar items
     if (options.preparation && baseItem.customizations && baseItem.customizations.preparation) {
       const preparationPrice = baseItem.customizations.preparation[options.preparation];
@@ -2349,20 +3328,10 @@ function addCustomizedItemToOrder(baseItem, overlay) {
         additionalPrice += selectedVariant.price;
       }
     }
-
-    // Apply discount if any
-    if (options.discount && options.discount !== 'none') {
-      if (options.discount === 'custom' && options.customDiscountPercent) {
-        const customDiscountMultiplier = -(options.customDiscountPercent / 100);
-        discountMultiplier = 1 + customDiscountMultiplier;
-      } else if (opts.discount[options.discount]) {
-        discountMultiplier = 1 + opts.discount[options.discount];
-      }
-    }
   }
 
-  // Calculate final price with all adjustments (always 0 for package mode)
-  const finalPrice = (baseItem.price + additionalPrice) * discountMultiplier;
+  const unitPrice = baseItem.price + additionalPrice;
+  const finalPrice = isPackageMode ? 0 : applyDiscountToUnitPrice(unitPrice, options);
 
   // Check if this exact customization already exists in the order
   const existingItemIndex = currentOrder.findIndex(orderItem =>
@@ -2373,13 +3342,22 @@ function addCustomizedItemToOrder(baseItem, overlay) {
     orderItem.customizations.sweetness === options.sweetness &&
     orderItem.customizations.milk === options.milk &&
     orderItem.customizations.discount === options.discount &&
+    (orderItem.customizations.customDiscountMode || 'percent') === (options.customDiscountMode || 'percent') &&
+    (orderItem.customizations.customDiscountPercent || 0) === (options.customDiscountPercent || 0) &&
+    (orderItem.customizations.customDiscountAmount || 0) === (options.customDiscountAmount || 0) &&
     orderItem.customizations.variant === options.variant &&
-    orderItem.customizations.strengthLevel === options.strengthLevel
+    orderItem.customizations.strengthLevel === options.strengthLevel &&
+    orderItem.customizations.matchaOption === options.matchaOption
   );
 
   if (existingItemIndex > -1) {
-    // Update existing item quantity
     currentOrder[existingItemIndex].quantity += options.quantity;
+    if (options.idPhoto && !currentOrder[existingItemIndex].customizations.idPhoto) {
+      currentOrder[existingItemIndex].customizations.idPhoto = options.idPhoto;
+    }
+    if (options.idDetails && !currentOrder[existingItemIndex].customizations.idDetails) {
+      currentOrder[existingItemIndex].customizations.idDetails = options.idDetails;
+    }
   } else {
     // Create customized item
     const customizedItem = {
@@ -2810,44 +3788,37 @@ function showEndOfDayModal() {
             document.getElementById('eodCancelBtn').addEventListener('click', () => overlay.remove());
             document.getElementById('eodNextBtn').addEventListener('click', goConfirm);
           });
-          document.getElementById('eodConfirmBtn').addEventListener('click', async () => {
-            overlay.remove();
-            try {
-              await setDoc(salesRef, { ...rec, timestamp: serverTimestamp() });
-              sendEventSalesEmail(rec, eventName, dateStr).catch(e => console.error(e));
-              const cashFlowData = { date: dateStr, event: currentEvent, expenses: ex, actualCash: ac, expectedCash: calcLeft, variance: ac - calcLeft, salesData, savedAt: new Date().toISOString() };
-              localStorage.setItem(cashFlowKey, JSON.stringify(cashFlowData));
-              const summaries = JSON.parse(localStorage.getItem('eodSummaries') || '[]');
-              const filtered = summaries.filter(s => !(s.date === dateStr && s.event === currentEvent));
-              filtered.push(cashFlowData);
-              localStorage.setItem('eodSummaries', JSON.stringify(filtered));
-              showPosSuccessModal(rec, eventName, dateStr, summaryHTML2);
-            } catch (e) {
-              console.error('Failed to save event sales:', e);
-              alert('Failed to submit. Please try again.');
-            }
+          document.getElementById('eodConfirmBtn').addEventListener('click', async (e) => {
+            const cashFlowData = { date: dateStr, event: currentEvent, expenses: ex, actualCash: ac, expectedCash: calcLeft, variance: ac - calcLeft, salesData, savedAt: new Date().toISOString() };
+            await finalizeEventSalesSubmission({
+              overlay,
+              confirmBtn: e.currentTarget,
+              record: rec,
+              salesRef,
+              cashFlowKey,
+              cashFlowData,
+              eventName,
+              dateStr,
+              summaryHTML: summaryHTML2
+            });
           });
         });
       });
     });
 
-    document.getElementById('eodConfirmBtn').addEventListener('click', async () => {
-      overlay.remove();
-      try {
-        const payload = { ...record, timestamp: serverTimestamp() };
-        await setDoc(salesRef, payload);
-        sendEventSalesEmail(record, eventName, dateStr).catch(e => console.error(e));
-        const cashFlowData = { date: dateStr, event: currentEvent, expenses, actualCash, expectedCash: calculatedCashLeft, variance, salesData, savedAt: new Date().toISOString() };
-        localStorage.setItem(cashFlowKey, JSON.stringify(cashFlowData));
-        const summaries = JSON.parse(localStorage.getItem('eodSummaries') || '[]');
-        const filtered = summaries.filter(s => !(s.date === dateStr && s.event === currentEvent));
-        filtered.push(cashFlowData);
-        localStorage.setItem('eodSummaries', JSON.stringify(filtered));
-        showPosSuccessModal(record, eventName, dateStr, summaryHTML);
-      } catch (e) {
-        console.error('Failed to save event sales:', e);
-        alert('Failed to submit. Please try again.');
-      }
+    document.getElementById('eodConfirmBtn').addEventListener('click', async (e) => {
+      const cashFlowData = { date: dateStr, event: currentEvent, expenses, actualCash, expectedCash: calculatedCashLeft, variance, salesData, savedAt: new Date().toISOString() };
+      await finalizeEventSalesSubmission({
+        overlay,
+        confirmBtn: e.currentTarget,
+        record,
+        salesRef,
+        cashFlowKey,
+        cashFlowData,
+        eventName,
+        dateStr,
+        summaryHTML
+      });
     });
   });
 }
@@ -3222,7 +4193,7 @@ function showGCashPaymentModal() {
   // QR Code image (changed from div to img)
   const qrCode = document.createElement('img');
   qrCode.className = 'qr-code';
-  qrCode.src = 'images/qr-toph.jpg';
+  qrCode.src = 'images/qr-bea.png';
   qrCode.alt = 'GCash QR Code';
   modal.appendChild(qrCode);
 
@@ -3596,6 +4567,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     forceSyncBtn.addEventListener('click', forceFullSync);
   }
 
+  window.showOrderBackupModal = showOrderBackupModal;
+
   // Package submit handler
   const packageSubmitBtn = document.getElementById('package-submit');
   if (packageSubmitBtn) {
@@ -3647,6 +4620,177 @@ async function initializeEventSelector() {
     subscribeToOrders(currentEvent, selectedDate, mergeFirebaseOrder);
     displayOrderHistory();
     scheduleLiveSessionPublish(true);
+  });
+}
+
+function getOrdersForBackup() {
+  const live = Array.isArray(orderHistory) ? orderHistory : [];
+  let backup = [];
+  try {
+    backup = JSON.parse(localStorage.getItem('orderHistoryBackup') || '[]');
+  } catch (error) {
+    console.error('Failed to read orderHistoryBackup:', error);
+  }
+  if (!Array.isArray(backup)) backup = [];
+  return backup.length > live.length ? backup : live;
+}
+
+function summarizeOrdersForBackup(orders) {
+  const byEvent = {};
+  let salesTotal = 0;
+  let counted = 0;
+
+  orders.forEach(order => {
+    if (!order || order.status === 'deleted') return;
+    counted += 1;
+    const eventKey = order.event || 'pop-up';
+    const dateStr = getLocalDateString(new Date(order.timestamp));
+    const isSales = order.status === 'pending' || order.status === 'completed';
+    const amount = Number(order.total) || 0;
+
+    if (!byEvent[eventKey]) {
+      byEvent[eventKey] = { count: 0, total: 0, byDate: {} };
+    }
+    byEvent[eventKey].count += 1;
+    if (isSales) {
+      byEvent[eventKey].total += amount;
+      salesTotal += amount;
+    }
+    if (!byEvent[eventKey].byDate[dateStr]) {
+      byEvent[eventKey].byDate[dateStr] = { count: 0, total: 0 };
+    }
+    byEvent[eventKey].byDate[dateStr].count += 1;
+    if (isSales) {
+      byEvent[eventKey].byDate[dateStr].total += amount;
+    }
+  });
+
+  return { counted, salesTotal, byEvent };
+}
+
+function buildOrderBackupPayload() {
+  const orders = getOrdersForBackup();
+  const summary = summarizeOrdersForBackup(orders);
+  return {
+    exportedAt: new Date().toISOString(),
+    deviceEvent: currentEvent,
+    orderCount: orders.length,
+    summary,
+    orders
+  };
+}
+
+async function copyBackupJson(jsonText) {
+  try {
+    await navigator.clipboard.writeText(jsonText);
+    return true;
+  } catch (error) {
+    const textarea = document.createElement('textarea');
+    textarea.value = jsonText;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+    const ok = document.execCommand('copy');
+    textarea.remove();
+    return ok;
+  }
+}
+
+async function shareOrDownloadBackup(payload, jsonText) {
+  const filename = `pos-order-backup-${getLocalDateString()}.json`;
+  const file = new File([jsonText], filename, { type: 'application/json' });
+
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    await navigator.share({
+      files: [file],
+      title: 'POS order backup',
+      text: `${payload.orderCount} orders, ${formatEventSalesCurrency(payload.summary.salesTotal)}`
+    });
+    return;
+  }
+
+  const blobUrl = URL.createObjectURL(new Blob([jsonText], { type: 'application/json' }));
+  const link = document.createElement('a');
+  link.href = blobUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+}
+
+function showOrderBackupModal() {
+  const existing = document.querySelector('.order-backup-modal');
+  if (existing) existing.remove();
+
+  const payload = buildOrderBackupPayload();
+  const jsonText = JSON.stringify(payload, null, 2);
+  const { counted, salesTotal, byEvent } = payload.summary;
+
+  let eventHtml = '';
+  const eventKeys = Object.keys(byEvent);
+  if (eventKeys.length === 0) {
+    eventHtml = '<p>No orders found in this app\'s local storage.</p>';
+  } else {
+    eventHtml = eventKeys.map(eventKey => {
+      const group = byEvent[eventKey];
+      const dates = Object.keys(group.byDate).sort().reverse().map(dateStr => {
+        const day = group.byDate[dateStr];
+        return `<li>${dateStr}: ${day.count} orders, ${formatEventSalesCurrency(day.total)}</li>`;
+      }).join('');
+      return `
+        <div class="backup-event-block">
+          <strong>${getEventDisplayName(eventKey)}</strong>
+          <div class="backup-event-meta">${eventKey} · ${group.count} orders · ${formatEventSalesCurrency(group.total)}</div>
+          <ul>${dates}</ul>
+        </div>`;
+    }).join('');
+  }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay order-backup-modal';
+
+  const modal = document.createElement('div');
+  modal.className = 'modal backup-modal';
+  modal.innerHTML = `
+    <h2 class="modal-header">LOCAL ORDER BACKUP</h2>
+    <p class="backup-summary">This iPad has <strong>${counted}</strong> local orders totaling <strong>${formatEventSalesCurrency(salesTotal)}</strong> (pending + completed). Copy this JSON off the device before Force Sync or any storage reset.</p>
+    <div class="backup-event-list">${eventHtml}</div>
+    <textarea class="backup-json" readonly></textarea>
+    <div class="modal-footer backup-modal-footer">
+      <button type="button" class="checkout-button modal-cancel" id="backupCloseBtn">CLOSE</button>
+      <button type="button" class="checkout-button" id="backupCopyBtn">COPY JSON</button>
+      <button type="button" class="checkout-button modal-add" id="backupShareBtn">SHARE / SAVE</button>
+    </div>
+  `;
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  const textarea = modal.querySelector('.backup-json');
+  textarea.value = jsonText;
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+  modal.querySelector('#backupCloseBtn').addEventListener('click', () => overlay.remove());
+  modal.querySelector('#backupCopyBtn').addEventListener('click', async () => {
+    const copied = await copyBackupJson(jsonText);
+    alert(copied
+      ? 'Copied. Paste it into Notes, Files, or an email and save it off this iPad.'
+      : 'Copy failed. Long-press the text box, Select All, then Copy.');
+  });
+  modal.querySelector('#backupShareBtn').addEventListener('click', async () => {
+    try {
+      await shareOrDownloadBackup(payload, jsonText);
+    } catch (error) {
+      if (error && error.name === 'AbortError') return;
+      textarea.focus();
+      textarea.select();
+      alert('Share failed. Long-press the text box, Select All, then Copy.');
+    }
   });
 }
 
@@ -3761,12 +4905,24 @@ function showNameInputModal() {
   header.textContent = "Who's this order for?";
   modal.appendChild(header);
 
+  const previousName = customerName;
+
   const input = document.createElement('input');
   input.type = 'text';
   input.placeholder = 'Enter name';
   input.value = customerName;
   input.maxLength = 30;
   
+  const applyTypedName = (name, persist) => {
+    customerName = String(name || '').trim();
+    updateOrderHeader();
+    scheduleLiveSessionPublish(persist);
+  };
+
+  input.addEventListener('input', () => {
+    applyTypedName(input.value, false);
+  });
+
   // Add Enter key handler
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
@@ -3783,12 +4939,18 @@ function showNameInputModal() {
   const cancelBtn = document.createElement('button');
   cancelBtn.className = 'checkout-button modal-cancel';
   cancelBtn.innerHTML = '<img src="images/cancel-icon.png" class="btn-icon" alt="Cancel">CANCEL';
-  cancelBtn.addEventListener('click', () => overlay.remove());
+  cancelBtn.addEventListener('click', () => {
+    applyTypedName(previousName, true);
+    overlay.remove();
+  });
 
   const okBtn = document.createElement('button');
   okBtn.className = 'checkout-button modal-add';
   okBtn.innerHTML = '<img src="images/done-icon.png" class="btn-icon" alt="OK">OK';
-  okBtn.addEventListener('click', () => updateCustomerName(input.value, overlay));
+  okBtn.addEventListener('click', () => {
+    console.log('[GREETING_DEBUG][POS] OK button click handler');
+    updateCustomerName(input.value, overlay);
+  });
 
   footer.appendChild(cancelBtn);
   footer.appendChild(okBtn);
@@ -3798,7 +4960,10 @@ function showNameInputModal() {
   document.body.appendChild(overlay);
 
   overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) overlay.remove();
+    if (e.target === overlay) {
+      applyTypedName(previousName, true);
+      overlay.remove();
+    }
   });
 
   setTimeout(() => input.focus(), 100);
@@ -3808,6 +4973,48 @@ function updateCustomerName(name, overlay) {
   customerName = name.trim();
   updateOrderHeader();
   overlay.remove();
+
+  console.log('[GREETING_DEBUG][POS] updateCustomerName called', {
+    name: customerName,
+    event: currentEvent,
+    scriptHint: 'expect script.js?v=greeting-fix-2+'
+  });
+
+  // Cancel any debounced typing publish so it cannot race the greeting write.
+  if (liveSessionPublishTimer) {
+    clearTimeout(liveSessionPublishTimer);
+    liveSessionPublishTimer = null;
+  }
+
+  if (customerName) {
+    const greetingId = Date.now();
+    const payload = {
+      ...buildLiveSessionPayload(),
+      nameGreetingId: greetingId
+    };
+    console.log('[GREETING_DEBUG][POS] OK pressed — publishing', {
+      name: customerName,
+      event: currentEvent,
+      greetingId
+    });
+    publishLiveSession(currentEvent, payload).then((ok) => {
+      console.log('[GREETING_DEBUG][POS] publishLiveSession result', { ok, greetingId, customerName, event: currentEvent, payload });
+    });
+    try {
+      localStorage.setItem('posNameGreeting', JSON.stringify({
+        id: greetingId,
+        name: customerName,
+        event: currentEvent,
+        at: greetingId
+      }));
+      console.log('[GREETING_DEBUG][POS] localStorage posNameGreeting written');
+    } catch (err) {
+      console.warn('[GREETING_DEBUG][POS] localStorage write failed', err);
+    }
+    return;
+  }
+
+  console.log('[GREETING_DEBUG][POS] empty name — no greeting publish');
   scheduleLiveSessionPublish(true);
 }
 
@@ -4214,34 +5421,42 @@ window.debugEventData = async function () {
 };
 
 let currentMenuData = null;
+
+function setCurrentMenuData(menu) {
+  currentMenuData = menu;
+  window.__posMenu = menu;
+}
 let isGridView = false;
 
 async function loadEventMenu(eventKey) {
   if (eventKey === 'pop-up') {
     // Use default menu for legacy pop-up
-    currentMenuData = (await import('./menu-data.js')).menuData;
+    setCurrentMenuData((await import('./menu-data.js')).menuData);
     refreshMenuDisplay();
     return;
   }
 
   try {
-    // Load event data from Firebase to get custom menu
+    // Load event data from Firebase to get custom menu.
+    // Prefer the active (non-archived) doc when duplicate keys exist
+    // (e.g. legacy archived "SM Southmall" sharing popup-sm-southmall).
     const events = await loadEventsFromFirebase();
-    const event = events.find(e => e.key === eventKey);
+    const event = events.find(e => e.key === eventKey && !e.archived)
+      || events.find(e => e.key === eventKey);
 
     if (event && event.customMenu) {
-      console.log('Loading custom menu for event:', eventKey);
-      currentMenuData = event.customMenu;
+      console.log('Loading custom menu for event:', eventKey, event.archived ? '(archived fallback)' : '(active)');
+      setCurrentMenuData(event.customMenu);
     } else {
       console.log('No custom menu found, using default for event:', eventKey);
-      currentMenuData = (await import('./menu-data.js')).menuData;
+      setCurrentMenuData((await import('./menu-data.js')).menuData);
     }
 
     refreshMenuDisplay();
   } catch (error) {
     console.error('Error loading event menu:', error);
     // Fallback to default menu
-    currentMenuData = (await import('./menu-data.js')).menuData;
+    setCurrentMenuData((await import('./menu-data.js')).menuData);
     refreshMenuDisplay();
   }
 }

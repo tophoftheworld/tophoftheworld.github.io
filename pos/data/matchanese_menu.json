@@ -1,13 +1,45 @@
 {
   "categories": [
-    { "id": "matcha-lattes", "name": "Matcha Lattes (Iced)" },
-    { "id": "hojicha-lattes", "name": "Hōjicha Lattes (Iced)" },
-    { "id": "matcha-specials", "name": "Matcha Specials (Iced)" },
-    { "id": "matcha-cocktails", "name": "Matcha Cocktails" },
-    { "id": "cookies", "name": "Cookies (per pc)" },
-    { "id": "desserts", "name": "Desserts (per Box/Cup)" },
-    { "id": "matcha-powder", "name": "Matcha Powder" },
-    { "id": "merchandise", "name": "Merchandise" }
+    {
+      "id": "matcha-lattes",
+      "name": "Matcha Lattes (Iced)",
+      "countsAsCup": true
+    },
+    {
+      "id": "hojicha-lattes",
+      "name": "Hōjicha Lattes (Iced)",
+      "countsAsCup": true
+    },
+    {
+      "id": "matcha-specials",
+      "name": "Matcha Specials (Iced)",
+      "countsAsCup": true
+    },
+    {
+      "id": "matcha-cocktails",
+      "name": "Matcha Cocktails",
+      "countsAsCup": true
+    },
+    {
+      "id": "cookies",
+      "name": "Cookies (per pc)",
+      "countsAsCup": false
+    },
+    {
+      "id": "desserts",
+      "name": "Desserts (per Box/Cup)",
+      "countsAsCup": false
+    },
+    {
+      "id": "matcha-powder",
+      "name": "Matcha Powder",
+      "countsAsCup": false
+    },
+    {
+      "id": "merchandise",
+      "name": "Merchandise",
+      "countsAsCup": false
+    }
   ],
   "items": [
     {
@@ -23,7 +55,9 @@
       "name": "Matchanese Seasalt Latte",
       "description": "Our Signature Matcha Latte topped with Seasalt Cream",
       "price": 250,
-      "tags": ["Best Seller"],
+      "tags": [
+        "Best Seller"
+      ],
       "type": "Iced",
       "shorthand": "MSL"
     },
@@ -48,7 +82,9 @@
       "name": "Coco Oat Matchanese Latte",
       "description": "Matcha Cold Whisked with Oat Milk over Coconut Juice",
       "price": 230,
-      "tags": ["Must-Try!"],
+      "tags": [
+        "Must-Try!"
+      ],
       "type": "Iced",
       "shorthand": "COML"
     },
@@ -81,7 +117,9 @@
       "name": "Strawberry Matcha Tiramisu Latte",
       "description": "Our Signature Matcha Latte topped with Strawberry Tiramisu",
       "price": 280,
-      "tags": ["Limited"],
+      "tags": [
+        "Limited"
+      ],
       "type": "Iced",
       "shorthand": "SMTL"
     },

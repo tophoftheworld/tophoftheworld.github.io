@@ -16,6 +16,8 @@ const {
   dayTranscriptCharBudget,
   pendingTranscriptCharBudget,
   isPlaceholderSummaryBullet,
+  stripLeakedImportanceScore,
+  normalizeAwaitingReplyAge,
   parseSummarySections,
   mergeSections,
   emptySections,
@@ -239,7 +241,7 @@ test("buildPendingBatchPrompt stays under Chatbase limit for heavy threads", () 
   }
 });
 
-test("buildSummaryPrompt uses concise ops sections", () => {
+test("buildSummaryPrompt uses concise ops sections without Payments", () => {
   const prompt = buildSummaryPrompt(
     [
       {
@@ -252,7 +254,7 @@ test("buildSummaryPrompt uses concise ops sections", () => {
   );
   assert.ok(prompt.length <= CHATBASE_MAX_CHARS);
   assert.match(prompt, /Leads/);
-  assert.match(prompt, /public workshop/i);
+  assert.match(prompt, /Do NOT include a Topics or Payments section/i);
   assert.doesNotMatch(prompt, /By channel/);
 });
 
@@ -304,12 +306,69 @@ Payments
 
 test("parseSummarySections extracts awaiting reply section", () => {
   const sections = parseSummarySections(`Awaiting reply
-- Mitch (IG) — 2d open — wedding quote pending cup count
+- Mitch (IG) — 2d ago — wedding quote pending cup count
 
 Topics
 - MOA: location questions`);
   assert.equal(sections.awaitingReply.length, 1);
   assert.match(sections.awaitingReply[0], /Mitch/);
+});
+
+test("stripLeakedImportanceScore removes a leaked score segment", () => {
+  assert.equal(
+    stripLeakedImportanceScore("Komunidad PH (IG) — 8.5 — Team still needs to complete form"),
+    "Komunidad PH (IG) — Team still needs to complete form"
+  );
+  assert.equal(
+    stripLeakedImportanceScore("Pauline (IG) — 7.5 — Confirm PWD discount"),
+    "Pauline (IG) — Confirm PWD discount"
+  );
+  assert.equal(
+    stripLeakedImportanceScore("Olivia (IG) — 8 — Ensure payment logged"),
+    "Olivia (IG) — Ensure payment logged"
+  );
+});
+
+test("stripLeakedImportanceScore leaves normal bullets untouched", () => {
+  const line = "Jenina (FB) — 1d ago — clarify which workshop option";
+  assert.equal(stripLeakedImportanceScore(line), line);
+  const withOrderRef = "M#2181 — Olivia: confirmed GCash payment";
+  assert.equal(stripLeakedImportanceScore(withOrderRef), withOrderRef);
+});
+
+test("normalizeAwaitingReplyAge converts open to ago and drops ranges", () => {
+  assert.equal(
+    normalizeAwaitingReplyAge("Keisa (IG) — 1–4d open — send wedding quote"),
+    "Keisa (IG) — send wedding quote"
+  );
+  assert.equal(
+    normalizeAwaitingReplyAge("Monica (IG) — 2d open — ensure payment logged"),
+    "Monica (IG) — 2d ago — ensure payment logged"
+  );
+  assert.equal(
+    normalizeAwaitingReplyAge("Eri (IG) — 4d ago — review partnership"),
+    "Eri (IG) — 4d ago — review partnership"
+  );
+});
+
+test("formatThreadForPendingPrompt includes exact days-ago label", () => {
+  const { rangeStart, rangeEnd } = pendingRangeForSummary("2026-06-12");
+  const block = formatThreadForPendingPrompt(
+    {
+      source: "Messenger",
+      displayName: "Sam",
+      messages: [
+        {
+          role: "user",
+          content: "Can someone follow up on our quote?",
+          createdAt: "2026-06-10T10:00:00Z"
+        },
+        { role: "assistant", content: "Someone from our team will get back to you." }
+      ]
+    },
+    { index: 0, rangeStart, rangeEnd, summaryDate: "2026-06-12", tz: "Asia/Manila" }
+  );
+  assert.match(block, /2d ago/);
 });
 
 test("parseSummarySections extracts section bullets", () => {

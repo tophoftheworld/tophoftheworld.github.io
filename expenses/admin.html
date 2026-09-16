@@ -12,7 +12,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"
         integrity="sha512-ElRFoEQdI5Ht6kZvyzXhYG9NqjtkmlkfYk0wr6wHxU9JEHakS7UJZNeml5ALk+8IKlU6jDgMabC3vkumRokgJA=="
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <link rel="stylesheet" href="css/admin.css?v=1054">
+    <link rel="stylesheet" href="css/admin.css?v=1077">
 </head>
 
 <body>
@@ -29,11 +29,6 @@
             </div>
         </div>
 
-        <!-- Summary Cards -->
-        <div class="summary-cards" id="summaryCards">
-            <!-- Cards will be populated by JS -->
-        </div>
-
         <!-- Table Type Selector (Expenses/Suppliers/Analytics) -->
         <div class="table-type-controls">
             <div class="view-selector">
@@ -42,6 +37,23 @@
                 <button class="view-btn" data-table="analytics">Analytics</button>
             </div>
             <div class="table-type-actions" id="tableTypeActions">
+                <button class="action-btn secondary" id="exportBtn" title="Export expenses for the selected date range (no receipt images)">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7,10 12,15 17,10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Export CSV
+                </button>
+                <button class="action-btn secondary" id="addBatchExpenseBtn" title="Upload multiple receipts">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7" rx="1"/>
+                        <rect x="14" y="3" width="7" height="7" rx="1"/>
+                        <rect x="3" y="14" width="7" height="7" rx="1"/>
+                        <rect x="14" y="14" width="7" height="7" rx="1"/>
+                    </svg>
+                    Add Batch
+                </button>
                 <button class="action-btn primary" id="addExpenseBtn">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -63,8 +75,7 @@
                             <option value="all">All Branches</option>
                             <option value="SM North">SM North</option>
                             <option value="Podium">Podium</option>
-                            <option value="BGC">BGC</option>
-                            <option value="Makati">Makati</option>
+                            <option value="Mall of Asia">Mall of Asia</option>
                         </select>
                     </div>
 
@@ -101,14 +112,6 @@
             <!-- Bulk action buttons (shown when rows are selected) -->
             <div class="action-row" id="bulkActionRow" style="display: none;">
                 <div class="table-actions">
-                    <button class="action-btn secondary" id="exportBtn" style="display: none;">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                            <polyline points="7,10 12,15 17,10"></polyline>
-                            <line x1="12" y1="15" x2="12" y2="3"></line>
-                        </svg>
-                        Export CSV
-                    </button>
                     <button class="action-btn secondary" id="importBtn" style="display: none;">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -143,6 +146,11 @@
             </div>
         </div>
 
+        <!-- Summary cards reflect the active filters above -->
+        <div class="summary-cards" id="summaryCards">
+            <!-- Cards will be populated by JS -->
+        </div>
+
         <!-- Data Views -->
         <div class="data-view" id="expensesView">
             <div class="data-table-container">
@@ -155,8 +163,10 @@
                             <th>Items</th>
                             <th data-sort="category">Category</th>
                             <th data-sort="amount">Amount</th>
-                            <th data-sort="branch">Branch</th>
+                            <th data-sort="allocation">Allocation</th>
+                            <th data-sort="branchevent">Branch / Event</th>
                             <th data-sort="paidby">Paid By</th>
+                            <th data-sort="recordedby">Recorded By</th>
                             <th data-sort="vat">VAT</th>
                         </tr>
                     </thead>
@@ -303,7 +313,7 @@
     </div>
 
     <!-- Load admin script at the bottom to ensure DOM is ready -->
-    <script type="module" src="./js/admin.js?v=1070"></script>
+    <script type="module" src="./js/admin.js?v=1097"></script>
 
 </body>
 

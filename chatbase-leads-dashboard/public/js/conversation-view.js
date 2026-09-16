@@ -16,16 +16,17 @@ function escapeHtml(text) {
     .replace(/>/g, "&gt;");
 }
 
-/** Open Inbox and find the thread by order# or quote ref in chat — never by conversationId. */
+/** Open Inbox and find the thread by name / user tag (or payment order#). Prefer display name over booking codes. */
 export function openConversationInInbox(searchLabel, searchTerms = [], { clientName } = {}) {
   const terms = searchTerms.length ? searchTerms : (searchLabel ? [searchLabel] : []);
   const nameSearchTerms = clientNameSearchTerms(clientName);
   if (!terms.length && !nameSearchTerms.length) return;
+  const label = searchLabel || clientName || terms[0] || "";
   window.dispatchEvent(
     new CustomEvent("chatbase-open-conversation", {
       detail: {
         searchTerms: terms,
-        searchLabel: searchLabel || terms[0] || "",
+        searchLabel: label,
         nameSearchTerms
       }
     })
@@ -39,7 +40,9 @@ export function scrollMessagesToBottom(messagesEl) {
   });
 }
 
-export function renderConversationPanel(conversation, { titleEl, metaEl, messagesEl }) {
+export function renderConversationPanel(conversation, { titleEl, metaEl, messagesEl, emailBtnEl }) {
+  if (emailBtnEl) emailBtnEl.hidden = true;
+
   const displayName =
     getClientNameForConversation(conversation?.id) || resolveDisplayName(conversation);
   if (displayName && !conversation.displayName) {
@@ -108,8 +111,12 @@ export function summaryTitleForDate(iso, { todayIso } = {}) {
   return `${label} summary`;
 }
 
-export function renderSummaryPanel({ titleEl, metaEl, messagesEl, summary, sections, meta }) {
+export function renderSummaryPanel({ titleEl, metaEl, messagesEl, emailBtnEl, summary, sections, meta }) {
   titleEl.textContent = meta?.date ? summaryTitleForDate(meta.date) : "Today's summary";
+  if (emailBtnEl) {
+    emailBtnEl.hidden = false;
+    emailBtnEl.disabled = Boolean(meta?.partial);
+  }
 
   const parts = [];
   if (meta?.phase !== "pending" && meta?.threadCount != null) {

@@ -1,0 +1,2318 @@
+{
+  "exportedAt": "2026-08-18T09:25:42.223Z",
+  "branches": [
+    {
+      "key": "sm-north",
+      "label": "SM North"
+    },
+    {
+      "key": "podium",
+      "label": "Podium"
+    },
+    {
+      "key": "moa",
+      "label": "MOA"
+    }
+  ],
+  "items": [
+    {
+      "id": "JZEdsbbQxSKxlCrkd49W",
+      "name": "Matcha Powder",
+      "description": "",
+      "category": "Base Ingredients",
+      "unit": "g",
+      "restockAmount": 1000,
+      "enabledBranches": [
+        "sm-north",
+        "podium",
+        "moa"
+      ],
+      "displayOrder": 0,
+      "categoryOrder": 0
+    },
+    {
+      "id": "tmAkdboW7eo3sgU8snOa",
+      "name": "Hojicha Powder",
+      "description": "",
+      "category": "Base Ingredients",
+      "unit": "g",
+      "restockAmount": 200,
+      "enabledBranches": [
+        "sm-north",
+        "podium",
+        "moa"
+      ],
+      "displayOrder": 1,
+      "categoryOrder": 0
+    },
+    {
+      "id": "97WCO2TVL1c2OPMHYDNr",
+      "name": "Genmaicha Powder",
+      "description": "",
+      "category": "Base Ingredients",
+      "unit": "g",
+      "restockAmount": 200,
+      "enabledBranches": [],
+      "displayOrder": 2,
+      "categoryOrder": 0
+    },
+    {
+      "id": "SYDXoHHRsmIdIzsLBr7y",
+      "name": "Coffee Beans",
+      "description": "",
+      "category": "Base Ingredients",
+      "unit": "g",
+      "restockAmount": 250,
+      "enabledBranches": [
+        "sm-north",
+        "podium"
+      ],
+      "displayOrder": 3,
+      "categoryOrder": 0
+    },
+    {
+      "id": "dKN2V968DYxyalKVBDSV",
+      "name": "Earl Grey",
+      "description": "",
+      "category": "Dry Ingredients",
+      "unit": "pcs",
+      "restockAmount": 10,
+      "enabledBranches": [
+        "sm-north",
+        "podium"
+      ],
+      "displayOrder": 0,
+      "categoryOrder": 0
+    },
+    {
+      "id": "ho8L67R1B1qP0e77Ytx0",
+      "name": "Biscoff Crumbs",
+      "description": "",
+      "category": "Dry Ingredients",
+      "unit": "g",
+      "restockAmount": 100,
+      "enabledBranches": [
+        "podium"
+      ],
+      "displayOrder": 4,
+      "categoryOrder": 0
+    },
+    {
+      "id": "9A39AUUl5GXYdcH6uaMD",
+      "name": "Iced Cups",
+      "description": "16oz",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 200,
+      "enabledBranches": [],
+      "displayOrder": 0,
+      "categoryOrder": 1
+    },
+    {
+      "id": "eB505bKmmpgQRE91v9s2",
+      "name": "Strawless Lids",
+      "description": "16oz",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 0,
+      "enabledBranches": [],
+      "displayOrder": 1,
+      "categoryOrder": 1
+    },
+    {
+      "id": "knm8sfwCNvgKnwWiwrOX",
+      "name": "Iced Cups",
+      "description": "12oz",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 200,
+      "enabledBranches": [
+        "sm-north",
+        "podium",
+        "moa"
+      ],
+      "displayOrder": 2,
+      "categoryOrder": 1
+    },
+    {
+      "id": "PzIwXMjMOMAZ8QIZbirG",
+      "name": "Strawless Lids",
+      "description": "12oz",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 200,
+      "enabledBranches": [
+        "sm-north",
+        "podium"
+      ],
+      "displayOrder": 3,
+      "categoryOrder": 1
+    },
+    {
+      "id": "W6kHAVh6EUPLJCKW9B1k",
+      "name": "Dome Lids",
+      "description": "12oz",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 100,
+      "enabledBranches": [
+        "sm-north",
+        "podium"
+      ],
+      "displayOrder": 4,
+      "categoryOrder": 1
+    },
+    {
+      "id": "tLXhTYSn0TSEde4NdMvC",
+      "name": "Hot Cups",
+      "description": "12oz Double Walled Cups",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 100,
+      "enabledBranches": [
+        "sm-north",
+        "podium"
+      ],
+      "displayOrder": 5,
+      "categoryOrder": 1
+    },
+    {
+      "id": "I2oyBkdboBN1L3X3NCxQ",
+      "name": "Hot Cup Lids",
+      "description": "12oz Double Walled Cup Lids",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 100,
+      "enabledBranches": [
+        "sm-north",
+        "podium"
+      ],
+      "displayOrder": 6,
+      "categoryOrder": 1
+    },
+    {
+      "id": "9fsIY3N9zrHUj29pzjiK",
+      "name": "Straws",
+      "description": "6mm",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 300,
+      "enabledBranches": [
+        "sm-north",
+        "podium",
+        "moa"
+      ],
+      "displayOrder": 7,
+      "categoryOrder": 1
+    },
+    {
+      "id": "xJy9Bfa7EKVvWjyRCxOW",
+      "name": "Straws",
+      "description": "12mm",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 100,
+      "enabledBranches": [
+        "sm-north",
+        "podium",
+        "moa"
+      ],
+      "displayOrder": 8,
+      "categoryOrder": 1
+    },
+    {
+      "id": "UGnPWh1T64wCSAtiE2dS",
+      "name": "Bottles",
+      "description": "250ml",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 20,
+      "enabledBranches": [],
+      "displayOrder": 9,
+      "categoryOrder": 1
+    },
+    {
+      "id": "01gUytfhmeE9OQSRhaCZ",
+      "name": "Bottle Caps",
+      "description": "250ml",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 20,
+      "enabledBranches": [],
+      "displayOrder": 10,
+      "categoryOrder": 1
+    },
+    {
+      "id": "jyH9GKGZyCbbQvnhoVLg",
+      "name": "Bottle Stickers",
+      "description": "250ml",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 5,
+      "enabledBranches": [],
+      "displayOrder": 11,
+      "categoryOrder": 1
+    },
+    {
+      "id": "lHD5TSwkmsrqCYPB6qhW",
+      "name": "Bottles",
+      "description": "50ml (Cream)",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 5,
+      "enabledBranches": [
+        "sm-north",
+        "podium"
+      ],
+      "displayOrder": 12,
+      "categoryOrder": 1
+    },
+    {
+      "id": "MQTdjysdIwGgLeylHPrb",
+      "name": "Bottle Caps",
+      "description": "50ml (Cream)",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 5,
+      "enabledBranches": [],
+      "displayOrder": 13,
+      "categoryOrder": 1
+    },
+    {
+      "id": "KidtEegnEBxcdFZRKKwp",
+      "name": "Ice Cream Cups",
+      "description": "3oz",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 50,
+      "enabledBranches": [
+        "podium"
+      ],
+      "displayOrder": 14,
+      "categoryOrder": 1
+    },
+    {
+      "id": "3vFgGQsXR9OFNjrbYv04",
+      "name": "Ice Cream Cones",
+      "description": "",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 20,
+      "enabledBranches": [
+        "podium"
+      ],
+      "displayOrder": 15,
+      "categoryOrder": 1
+    },
+    {
+      "id": "zutiLxv9JaKzpPmrkbfp",
+      "name": "Ice Cream Cone Sleeves",
+      "description": "",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 20,
+      "enabledBranches": [
+        "podium"
+      ],
+      "displayOrder": 16,
+      "categoryOrder": 1
+    },
+    {
+      "id": "YXXgwON6IJ2dKwPM0TMT",
+      "name": "Cup Holders",
+      "description": "1s",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 20,
+      "enabledBranches": [],
+      "displayOrder": 17,
+      "categoryOrder": 1
+    },
+    {
+      "id": "PNEJOGXjzBVvCbXJNCvm",
+      "name": "Cup Holders",
+      "description": "2s",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 20,
+      "enabledBranches": [
+        "podium",
+        "sm-north"
+      ],
+      "displayOrder": 18,
+      "categoryOrder": 1
+    },
+    {
+      "id": "PBJJV1De6jq2qgxV0Qb5",
+      "name": "Cup Holders",
+      "description": "4s",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 20,
+      "enabledBranches": [
+        "podium",
+        "sm-north"
+      ],
+      "displayOrder": 19,
+      "categoryOrder": 1
+    },
+    {
+      "id": "gGWKGOBFrtUSBZbBejwU",
+      "name": "Spill-proof Cup Covers",
+      "description": "",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 1,
+      "enabledBranches": [
+        "sm-north",
+        "podium"
+      ],
+      "displayOrder": 20,
+      "categoryOrder": 1
+    },
+    {
+      "id": "hsVWZx3Sx331UNy9DrZv",
+      "name": "Customer Tissue",
+      "description": "",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 1,
+      "enabledBranches": [
+        "sm-north",
+        "podium",
+        "moa"
+      ],
+      "displayOrder": 21,
+      "categoryOrder": 1
+    },
+    {
+      "id": "VALTNvFVxHQjLKeesIBt",
+      "name": "Paper Towels",
+      "description": "",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 1,
+      "enabledBranches": [
+        "sm-north",
+        "podium",
+        "moa"
+      ],
+      "displayOrder": 22,
+      "categoryOrder": 1
+    },
+    {
+      "id": "njAcr4mQFZnx0jGR82ib",
+      "name": "Paper Bag - S",
+      "description": "",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 20,
+      "enabledBranches": [
+        "sm-north",
+        "podium"
+      ],
+      "displayOrder": 23,
+      "categoryOrder": 1
+    },
+    {
+      "id": "9qdBnlkGTn8zj43X2ptJ",
+      "name": "Paper Bag - M",
+      "description": "",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 20,
+      "enabledBranches": [
+        "sm-north",
+        "podium"
+      ],
+      "displayOrder": 24,
+      "categoryOrder": 1
+    },
+    {
+      "id": "HI9IfSMw4VoqfN6sdPpF",
+      "name": "Paper Bag - L",
+      "description": "",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 20,
+      "enabledBranches": [
+        "sm-north",
+        "podium"
+      ],
+      "displayOrder": 25,
+      "categoryOrder": 1
+    },
+    {
+      "id": "fP6AmN9cv0YKhj5Xl2vY",
+      "name": "Wooden Stirrer",
+      "description": "",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 10,
+      "enabledBranches": [
+        "sm-north",
+        "podium"
+      ],
+      "displayOrder": 26,
+      "categoryOrder": 1
+    },
+    {
+      "id": "4NUfMweNsR0O6LihNPX5",
+      "name": "Chopsticks",
+      "description": "",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 20,
+      "enabledBranches": [
+        "sm-north",
+        "podium"
+      ],
+      "displayOrder": 27,
+      "categoryOrder": 1
+    },
+    {
+      "id": "MG6gV5Otb6hzp5TKosk1",
+      "name": "Mini Spoon",
+      "description": "No Cover",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 50,
+      "enabledBranches": [
+        "sm-north",
+        "podium"
+      ],
+      "displayOrder": 28,
+      "categoryOrder": 1
+    },
+    {
+      "id": "5twy5CQT07XvYgMJx5Pm",
+      "name": "Mini Spoon",
+      "description": "Takeout",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 20,
+      "enabledBranches": [
+        "sm-north",
+        "podium"
+      ],
+      "displayOrder": 29,
+      "categoryOrder": 1
+    },
+    {
+      "id": "OadT0zvQXK1heVwVMCHo",
+      "name": "Bamboo Skewers",
+      "description": "",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 20,
+      "enabledBranches": [
+        "podium"
+      ],
+      "displayOrder": 30,
+      "categoryOrder": 1
+    },
+    {
+      "id": "8oCptUbMxCgiS4LDluOB",
+      "name": "Sauce Container",
+      "description": "",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 20,
+      "enabledBranches": [
+        "sm-north",
+        "podium"
+      ],
+      "displayOrder": 31,
+      "categoryOrder": 1
+    },
+    {
+      "id": "bhNIj4vVGF315LY7XY7p",
+      "name": "Thermal Bag",
+      "description": "",
+      "category": "Packaging & Consumables",
+      "unit": "pcs",
+      "restockAmount": 5,
+      "enabledBranches": [
+        "podium"
+      ],
+      "displayOrder": 32,
+      "categoryOrder": 1
+    },
+    {
+      "id": "CrvjowL29aHUTfC6dOZf",
+      "name": "Seasalt",
+      "description": "",
+      "category": "Dry Ingredients",
+      "unit": "pcs",
+      "restockAmount": 1,
+      "enabledBranches": [
+        "sm-north",
+        "podium",
+        "moa"
+      ],
+      "displayOrder": 0,
+      "categoryOrder": 2
+    },
+    {
+      "id": "xk2590LYKUrR5Bg78p1k",
+      "name": "White Chocolate Bar",
+      "description": "",
+      "category": "Dry Ingredients",
+      "unit": "g",
+      "restockAmount": 50,
+      "enabledBranches": [
+        "sm-north",
+        "podium"
+      ],
+      "displayOrder": 0,
+      "categoryOrder": 2
+    },
+    {
+      "id": "pToSMsBvhW7JlyvoM9Jt",
+      "name": "White Sugar",
+      "description": "",
+      "category": "Dry Ingredients",
+      "unit": "g",
+      "restockAmount": 1000,
+      "enabledBranches": [
+        "sm-north",
+        "podium",
+        "moa"
+      ],
+      "displayOrder": 0,
+      "categoryOrder": 2
+    },
+    {
+      "id": "wkElxWhgaTNvpNZqkVp0",
+      "name": "Orange Slices",
+      "description": "",
+      "category": "Dry Ingredients",
+      "unit": "pcs",
+      "restockAmount": 5,
+      "enabledBranches": [
+        "sm-north",
+        "podium"
+      ],
+      "displayOrder": 1,
+      "categoryOrder": 2
+    },
+    {
+      "id": "iffxRiMsHujGuZH3z2YS",
+      "name": "Dairy Milk",
+      "description": "Lasciate",
+      "category": "Liquid Ingredients",
+      "unit": "L",
+      "restockAmount": 20,
+      "enabledBranches": [
+        "sm-north",
+        "podium",
+        "moa"
+      ],
+      "displayOrder": 0,
+      "categoryOrder": 3
+    },
+    {
+      "id": "vdpSsFr9VqCmNAN7c7zC",
+      "name": "Oat Milk",
+      "description": "Oatside",
+      "category": "Liquid Ingredients",
+      "unit": "L",
+      "restockAmount": 12,
+      "enabledBranches": [
+        "sm-north",
+        "podium",
+        "moa"
+      ],
+      "displayOrder": 1,
+      "categoryOrder": 3
+    },
+    {
+      "id": "5AiOtsGAU8dsduLvvmjA",
+      "name": "Whipping Cream",
+      "description": "",
+      "category": "Liquid Ingredients",
+      "unit": "L",
+      "restockAmount": 2,
+      "enabledBranches": [
+        "sm-north",
+        "podium",
+        "moa"
+      ],
+      "displayOrder": 2,
+      "categoryOrder": 3
+    },
+    {
+      "id": "8ltbl69V7SxP7lQfxIOA",
+      "name": "Everwhip",
+      "description": "Non-Dairy Cream",
+      "category": "Liquid Ingredients",
+      "unit": "ml",
+      "restockAmount": 500,
+      "enabledBranches": [
+        "podium",
+        "sm-north"
+      ],
+      "displayOrder": 3,
+      "categoryOrder": 3
+    },
+    {
+      "id": "vn1dLPylsWlVGmY3qhyS",
+      "name": "Bunge",
+      "description": "Whip Topping",
+      "category": "Liquid Ingredients",
+      "unit": "ml",
+      "restockAmount": 500,
+      "enabledBranches": [
+        "podium",
+        "sm-north"
+      ],
+      "displayOrder": 4,
+      "categoryOrder": 3
+    },
+    {
+      "id": "GKxBSOtb3daU3yZRNKW0",
+      "name": "Dalandan Concentrate",
+      "description": "",
+      "category": "Liquid Ingredients",
+      "unit": "ml",
+      "restockAmount": 200,
+      "enabledBranches": [
+        "podium"
+      ],
+      "displayOrder": 5,
+      "categoryOrder": 3
+    },
+    {
+      "id": "LyZV6vabS7l40nJIYVwb",
+      "name": "Evaporated Milk",
+      "description": "",
+      "category": "Liquid Ingredients",
+      "unit": "L",
+      "restockAmount": 0,
+      "enabledBranches": [
+        "podium"
+      ],
+      "displayOrder": 6,
+      "categoryOrder": 3
+    },
+    {
+      "id": "NBsiWpiqGIoSL086uuUm",
+      "name": "Condensed Milk",
+      "description": "",
+      "category": "Liquid Ingredients",
+      "unit": "L",
+      "restockAmount": 0,
+      "enabledBranches": [
+        "podium",
+        "sm-north"
+      ],
+      "displayOrder": 7,
+      "categoryOrder": 3
+    },
+    {
+      "id": "x6JOGpPuu75ID126ThjN",
+      "name": "Coconut Milk",
+      "description": "Nobo",
+      "category": "Liquid Ingredients",
+      "unit": "L",
+      "restockAmount": 0,
+      "enabledBranches": [
+        "podium",
+        "sm-north"
+      ],
+      "displayOrder": 8,
+      "categoryOrder": 3
+    },
+    {
+      "id": "DuJpDBuYxluYN58ioAQ8",
+      "name": "Strawberry Puree",
+      "description": "Allegro",
+      "category": "Liquid Ingredients",
+      "unit": "g",
+      "restockAmount": 0,
+      "enabledBranches": [],
+      "displayOrder": 9,
+      "categoryOrder": 3
+    },
+    {
+      "id": "2jPYnQacyvNQ02TFsrmN",
+      "name": "Strawberry Sauce",
+      "description": "Monin",
+      "category": "Liquid Ingredients",
+      "unit": "g",
+      "restockAmount": 100,
+      "enabledBranches": [
+        "podium",
+        "sm-north"
+      ],
+      "displayOrder": 10,
+      "categoryOrder": 3
+    },
+    {
+      "id": "3G2oo1PTfUuHUS1q5o8Z",
+      "name": "Strawberry Can",
+      "description": "DLA",
+      "category": "Liquid Ingredients",
+      "unit": "pcs",
+      "restockAmount": 1,
+      "enabledBranches": [
+        "sm-north",
+        "podium"
+      ],
+      "displayOrder": 11,
+      "categoryOrder": 3
+    },
+    {
+      "id": "djdDhxzY6XMt6OKOz6qS",
+      "name": "White Chocolate Sauce",
+      "description": "",
+      "category": "Liquid Ingredients",
+      "unit": "g",
+      "restockAmount": 500,
+      "enabledBranches": [
+        "sm-north",
+        "podium"
+      ],
+      "displayOrder": 12,
+      "categoryOrder": 3
+    },
+    {
+      "id": "44sCbpDFzWyNF7Y8w2Cl",
+      "name": "Salted Caramel Sauce",
+      "description": "",
+      "category": "Liquid Ingredients",
+      "unit": "g",
+      "restockAmount": 500,
+      "enabledBranches": [
+        "sm-north"
+      ],
+      "displayOrder": 13,
+      "categoryOrder": 3
+    },
+    {
+      "id": "ElmOrrVeBJVD4ELpRZhi",
+      "name": "Orange Juice",
+      "description": "Ceres",
+      "category": "Liquid Ingredients",
+      "unit": "ml",
+      "restockAmount": 500,
+      "enabledBranches": [
+        "sm-north"
+      ],
+      "displayOrder": 14,
+      "categoryOrder": 3
+    },
+    {
+      "id": "0FKu266eXNcqahWc81Fu",
+      "name": "Coconut Water",
+      "description": "",
+      "category": "Liquid Ingredients",
+      "unit": "ml",
+      "restockAmount": 500,
+      "enabledBranches": [
+        "sm-north",
+        "podium"
+      ],
+      "displayOrder": 15,
+      "categoryOrder": 3
+    },
+    {
+      "id": "7YGM3rQZfvOpkyt4Kb29",
+      "name": "Ice Cream",
+      "description": "Matcha Level 1",
+      "category": "Desserts",
+      "unit": "g",
+      "restockAmount": 1,
+      "enabledBranches": [
+        "podium"
+      ],
+      "displayOrder": 0,
+      "categoryOrder": 4
+    },
+    {
+      "id": "NNNbvTnEtkPT49AZhvTG",
+      "name": "Ice Cream",
+      "description": "Matcha Level 2",
+      "category": "Desserts",
+      "unit": "g",
+      "restockAmount": 1,
+      "enabledBranches": [],
+      "displayOrder": 1,
+      "categoryOrder": 4
+    },
+    {
+      "id": "OeEdY85AzbHZE55Deqki",
+      "name": "Ice Cream",
+      "description": "Matcha Level 3",
+      "category": "Desserts",
+      "unit": "g",
+      "restockAmount": 1,
+      "enabledBranches": [],
+      "displayOrder": 2,
+      "categoryOrder": 4
+    },
+    {
+      "id": "dkh1z4bu9k5CiN1qFgk4",
+      "name": "Matcha Bomb",
+      "description": "Cookie",
+      "category": "Desserts",
+      "unit": "pcs",
+      "restockAmount": 1,
+      "enabledBranches": [],
+      "displayOrder": 3,
+      "categoryOrder": 4
+    },
+    {
+      "id": "jZIQQGxBflQF4XYp00wc",
+      "name": "Matcha Smores",
+      "description": "Cookie",
+      "category": "Desserts",
+      "unit": "pcs",
+      "restockAmount": 1,
+      "enabledBranches": [],
+      "displayOrder": 4,
+      "categoryOrder": 4
+    },
+    {
+      "id": "fft0qln1H69NgcopbZ1M",
+      "name": "Matcha White Chocolate",
+      "description": "Cookie",
+      "category": "Desserts",
+      "unit": "pcs",
+      "restockAmount": 1,
+      "enabledBranches": [],
+      "displayOrder": 5,
+      "categoryOrder": 4
+    },
+    {
+      "id": "vO8OsyD57DRT1vJRFN5X",
+      "name": "Matcha Dark Chocolate",
+      "description": "Cookie",
+      "category": "Desserts",
+      "unit": "pcs",
+      "restockAmount": 1,
+      "enabledBranches": [],
+      "displayOrder": 6,
+      "categoryOrder": 4
+    },
+    {
+      "id": "Hfa3yoAprAxk9CLLeMA9",
+      "name": "Matcha Ube",
+      "description": "Cookie",
+      "category": "Desserts",
+      "unit": "pcs",
+      "restockAmount": 1,
+      "enabledBranches": [],
+      "displayOrder": 7,
+      "categoryOrder": 4
+    },
+    {
+      "id": "KCYozQZVXkWhVZ7iuV5X",
+      "name": "Matcha Biscoff",
+      "description": "Cookie",
+      "category": "Desserts",
+      "unit": "pcs",
+      "restockAmount": 1,
+      "enabledBranches": [],
+      "displayOrder": 8,
+      "categoryOrder": 4
+    },
+    {
+      "id": "jIenhZqACanorNoNTm7S",
+      "name": "Warabi Mochi",
+      "description": "Kinako Box",
+      "category": "Desserts",
+      "unit": "pcs",
+      "restockAmount": 2,
+      "enabledBranches": [
+        "sm-north",
+        "podium"
+      ],
+      "displayOrder": 9,
+      "categoryOrder": 4
+    },
+    {
+      "id": "L92kVefQXpTzHDLMl4wS",
+      "name": "Warabi Mochi",
+      "description": "Matcha Box",
+      "category": "Desserts",
+      "unit": "pcs",
+      "restockAmount": 2,
+      "enabledBranches": [
+        "sm-north",
+        "podium"
+      ],
+      "displayOrder": 10,
+      "categoryOrder": 4
+    },
+    {
+      "id": "wgNjE07VVeyvFuxc071y",
+      "name": "Warabi Mochi",
+      "description": "Tray",
+      "category": "Desserts",
+      "unit": "pans",
+      "restockAmount": 0,
+      "enabledBranches": [
+        "podium"
+      ],
+      "displayOrder": 11,
+      "categoryOrder": 4
+    },
+    {
+      "id": "s2Ype0eJpfXpywka1Lzs",
+      "name": "Tiramisu",
+      "description": "Cup",
+      "category": "Desserts",
+      "unit": "pcs",
+      "restockAmount": 2,
+      "enabledBranches": [
+        "sm-north",
+        "podium"
+      ],
+      "displayOrder": 12,
+      "categoryOrder": 4
+    },
+    {
+      "id": "Z2Hack0ksY9lOSKyG3Uw",
+      "name": "Banoffee",
+      "description": "Cup",
+      "category": "Desserts",
+      "unit": "pcs",
+      "restockAmount": 2,
+      "enabledBranches": [
+        "sm-north",
+        "podium"
+      ],
+      "displayOrder": 13,
+      "categoryOrder": 4
+    },
+    {
+      "id": "CzXfcSppEnzZ9utKbHkU",
+      "name": "Tiramisu",
+      "description": "Masu Box",
+      "category": "Desserts",
+      "unit": "pcs",
+      "restockAmount": 2,
+      "enabledBranches": [],
+      "displayOrder": 13,
+      "categoryOrder": 4
+    }
+  ],
+  "suppliers": [
+    {
+      "id": "mcecbi1rzkcobj0s0y",
+      "name": "1919 Grand Restaurant Corp.",
+      "businessName": "1919 Grand Restaurant Corp."
+    },
+    {
+      "id": "mfxvd9s1qmttj1lmleb",
+      "name": "7/11",
+      "businessName": ""
+    },
+    {
+      "id": "mst2xbbu9vdeqeq02kk",
+      "name": "81406",
+      "businessName": ""
+    },
+    {
+      "id": "ms1bvqgyxcn68xx69cp",
+      "name": "AAR BAKING GOODS & SUPPLIES INC.",
+      "businessName": "AAR BAKING GOODS & SUPPLIES INC."
+    },
+    {
+      "id": "mcecbi1qh0kgk7aodgl",
+      "name": "Abacus Book and Card Corp.",
+      "businessName": "Abacus Book and Card Corp."
+    },
+    {
+      "id": "mcecbi1qnm4upizytmk",
+      "name": "AC Packaging",
+      "businessName": "Alyssa Ann Kamille A. Co-Prop"
+    },
+    {
+      "id": "ms37vxrboemmfc1q64",
+      "name": "AC PACKAGING ONLINE STORE",
+      "businessName": "AC PACKAGING ONLINE STORE"
+    },
+    {
+      "id": "mrytkh91j3l2yvwx5hd",
+      "name": "ACE HARDWARE",
+      "businessName": "ACE HARDWARE PHILIPPINES, INC."
+    },
+    {
+      "id": "msg207mxl6ppy8a49uh",
+      "name": "AIJ FROZEN",
+      "businessName": "AIJ FROZEN"
+    },
+    {
+      "id": "mrdeuhrmry9zf33jyc",
+      "name": "AIJ fruit store",
+      "businessName": ""
+    },
+    {
+      "id": "ms62ldtxkau8yr5fvv",
+      "name": "AIJ FRUITS STORE",
+      "businessName": "AIJ FRUITS STORE"
+    },
+    {
+      "id": "mfxvd9qyr8zz6jmjyoc",
+      "name": "AJ Fruit House",
+      "businessName": ""
+    },
+    {
+      "id": "mr65x298x01urniirgg",
+      "name": "AJ Fruit Store",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1svdn39bkve09",
+      "name": "Alain S. Grageda",
+      "businessName": "Alain S. Grageda"
+    },
+    {
+      "id": "mrzyldi32zhkltlrx2j",
+      "name": "ALEXANDRA TUBE ICE INC.",
+      "businessName": "ALEXANDRA TUBE ICE INC."
+    },
+    {
+      "id": "msq8t0wqb6xtvrklz7",
+      "name": "ALFAMART TRADING PHILIPPINES, INC.",
+      "businessName": "ALFAMART TRADING PHILIPPINES, INC."
+    },
+    {
+      "id": "ms1e1bi1y2mol251zpi",
+      "name": "ALL",
+      "businessName": "ALL"
+    },
+    {
+      "id": "mcf1ubveih5lnmhcb9t",
+      "name": "All About Baking - Congressional",
+      "businessName": "AAB Baking Goods and Supplies Inc."
+    },
+    {
+      "id": "mcecbi1qwyuc7ysh7jg",
+      "name": "All About Baking - Uptown",
+      "businessName": "AAB Baking Goods and Supplies Inc."
+    },
+    {
+      "id": "mcecbi1q221w6saiqvc",
+      "name": "Allegro Beverage Corporation",
+      "businessName": "Allegro Beverage Corporation"
+    },
+    {
+      "id": "msoqxb2pbc9d2jm6jjf",
+      "name": "ALTO GROUNDS",
+      "businessName": "NMH CAFE OPC"
+    },
+    {
+      "id": "mfxvd9tb4wg1kqlw73w",
+      "name": "Amazing Appetite Food Corp.",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1vurimem8kkqpxmr",
+      "name": "Arlene's Dairyhouse",
+      "businessName": ""
+    },
+    {
+      "id": "ms0d3n3k73p69gazvzi",
+      "name": "AV20 Prime Squad Co.",
+      "businessName": "AV20 Prime Squad Co."
+    },
+    {
+      "id": "msd7on06hf4t3sxzg3g",
+      "name": "Baby' Ice Tube Manufacturing",
+      "businessName": "Baby' Ice Tube Manufacturing"
+    },
+    {
+      "id": "msndiym218o7eb12iul",
+      "name": "BAKE AND THE CITY",
+      "businessName": "BS Square Commercial Inc"
+    },
+    {
+      "id": "mfxvd9osxyf0kvce1xg",
+      "name": "Baker's Choice",
+      "businessName": "Baker's Choice"
+    },
+    {
+      "id": "mcecbi1ra7wve6wsjsp",
+      "name": "Balai ni Frutas Inc.",
+      "businessName": "Balai ni Frutas Inc."
+    },
+    {
+      "id": "mrxeh65ck16gsdoc2ah",
+      "name": "BALAI PANDESAL",
+      "businessName": "BALAI NI FRUITAS INC."
+    },
+    {
+      "id": "mst2od170h1pob7ha7xl",
+      "name": "Beard Papa MOA",
+      "businessName": "FJ PRIMEHOLDINGS CORPORATION"
+    },
+    {
+      "id": "msre7iowjoauiocy34",
+      "name": "BEE REFRESH",
+      "businessName": "BUSY BEE MARKETING CORPORATION"
+    },
+    {
+      "id": "mcecbi1r9w3l8egi1mp",
+      "name": "Benny & Cherry",
+      "businessName": "Lanzah Corporation"
+    },
+    {
+      "id": "ms0dayl8x0hd5tktkql",
+      "name": "BILLMOKO STORE",
+      "businessName": "BILLMOKO STORE"
+    },
+    {
+      "id": "mfxvd9r40eqcbn88j6i",
+      "name": "Boduo Raw Milktea Hub",
+      "businessName": ""
+    },
+    {
+      "id": "msiypdaz89ipmb58j2s",
+      "name": "BUBBLEHUB MILKTEA SUPPLIES",
+      "businessName": "BUBBLEHUB MILKTEA SUPPLIES"
+    },
+    {
+      "id": "mfxvd9ptwsc9tx11f8b",
+      "name": "Builtamart",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1s03ob4sbvy1ak",
+      "name": "Cab Filipino Food Concepts Inc.",
+      "businessName": "Cab Filipino Food Concepts Inc."
+    },
+    {
+      "id": "mcf1vuri38v9qhrdzly",
+      "name": "Coconutjuice",
+      "businessName": ""
+    },
+    {
+      "id": "ms0a7r243wwfkvsyo01",
+      "name": "Coffee Central Integrated Philippines Inc.",
+      "businessName": "Coffee Central Integrated Philippines Inc."
+    },
+    {
+      "id": "mfxvd9t5twputjtmybl",
+      "name": "Coneland",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubveheewvxutzra",
+      "name": "Cookies",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1qme6n0h7jgpr",
+      "name": "CTT.Synergy Corporation",
+      "businessName": "CTT.Synergy Corporation"
+    },
+    {
+      "id": "mr3klcsq8j2dg0jxrs",
+      "name": "Cupholders Supplier",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubvea291919zm4a",
+      "name": "Customer's online payment change",
+      "businessName": ""
+    },
+    {
+      "id": "ms74ey7kyhp9hiyx8hr",
+      "name": "Customer's paid thru card refunded by cash",
+      "businessName": ""
+    },
+    {
+      "id": "mshswp39ywstf7homz",
+      "name": "DATABLITZ",
+      "businessName": "Orion Cepheid, Inc."
+    },
+    {
+      "id": "mcf1ubve0m8p18e9e8y",
+      "name": "Deliver",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubve6utbkqu6izg",
+      "name": "Delivery",
+      "businessName": ""
+    },
+    {
+      "id": "mshsqxvegij6484jy8a",
+      "name": "DEUCES FOOD AND BEVERAGE CORPORATION",
+      "businessName": "DEUCES FOOD AND BEVERAGE CORPORATION"
+    },
+    {
+      "id": "mcecbi1r55v4u5a7jcr",
+      "name": "DHL Express (Philippines) Corp.",
+      "businessName": "DHL Express (Philippines) Corp."
+    },
+    {
+      "id": "mcecbi1rbg2ar3erp78",
+      "name": "Earnest Matthew S. Chan - Prop",
+      "businessName": "Earnest Matthew S. Chan - Prop"
+    },
+    {
+      "id": "msuksvsg2wynjxntcs7",
+      "name": "EATPIZZA SM MOA",
+      "businessName": "Scottland Food Group Corporation"
+    },
+    {
+      "id": "mcf1vurizf7y2p9c5ye",
+      "name": "Egg",
+      "businessName": ""
+    },
+    {
+      "id": "mfxvd9qr70jtn6kwd0x",
+      "name": "Erdy",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1q713y3z1nibh",
+      "name": "Ester Prime Corporation",
+      "businessName": "Ester Prime Corporation"
+    },
+    {
+      "id": "msbco60bfk9rscphdab",
+      "name": "EVER COMMONWEALTH CENTER INC.",
+      "businessName": "EVER COMMONWEALTH CENTER INC."
+    },
+    {
+      "id": "mcf1vurige357dzh25s",
+      "name": "Express Grab",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubvemkupp7tjm2p",
+      "name": "Express Grab Fee",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1r6olauj6v64f",
+      "name": "Fax 'n Parcel, Inc.",
+      "businessName": "Fax 'n Parcel, Inc."
+    },
+    {
+      "id": "mcf1ubveu24zlif3z3",
+      "name": "Fax N Parcel",
+      "businessName": ""
+    },
+    {
+      "id": "msy81dscxt61as6m8wf",
+      "name": "FAX PARCEL I PRINT",
+      "businessName": "FAX PARCEL I PRINT"
+    },
+    {
+      "id": "mst32mykz2caly935r",
+      "name": "FAX PARCEL PRINT - MOA",
+      "businessName": "FAX PARCEL PRINT - MOA"
+    },
+    {
+      "id": "ms0derrk3tavt2hsh64",
+      "name": "FAXPARCELPRINT",
+      "businessName": "FAXPARCELPRINT"
+    },
+    {
+      "id": "mcecbi1s22oebg8d5zl",
+      "name": "First Asia Realty Development Corp",
+      "businessName": "First Asia Realty Development Corp"
+    },
+    {
+      "id": "mcf1ubvfohkdbn9x7ye",
+      "name": "FLASH",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubvfcj9wdl306di",
+      "name": "FMPT Packaging Supplies Trading",
+      "businessName": ""
+    },
+    {
+      "id": "msabau71wvp8qy9m9f8",
+      "name": "FNP North Edsa, Inc.",
+      "businessName": "FNP North Edsa, Inc."
+    },
+    {
+      "id": "mfxvd9ol39trsc2x6r3",
+      "name": "Food Alley",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1vurigadi5vc9n1i",
+      "name": "Food Alley Basement",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1vuriog3gjhjm0he",
+      "name": "Food Alley Eggs",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1rurlb60nqff",
+      "name": "Frances May Pauline S. Tutor - Prop.",
+      "businessName": "Frances May Pauline S. Tutor - Prop."
+    },
+    {
+      "id": "mcecbi1qg3lfjaic89u",
+      "name": "Frances May Pauline S. Tutor - Prop. - FMPT PACKAGING SUPPLIES TRADING",
+      "businessName": "Frances May Pauline S. Tutor - Prop. - FMPT PACKAGING SUPPLIES TRADING"
+    },
+    {
+      "id": "mrvfst03wq6uf8aaio",
+      "name": "Frostube Manufacturing Corporation",
+      "businessName": "Frostube Manufacturing Corporation"
+    },
+    {
+      "id": "mcf1vurimjear02vyv",
+      "name": "Fruitas",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1vurivfvdplrj91k",
+      "name": "Fruitas Group INC.",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubvfn8ze5ntrub",
+      "name": "Fruitas House of Desserts",
+      "businessName": ""
+    },
+    {
+      "id": "mrx61jbtopji9auw8qc",
+      "name": "FRUITASGROUP INCORPORATED",
+      "businessName": "FRUITASGROUP INCORPORATED"
+    },
+    {
+      "id": "mcf1ubvex9v14hx08o",
+      "name": "Gavino's Group Inc.",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubvfnguauku089a",
+      "name": "Gavinos",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1rv7knn0rdbkm",
+      "name": "Gavinos Group Inc.",
+      "businessName": "Gavinos Group Inc."
+    },
+    {
+      "id": "mcf1ubvee363bde03ku",
+      "name": "Gerrycom Baking - Pasig",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1rwwid8o0z7ml",
+      "name": "Global Food Group Innovations Inc.",
+      "businessName": "Global Food Group Innovations Inc."
+    },
+    {
+      "id": "mcecbi1r185w8m880hy",
+      "name": "Global Pacific",
+      "businessName": "Global Pacific Distribution Network Corporation"
+    },
+    {
+      "id": "mcf1vuri2138fqn5h22",
+      "name": "Global Pacific",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubvehhr2m9z7bga",
+      "name": "Global Pacific Store",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubvfgigl7sgap4",
+      "name": "Gogo Express",
+      "businessName": ""
+    },
+    {
+      "id": "mfxvd9szqb3d0tch6w",
+      "name": "Golden Palco Trading",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubvek3wkuotnwnc",
+      "name": "Grab",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubvfss35i2kih2r",
+      "name": "Grab Delivery Fee",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubve83dseh6jeu",
+      "name": "Grab Express Fee",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubveem0079jafnh",
+      "name": "Grab Fee",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1vuri9j6gcpnlmx",
+      "name": "Grab Ice Cream Tip",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubvetfsda9sp2zm",
+      "name": "Grab Mart",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubverpquconjrlb",
+      "name": "Grab Mart Fee",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubve14l8700aba8",
+      "name": "GrabExpress",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1s1y1k5suznxch",
+      "name": "Green Portos Dev't Corporation",
+      "businessName": "Green Portos Dev't Corporation"
+    },
+    {
+      "id": "mfxvd9ro6xmoybb1tr5",
+      "name": "Greenstar",
+      "businessName": ""
+    },
+    {
+      "id": "mfxvd9rbs0kl27dccsa",
+      "name": "Greenstar One Enterprises",
+      "businessName": ""
+    },
+    {
+      "id": "msuewjl7fmagmvyk3i5",
+      "name": "GREENSTAR ONE ENTERPRISES OPC",
+      "businessName": "GREENSTAR ONE ENTERPRISES OPC"
+    },
+    {
+      "id": "mcf1ubve6crd1ldi11k",
+      "name": "Grocery",
+      "businessName": ""
+    },
+    {
+      "id": "mst34w1boni4gs130gg",
+      "name": "GW SVI",
+      "businessName": "GW SVI"
+    },
+    {
+      "id": "mfxvd9p4vhw2z98bep",
+      "name": "Haig and Lee Import Export Corp.",
+      "businessName": ""
+    },
+    {
+      "id": "mshsphve9sjmi1hdgcs",
+      "name": "HAPPY BEEHAVE FOOD CORPORATION",
+      "businessName": "HAPPY BEEHAVE FOOD CORPORATION"
+    },
+    {
+      "id": "mcecbi1r9qrz2c1fnk",
+      "name": "HCS Division 1 Inc.",
+      "businessName": "HCS Division 1 Inc."
+    },
+    {
+      "id": "mr9fdwaijhsstl78b2b",
+      "name": "Horiken",
+      "businessName": "Horiken Co., Ltd."
+    },
+    {
+      "id": "mcf1ubvet3vyb5spdi",
+      "name": "Ice",
+      "businessName": ""
+    },
+    {
+      "id": "mkdg6iixj9youp4e22",
+      "name": "Ice Ice Baby",
+      "businessName": "Ice Ice Baby"
+    },
+    {
+      "id": "ms384bflov2oqhote5c",
+      "name": "ICE TUBE MANUFACTURING",
+      "businessName": "ICE TUBE MANUFACTURING"
+    },
+    {
+      "id": "ms62ml50l3n3zbkpiqr",
+      "name": "ICE-ICE-BABY ICE TUBE MANUFACTURING",
+      "businessName": "ICE-ICE-BABY ICE TUBE MANUFACTURING"
+    },
+    {
+      "id": "mrxeolnqj4nm5awux0m",
+      "name": "ICE-ICE-BABY' ICE TUBE MANUFACTURING",
+      "businessName": "ICE-ICE-BABY' ICE TUBE MANUFACTURING"
+    },
+    {
+      "id": "mcf1vuridczycayd53o",
+      "name": "Indigo Ink Pub Inc",
+      "businessName": ""
+    },
+    {
+      "id": "mfxvd9phzutqt11sv5q",
+      "name": "Irish Luck Inc",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubveb9nz6x9xt2e",
+      "name": "Ivory Way",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubvepb26xbrrk1",
+      "name": "Ivoryway",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubvetmkauosrk6",
+      "name": "Ivoryway Co. Inc.",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1qf32ic77o8j",
+      "name": "Ivoryway Company Inc.",
+      "businessName": "Ivoryway Company Inc."
+    },
+    {
+      "id": "mcf1ubvezf086frjyc",
+      "name": "Ivoryway Ice",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubve0d93b494zj3v",
+      "name": "Ivoryway Ice 8packs",
+      "businessName": ""
+    },
+    {
+      "id": "mr6ea0uuredmar5k85o",
+      "name": "J&T",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1roldk1rl5n5",
+      "name": "Japan Home, Inc.",
+      "businessName": "Japan Home, Inc."
+    },
+    {
+      "id": "mcf1vuri9h62g50ds46",
+      "name": "Kamote",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1vurilpcjg98336",
+      "name": "Kareila Mgt.corp",
+      "businessName": ""
+    },
+    {
+      "id": "mkdg0akwhqazg9do5xv",
+      "name": "Kimkate Enterprises",
+      "businessName": "Kimkate Enterprises"
+    },
+    {
+      "id": "mfxvd9odc75hrfpexp6",
+      "name": "Kmakati Mart",
+      "businessName": ""
+    },
+    {
+      "id": "ms62n67d5mxzg7wyxhf",
+      "name": "KMAKATIMART SARI-SARI STORE",
+      "businessName": "KMAKATIMART SARI-SARI STORE"
+    },
+    {
+      "id": "msncrybgkd1wbb88b7o",
+      "name": "Krispy Kreme Doughnuts",
+      "businessName": "The Real American Doughnuts Company Inc."
+    },
+    {
+      "id": "mfxvd9tiaq8tj3x1ns6",
+      "name": "Kukido",
+      "businessName": ""
+    },
+    {
+      "id": "mfxvd9q8p5nlt59nyor",
+      "name": "Kukido Cookie Corp.",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1rq57jmn4lnm",
+      "name": "Kush & Kush Corporation",
+      "businessName": "Kush & Kush Corporation"
+    },
+    {
+      "id": "mcecbi1rw5kn8fh90p",
+      "name": "LA Food Corporation",
+      "businessName": "LA Food Corporation"
+    },
+    {
+      "id": "mfxvd9q1pe03gz2w7cb",
+      "name": "Laciate",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubve7vmz0jmbj3m",
+      "name": "Lalamove",
+      "businessName": ""
+    },
+    {
+      "id": "mfxvd9rue8z0t8f6y6e",
+      "name": "Landers",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1r4ggx817iy7f",
+      "name": "Landmark BGC",
+      "businessName": "The Landmark Corporation"
+    },
+    {
+      "id": "mryvm6k8ojve6zrhyw",
+      "name": "Landmark Supermarket",
+      "businessName": "Landmark Supermarket"
+    },
+    {
+      "id": "mnlacziywlhr310t7i",
+      "name": "Landmark Trinoma",
+      "businessName": "Landmark Citysuper Incorporated"
+    },
+    {
+      "id": "mrg7llo6c6a06egqeia",
+      "name": "Lansons",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubvf036zksnu0qho",
+      "name": "Laoamove Fee",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1szx5lu3egif9",
+      "name": "LawinLima, Inc.",
+      "businessName": "LawinLima, Inc."
+    },
+    {
+      "id": "mrbyhdc90euzyrr70lf6",
+      "name": "Lingnam Food Inc",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1qlx6thzhsc57",
+      "name": "M Bakery",
+      "businessName": "Phil. Jacobe Ventures Inc."
+    },
+    {
+      "id": "mcf1ubveh6qu10zslpi",
+      "name": "M Bakery",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubvfjx65u0jzvct",
+      "name": "M.D.R Baking & Restaurant Supplies",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1raq72yjn212i",
+      "name": "M.D.R Consumer Goods Trading",
+      "businessName": "M.D.R Consumer Goods Trading"
+    },
+    {
+      "id": "mcecbi1q8sxqmwvsw6y",
+      "name": "M.D.R. Consumer Goods Trading",
+      "businessName": "M.D.R. Consumer Goods Trading"
+    },
+    {
+      "id": "mcecbi1r0ru94lch3ml",
+      "name": "Maker and Made",
+      "businessName": "Communal Artisanry Group Inc."
+    },
+    {
+      "id": "mcecbi1rq3bhn9irvb",
+      "name": "Mary Grace Foods Inc.",
+      "businessName": "Mary Grace Foods Inc."
+    },
+    {
+      "id": "ms0c5evx2bmhey3wdqp",
+      "name": "Matchanese SM North",
+      "businessName": "Matchanese SM North"
+    },
+    {
+      "id": "mrsp6soj672fplee0pl",
+      "name": "Mcdo",
+      "businessName": ""
+    },
+    {
+      "id": "mrzuu8cus7jkrupy27p",
+      "name": "MCDONALD'S RESTAURANT",
+      "businessName": "Golden Arches Development Corporation"
+    },
+    {
+      "id": "mcf1vuri91s1mv91re",
+      "name": "MDR",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1vurigpamzelrm47",
+      "name": "MDR Baking & Restaurant Supplies",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubve5t9x5zxiq6d",
+      "name": "MDR Baking Supplies",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubvf219ro2n9a1k",
+      "name": "MDR Consumer Goods",
+      "businessName": ""
+    },
+    {
+      "id": "mfxvd9s75aqblfi1ht",
+      "name": "MDR Consumer Goods Dairy milk 60L, White Sugar 5kh",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubve8023jppy9vc",
+      "name": "MDR Trading",
+      "businessName": ""
+    },
+    {
+      "id": "msa3t36547tuashqoxa",
+      "name": "Mediaprint Philippines Inc.",
+      "businessName": "Mediaprint Philippines Inc."
+    },
+    {
+      "id": "ms1qgr4huszl1hzs2bh",
+      "name": "Metro Retail Stores Group, Inc.",
+      "businessName": "THE METRO GAISANO PASIG"
+    },
+    {
+      "id": "mfxvd9rhq0fp42d3bzl",
+      "name": "Milk",
+      "businessName": ""
+    },
+    {
+      "id": "ms1qfgr4x0q3rwflau",
+      "name": "MINISO",
+      "businessName": "MINI DEPATO CORP."
+    },
+    {
+      "id": "mcecbi1rjykb2skofu",
+      "name": "MP Pasquil trading corp.",
+      "businessName": "MP Pasquil trading corp."
+    },
+    {
+      "id": "mcecbi1rg3na8d6u6mf",
+      "name": "Mr. Quickie Corp.",
+      "businessName": "Mr. Quickie Corp."
+    },
+    {
+      "id": "mrt7c3khlx7uittetbr",
+      "name": "Muji",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubveok3u9qcltka",
+      "name": "National Book Store",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1vurirxzejm2i9t",
+      "name": "National Bookstore",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubvf2rfugjud67b",
+      "name": "National BS",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1vuri8186kor1et7",
+      "name": "NBS",
+      "businessName": ""
+    },
+    {
+      "id": "ms4n4q89rxlpllwt0de",
+      "name": "No",
+      "businessName": ""
+    },
+    {
+      "id": "msncyzb91as8i3ghjod",
+      "name": "Office Warehouse",
+      "businessName": "Office Warehouse"
+    },
+    {
+      "id": "msncvcu8udykdlmr06",
+      "name": "OFFICE WAREHOUSE, INC.",
+      "businessName": "OFFICE WAREHOUSE, INC."
+    },
+    {
+      "id": "mrun1icuq3v9y1lx2w",
+      "name": "Over expenses yesterday",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1q6xombve7jql",
+      "name": "Padova Fine Food Technologies Inc.",
+      "businessName": "Padova Fine Food Technologies Inc."
+    },
+    {
+      "id": "msok5pth8w9bynabml",
+      "name": "Papakape Legazpi",
+      "businessName": "Papakape, OPC"
+    },
+    {
+      "id": "mkdgmo63dje2o8kwxfe",
+      "name": "Petty Cash",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubveqy575hl3m39",
+      "name": "Phil. Jacobe Ventures, Inc.",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1r587xu05oh6j",
+      "name": "Philippine Seven Corporation",
+      "businessName": "Philippine Seven Corporation"
+    },
+    {
+      "id": "mcecbi1ri5c4hhqavrf",
+      "name": "Pizzulu Food Corporation",
+      "businessName": "Pizzulu Food Corporation"
+    },
+    {
+      "id": "mfxvd9oymgc2gm6ue3m",
+      "name": "Plain Sight",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubvffgl284qdhcr",
+      "name": "Powefoods",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1rssrcsowqmqi",
+      "name": "Powerfoods Marketing Intenational Inc.",
+      "businessName": "Powerfoods Marketing Intenational Inc."
+    },
+    {
+      "id": "mcecbi1rhqxrq8fxw6s",
+      "name": "Powerfoods Marketing International Inc.",
+      "businessName": "Powerfoods Marketing International Inc."
+    },
+    {
+      "id": "ms7ht7hfu55f8ksperq",
+      "name": "PPT",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1vuri16wfdljjkj6",
+      "name": "Print",
+      "businessName": ""
+    },
+    {
+      "id": "mst36b85f0a5czbplqj",
+      "name": "PYC FOODS CORP",
+      "businessName": "PYC FOODS CORP"
+    },
+    {
+      "id": "mcf1ubve4dl2otghdya",
+      "name": "R&BTube Ice",
+      "businessName": ""
+    },
+    {
+      "id": "mshsv4cqnukrgjky0ma",
+      "name": "RAMEN NAGI",
+      "businessName": "RAMEN NAGI NOODLERAMA GROUP INC."
+    },
+    {
+      "id": "mcf1ubvfywqvqe9tv3e",
+      "name": "Reenvio F&B",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1rk5dlgtgcwf",
+      "name": "Reenvio food and beverages",
+      "businessName": "Reenvio food and beverages"
+    },
+    {
+      "id": "mcecbi1q43grmza0z6p",
+      "name": "Renielle B. Rebadomia - Prop",
+      "businessName": "Renielle B. Rebadomia - Prop"
+    },
+    {
+      "id": "mcecbi1sjlsmoenxnv",
+      "name": "Renielle B. Rebadomia - Prop. - BOXPACKERS CONSUMER GOODS TRADING",
+      "businessName": "Renielle B. Rebadomia - Prop. - BOXPACKERS CONSUMER GOODS TRADING"
+    },
+    {
+      "id": "mr66g68ts269zalby8",
+      "name": "Roastery Lab Opc",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1s2a1qzocyeo9",
+      "name": "Robinson's Supermarket Corp.",
+      "businessName": "Robinson's Supermarket Corp."
+    },
+    {
+      "id": "mcecbi1rn1i7db3jpx",
+      "name": "Robinson's Supermarket Corporation",
+      "businessName": "Robinson's Supermarket Corporation"
+    },
+    {
+      "id": "mcecbi1qrtr3xfrb58d",
+      "name": "Robinsons Supermarket Corporation",
+      "businessName": "Robinsons Supermarket Corporation"
+    },
+    {
+      "id": "mcecbi1rw27pc8kx7y",
+      "name": "Rosemarie G. Concepcion - Prop.",
+      "businessName": "Rosemarie G. Concepcion - Prop."
+    },
+    {
+      "id": "mcecbi1r9a9gz7sbczu",
+      "name": "RPJ Development Inc.",
+      "businessName": "RPJ Development Inc."
+    },
+    {
+      "id": "mrevs1fwho1pa4hav7l",
+      "name": "S&R",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1qppwts6eare",
+      "name": "S&R - Shaw",
+      "businessName": "Kareila Mngt. Corp"
+    },
+    {
+      "id": "mcf1ubvelkqpw6txyfd",
+      "name": "S&R Mascarpone",
+      "businessName": ""
+    },
+    {
+      "id": "mrytiu5bylhlejv3k2h",
+      "name": "S&R MEMBERSHIP SHOPPING",
+      "businessName": "S&R MEMBERSHIP SHOPPING"
+    },
+    {
+      "id": "mrsouxcsksgmx6wozu",
+      "name": "Samgyupsalamat",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1rgtkxuiu218",
+      "name": "Sanford Marketing Corporation",
+      "businessName": "Sanford Marketing Corporation"
+    },
+    {
+      "id": "ms688cflcmj8h6fufr8",
+      "name": "Sari Sari mart",
+      "businessName": ""
+    },
+    {
+      "id": "ms65eq0gqlsa2yuody8",
+      "name": "Sari-Sari Mart",
+      "businessName": "Sari-Sari Mart"
+    },
+    {
+      "id": "mcf1ubvedjr0dfyg61m",
+      "name": "Shopee",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubvehmqcnkgzt5a",
+      "name": "SM",
+      "businessName": ""
+    },
+    {
+      "id": "mrvn59nxq2kill8tu3",
+      "name": "SM Aura - Supermarket",
+      "businessName": ""
+    },
+    {
+      "id": "mrxj4la8znuf4ga5x5",
+      "name": "Sm Grocery",
+      "businessName": ""
+    },
+    {
+      "id": "mrz02apqqzw42urc0bh",
+      "name": "SM HYPERMARKET",
+      "businessName": "SM HYPERMARKET NORTH EDSA"
+    },
+    {
+      "id": "mcecbi1q4y4yslqa1vi",
+      "name": "SM Hypermarket North Edsa",
+      "businessName": "Super Shopping Market, Inc."
+    },
+    {
+      "id": "mcf1vuri3b4o2zhahk9",
+      "name": "Sm Market Dairy7, Sugar3kg, Lysol",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1ri02f6ei70nh",
+      "name": "SM Prime Holdings Inc.",
+      "businessName": "SM Prime Holdings Inc."
+    },
+    {
+      "id": "msorbjquynjco09mpz",
+      "name": "SM STORE",
+      "businessName": "METRO MAIN STAR ASIA CORP."
+    },
+    {
+      "id": "mcf1ubvex5j8kxkqcap",
+      "name": "SM Super Market",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubvestnty3huno",
+      "name": "SM Supermarket",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1q668bj1xf8zq",
+      "name": "SM Supermarket Megamall",
+      "businessName": "Supervalue, Inc."
+    },
+    {
+      "id": "mrvhqhpy33wn8d3nb93",
+      "name": "SM Supermarket Southmall",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1rioei0zk149d",
+      "name": "Sostanza Inc.",
+      "businessName": "Sostanza Inc."
+    },
+    {
+      "id": "mfxvd9sdea4gb1yxahs",
+      "name": "Southeast Asia Retail Inc",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1rmxlxc79prb",
+      "name": "Southeastasia Retail Inc",
+      "businessName": "Southeastasia Retail Inc"
+    },
+    {
+      "id": "mcecbi1rersdark2tgd",
+      "name": "SRJ Imperial OPC",
+      "businessName": "SRJ Imperial OPC"
+    },
+    {
+      "id": "mfxvd9sk6u98g4ohzqj",
+      "name": "Storm of Blessing Marketing",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubveaofxd6wsmds",
+      "name": "Super Market",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubvevv9tqv84z",
+      "name": "Supermarket",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1rcfdihyxe888",
+      "name": "Tabletop Partners, Inc.",
+      "businessName": "Tabletop Partners, Inc."
+    },
+    {
+      "id": "mnjv54a6bgv9xvj7kq6",
+      "name": "Tatang",
+      "businessName": ""
+    },
+    {
+      "id": "mfxvd9qltnsnlz5bqgc",
+      "name": "TDC",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1rmffiyu7ydpq",
+      "name": "The Corner Market",
+      "businessName": "Common Ground Food Specialists, Inc."
+    },
+    {
+      "id": "mcecbi1qddm9jjtiv7t",
+      "name": "The Daily Cut",
+      "businessName": "For the Love of Food Inc."
+    },
+    {
+      "id": "mcf1ubveikyxxtsxznf",
+      "name": "The Daily Cut",
+      "businessName": ""
+    },
+    {
+      "id": "mr69atb0usm5ar9pin",
+      "name": "The Greener Good",
+      "businessName": "The Greener Good, Inc."
+    },
+    {
+      "id": "ms36ja2ahiibok6e627",
+      "name": "THE GREENER GOOD CO. INC.",
+      "businessName": "THE GREENER GOOD CO. INC."
+    },
+    {
+      "id": "mcecbi1rzfttis3ran7",
+      "name": "The Landmark Manila Bay Corporation",
+      "businessName": "The Landmark Manila Bay Corporation"
+    },
+    {
+      "id": "mcecbi1qsxljmkbl4hd",
+      "name": "The Manna Cuisine Corporation",
+      "businessName": "The Manna Cuisine Corporation"
+    },
+    {
+      "id": "mcf1ubve40w6wd4wc8u",
+      "name": "The Marketplace",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1r3ih4ev6h75",
+      "name": "The Whole One Yard Inc.",
+      "businessName": "The Whole One Yard Inc."
+    },
+    {
+      "id": "mcf1vuril04vkf2a23",
+      "name": "Thermal paper 2pcs",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1s0siw72bqh43d",
+      "name": "Tiger Resort Leisure & Entertainment Inc.",
+      "businessName": "Tiger Resort Leisure & Entertainment Inc."
+    },
+    {
+      "id": "mcecbi1runcn24mtowo",
+      "name": "Tiger Resort Leisure and Entertainment Inc.",
+      "businessName": "Tiger Resort Leisure and Entertainment Inc."
+    },
+    {
+      "id": "mrfzfuooc4ew1nqmy9p",
+      "name": "Tokyo Tokyo TWO E-COM",
+      "businessName": "Hansbury, Inc."
+    },
+    {
+      "id": "mcecbi1rngmlxek6ma",
+      "name": "TX Concept Group Inc.",
+      "businessName": "TX Concept Group Inc."
+    },
+    {
+      "id": "mcf1vuricq4gtr5w96a",
+      "name": "TX Concept Group Inc. Cupholder",
+      "businessName": ""
+    },
+    {
+      "id": "mrq29cselrf5y2vm9ml",
+      "name": "Uncle John’s",
+      "businessName": ""
+    },
+    {
+      "id": "mfxvd9paz2663grd8a",
+      "name": "Unknown",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubvead0i7mji37m",
+      "name": "Unknown Supplier",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1r8nrwop2km13",
+      "name": "UTAKPOS INC.",
+      "businessName": "UTAKPOS INC."
+    },
+    {
+      "id": "ms37j0mxn9ky7j7u",
+      "name": "VALERIO MART",
+      "businessName": "VALERIO MART"
+    },
+    {
+      "id": "mcecbi1r7zwgn55q054",
+      "name": "VFS Services Philippines Privatre Inc.",
+      "businessName": "VFS Services Philippines Privatre Inc."
+    },
+    {
+      "id": "ms4n5v4t8e1ep30r6sc",
+      "name": "VOUCHENG",
+      "businessName": "VOUCHENG"
+    },
+    {
+      "id": "mfxvd9qeje7hwi8jrp9",
+      "name": "Waltermat Supermarket",
+      "businessName": ""
+    },
+    {
+      "id": "msoraums26nk8egzyep",
+      "name": "WARPVISIONS INFORMATION SYSTEMS SERVICES",
+      "businessName": "WARPVISIONS INFORMATION SYSTEMS SERVICES"
+    },
+    {
+      "id": "mcf1vuricrmebzk3sk7",
+      "name": "Watson",
+      "businessName": ""
+    },
+    {
+      "id": "mfxvd9pndkvqw5iovjd",
+      "name": "Watsons",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubvf3e4gtod87sp",
+      "name": "Whipping Cream",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1vuri5sq2v84eiw3",
+      "name": "Willard's Enterprise",
+      "businessName": ""
+    },
+    {
+      "id": "mfxvd9ssohkrf6pcn0e",
+      "name": "Willard's Enterprises",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubvenb2chaxuup9",
+      "name": "Wonderbake",
+      "businessName": ""
+    },
+    {
+      "id": "mcecbi1ri5oegluru4",
+      "name": "Wonderbake, Inc.",
+      "businessName": "Wonderbake, Inc."
+    },
+    {
+      "id": "mcf1ubvespj2yjpo92",
+      "name": "Yardstick",
+      "businessName": ""
+    },
+    {
+      "id": "mcf1ubvfrod3xuw1n2",
+      "name": "Yardstick Coffee Beans",
+      "businessName": ""
+    },
+    {
+      "id": "mrzu7sstw827mw7cjw",
+      "name": "YELO MUNA ICE STORE",
+      "businessName": "YELO MUNA ICE STORE"
+    },
+    {
+      "id": "msht0hz3f5y70a7qdnd",
+      "name": "ZIRCONIA, INC.",
+      "businessName": "ZIRCONIA, INC."
+    },
+    {
+      "id": "mshstl8f3ezl3hh8qjs",
+      "name": "ZUCCA INC.",
+      "businessName": "ZUCCA INC."
+    }
+  ]
+}

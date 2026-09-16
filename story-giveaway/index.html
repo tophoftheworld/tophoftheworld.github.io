@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0a0a" />
+  <title>Story Giveaway</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css?v=19" />
+</head>
+<body>
+  <div id="app" class="app">
+    <header class="top-bar">
+      <span class="top-bar__title">Stories</span>
+      <span id="photoCount" class="top-bar__count">0</span>
+    </header>
+
+    <main id="feedViewport" class="feed-viewport" aria-label="Story entries">
+      <div id="feedTrack" class="feed-track"></div>
+      <div id="emptyState" class="empty-state hidden">
+        <p>No stories yet</p>
+        <p class="empty-state__hint">Sync photos from the admin dashboard</p>
+      </div>
+    </main>
+
+    <div id="drawOverlay" class="draw-overlay" aria-hidden="true">
+      <div id="revealStage" class="reveal-stage"></div>
+      <div id="winnersStage" class="winners-stage hidden"></div>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <div class="shutter-dock">
+      <button id="prizeLabel" class="prize-label hidden" type="button" aria-live="polite">
+        <span class="prize-label__eyebrow">5x Winners:</span>
+        <span id="prizeLabelText" class="prize-label__name"></span>
+      </button>
+      <button
+        id="shutterBtn"
+        class="shutter"
+        type="button"
+        aria-label="Draw winners"
+        disabled
+      >
+        <span class="shutter__ring"></span>
+        <span class="shutter__core"></span>
+        <span class="shutter__x" aria-hidden="true"></span>
+      </button>
+    </div>
+  </div>
+
+  <div id="lightbox" class="lightbox hidden" role="dialog" aria-modal="true" aria-label="Story preview">
+    <div class="lightbox__stage">
+      <img id="lightboxImg" class="lightbox__img" alt="" />
+    </div>
+    <button id="lightboxClose" class="lightbox__close" type="button" aria-label="Close">×</button>
+  </div>
+
+  <script type="module" src="js/app.js?v=21"></script>
+</body>
+</html>

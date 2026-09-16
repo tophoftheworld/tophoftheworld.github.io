@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MMF Hub Admin — Manila Matcha Fest 2026</title>
+    <meta name="robots" content="noindex,nofollow">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="adminGate" class="gate-body">
+        <div class="card gate-card">
+            <img class="gate-logo" src="images/mmf-logo.png" alt="Manila Matcha Fest 2026" width="160" height="160">
+            <h1>Hub Admin</h1>
+            <p class="muted">Sales &amp; freebies claim review</p>
+            <form id="adminLoginForm" autocomplete="off">
+                <div class="field">
+                    <label for="adminPassword">Password</label>
+                    <input class="input" type="password" id="adminPassword" autocomplete="current-password" required>
+                </div>
+                <button type="submit" class="btn" style="width:100%">Enter</button>
+                <p class="gate-status" id="adminGateStatus" aria-live="polite"></p>
+                <p class="muted" style="margin-top:1rem;font-size:0.8rem;">
+                    Need registrations? <a href="https://mmf-info.web.app/admin">Merchant Registrations admin</a>
+                </p>
+            </form>
+        </div>
+    </div>
+
+    <div id="adminApp" class="admin-body hidden">
+        <header class="admin-header">
+            <div class="admin-header-inner">
+                <h1>Sales &amp; Freebies Admin</h1>
+                <div class="admin-actions">
+                    <a class="btn btn-ghost btn-sm" href="/meal-orders">Crew meal orders</a>
+                    <a class="btn btn-ghost btn-sm" href="https://mmf-info.web.app/admin">← Merchant Registrations</a>
+                    <button type="button" class="btn btn-ghost btn-sm" id="refreshBtn">Refresh</button>
+                    <button type="button" class="btn btn-ghost btn-sm" id="exportSalesBtn">Export sales CSV</button>
+                    <button type="button" class="btn btn-ghost btn-sm" id="exportKolBtn">Export freebies CSV</button>
+                    <button type="button" class="btn btn-ghost btn-sm" id="adminLogoutBtn">Log out</button>
+                </div>
+            </div>
+        </header>
+
+        <main class="admin-main">
+            <section class="hub-section" style="padding:1.25rem">
+                <div class="hub-section-header" style="margin-bottom:0.75rem">
+                    <div>
+                        <h2>Filters</h2>
+                        <p class="muted">Filter reports by day and brand.</p>
+                    </div>
+                </div>
+                <div class="admin-filters">
+                    <div class="field">
+                        <label for="filterDay">Day</label>
+                        <select class="select" id="filterDay">
+                            <option value="">All days</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="filterBrand">Brand</label>
+                        <select class="select" id="filterBrand">
+                            <option value="">All brands</option>
+                        </select>
+                    </div>
+                </div>
+            </section>
+
+            <section class="hub-section" style="padding:1.25rem">
+                <div class="hub-section-header" style="margin-bottom:0.75rem">
+                    <div>
+                        <h2>Summary</h2>
+                        <p class="muted">Totals for current filter.</p>
+                    </div>
+                </div>
+                <div class="summary-grid">
+                    <div class="summary-card">
+                        <div class="label">Cash sales</div>
+                        <div class="value" id="sumGross">₱0.00</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="label">KOL drinks</div>
+                        <div class="value" id="sumKolDrinks">0</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="label">KOL retail</div>
+                        <div class="value" id="sumKolRetail">0</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="label">Reports filed</div>
+                        <div class="value" id="sumReports">0</div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="hub-section" style="padding:1.25rem">
+                <div class="hub-section-header" style="margin-bottom:0.75rem">
+                    <div>
+                        <h2>Sales reports</h2>
+                        <p class="muted">One row per brand per day.</p>
+                    </div>
+                </div>
+                <div class="data-table-wrap">
+                    <table class="data-table" id="salesTable">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Brand</th>
+                                <th class="num">Cash sales</th>
+                                <th>Updated</th>
+                            </tr>
+                        </thead>
+                        <tbody id="salesTableBody">
+                            <tr><td colspan="5" class="muted">Loading…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="hub-section" style="padding:1.25rem">
+                <div class="hub-section-header" style="margin-bottom:0.75rem">
+                    <div>
+                        <h2>KOL / influencer claims</h2>
+                        <p class="muted">Drinks &amp; retail claimed per brand per day.</p>
+                    </div>
+                </div>
+                <div class="data-table-wrap">
+                    <table class="data-table" id="kolTable">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Brand</th>
+                                <th class="num">Drinks</th>
+                                <th class="num">Retail</th>
+                                <th>Updated</th>
+                            </tr>
+                        </thead>
+                        <tbody id="kolTableBody">
+                            <tr><td colspan="5" class="muted">Loading…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script type="module" src="js/admin.js"></script>
+</body>
+</html>

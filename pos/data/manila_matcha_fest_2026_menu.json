@@ -1,0 +1,595 @@
+{
+  "oatUpgradePrice": 0,
+  "defaultMilk": "oat",
+  "strengthLevelPrices": {
+    "1": 0,
+    "2": 30,
+    "3": 70
+  },
+  "categories": [
+    {
+      "id": "matcha-starters",
+      "name": "Matcha Starters",
+      "countsAsCup": true
+    },
+    {
+      "id": "matcha-lattes",
+      "name": "Matcha Lattes",
+      "countsAsCup": true
+    },
+    {
+      "id": "beyond-matcha",
+      "name": "Beyond Matcha",
+      "countsAsCup": true
+    },
+    {
+      "id": "specials",
+      "name": "Specials",
+      "countsAsCup": true
+    },
+    {
+      "id": "desserts",
+      "name": "Desserts",
+      "countsAsCup": false
+    },
+    {
+      "id": "retail-matchanese",
+      "name": "Retail (Matchanese)",
+      "countsAsCup": false
+    },
+    {
+      "id": "retail-nuki-nuki",
+      "name": "Retail (Nuki Nuki)",
+      "countsAsCup": false
+    },
+    {
+      "id": "merch",
+      "name": "Merch",
+      "countsAsCup": false
+    },
+    {
+      "id": "tools",
+      "name": "Tools",
+      "countsAsCup": false
+    }
+  ],
+  "items": [
+    {
+      "categoryId": "matcha-starters",
+      "name": "Signature Matchanese Latte",
+      "description": "Matcha Cold Whisked with Milk",
+      "price": 230,
+      "type": "Iced",
+      "shorthand": "SML",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "matcha-starters",
+      "name": "Matchanese Seasalt Latte",
+      "description": "Our Signature Matcha Latte with Seasalt Cream",
+      "price": 260,
+      "tags": [
+        "Best Seller"
+      ],
+      "type": "Iced",
+      "shorthand": "MSL",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Strawberry Matchanese Latte",
+      "description": "Our Signature Matcha Latte with Strawberry Puree",
+      "price": 260,
+      "type": "Iced",
+      "shorthand": "STML",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Earl Grey Matchanese Latte",
+      "description": "Our Signature Matcha Latte with Homemade Earl Grey Syrup",
+      "price": 250,
+      "type": "Iced",
+      "shorthand": "EGML",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Matchanese Coco Oat Latte",
+      "description": "Cold Whisked Matcha with Oat Milk over Vita Coco",
+      "price": 240,
+      "type": "Iced",
+      "shorthand": "COML",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Matchanese Float",
+      "description": "Our Signature Matcha Latte with a Scoop of Matcha Ice Cream",
+      "price": 300,
+      "tags": [
+        "Limited"
+      ],
+      "type": "Iced",
+      "shorthand": "MFL",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "beyond-matcha",
+      "name": "Hōjicha Latte",
+      "description": "Cold Whisked Hōjicha with Milk",
+      "price": 200,
+      "type": "Iced",
+      "shorthand": "HL",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "beyond-matcha",
+      "name": "Hōjicha Seasalt Latte",
+      "description": "Hōjicha Latte topped with Seasalt Cream",
+      "price": 240,
+      "type": "Iced",
+      "shorthand": "HSL",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "beyond-matcha",
+      "name": "Genmaicha Latte",
+      "description": "Cold Whisked Genmaicha with Milk",
+      "price": 190,
+      "type": "Iced",
+      "shorthand": "GL",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "beyond-matcha",
+      "name": "Genmaicha Seasalt Latte",
+      "description": "Genmaicha Latte topped with Seasalt Cream",
+      "price": 230,
+      "type": "Iced",
+      "shorthand": "GSL",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "specials",
+      "name": "Dulce de Leche Matcha Latte",
+      "description": "Dulce de Leche Cream, Smashed Lengua de Gato",
+      "price": 290,
+      "type": "Iced",
+      "shorthand": "DDLM",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "specials",
+      "name": "Ube Pudding Matcha Latte",
+      "description": "Ube Halaya Pudding, Dango",
+      "price": 320,
+      "type": "Iced",
+      "shorthand": "UPML",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "specials",
+      "name": "White Champorado Matcha",
+      "description": "White Chocolate Dome, White Chocolate Cream, Rice Crispies",
+      "price": 320,
+      "type": "Iced",
+      "shorthand": "WCM",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "specials",
+      "name": "Matcha Tiramisu Latte",
+      "description": "Mascarpone, Cream, Pasteurized Yolks, Ladyfinger",
+      "price": 320,
+      "type": "Iced",
+      "shorthand": "MTL",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "specials",
+      "name": "Tamago Brulee Matcha",
+      "description": "Mascarpone, Cream, Pasteurized Yolks, Ladyfinger",
+      "price": 300,
+      "type": "Iced",
+      "shorthand": "TBM",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "specials",
+      "name": "Cereal Cookie Dough Matcha [OHT Collab]",
+      "description": "OHT Collab",
+      "price": 320,
+      "tags": [
+        "Collab"
+      ],
+      "type": "Iced",
+      "shorthand": "CCDM",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "desserts",
+      "name": "Warabi Mochi",
+      "description": "Choose your dusting: Kinako or Matcha",
+      "price": 270,
+      "type": "Dessert",
+      "shorthand": "WM",
+      "variants": [
+        {
+          "name": "Kinako"
+        },
+        {
+          "name": "Matcha"
+        }
+      ],
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "desserts",
+      "name": "Matcha Cookie",
+      "description": "Choose your flavor",
+      "price": 165,
+      "type": "Dessert",
+      "shorthand": "MC",
+      "variants": [
+        {
+          "name": "Matcha Bomb"
+        },
+        {
+          "name": "Matcha White Choco"
+        },
+        {
+          "name": "Matcha Dark Choco"
+        }
+      ],
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "retail-matchanese",
+      "name": "Aki",
+      "description": "Matchanese retail matcha",
+      "price": 900,
+      "type": "Retail",
+      "shorthand": "AKI",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": false
+      }
+    },
+    {
+      "categoryId": "retail-matchanese",
+      "name": "Natsu",
+      "description": "Matchanese retail matcha",
+      "price": 1150,
+      "type": "Retail",
+      "shorthand": "NAT",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": false
+      }
+    },
+    {
+      "categoryId": "retail-matchanese",
+      "name": "Hojicha",
+      "description": "Matchanese retail hojicha",
+      "price": 550,
+      "type": "Retail",
+      "shorthand": "HOJ",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": false
+      }
+    },
+    {
+      "categoryId": "retail-matchanese",
+      "name": "Samidori",
+      "description": "Matchanese retail matcha",
+      "price": 1250,
+      "type": "Retail",
+      "shorthand": "SAM",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": false
+      }
+    },
+    {
+      "categoryId": "retail-nuki-nuki",
+      "name": "Nuki Nuki 01",
+      "description": "Nuki Nuki retail matcha",
+      "price": 950,
+      "type": "Retail",
+      "shorthand": "NN01",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": false
+      }
+    },
+    {
+      "categoryId": "retail-nuki-nuki",
+      "name": "Nuki Nuki 02",
+      "description": "Nuki Nuki retail matcha",
+      "price": 1150,
+      "type": "Retail",
+      "shorthand": "NN02",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": false
+      }
+    },
+    {
+      "categoryId": "merch",
+      "name": "Shirt",
+      "description": "Official MMF merch",
+      "price": 750,
+      "type": "Merch",
+      "shorthand": "SHT",
+      "variants": [
+        {
+          "name": "Matcha Lover"
+        },
+        {
+          "name": "Matcha Fest"
+        }
+      ],
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": false
+      }
+    },
+    {
+      "categoryId": "merch",
+      "name": "Cap",
+      "description": "Official MMF merch",
+      "price": 650,
+      "type": "Merch",
+      "shorthand": "CAP",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": false
+      }
+    },
+    {
+      "categoryId": "merch",
+      "name": "Tote Bag (Small)",
+      "description": "Official MMF merch",
+      "price": 150,
+      "type": "Merch",
+      "shorthand": "TBS",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": false
+      }
+    },
+    {
+      "categoryId": "merch",
+      "name": "Tote Bag (Big)",
+      "description": "Official MMF merch",
+      "price": 450,
+      "type": "Merch",
+      "shorthand": "TBB",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": false
+      }
+    },
+    {
+      "categoryId": "merch",
+      "name": "Sticker Pack",
+      "description": "Official MMF merch",
+      "price": 150,
+      "type": "Merch",
+      "shorthand": "STK",
+      "variants": [
+        {
+          "name": "MMF 2025"
+        },
+        {
+          "name": "MMF 2026"
+        },
+        {
+          "name": "Matchanese Tools"
+        },
+        {
+          "name": "Matchanese Desserts"
+        },
+        {
+          "name": "Matchanese 5th Anniv"
+        }
+      ],
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": false
+      }
+    },
+    {
+      "categoryId": "merch",
+      "name": "Sticker Pack (3 for ₱360)",
+      "description": "Any 3 sticker packs",
+      "price": 360,
+      "type": "Merch",
+      "shorthand": "STK3",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": false
+      }
+    },
+    {
+      "categoryId": "tools",
+      "name": "Bamboo Whisk + Scoop Set",
+      "description": "Bamboo whisk and scoop set",
+      "price": 950,
+      "type": "Tool",
+      "shorthand": "BWSCOOP",
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": false
+      }
+    },
+    {
+      "categoryId": "tools",
+      "name": "Bowl & Whisk Stand",
+      "description": "Choose your color: Clear Green or Clear Pink",
+      "price": 1250,
+      "type": "Tool",
+      "shorthand": "BWS",
+      "variants": [
+        {
+          "name": "Clear Green"
+        },
+        {
+          "name": "Clear Pink"
+        }
+      ],
+      "customizations": {
+        "size": false,
+        "serving": false,
+        "sweetness": false,
+        "milk": false,
+        "strengthLevel": false,
+        "discount": false
+      }
+    }
+  ]
+}

@@ -8,13 +8,14 @@
   },
   "scripts": {
     "serve": "firebase emulators:start",
-    "deploy": "node ../scripts/prepare-deploy.mjs && firebase deploy --only functions:api,hosting",
+    "deploy": "node ../scripts/prepare-deploy.mjs && firebase deploy --only functions:api,functions:publicInvoicePage,functions:inboxSummaryEmailMorning,functions:inboxSummaryEmailEvening,functions:opsEventCalendarSync,hosting",
     "lint": "echo \"No lint configured\"",
     "test": "node --test tests/*.test.js"
   },
   "dependencies": {
     "express": "^4.21.2",
     "firebase-admin": "^13.0.2",
-    "firebase-functions": "^6.3.2"
+    "firebase-functions": "^6.3.2",
+    "googleapis": "^173.0.0"
   }
 }

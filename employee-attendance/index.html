@@ -24,7 +24,7 @@
     <link rel="icon" href="data:,">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-    <link rel="stylesheet" href="css/style.css?v=2.0.2">
+    <link rel="stylesheet" href="css/style.css?v=2.0.4">
     <link rel="manifest" href="/manifest.webmanifest">
     <meta name="theme-color" content="#2b9348">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -168,11 +168,10 @@
                     </div>
                     <div class="dropdown-stack">
                         <select class="branch-label" id="branchSelect">
-                            <option selected>Podium</option>
-                            <option>SM North</option>
-                            <option>Pop-up</option>
-                            <option>Workshop</option>
-                            <option>Other Events</option>
+                            <option value="Podium" selected>Podium</option>
+                            <option value="SM North">SM North</option>
+                            <option value="Other Events">Other Events</option>
+                            <!-- Named pop-ups / workshops loaded from Firestore -->
                         </select>
                         <select class="shift-label" id="shiftSelect">
                             <option>Opening</option>
@@ -261,13 +260,25 @@
 
         <div id="earlyOutModal" class="image-modal">
             <div class="modal-content" style="padding: 1.5rem; max-width: 90%; text-align: center;">
-                <p style="font-size: 1.2rem; margin-bottom: 1.5rem;">
-                    ⏰ It's not yet time to clock out.<br>Are you sure you want to proceed?
+                <p id="earlyOutMessage" style="font-size: 1.2rem; margin-bottom: 1.5rem;">
+                    It's not yet time to clock out.<br>Are you sure you want to proceed?
                 </p>
                 <div style="display: flex; gap: 1rem; justify-content: center;">
                     <button id="cancelEarlyOut" class="retake-btn">Cancel</button>
                     <button id="confirmEarlyOut" class="submit-btn">Proceed</button>
                 </div>
+            </div>
+        </div>
+
+        <div id="locationRequiredModal" class="image-modal location-required-modal" style="z-index: 10050;">
+            <div class="modal-content location-required-card" onclick="event.stopPropagation();">
+                <button type="button" class="location-required-close" onclick="cancelLocationRequiredModal()" aria-label="Close">&times;</button>
+                <p class="location-required-title">Location Verification</p>
+                <p id="locationRequiredMessage" class="location-required-copy">
+                    Please enable location sharing permissions on your device.
+                </p>
+                <p id="locationRequiredHint" class="location-required-hint"></p>
+                <button type="button" class="submit-btn location-required-ok" onclick="cancelLocationRequiredModal()">OK</button>
             </div>
         </div>
 
@@ -283,8 +294,8 @@
             </div>
         </div>
         <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-        <script src="../shared/js/PayCalculator.js?v=2.0.1"></script>
-        <script type="module" src="js/script.js?v=2.0.2"></script>
+        <script src="../shared/js/PayCalculator.js?v=2.0.9"></script>
+        <script type="module" src="js/script.js?v=2.0.20"></script>
     </div>
     <!-- Update notification removed - handled by parent portal -->
 </body>

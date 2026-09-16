@@ -5,47 +5,112 @@
   "firestore": {
     "rules": "firestore.rules"
   },
-  "hosting": {
-    "public": "public",
-    "ignore": [
-      "firebase.json",
-      "**/.*",
-      "**/node_modules/**"
-    ],
-    "redirects": [
-      {
-        "regex": "/workshops$",
-        "destination": "/workshops/",
-        "type": 301
-      }
-    ],
-    "rewrites": [
-      {
-        "source": "/api/**",
-        "function": "api"
-      },
-      {
-        "source": "/conversation",
-        "destination": "/conversation.html"
-      },
-      {
-        "source": "/workshops/",
-        "destination": "/workshops/workshops.html"
-      },
-      {
-        "source": "/shopify",
-        "destination": "/shopify/index.html"
-      },
-      {
-        "source": "/leads",
-        "destination": "/leads/index.html"
-      },
-      {
-        "source": "**",
-        "destination": "/index.html"
-      }
-    ]
-  },
+  "hosting": [
+    {
+      "site": "matchanese-attendance",
+      "public": "public",
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**"
+      ],
+      "headers": [
+        {
+          "source": "**/*.@(js|css|html|webmanifest)",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "no-cache"
+            }
+          ]
+        }
+      ],
+      "redirects": [
+        {
+          "regex": "/workshops$",
+          "destination": "/workshops/",
+          "type": 301
+        },
+        {
+          "source": "/workshops/index.html",
+          "destination": "/shopify/index.html",
+          "type": 301
+        }
+      ],
+      "rewrites": [
+        {
+          "source": "/api/**",
+          "function": "api"
+        },
+        {
+          "source": "/i",
+          "function": "publicInvoicePage"
+        },
+        {
+          "source": "/i/**",
+          "function": "publicInvoicePage"
+        },
+        {
+          "source": "/conversation",
+          "destination": "/conversation.html"
+        },
+        {
+          "source": "/workshops/",
+          "destination": "/workshops/workshops.html"
+        },
+        {
+          "source": "/shopify",
+          "destination": "/shopify/index.html"
+        },
+        {
+          "source": "/leads",
+          "destination": "/leads/index.html"
+        },
+        {
+          "source": "**",
+          "destination": "/index.html"
+        }
+      ]
+    },
+    {
+      "site": "matchanese-invoice",
+      "public": "public-invoice",
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**"
+      ],
+      "headers": [
+        {
+          "source": "**/*.@(js|css|html|webmanifest)",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "no-cache"
+            }
+          ]
+        }
+      ],
+      "rewrites": [
+        {
+          "source": "/api/**",
+          "function": "api"
+        },
+        {
+          "source": "/i",
+          "function": "publicInvoicePage"
+        },
+        {
+          "source": "/i/**",
+          "function": "publicInvoicePage"
+        },
+        {
+          "source": "**",
+          "function": "publicInvoicePage"
+        }
+      ]
+    }
+  ],
   "emulators": {
     "functions": {
       "port": 5001

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800" role="img" aria-labelledby="title desc">
+  <title id="title">MMF 2026 Booth Layout Placeholder</title>
+  <desc id="desc">Placeholder floor plan  replace with the official booth layout.</desc>
+  <rect width="1200" height="800" fill="#f8fafc"/>
+  <rect x="40" y="40" width="1120" height="720" rx="16" fill="#ffffff" stroke="#d1d5db" stroke-width="2"/>
+  <text x="600" y="120" text-anchor="middle" font-family="DM Sans, system-ui, sans-serif" font-size="36" font-weight="700" fill="#1f2937">Manila Matcha Fest 2026</text>
+  <text x="600" y="170" text-anchor="middle" font-family="DM Sans, system-ui, sans-serif" font-size="22" fill="#6b7280">Booth / Event Layout</text>
+  <rect x="420" y="220" width="360" height="48" rx="24" fill="#fef3c7" stroke="#fcd34d"/>
+  <text x="600" y="252" text-anchor="middle" font-family="DM Sans, system-ui, sans-serif" font-size="18" font-weight="700" fill="#92400e">PLACEHOLDER</text>
+  <!-- Atrium outline -->
+  <rect x="180" y="320" width="840" height="360" rx="12" fill="#f0fdf4" stroke="#2b9348" stroke-width="2" stroke-dasharray="8 6"/>
+  <text x="600" y="360" text-anchor="middle" font-family="DM Sans, system-ui, sans-serif" font-size="16" fill="#1e7e34">SM Mall of Asia  Main Atrium</text>
+  <!-- Booth stubs -->
+  <g fill="#ffffff" stroke="#2b9348" stroke-width="1.5">
+    <rect x="220" y="400" width="100" height="70" rx="6"/>
+    <rect x="340" y="400" width="100" height="70" rx="6"/>
+    <rect x="460" y="400" width="100" height="70" rx="6"/>
+    <rect x="580" y="400" width="100" height="70" rx="6"/>
+    <rect x="700" y="400" width="100" height="70" rx="6"/>
+    <rect x="820" y="400" width="100" height="70" rx="6"/>
+    <rect x="220" y="520" width="100" height="70" rx="6"/>
+    <rect x="340" y="520" width="100" height="70" rx="6"/>
+    <rect x="460" y="520" width="100" height="70" rx="6"/>
+    <rect x="580" y="520" width="100" height="70" rx="6"/>
+    <rect x="700" y="520" width="100" height="70" rx="6"/>
+    <rect x="820" y="520" width="100" height="70" rx="6"/>
+  </g>
+  <text x="600" y="660" text-anchor="middle" font-family="DM Sans, system-ui, sans-serif" font-size="14" fill="#6b7280">Replace images/booth-layout.svg with the official map.</text>
+</svg>

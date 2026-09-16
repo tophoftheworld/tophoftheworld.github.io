@@ -45,6 +45,11 @@
     color: #2563eb;
 }
 
+.role-badge.intern {
+    background-color: #f5f3ff;
+    color: #7c3aed;
+}
+
 /* Status badges */
 .status-badge {
     display: inline-block;
@@ -64,6 +69,370 @@
 .status-badge.inactive {
     background-color: #fef2f2;
     color: #dc2626;
+}
+
+/* Pay type badges */
+.pay-type-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+}
+
+.pay-type-badge.hourly {
+    background-color: #ecfdf5;
+    color: #047857;
+}
+
+.pay-type-badge.monthly {
+    background-color: #eff6ff;
+    color: #1d4ed8;
+}
+
+.pay-type-badge.hybrid {
+    background-color: #faf5ff;
+    color: #7e22ce;
+}
+
+.pay-type-badge.inclusive {
+    background-color: #fff7ed;
+    color: #c2410c;
+}
+
+.account-info-cell {
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.account-checks {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.28rem;
+}
+
+.account-check {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 0.4rem !important;
+    padding: 0.12rem 0.28rem !important;
+    margin: 0 !important;
+    border: 0 !important;
+    border-radius: 6px !important;
+    background: transparent !important;
+    color: #9ca3af !important;
+    font-family: inherit;
+    font-size: 0.78rem;
+    font-weight: 600;
+    line-height: 1.2;
+    cursor: pointer;
+    text-align: left;
+}
+
+.account-check:hover {
+    background: #f3f4f6 !important;
+    color: #4b5563 !important;
+}
+
+.account-check.is-complete {
+    color: #047857 !important;
+}
+
+.account-check.is-complete:hover {
+    background: #ecfdf5 !important;
+    color: #047857 !important;
+}
+
+.account-check-box {
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid #d1d5db;
+    border-radius: 4px;
+    background: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    box-sizing: border-box;
+}
+
+.account-check.is-complete .account-check-box {
+    background: #2b9348;
+    border-color: #2b9348;
+    color: #fff;
+}
+
+.account-check-box svg {
+    display: block;
+}
+
+.info-modal-content {
+    max-width: 420px !important;
+}
+
+.info-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding-right: 1.75rem;
+}
+
+.info-modal-header h2 {
+    margin: 0;
+}
+
+.info-modal-subtitle {
+    margin: 0.35rem 0 1.15rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #111827;
+}
+
+.info-status-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.55rem;
+    border-radius: 9999px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    background: #f3f4f6;
+    color: #6b7280;
+    flex-shrink: 0;
+}
+
+.info-status-badge.is-complete {
+    background: #ecfdf5;
+    color: #047857;
+}
+
+.info-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+}
+
+.info-field-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.info-field-value {
+    margin-top: 0.15rem;
+    font-size: 0.95rem;
+    color: #111827;
+    word-break: break-word;
+}
+
+.info-field-value.is-empty,
+.info-empty {
+    color: #9ca3af;
+    font-style: italic;
+    font-size: 0.9rem;
+}
+
+.info-empty {
+    margin: 0.35rem 0 0;
+}
+
+.info-field-value a {
+    color: #047857;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.info-field-value a:hover {
+    text-decoration: underline;
+}
+
+.bank-view-card {
+    margin-top: 0.85rem;
+    padding: 0.9rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    background: #f9fafb;
+}
+
+.bank-view-card.is-complete {
+    border-color: #86efac;
+    background: #f0fdf4;
+}
+
+.bank-view-heading {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.65rem;
+}
+
+.bank-view-heading strong {
+    font-size: 0.95rem;
+    color: #111827;
+}
+
+.bank-pay-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.12rem 0.45rem;
+    border-radius: 9999px;
+    background: #dcfce7;
+    color: #166534;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.bank-view-qr {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0.4rem !important;
+    margin: 0.75rem 0 0 !important;
+    background: #fff !important;
+    border: 1px solid #e5e7eb !important;
+    border-radius: 8px !important;
+    cursor: pointer;
+}
+
+.bank-view-qr:hover {
+    background: #fff !important;
+    border-color: #2b9348 !important;
+}
+
+.bank-view-qr img {
+    width: 120px;
+    height: 120px;
+    object-fit: contain;
+    display: block;
+}
+
+.bank-account-card {
+    margin: 0.75rem 0 0;
+    padding: 0;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    background: #f9fafb;
+    overflow: hidden;
+}
+
+.bank-account-card.is-complete {
+    border-color: #86efac;
+    background: #f0fdf4;
+}
+
+.bank-account-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.85rem 0.9rem;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    text-align: left;
+}
+
+.bank-account-toggle-main {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.bank-account-toggle-main > span:nth-child(2) {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #111827;
+}
+
+.bank-chevron {
+    width: 0.65rem;
+    height: 0.65rem;
+    border: solid #6b7280;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+    transition: transform 0.15s ease;
+    flex-shrink: 0;
+}
+
+.bank-account-card.is-open .bank-chevron {
+    transform: rotate(-135deg);
+    margin-top: 0.2rem;
+}
+
+.bank-account-card-body {
+    display: none;
+    padding: 0 0.9rem 0.5rem;
+}
+
+.bank-account-card.is-open .bank-account-card-body {
+    display: block;
+}
+
+.bank-add-hint {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #6b7280;
+    flex-shrink: 0;
+}
+
+.bank-account-card.is-open .bank-add-hint,
+.bank-account-card.is-complete .bank-add-hint {
+    display: none;
+}
+
+.bank-complete-check {
+    display: none;
+    width: 1.4rem;
+    height: 1.4rem;
+    border-radius: 9999px;
+    background: #16a34a;
+    color: #fff;
+    font-size: 0.8rem;
+    font-weight: 700;
+    align-items: center;
+    justify-content: center;
+}
+
+.bank-account-card.is-complete .bank-complete-check {
+    display: inline-flex;
+}
+
+.qr-current {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.qr-current img {
+    max-width: 160px;
+    max-height: 160px;
+    object-fit: contain;
+    background: #fff;
+    cursor: pointer;
+}
+
+#editPayrollBankSection {
+    margin-top: 0.25rem;
+}
+
+#editPayrollBankSection > .form-hint {
+    margin: 0 0 0.85rem;
+}
+
+.form-hint {
+    margin: 0.35rem 0 0;
+    font-size: 0.8rem;
+    color: #6b7280;
 }
 
 /* Permissions grid */
@@ -361,6 +730,42 @@ button:hover {
     z-index: 10;
 }
 
+.data-table th.sortable {
+    cursor: pointer;
+    user-select: none;
+    padding-right: 1.75rem;
+}
+
+.data-table th.sortable:hover {
+    background-color: #eeeeee;
+}
+
+.data-table th.sortable:after {
+    content: '↕';
+    position: absolute;
+    right: 0.55rem;
+    top: 50%;
+    transform: translateY(-50%);
+    opacity: 0.4;
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: #666;
+}
+
+.data-table th.sortable.sorted-asc:after,
+.data-table th.sortable.sorted-desc:after {
+    opacity: 1;
+    color: #2b9348;
+}
+
+.data-table th.sortable.sorted-asc:after {
+    content: '↑';
+}
+
+.data-table th.sortable.sorted-desc:after {
+    content: '↓';
+}
+
 .data-table tr:last-child td {
     border-bottom: none;
 }
@@ -628,6 +1033,10 @@ button:hover {
         flex-direction: column;
         align-items: flex-start;
         width: 100%;
+    }
+
+    .staff-hide-inactive {
+        width: auto;
     }
 
     .control-item {
@@ -922,6 +1331,11 @@ button:hover {
     font-weight: 500;
 }
 
+.cancel-btn:hover {
+    background-color: #d1d5db;
+    color: #333;
+}
+
 .base-rate {
     font-weight: 500;
 }
@@ -974,6 +1388,17 @@ button:hover {
     font-size: 0.9rem;
     color: #555;
     cursor: pointer;
+}
+
+.staff-hide-inactive {
+    flex-shrink: 0;
+    padding: 0.35rem 0.15rem;
+}
+
+.staff-hide-inactive label {
+    white-space: nowrap;
+    font-weight: 500;
+    color: #374151;
 }
 
 .export-progress {
@@ -1728,47 +2153,6 @@ input[type="time"]:focus::placeholder {
     margin-bottom: 2px;
 }
 
-.photo-actions {
-    position: absolute;
-    top: -8px;
-    right: -8px;
-    display: flex;
-    gap: 2px;
-    opacity: 0;
-    transition: opacity 0.2s ease;
-}
-
-.photo-container:hover .photo-actions {
-    opacity: 1;
-}
-
-.photo-action-btn {
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    border: none;
-    background-color: #ffffff;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-}
-
-.photo-action-btn:hover {
-    transform: scale(1.1);
-}
-
-.photo-action-btn.delete {
-    background-color: #ef4444;
-    color: white;
-}
-
-.photo-action-btn.delete:hover {
-    background-color: #dc2626;
-}
-
 .photo-input {
     width: 100%;
     padding: 0.75rem;
@@ -1915,16 +2299,6 @@ input[type="time"]:focus::placeholder {
     
     .no-photo {
         font-size: 0.6rem;
-    }
-    
-    .photo-actions {
-        top: -6px;
-        right: -6px;
-    }
-    
-    .photo-action-btn {
-        width: 18px;
-        height: 18px;
     }
     
     .modal-image {

@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#439407">
+  <title>Money Manager</title>
+  <link rel="stylesheet" href="css/style.css?v=2">
+</head>
+<body>
+  <div id="app">
+    <header class="app-header">
+      <div class="brand">
+        <span class="brand-mark">MM</span>
+        <div>
+          <h1 class="brand-title">Money Manager</h1>
+          <p class="brand-sub" id="headerMeta">Loading…</p>
+        </div>
+      </div>
+      <button type="button" class="icon-btn" id="btnRefresh" title="Refresh" aria-label="Refresh">↻</button>
+    </header>
+
+    <main id="main" class="main">
+      <section id="view-dashboard" class="view active" data-view="dashboard"></section>
+      <section id="view-accounts" class="view" data-view="accounts"></section>
+      <section id="view-funds" class="view" data-view="funds"></section>
+      <section id="view-ledger" class="view" data-view="ledger"></section>
+      <section id="view-more" class="view" data-view="more"></section>
+    </main>
+
+    <button type="button" class="fab" id="fabAdd" aria-label="Add transaction">+</button>
+
+    <nav class="bottom-nav" aria-label="Primary">
+      <button type="button" class="nav-item active" data-nav="dashboard">
+        <span class="nav-icon">▣</span>
+        <span>Home</span>
+      </button>
+      <button type="button" class="nav-item" data-nav="accounts">
+        <span class="nav-icon">◫</span>
+        <span>Accounts</span>
+      </button>
+      <button type="button" class="nav-item" data-nav="funds">
+        <span class="nav-icon">◇</span>
+        <span>Funds</span>
+      </button>
+      <button type="button" class="nav-item" data-nav="ledger">
+        <span class="nav-icon">☰</span>
+        <span>Ledger</span>
+      </button>
+      <button type="button" class="nav-item" data-nav="more">
+        <span class="nav-icon">⋯</span>
+        <span>More</span>
+      </button>
+    </nav>
+  </div>
+
+  <div id="modalRoot" class="modal-root" hidden></div>
+  <div id="toastRoot" class="toast-root" aria-live="polite"></div>
+
+  <script type="module" src="js/app.js?v=2"></script>
+</body>
+</html>

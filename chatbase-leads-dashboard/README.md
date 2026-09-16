@@ -9,6 +9,9 @@ Dashboard for Chatbase agent conversations (Instagram, Messenger, WhatsApp, widg
 - Paginated **Refresh** loads conversations in the selected date range
 - Filter by source, date range, and client-side search
 - Two-pane layout: conversation list + message thread (agent messages on the **right**)
+- **Summary** button builds an ops brief (Urgent / Leads / Payments to verify / Follow-ups / Awaiting reply)
+- **Send test email** on the summary pane; scheduled emails at **9:00** and **21:00** Asia/Manila (rolling 24h + 5-day awaiting-reply)
+- Same briefs post to Discord `#inbox-summary`; service leads post to `#inquiries` (creates and updates; updates edit the same Discord message)
 
 ### Service leads
 
@@ -37,10 +40,34 @@ firebase emulators:start --only functions,hosting
 ## Deploy
 
 ```bash
-firebase deploy --only "functions:api,hosting"
+cd functions && npm run deploy
 ```
 
-Set on Cloud Function `**api**`: `ADMIN_API_TOKEN`, `CHATBASE_API_KEY`, `CHATBASE_CHATBOT_ID`, `CHATBASE_ACTION_SECRET`, `SHOPIFY_SHOP`, `SHOPIFY_ACCESS_TOKEN` (or client id/secret).
+(or `firebase deploy --only "functions:api,functions:inboxSummaryEmailMorning,functions:inboxSummaryEmailEvening,hosting"`)
+
+Set on Cloud Functions (via `functions/.env`): `ADMIN_API_TOKEN`, `CHATBASE_API_KEY`, `CHATBASE_CHATBOT_ID`, `CHATBASE_ACTION_SECRET`, `SHOPIFY_SHOP`, `SHOPIFY_ACCESS_TOKEN` (or client id/secret), plus EmailJS vars below for summary email, and Discord webhook URLs.
+
+### Inbox summary email (EmailJS)
+
+Uses the same EmailJS account as daily-sales. In EmailJS:
+
+1. Account → Security → enable **Allow EmailJS API for non-browser applications** and copy the private key → `EMAILJS_PRIVATE_KEY`
+2. Create a template (e.g. `EMAILJS_SUMMARY_TEMPLATE_ID`) with body `{{{summary_html}}}` (triple braces) and params `{{subject}}`, `{{to_email}}`, `{{from_name}}`
+3. Set `EMAILJS_SERVICE_ID`, `EMAILJS_PUBLIC_KEY`, `SUMMARY_EMAIL_TO` (default `hi@matchanese.com`)
+
+Schedules: `inboxSummaryEmailMorning` (09:00) and `inboxSummaryEmailEvening` (21:00) Asia/Manila.
+
+### Discord (inbox summary + new inquiries)
+
+Create **three** incoming webhooks (Integrations → Webhooks). The Discord **Name** field is a display name only — do not put env var names there, and do not use the word `discord` in the name.
+
+| Discord name | Channel | Env var |
+|---|---|---|
+| Inbox Summary | `#inbox-summary` | `DISCORD_INBOX_WEBHOOK_URL` |
+| Inquiries | `#inquiries` | `DISCORD_INQUIRIES_WEBHOOK_URL` |
+| Orders | orders channel | `DISCORD_ORDERS_WEBHOOK_URL` |
+
+Paste the copied URLs into `functions/.env` (do not commit them). Morning/evening jobs and the dashboard **Send test email** button also post the brief to `#inbox-summary`. Chatbase and dashboard lead **creates** post a card to `#inquiries`; later **updates** edit that same message (stored as `discordMessageId` on the lead). If the original Discord message was deleted, a new card is posted. Shopify `orders/create` and `orders/paid` post to the orders webhook. If a URL is missing, email and lead logging still work.
 
 **Webhooks:**
 
@@ -81,7 +108,7 @@ New quote: at least **one** detail field required. Update: `quoteReference` alon
   "profileStatus": "draft",
   "pipelineStatus": "inquiry",
   "status": "draft",
-  "messageForUser": "Thanks! Your quote reference is K7M2P..."
+  "messageForUser": "Thanks! We've noted what you've shared so far..."
 }
 ```
 
@@ -160,7 +187,7 @@ Never skip logging because information is incomplete.
 
 The HTTPS URL must be plain text (no `{{` around the URL). Chatbase server actions do **not** expose `conversationId` in Add variable; `userId` / [identity verification](https://www.chatbase.co/docs/developer-guides/identity-verification) is **website widget only**, not Instagram/Messenger.
 
-**Linking Inbox ↔ Service leads:** Chatbase cannot pass `conversationId`. After each successful action, the **agent must say the `quoteReference` in chat**. The server searches inbox threads from **lead created date → webhook time** (up to 400 days) for that code. First inquiry may not link until the ref has been mentioned and a follow-up action runs.
+**Linking Inbox ↔ Service leads:** Chatbase cannot pass `conversationId`. The dashboard **View conversation** action searches Inbox by **client name / user display name**, not by quote reference. Keep `quoteReference` for internal updates only — **never say the booking/quote code to the customer in chat**.
 
 ### Test response
 
@@ -178,7 +205,7 @@ The HTTPS URL must be plain text (no `{{` around the URL). Chatbase server actio
 ```
 logServiceLead rules:
 1. On first quote detail → call immediately with only known fields; quoteReference empty; pipelineStatus inquiry.
-2. After EVERY successful response, your reply MUST include the quoteReference in plain text (e.g. "Your quote reference is K7M2P"). This is required for inbox linking.
+2. Never tell the customer the quoteReference / booking code. Keep it internal (read from the action response for later updates only). Use messageForUser as written — do not append the code.
 3. On ANY later change → call again with same quoteReference + all fields you currently know (leave unknown fields empty).
 4. New separate event in same chat → quoteReference empty.
 5. Set pipelineStatus quoted when you give any custom quotation or price (including estimates for a pax/cup RANGE).

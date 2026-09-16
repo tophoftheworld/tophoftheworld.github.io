@@ -133,8 +133,8 @@ function checkTabPermission(tabName) {
         return true;
     }
     
-    // Staff users have no access
-    if (currentUserData.role === 'staff') {
+    // Staff / interns have no admin tab access
+    if (currentUserData.role === 'staff' || currentUserData.role === 'intern') {
         return false;
     }
     
@@ -145,6 +145,7 @@ function checkTabPermission(tabName) {
         // Map tab names to permission keys
         const tabPermissions = {
             'Payroll': 'payroll',
+            'Requests': 'requests',
             'Staff': 'staff',
             'Schedule': 'schedule',
             'Shopify': 'shopify',
@@ -152,11 +153,31 @@ function checkTabPermission(tabName) {
             'Inbox': 'inbox',
             'Sales': 'sales',
             'Expenses': 'expenses',
+            'Purchasing': 'purchasing',
+            'Money': 'money',
             'Inventory': 'inventory',
-            'Pop-ups': 'popups'
+            'Forecast': 'forecast',
+            'Pop-ups': 'popups',
+            'Events': 'events'
         };
         
         const permissionKey = tabPermissions[tabName];
+        if (tabName === 'Forecast') {
+            if (permissions.forecast === true) return true;
+            if (permissions.forecast == null && permissions.inventory === true) return true;
+            return false;
+        }
+        if (tabName === 'Events') {
+            if (permissions.events === true) return true;
+            if (permissions.events == null) {
+                return (
+                    permissions.popups === true ||
+                    permissions.workshops === true ||
+                    permissions.inbox === true
+                );
+            }
+            return false;
+        }
         return permissionKey ? permissions[permissionKey] === true : false;
     }
     

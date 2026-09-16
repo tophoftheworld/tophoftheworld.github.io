@@ -71,12 +71,28 @@ function renderPackageSectionList(label, items) {
   return html;
 }
 
+function resolvePackageCount(item) {
+  const n = parseInt(item?.count, 10);
+  if (n > 0) return n;
+  if (item?.numberOfPax === "custom") return parseInt(item.customCups, 10) || 0;
+  const nop = parseInt(item?.numberOfPax, 10);
+  if (nop > 0) return nop;
+  const match = String(item?.cups || "").match(/\d+/);
+  return match ? parseInt(match[0], 10) : 0;
+}
+
 function renderCountSection(item) {
-  if (!item.cups) return "";
-  const countLabel = item.countLabel === "guests" ? "Guests:" : "Cups:";
+  const n = resolvePackageCount(item);
+  if (!n) return "";
+  const isGuests =
+    item.countLabel === "guests" ||
+    item.countLabel === "participants" ||
+    item.isWorkshop;
+  const countLabel = isGuests ? "Guests:" : "Cups:";
+  const display = isGuests ? `${n} guests` : `${n} cups`;
   return `<div class="package-section package-section-count">
     <span class="package-section-label">${countLabel}</span>
-    <span class="package-section-value">${escapeHtml(item.cups)}</span>
+    <span class="package-section-value">${escapeHtml(display)}</span>
   </div>`;
 }
 
@@ -258,14 +274,13 @@ export function renderMilestoneRowsHtml(milestones) {
 
 export function buildLineItemFromLead(lead, { unitPrice }) {
   const paxMatch = String(lead.targetPax || "").match(/\d+/);
-  const n = paxMatch ? paxMatch[0] : String(lead.targetPax).trim();
+  const n = paxMatch ? Number(paxMatch[0]) : Number(String(lead.targetPax).trim()) || 0;
   const isWorkshop = lead.service === SERVICE_WORKSHOP;
   const countLabel = isWorkshop ? "guests" : "cups";
-  const cupsValue = isWorkshop ? `${n} Guests` : `${n} Cups`;
 
   return {
     description: formatServiceLabel(lead.service),
-    cups: cupsValue,
+    count: n,
     countLabel,
     menuItems: [],
     additionalOptions: [],

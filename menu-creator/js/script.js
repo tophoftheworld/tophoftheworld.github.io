@@ -45,7 +45,19 @@ import {
             columnRowLocks: [[false, false], [false, false]],
             tileTemplate: [['white', 'white'], ['white', 'white']],
             tileTemplateProps: [[{ line1: '', line2: '' }, { line1: '', line2: '' }], [{ line1: '', line2: '' }, { line1: '', line2: '' }]],
-            gap: 24
+            gap: 24,
+            layoutMode: 'grid',
+            overlay: getDefaultOverlayState()
+        };
+    }
+
+    function getDefaultOverlayState() {
+        return {
+            imageUrl: '',
+            imageNaturalWidth: 0,
+            imageNaturalHeight: 0,
+            selectedId: '',
+            modules: []
         };
     }
 
@@ -53,6 +65,11 @@ import {
     const photoUploading = {};
     let photoGalleryIntervals = [];
     let liveSessionPollers = [];
+    const OVERLAY_MIN_PX = 64;
+    const OVERLAY_HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+    let overlayInteract = null;
+    let overlayImageUploading = false;
+    let overlayStageLayout = { left: 0, top: 0, width: 0, height: 0 };
 
     function getGalleryProps(props) {
         const p = props || {};
@@ -72,6 +89,366 @@ import {
         };
     }
 
+    function getPhotoTakeoverDisplaySrc(eventKey, styleMod) {
+        const resolvedEventKey = (eventKey || '').trim() || localStorage.getItem('currentEvent') || 'pop-up';
+        const params = new URLSearchParams();
+        params.set('event', resolvedEventKey);
+        params.set('embedded', '1');
+        params.set('hideSettings', '1');
+        if (styleMod) {
+            params.set('radius', String(getOverlayBorderRadius(styleMod)));
+            params.set('scale', String(getOverlayContentScale(styleMod)));
+        }
+        params.set('v', 'greeting-fix-2');
+        return {
+            src: '../pos/customer-display.html?' + params.toString(),
+            eventKey: resolvedEventKey
+        };
+    }
+
+    function buildPhotoModuleHtml(props, opts) {
+        const { mediaItems, galleryIntervalSeconds } = getGalleryProps(props);
+        const useAsCustomerDisplay = Boolean(props && props.useAsCustomerDisplay);
+        const eventKey = ((props && props.customerDisplayEventKey) || '').trim();
+        if (mediaItems.length === 0 && !useAsCustomerDisplay) {
+            return '<div class="tile-photo-wrap tile-photo-empty"><span class="tile-placeholder">Upload a photo or video</span></div>';
+        }
+        const interval = Math.max(1, galleryIntervalSeconds);
+        const mediaHtml = mediaItems.map((item, i) => {
+            if (item.type === 'video') {
+                return '<video src="' + escapeHtml(item.url) + '" class="tile-photo-item tile-photo-video' + (i === 0 ? ' tile-photo-visible' : '') + '" data-index="' + i + '" muted playsinline preload="metadata" loop></video>';
+            }
+            return '<img src="' + escapeHtml(item.url) + '" alt="" class="tile-photo-item tile-photo-img' + (i === 0 ? ' tile-photo-visible' : '') + '" data-index="' + i + '">';
+        }).join('');
+        const galleryHtml = mediaItems.length > 0
+            ? '<div class="tile-photo-wrap tile-photo-gallery" data-interval="' + interval + '">' + mediaHtml + '</div>'
+            : '<div class="tile-photo-wrap tile-photo-empty"><span class="tile-placeholder">No gallery media</span></div>';
+        if (!useAsCustomerDisplay) return galleryHtml;
+        const display = getPhotoTakeoverDisplaySrc(eventKey, opts && opts.overlayMod);
+        return '<div class="tile-photo-display-switch" data-event="' + escapeHtml(display.eventKey) + '"><div class="tile-photo-layer tile-photo-layer-gallery">' + galleryHtml + '</div><div class="tile-photo-layer tile-photo-layer-display" hidden><iframe class="tile-customer-display-iframe" src="' + escapeHtml(display.src) + '" loading="lazy" referrerpolicy="no-referrer"></iframe></div></div>';
+    }
+
+    function clearPhotoRuntimes() {
+        photoGalleryIntervals.forEach((cleanup) => {
+            try { cleanup(); } catch (_) { /* ignore */ }
+        });
+        photoGalleryIntervals = [];
+        liveSessionPollers.forEach((cleanup) => {
+            try { cleanup(); } catch (_) { /* ignore */ }
+        });
+        liveSessionPollers = [];
+    }
+
+    function bindPhotoGalleries(root) {
+        if (!root) return;
+        root.querySelectorAll('.tile-photo-gallery').forEach((el) => {
+            const intervalSec = Number(el.dataset.interval) || 3;
+            const items = Array.from(el.querySelectorAll('.tile-photo-item'));
+            if (items.length === 0) return;
+
+            let idx = 0;
+            let timeoutId = null;
+
+            const getItemDurationMs = (item) => {
+                if (item && item.tagName === 'VIDEO') {
+                    const d = Number(item.duration);
+                    if (Number.isFinite(d) && d > 0) return d * 1000;
+                }
+                return Math.max(1, intervalSec) * 1000;
+            };
+
+            const setVisible = (index) => {
+                idx = index;
+                items.forEach((item, i) => {
+                    const isVisible = i === index;
+                    item.classList.toggle('tile-photo-visible', isVisible);
+                    if (item.tagName === 'VIDEO') {
+                        if (isVisible) {
+                            item.currentTime = 0;
+                            item.play().catch(() => { /* ignore autoplay restrictions */ });
+                        } else {
+                            item.pause();
+                        }
+                    }
+                });
+            };
+
+            const scheduleNext = () => {
+                if (items.length <= 1) return;
+                if (timeoutId) clearTimeout(timeoutId);
+                const current = items[idx];
+                const delay = getItemDurationMs(current);
+                timeoutId = setTimeout(() => {
+                    setVisible((idx + 1) % items.length);
+                    scheduleNext();
+                }, delay);
+            };
+
+            items.forEach((item) => {
+                if (item.tagName === 'VIDEO') {
+                    item.addEventListener('loadedmetadata', () => {
+                        if (item.classList.contains('tile-photo-visible')) scheduleNext();
+                    });
+                }
+            });
+
+            setVisible(0);
+            scheduleNext();
+            photoGalleryIntervals.push(() => {
+                if (timeoutId) clearTimeout(timeoutId);
+                items.forEach((item) => {
+                    if (item.tagName === 'VIDEO') item.pause();
+                });
+            });
+        });
+    }
+
+    function bindPhotoDisplaySwitches(root) {
+        if (!root) return;
+        root.querySelectorAll('.tile-photo-display-switch').forEach((switchRoot) => {
+            const galleryLayer = switchRoot.querySelector('.tile-photo-layer-gallery');
+            const displayLayer = switchRoot.querySelector('.tile-photo-layer-display');
+            if (!galleryLayer || !displayLayer) return;
+            const eventForPolling = (switchRoot.getAttribute('data-event') || '').trim() || localStorage.getItem('currentEvent') || 'pop-up';
+            let lastState = null;
+            const setActive = (showDisplay) => {
+                if (lastState === showDisplay) return;
+                lastState = showDisplay;
+                galleryLayer.hidden = showDisplay;
+                displayLayer.hidden = !showDisplay;
+            };
+            const poll = async () => {
+                try {
+                    const snap = await getDoc(doc(db, 'pos-live', eventForPolling, 'session', 'current'));
+                    const active = snap.exists() ? hasActiveLiveOrder(snap.data()) : false;
+                    setActive(active);
+                } catch (err) {
+                    console.error('Live session poll failed:', err);
+                }
+            };
+            poll();
+            const pollId = setInterval(poll, 1500);
+            liveSessionPollers.push(() => clearInterval(pollId));
+        });
+    }
+
+    function bindPhotoRuntimes(root) {
+        bindPhotoGalleries(root);
+        bindPhotoDisplaySwitches(root);
+    }
+
+    function appendPhotoGalleryEditor(container, options) {
+        const uploadKey = options.uploadKey;
+        const persistCanvas = () => {
+            saveState();
+            if (typeof options.onCanvasChanged === 'function') options.onCanvasChanged();
+        };
+        const refreshControls = () => {
+            if (typeof options.onControlsChanged === 'function') options.onControlsChanged();
+        };
+        function getTarget() {
+            return typeof options.getProps === 'function' ? options.getProps() : null;
+        }
+        function ensurePhotoProps() {
+            const p = getTarget();
+            if (!p) return { mediaItems: [], imageUrls: [], galleryIntervalSeconds: 3 };
+            const g = getGalleryProps(p);
+            if (!Array.isArray(p.mediaItems)) p.mediaItems = g.mediaItems.slice();
+            p.imageUrls = (p.mediaItems || []).filter((item) => item && item.type !== 'video' && item.url).map((item) => item.url);
+            if (typeof p.galleryIntervalSeconds !== 'number') p.galleryIntervalSeconds = g.galleryIntervalSeconds;
+            return p;
+        }
+
+        const photoProps = ensurePhotoProps();
+        const { mediaItems, imageUrls, galleryIntervalSeconds } = getGalleryProps(photoProps);
+        if (!Array.isArray(photoProps.mediaItems) || typeof photoProps.galleryIntervalSeconds !== 'number') {
+            photoProps.mediaItems = mediaItems.slice();
+            photoProps.imageUrls = imageUrls.slice();
+            photoProps.galleryIntervalSeconds = galleryIntervalSeconds;
+        }
+
+        const intervalLabel = document.createElement('label');
+        intervalLabel.textContent = 'Gallery interval (seconds)';
+        const intervalInput = document.createElement('input');
+        intervalInput.type = 'number';
+        intervalInput.min = 1;
+        intervalInput.max = 60;
+        intervalInput.step = 1;
+        intervalInput.className = 'tile-photo-interval';
+        intervalInput.value = String(galleryIntervalSeconds);
+        intervalInput.addEventListener('change', () => {
+            const target = ensurePhotoProps();
+            target.galleryIntervalSeconds = Math.max(1, Math.min(60, Number(intervalInput.value) || 3));
+            persistCanvas();
+        });
+        container.appendChild(intervalLabel);
+        container.appendChild(intervalInput);
+
+        const thumbsWrap = document.createElement('div');
+        thumbsWrap.className = 'tile-photo-thumbs-wrap';
+
+        function renderThumbs() {
+            thumbsWrap.innerHTML = '';
+            const target = ensurePhotoProps();
+            const items = target.mediaItems || [];
+            items.forEach((item, index) => {
+                const cell = document.createElement('div');
+                cell.className = 'tile-photo-thumb-cell';
+                if (item.type === 'video') {
+                    const video = document.createElement('video');
+                    video.src = item.url;
+                    video.muted = true;
+                    video.playsInline = true;
+                    video.preload = 'metadata';
+                    video.className = 'tile-photo-thumb-video';
+                    cell.appendChild(video);
+                    const badge = document.createElement('span');
+                    badge.className = 'tile-photo-thumb-badge';
+                    badge.textContent = 'Video';
+                    cell.appendChild(badge);
+                } else {
+                    const img = document.createElement('img');
+                    img.src = item.url;
+                    img.alt = '';
+                    img.className = 'tile-photo-thumb-img';
+                    cell.appendChild(img);
+                }
+                const removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.className = 'tile-photo-thumb-remove';
+                removeBtn.setAttribute('aria-label', 'Remove media');
+                removeBtn.textContent = '×';
+                removeBtn.addEventListener('click', () => {
+                    const t = ensurePhotoProps();
+                    if (!Array.isArray(t.mediaItems)) return;
+                    t.mediaItems.splice(index, 1);
+                    persistCanvas();
+                    renderThumbs();
+                });
+                cell.appendChild(removeBtn);
+                thumbsWrap.appendChild(cell);
+            });
+            const addCell = document.createElement('button');
+            addCell.type = 'button';
+            addCell.className = 'tile-photo-thumb-add';
+            addCell.setAttribute('aria-label', 'Add photo(s) or video(s)');
+            addCell.textContent = '+';
+            addCell.addEventListener('click', () => photoInput.click());
+            thumbsWrap.appendChild(addCell);
+        }
+
+        const photoInput = document.createElement('input');
+        photoInput.type = 'file';
+        photoInput.accept = 'image/*,video/*';
+        photoInput.multiple = true;
+        photoInput.className = 'tile-photo-upload';
+        photoInput.style.display = 'none';
+        photoInput.addEventListener('change', async () => {
+            const files = photoInput.files ? Array.from(photoInput.files) : [];
+            photoInput.value = '';
+            if (files.length === 0) return;
+            const target = ensurePhotoProps();
+            if (!Array.isArray(target.mediaItems)) target.mediaItems = [];
+            photoUploading[uploadKey] = true;
+            refreshControls();
+            for (const file of files) {
+                try {
+                    const mediaType = file.type && file.type.startsWith('video/') ? 'video' : 'image';
+                    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+                    const path = (options.uploadPathPrefix || 'menu-creator-photos/media') + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.' + ext;
+                    const ref = storageRef(storage, path);
+                    await uploadBytes(ref, file);
+                    const url = await getDownloadURL(ref);
+                    target.mediaItems.push({ type: mediaType, url });
+                } catch (err) {
+                    console.error('Media upload failed:', err);
+                    const url = await new Promise((res) => {
+                        const reader = new FileReader();
+                        reader.onload = () => res(reader.result);
+                        reader.readAsDataURL(file);
+                    });
+                    const mediaType = file.type && file.type.startsWith('video/') ? 'video' : 'image';
+                    target.mediaItems.push({ type: mediaType, url });
+                }
+            }
+            persistCanvas();
+            photoUploading[uploadKey] = false;
+            refreshControls();
+        });
+
+        renderThumbs();
+        if (photoUploading[uploadKey]) {
+            const uploadingLabel = document.createElement('span');
+            uploadingLabel.className = 'tile-photo-preview-label';
+            uploadingLabel.textContent = 'Uploading…';
+            uploadingLabel.style.display = 'block';
+            uploadingLabel.style.marginBottom = '0.25rem';
+            container.appendChild(uploadingLabel);
+        }
+        container.appendChild(thumbsWrap);
+        container.appendChild(photoInput);
+
+        const takeoverWrap = document.createElement('label');
+        takeoverWrap.className = 'menu-save-new-toggle';
+        const takeoverInput = document.createElement('input');
+        takeoverInput.type = 'checkbox';
+        takeoverInput.checked = Boolean(photoProps.useAsCustomerDisplay);
+        const takeoverText = document.createElement('span');
+        takeoverText.textContent = 'Use customer display when active order exists';
+        takeoverInput.addEventListener('change', () => {
+            const target = ensurePhotoProps();
+            target.useAsCustomerDisplay = takeoverInput.checked;
+            persistCanvas();
+            refreshControls();
+        });
+        takeoverWrap.appendChild(takeoverInput);
+        takeoverWrap.appendChild(takeoverText);
+        container.appendChild(takeoverWrap);
+
+        if (takeoverInput.checked) {
+            const eventLabel = document.createElement('label');
+            eventLabel.textContent = 'POS event';
+            const eventSelect = document.createElement('select');
+            const selectedEvent = (photoProps.customerDisplayEventKey || '').trim();
+            eventSelect.innerHTML = buildPosEventDropdownHtml(selectedEvent);
+            eventSelect.value = selectedEvent;
+            if (!activeEventKeysLoaded) ensureActiveEventKeysLoaded();
+            eventSelect.addEventListener('change', () => {
+                const target = ensurePhotoProps();
+                target.customerDisplayEventKey = eventSelect.value.trim();
+                persistCanvas();
+            });
+            const refreshBtn = document.createElement('button');
+            refreshBtn.type = 'button';
+            refreshBtn.className = 'btn btn-secondary';
+            refreshBtn.textContent = 'Refresh';
+            refreshBtn.title = 'Reload POS event list from Firebase';
+            refreshBtn.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                activeEventKeysLoaded = false;
+                loadActiveEventKeys({ force: true }).then(() => refreshControls());
+            });
+            const eventRow = document.createElement('div');
+            eventRow.style.display = 'flex';
+            eventRow.style.gap = '0.5rem';
+            eventRow.style.alignItems = 'center';
+            eventRow.style.flexWrap = 'wrap';
+            eventSelect.style.flex = '1';
+            eventSelect.style.minWidth = '8rem';
+            eventRow.appendChild(eventSelect);
+            eventRow.appendChild(refreshBtn);
+            const eventHint = document.createElement('span');
+            eventHint.className = 'form-hint';
+            const hintExtra = posEventDropdownHint();
+            eventHint.textContent = hintExtra
+                ? hintExtra
+                : 'Idle shows gallery; active order shows customer display.';
+            container.appendChild(eventLabel);
+            container.appendChild(eventRow);
+            container.appendChild(eventHint);
+        }
+    }
+
     function hasActiveLiveOrder(liveData) {
         if (!liveData || typeof liveData !== 'object') return false;
         const items = Array.isArray(liveData.items)
@@ -81,8 +458,10 @@ import {
         const total = Number(liveData.total);
         const hasItems = items.length > 0;
         const hasPositiveTotal = Number.isFinite(total) && total > 0;
+        const hasName = Boolean((liveData.customerName || '').toString().trim());
         const activeStatuses = new Set(['editing', 'reviewing', 'payment', 'checkout', 'pending', 'serving', 'open']);
         if (activeStatuses.has(status)) return true;
+        if (hasName) return true;
         if (status === 'idle' || status === 'closed' || status === 'completed' || status === 'voided') {
             return false;
         }
@@ -102,6 +481,20 @@ import {
     const tileGapEl = $('tileGap');
     const menuCanvasEl = $('menuCanvas');
     const tileGridEl = $('tileGrid');
+    const overlayStageEl = $('overlayStage');
+    const overlayEmptyStateEl = $('overlayEmptyState');
+    const overlayBgImageEl = $('overlayBgImage');
+    const overlayModulesEl = $('overlayModules');
+    const overlayBgPickBtnEl = $('overlayBgPickBtn');
+    const overlayBgRemoveBtnEl = $('overlayBgRemoveBtn');
+    const overlayBgInputEl = $('overlayBgInput');
+    const overlayBgThumbEl = $('overlayBgThumb');
+    const overlayBgEmptyHintEl = $('overlayBgEmptyHint');
+    const overlayBgStatusEl = $('overlayBgStatus');
+    const overlayModuleTypeEl = $('overlayModuleType');
+    const addOverlayModuleBtnEl = $('addOverlayModuleBtn');
+    const overlayModuleListEl = $('overlayModuleList');
+    const overlaySelectedPropsEl = $('overlaySelectedProps');
     const previewWrapEl = $('previewWrap');
     const canvasScalerEl = $('canvasScaler');
     const canvasFitWrapperEl = $('canvasFitWrapper');
@@ -190,6 +583,7 @@ import {
                 }
             }
             ensureLockArrays();
+            ensureOverlayState();
             if (state.tileBg && !state.tileTemplate) {
                 state.tileTemplate = state.tileBg.map(col => col.map(v => v || 'white'));
             }
@@ -243,6 +637,7 @@ import {
             }
         }
         ensureLockArrays();
+        ensureOverlayState();
         if (state.tileBg && !state.tileTemplate) {
             state.tileTemplate = state.tileBg.map(col => col.map(v => v || 'white'));
         }
@@ -554,6 +949,115 @@ import {
             state.columnRowUnits[i].length = len;
         });
         ensureTileTemplates();
+        ensureOverlayState();
+    }
+
+    function newOverlayId() {
+        return 'ov-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
+    }
+
+    function clampNumber(value, min, max) {
+        const n = Number(value);
+        const x = Number.isFinite(n) ? n : min;
+        return Math.max(min, Math.min(max, x));
+    }
+
+    function overlayModuleLabel(type) {
+        if (type === 'photo') return 'Photo / video gallery';
+        if (type === 'customer-display') return 'Customer display';
+        return 'Module';
+    }
+
+    function getDefaultOverlayModuleProps(type) {
+        if (type === 'photo') {
+            return {
+                mediaItems: [],
+                imageUrls: [],
+                galleryIntervalSeconds: 3,
+                useAsCustomerDisplay: false,
+                customerDisplayEventKey: '',
+                borderRadius: 12,
+                contentScale: 1.4
+            };
+        }
+        return { eventKey: '', showSettingsButton: false, borderRadius: 12, contentScale: 1.4 };
+    }
+
+    function getOverlayBorderRadius(mod) {
+        const n = Number(mod && mod.props && mod.props.borderRadius);
+        return Number.isFinite(n) ? clampNumber(n, 0, 80) : 12;
+    }
+
+    function getOverlayContentScale(mod) {
+        const n = Number(mod && mod.props && mod.props.contentScale);
+        return Number.isFinite(n) ? clampNumber(n, 0.5, 2.5) : 1;
+    }
+
+    function postOverlayDisplayStyle(el, mod) {
+        const iframe = el && el.querySelector && el.querySelector('iframe');
+        if (!iframe || !iframe.contentWindow) return;
+        try {
+            iframe.contentWindow.postMessage({
+                type: 'menu-creator-display-style',
+                radius: getOverlayBorderRadius(mod),
+                scale: getOverlayContentScale(mod)
+            }, '*');
+        } catch (err) { /* ignore */ }
+    }
+
+    function normalizeOverlayModule(mod) {
+        if (!mod || typeof mod !== 'object') {
+            return {
+                id: newOverlayId(),
+                type: 'customer-display',
+                x: 32,
+                y: 25,
+                w: 36,
+                h: 50,
+                props: getDefaultOverlayModuleProps('customer-display')
+            };
+        }
+        if (!mod.id) mod.id = newOverlayId();
+        mod.type = mod.type === 'photo' ? 'photo' : 'customer-display';
+        mod.x = clampNumber(mod.x, 0, 100);
+        mod.y = clampNumber(mod.y, 0, 100);
+        mod.w = clampNumber(mod.w, 4, 100);
+        mod.h = clampNumber(mod.h, 4, 100);
+        if (mod.x + mod.w > 100) mod.x = Math.max(0, 100 - mod.w);
+        if (mod.y + mod.h > 100) mod.y = Math.max(0, 100 - mod.h);
+        if (!mod.props || typeof mod.props !== 'object') mod.props = {};
+        if (!Number.isFinite(Number(mod.props.borderRadius))) mod.props.borderRadius = 12;
+        else mod.props.borderRadius = clampNumber(mod.props.borderRadius, 0, 80);
+        if (!Number.isFinite(Number(mod.props.contentScale))) mod.props.contentScale = 1.4;
+        else mod.props.contentScale = clampNumber(mod.props.contentScale, 0.5, 2.5);
+        if (mod.type === 'photo') {
+            const gallery = getGalleryProps(mod.props);
+            mod.props.mediaItems = gallery.mediaItems;
+            mod.props.imageUrls = gallery.imageUrls;
+            mod.props.galleryIntervalSeconds = gallery.galleryIntervalSeconds;
+            mod.props.useAsCustomerDisplay = Boolean(mod.props.useAsCustomerDisplay);
+            if (typeof mod.props.customerDisplayEventKey !== 'string') mod.props.customerDisplayEventKey = '';
+        } else {
+            if (typeof mod.props.eventKey !== 'string') mod.props.eventKey = '';
+            mod.props.showSettingsButton = Boolean(mod.props.showSettingsButton);
+        }
+        return mod;
+    }
+
+    function ensureOverlayState() {
+        if (state.layoutMode !== 'grid' && state.layoutMode !== 'overlay') state.layoutMode = 'grid';
+        if (!state.overlay || typeof state.overlay !== 'object') {
+            state.overlay = getDefaultOverlayState();
+        }
+        if (typeof state.overlay.imageUrl !== 'string') state.overlay.imageUrl = '';
+        state.overlay.imageNaturalWidth = Math.max(0, Number(state.overlay.imageNaturalWidth) || 0);
+        state.overlay.imageNaturalHeight = Math.max(0, Number(state.overlay.imageNaturalHeight) || 0);
+        if (typeof state.overlay.selectedId !== 'string') state.overlay.selectedId = '';
+        if (!Array.isArray(state.overlay.modules)) state.overlay.modules = [];
+        state.overlay.modules = state.overlay.modules.map(normalizeOverlayModule);
+        if (state.overlay.selectedId && !state.overlay.modules.some((m) => m.id === state.overlay.selectedId)) {
+            state.overlay.selectedId = '';
+        }
     }
 
     function ensureTileTemplates() {
@@ -703,7 +1207,10 @@ import {
         canvasHeightEl.value = state.height;
         columnCountEl.value = state.columnCount;
         tileGapEl.value = state.gap;
+        updateLayoutModeUi();
         updateCanvasHint();
+        updateOverlayBgThumb();
+        renderOverlayPanel();
     }
 
     function escapeHtml(s) {
@@ -1196,6 +1703,7 @@ import {
             if (!isPreviewInteractionEnabled()) return;
             if (!e.isPrimary) return;
             if (e.pointerType === 'mouse' && e.button !== 0) return;
+            if (e.target && e.target.closest && e.target.closest('.overlay-module')) return;
 
             if (VIEWER_MODE) {
                 if (viewerHoldTimer) {
@@ -1418,6 +1926,7 @@ import {
         if (activeEventKeysLoaded || activeEventKeysLoading) return;
         loadActiveEventKeys().then(() => {
             renderColumnRowsSection();
+            renderOverlaySelectedProps();
         });
     }
 
@@ -1796,6 +2305,12 @@ import {
         const w = state.width;
         const h = state.height;
         const u = state.unit;
+        if (state.layoutMode === 'overlay') {
+            canvasHintEl.textContent = u === 'px'
+                ? `Canvas: ${w}×${h} px. Loading an image sets this to the image size.`
+                : `Canvas: ${w}×${h} cm. Loading an image sets this to the image size.`;
+            return;
+        }
         canvasHintEl.textContent = u === 'px' ? `Current: ${w}×${h} px` : `Current: ${w}×${h} cm`;
     }
 
@@ -2325,209 +2840,21 @@ import {
                 if (templateVal === 'photo') {
                     const propsPanel = document.createElement('div');
                     propsPanel.className = 'tile-template-props';
-                    const uploadKey = `${colIdx}-${rowIdx}`;
-                    const photoProps = (state.tileTemplateProps[colIdx] && state.tileTemplateProps[colIdx][rowIdx]) || {};
-                    const { mediaItems, imageUrls, galleryIntervalSeconds } = getGalleryProps(photoProps);
-                    if (!Array.isArray(state.tileTemplateProps[colIdx][rowIdx].mediaItems) || typeof state.tileTemplateProps[colIdx][rowIdx].galleryIntervalSeconds !== 'number') {
-                        state.tileTemplateProps[colIdx][rowIdx] = { ...state.tileTemplateProps[colIdx][rowIdx], mediaItems: [...mediaItems], imageUrls: [...imageUrls], galleryIntervalSeconds };
+                    if (!state.tileTemplateProps[colIdx][rowIdx]) {
+                        state.tileTemplateProps[colIdx][rowIdx] = { mediaItems: [], imageUrls: [], galleryIntervalSeconds: 3 };
                     }
-
-                    const intervalLabel = document.createElement('label');
-                    intervalLabel.textContent = 'Gallery interval (seconds)';
-                    const intervalInput = document.createElement('input');
-                    intervalInput.type = 'number';
-                    intervalInput.min = 1;
-                    intervalInput.max = 60;
-                    intervalInput.step = 1;
-                    intervalInput.className = 'tile-photo-interval';
-                    intervalInput.value = String(galleryIntervalSeconds);
-                    intervalInput.addEventListener('change', () => {
-                        if (!state.tileTemplateProps[colIdx][rowIdx]) state.tileTemplateProps[colIdx][rowIdx] = { mediaItems: [], imageUrls: [], galleryIntervalSeconds: 3 };
-                        const v = Math.max(1, Math.min(60, Number(intervalInput.value) || 3));
-                        state.tileTemplateProps[colIdx][rowIdx].galleryIntervalSeconds = v;
-                        saveState();
-                        renderTiles();
-                    });
-                    propsPanel.appendChild(intervalLabel);
-                    propsPanel.appendChild(intervalInput);
-
-                    const thumbsWrap = document.createElement('div');
-                    thumbsWrap.className = 'tile-photo-thumbs-wrap';
-
-                    function ensurePhotoProps() {
-                        const p = state.tileTemplateProps[colIdx][rowIdx] || {};
-                        if (!state.tileTemplateProps[colIdx][rowIdx]) state.tileTemplateProps[colIdx][rowIdx] = { mediaItems: [], imageUrls: [], galleryIntervalSeconds: 3 };
-                        let items = state.tileTemplateProps[colIdx][rowIdx].mediaItems;
-                        if (!Array.isArray(items)) {
-                            const legacyUrls = Array.isArray(p.imageUrls) ? p.imageUrls : (p.imageUrl ? [p.imageUrl] : []);
-                            items = legacyUrls.filter(Boolean).map((url) => ({ type: 'image', url }));
-                            state.tileTemplateProps[colIdx][rowIdx].mediaItems = items;
-                        }
-                        state.tileTemplateProps[colIdx][rowIdx].imageUrls = items.filter((item) => item && item.type !== 'video' && item.url).map((item) => item.url);
-                        if (typeof state.tileTemplateProps[colIdx][rowIdx].galleryIntervalSeconds !== 'number') state.tileTemplateProps[colIdx][rowIdx].galleryIntervalSeconds = 3;
-                    }
-
-                    function renderThumbs() {
-                        thumbsWrap.innerHTML = '';
-                        const items = state.tileTemplateProps[colIdx][rowIdx].mediaItems || [];
-                        items.forEach((item, index) => {
-                            const cell = document.createElement('div');
-                            cell.className = 'tile-photo-thumb-cell';
-                            if (item.type === 'video') {
-                                const video = document.createElement('video');
-                                video.src = item.url;
-                                video.muted = true;
-                                video.playsInline = true;
-                                video.preload = 'metadata';
-                                video.className = 'tile-photo-thumb-video';
-                                cell.appendChild(video);
-                                const badge = document.createElement('span');
-                                badge.className = 'tile-photo-thumb-badge';
-                                badge.textContent = 'Video';
-                                cell.appendChild(badge);
-                            } else {
-                                const img = document.createElement('img');
-                                img.src = item.url;
-                                img.alt = '';
-                                img.className = 'tile-photo-thumb-img';
-                                cell.appendChild(img);
+                    appendPhotoGalleryEditor(propsPanel, {
+                        uploadKey: `${colIdx}-${rowIdx}`,
+                        uploadPathPrefix: `menu-creator-photos/tile-${colIdx}-${rowIdx}`,
+                        getProps: () => {
+                            if (!state.tileTemplateProps[colIdx][rowIdx]) {
+                                state.tileTemplateProps[colIdx][rowIdx] = { mediaItems: [], imageUrls: [], galleryIntervalSeconds: 3 };
                             }
-                            const removeBtn = document.createElement('button');
-                            removeBtn.type = 'button';
-                            removeBtn.className = 'tile-photo-thumb-remove';
-                            removeBtn.setAttribute('aria-label', 'Remove media');
-                            removeBtn.textContent = '×';
-                            removeBtn.addEventListener('click', () => {
-                                ensurePhotoProps();
-                                state.tileTemplateProps[colIdx][rowIdx].mediaItems.splice(index, 1);
-                                saveState();
-                                renderTiles();
-                                renderThumbs();
-                            });
-                            cell.appendChild(removeBtn);
-                            thumbsWrap.appendChild(cell);
-                        });
-                        const addCell = document.createElement('button');
-                        addCell.type = 'button';
-                        addCell.className = 'tile-photo-thumb-add';
-                        addCell.setAttribute('aria-label', 'Add photo(s) or video(s)');
-                        addCell.textContent = '+';
-                        addCell.addEventListener('click', () => photoInput.click());
-                        thumbsWrap.appendChild(addCell);
-                    }
-
-                    const photoInput = document.createElement('input');
-                    photoInput.type = 'file';
-                    photoInput.accept = 'image/*,video/*';
-                    photoInput.multiple = true;
-                    photoInput.className = 'tile-photo-upload';
-                    photoInput.style.display = 'none';
-                    photoInput.addEventListener('change', async () => {
-                        const files = photoInput.files ? Array.from(photoInput.files) : [];
-                        photoInput.value = '';
-                        if (files.length === 0) return;
-                        ensurePhotoProps();
-                        photoUploading[uploadKey] = true;
-                        renderColumnRowsSection();
-                        for (const file of files) {
-                            try {
-                                const mediaType = file.type && file.type.startsWith('video/') ? 'video' : 'image';
-                                const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
-                                const path = `menu-creator-photos/tile-${colIdx}-${rowIdx}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-                                const ref = storageRef(storage, path);
-                                await uploadBytes(ref, file);
-                                const url = await getDownloadURL(ref);
-                                state.tileTemplateProps[colIdx][rowIdx].mediaItems.push({ type: mediaType, url });
-                            } catch (err) {
-                                console.error('Media upload failed:', err);
-                                const url = await new Promise((res) => {
-                                    const reader = new FileReader();
-                                    reader.onload = () => res(reader.result);
-                                    reader.readAsDataURL(file);
-                                });
-                                const mediaType = file.type && file.type.startsWith('video/') ? 'video' : 'image';
-                                state.tileTemplateProps[colIdx][rowIdx].mediaItems.push({ type: mediaType, url });
-                            }
-                        }
-                        saveState();
-                        renderTiles();
-                        photoUploading[uploadKey] = false;
-                        renderColumnRowsSection();
+                            return state.tileTemplateProps[colIdx][rowIdx];
+                        },
+                        onCanvasChanged: () => renderTiles(),
+                        onControlsChanged: () => renderColumnRowsSection()
                     });
-
-                    renderThumbs();
-                    if (photoUploading[uploadKey]) {
-                        const uploadingLabel = document.createElement('span');
-                        uploadingLabel.className = 'tile-photo-preview-label';
-                        uploadingLabel.textContent = 'Uploading…';
-                        uploadingLabel.style.display = 'block';
-                        uploadingLabel.style.marginBottom = '0.25rem';
-                        propsPanel.appendChild(uploadingLabel);
-                    }
-                    propsPanel.appendChild(thumbsWrap);
-                    propsPanel.appendChild(photoInput);
-
-                    const takeoverWrap = document.createElement('label');
-                    takeoverWrap.className = 'menu-save-new-toggle';
-                    const takeoverInput = document.createElement('input');
-                    takeoverInput.type = 'checkbox';
-                    takeoverInput.checked = Boolean(photoProps.useAsCustomerDisplay);
-                    const takeoverText = document.createElement('span');
-                    takeoverText.textContent = 'Use customer display when active order exists';
-                    takeoverInput.addEventListener('change', () => {
-                        if (!state.tileTemplateProps[colIdx][rowIdx]) state.tileTemplateProps[colIdx][rowIdx] = {};
-                        state.tileTemplateProps[colIdx][rowIdx].useAsCustomerDisplay = takeoverInput.checked;
-                        saveState();
-                        renderColumnRowsSection();
-                        renderTiles();
-                    });
-                    takeoverWrap.appendChild(takeoverInput);
-                    takeoverWrap.appendChild(takeoverText);
-                    propsPanel.appendChild(takeoverWrap);
-
-                    if (takeoverInput.checked) {
-                        const eventLabel = document.createElement('label');
-                        eventLabel.textContent = 'POS event';
-                        const eventSelect = document.createElement('select');
-                        const selectedEvent = (photoProps.customerDisplayEventKey || '').trim();
-                        eventSelect.innerHTML = buildPosEventDropdownHtml(selectedEvent);
-                        eventSelect.value = selectedEvent;
-                        if (!activeEventKeysLoaded) ensureActiveEventKeysLoaded();
-                        eventSelect.addEventListener('change', () => {
-                            if (!state.tileTemplateProps[colIdx][rowIdx]) state.tileTemplateProps[colIdx][rowIdx] = {};
-                            state.tileTemplateProps[colIdx][rowIdx].customerDisplayEventKey = eventSelect.value.trim();
-                            saveState();
-                            renderTiles();
-                        });
-                        const refreshBtn = document.createElement('button');
-                        refreshBtn.type = 'button';
-                        refreshBtn.className = 'btn btn-secondary';
-                        refreshBtn.textContent = 'Refresh';
-                        refreshBtn.title = 'Reload POS event list from Firebase';
-                        refreshBtn.addEventListener('click', (ev) => {
-                            ev.preventDefault();
-                            activeEventKeysLoaded = false;
-                            loadActiveEventKeys({ force: true }).then(() => renderColumnRowsSection());
-                        });
-                        const eventRow = document.createElement('div');
-                        eventRow.style.display = 'flex';
-                        eventRow.style.gap = '0.5rem';
-                        eventRow.style.alignItems = 'center';
-                        eventRow.style.flexWrap = 'wrap';
-                        eventSelect.style.flex = '1';
-                        eventSelect.style.minWidth = '8rem';
-                        eventRow.appendChild(eventSelect);
-                        eventRow.appendChild(refreshBtn);
-                        const eventHint = document.createElement('span');
-                        eventHint.className = 'form-hint';
-                        const hintExtra = posEventDropdownHint();
-                        eventHint.textContent = hintExtra
-                            ? hintExtra
-                            : 'Idle shows gallery; active order shows customer display.';
-                        propsPanel.appendChild(eventLabel);
-                        propsPanel.appendChild(eventRow);
-                        propsPanel.appendChild(eventHint);
-                    }
                     block.appendChild(propsPanel);
                 }
                 if (templateVal === 'customization') {
@@ -2710,6 +3037,807 @@ import {
         }
     }
 
+    function isOverlayEditorActive() {
+        return state.layoutMode === 'overlay' && !VIEWER_MODE && !fullscreenPreviewActive;
+    }
+
+    function getPreviewTotalScale() {
+        if (!previewWrapEl) return 1;
+        const { w, h } = getCanvasDimensions();
+        const wrapW = previewWrapEl.clientWidth;
+        const wrapH = previewWrapEl.clientHeight;
+        if (wrapW <= 0 || wrapH <= 0 || w <= 0 || h <= 0) return 1;
+        const rot = normalizeViewRotationDeg(viewRotationDeg);
+        const fitW = (rot === 90 || rot === 270) ? h : w;
+        const fitH = (rot === 90 || rot === 270) ? w : h;
+        let scale = Math.min(wrapW / fitW, wrapH / fitH);
+        if (!fullscreenPreviewActive) scale = Math.min(scale, 1);
+        const interactionZoom = isPreviewZoomEnabled() ? previewZoom : 1;
+        return scale * interactionZoom;
+    }
+
+    function clientToCanvasPoint(clientX, clientY) {
+        const { w, h } = getCanvasDimensions();
+        const rot = normalizeViewRotationDeg(viewRotationDeg);
+        const totalScale = getPreviewTotalScale();
+        if (!canvasFitWrapperEl || w <= 0 || h <= 0 || totalScale <= 0) return { x: 0, y: 0 };
+        const wrapperRect = canvasFitWrapperEl.getBoundingClientRect();
+        const cx = wrapperRect.left + wrapperRect.width / 2;
+        const cy = wrapperRect.top + wrapperRect.height / 2;
+        const dx = (clientX - cx) / totalScale;
+        const dy = (clientY - cy) / totalScale;
+        const rad = -rot * Math.PI / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+        return {
+            x: dx * cos - dy * sin + w / 2,
+            y: dx * sin + dy * cos + h / 2
+        };
+    }
+
+    function clientToOverlayStagePoint(clientX, clientY) {
+        const p = clientToCanvasPoint(clientX, clientY);
+        return {
+            x: p.x - overlayStageLayout.left,
+            y: p.y - overlayStageLayout.top
+        };
+    }
+
+    function getOverlayStageLayout(canvasW, canvasH) {
+        const iw = Number(state.overlay && state.overlay.imageNaturalWidth) || 0;
+        const ih = Number(state.overlay && state.overlay.imageNaturalHeight) || 0;
+        if (!state.overlay || !state.overlay.imageUrl || iw <= 0 || ih <= 0) {
+            return { left: 0, top: 0, width: canvasW, height: canvasH };
+        }
+        const scale = Math.min(canvasW / iw, canvasH / ih);
+        const width = iw * scale;
+        const height = ih * scale;
+        return {
+            left: (canvasW - width) / 2,
+            top: (canvasH - height) / 2,
+            width,
+            height
+        };
+    }
+
+    function applyOverlayStageLayout(layout) {
+        overlayStageLayout = layout;
+        if (!overlayStageEl) return;
+        overlayStageEl.style.left = layout.left + 'px';
+        overlayStageEl.style.top = layout.top + 'px';
+        overlayStageEl.style.width = layout.width + 'px';
+        overlayStageEl.style.height = layout.height + 'px';
+    }
+
+    function applyOverlayModuleStyle(el, mod) {
+        el.style.left = mod.x + '%';
+        el.style.top = mod.y + '%';
+        el.style.width = mod.w + '%';
+        el.style.height = mod.h + '%';
+        el.style.setProperty('--overlay-module-radius', getOverlayBorderRadius(mod) + 'px');
+        if (!overlayInteract) postOverlayDisplayStyle(el, mod);
+    }
+
+    function overlayModToPx(mod, stageW, stageH) {
+        return {
+            x: (mod.x / 100) * stageW,
+            y: (mod.y / 100) * stageH,
+            w: (mod.w / 100) * stageW,
+            h: (mod.h / 100) * stageH
+        };
+    }
+
+    function applyResizeFromStart(startRect, handle, dx, dy, stageW, stageH) {
+        let x = startRect.x;
+        let y = startRect.y;
+        let w = startRect.w;
+        let h = startRect.h;
+        const minW = OVERLAY_MIN_PX;
+        const minH = OVERLAY_MIN_PX;
+        const right = startRect.x + startRect.w;
+        const bottom = startRect.y + startRect.h;
+        if (handle.indexOf('e') !== -1) {
+            w = Math.max(minW, Math.min(stageW - startRect.x, startRect.w + dx));
+        }
+        if (handle.indexOf('s') !== -1) {
+            h = Math.max(minH, Math.min(stageH - startRect.y, startRect.h + dy));
+        }
+        if (handle.indexOf('w') !== -1) {
+            x = Math.max(0, Math.min(right - minW, startRect.x + dx));
+            w = right - x;
+        }
+        if (handle.indexOf('n') !== -1) {
+            y = Math.max(0, Math.min(bottom - minH, startRect.y + dy));
+            h = bottom - y;
+        }
+        return { x, y, w, h };
+    }
+
+    function getOverlayModuleIframeSrc(mod, opts) {
+        const props = (mod && mod.props) || {};
+        const params = new URLSearchParams();
+        if (props.eventKey) params.set('event', props.eventKey);
+        params.set('embedded', '1');
+        if (!props.showSettingsButton) params.set('hideSettings', '1');
+        if (!opts || opts.includeStyle !== false) {
+            params.set('radius', String(getOverlayBorderRadius(mod)));
+            params.set('scale', String(getOverlayContentScale(mod)));
+        }
+        // Bust HTML/asset cache when customer-display greeting/UI updates.
+        params.set('v', 'greeting-fix-2');
+        const query = params.toString();
+        return '../pos/customer-display.html' + (query ? '?' + query : '');
+    }
+
+    function getOverlayModuleIframeIdentity(mod) {
+        return getOverlayModuleIframeSrc(mod, { includeStyle: false });
+    }
+
+    function getOverlayModuleContentIdentity(mod) {
+        if (mod && mod.type === 'photo') {
+            const gallery = getGalleryProps(mod.props);
+            return JSON.stringify({
+                t: 'photo',
+                media: gallery.mediaItems,
+                interval: gallery.galleryIntervalSeconds,
+                takeover: Boolean(mod.props && mod.props.useAsCustomerDisplay),
+                event: ((mod.props && mod.props.customerDisplayEventKey) || '').trim()
+            });
+        }
+        return getOverlayModuleIframeIdentity(mod);
+    }
+
+    function fillOverlayModuleContent(el, mod) {
+        const content = el.querySelector('.overlay-module-content');
+        if (!content) return;
+        content.innerHTML = '';
+        content.classList.toggle('overlay-module-photo', mod.type === 'photo');
+        if (mod.type === 'photo') {
+            content.innerHTML = buildPhotoModuleHtml(mod.props || {}, { overlayMod: mod });
+            const iframe = content.querySelector('iframe');
+            if (iframe) {
+                iframe.addEventListener('load', () => {
+                    const current = (state.overlay.modules || []).find((m) => m.id === mod.id) || mod;
+                    postOverlayDisplayStyle(el, current);
+                });
+            }
+            return;
+        }
+        const iframe = document.createElement('iframe');
+        iframe.className = 'tile-customer-display-iframe';
+        iframe.loading = 'lazy';
+        iframe.referrerPolicy = 'no-referrer';
+        iframe.src = getOverlayModuleIframeSrc(mod);
+        iframe.dataset.identitySrc = getOverlayModuleIframeIdentity(mod);
+        iframe.addEventListener('load', () => {
+            const current = (state.overlay.modules || []).find((m) => m.id === mod.id) || mod;
+            postOverlayDisplayStyle(el, current);
+        });
+        const wrap = document.createElement('div');
+        wrap.className = 'tile-customer-display-wrap';
+        wrap.appendChild(iframe);
+        content.appendChild(wrap);
+    }
+
+    function createOverlayModuleElement(mod) {
+        const el = document.createElement('div');
+        el.className = 'overlay-module';
+        el.dataset.id = mod.id;
+        applyOverlayModuleStyle(el, mod);
+        const content = document.createElement('div');
+        content.className = 'overlay-module-content';
+        el.appendChild(content);
+        fillOverlayModuleContent(el, mod);
+        el.dataset.contentIdentity = getOverlayModuleContentIdentity(mod);
+        const hit = document.createElement('div');
+        hit.className = 'overlay-module-hit';
+        const gizmo = document.createElement('div');
+        gizmo.className = 'overlay-gizmo';
+        OVERLAY_HANDLES.forEach((name) => {
+            const handle = document.createElement('span');
+            handle.className = 'overlay-handle';
+            handle.dataset.handle = name;
+            gizmo.appendChild(handle);
+        });
+        el.appendChild(hit);
+        el.appendChild(gizmo);
+        return el;
+    }
+
+    function updateOverlaySelectionUi() {
+        if (!overlayModulesEl) return;
+        const selectedId = state.overlay && state.overlay.selectedId;
+        const showChrome = isOverlayEditorActive();
+        overlayModulesEl.querySelectorAll('.overlay-module').forEach((el) => {
+            el.classList.toggle('is-selected', showChrome && el.dataset.id === selectedId);
+        });
+        if (overlayModuleListEl) {
+            overlayModuleListEl.querySelectorAll('.overlay-module-list-item').forEach((el) => {
+                el.classList.toggle('is-selected', el.dataset.id === selectedId);
+            });
+        }
+    }
+
+    function syncOverlayModuleElements() {
+        if (!overlayModulesEl) return;
+        const existing = new Map();
+        overlayModulesEl.querySelectorAll('.overlay-module').forEach((el) => {
+            existing.set(el.dataset.id, el);
+        });
+        const keep = new Set();
+        (state.overlay.modules || []).forEach((mod) => {
+            keep.add(mod.id);
+            let el = existing.get(mod.id);
+            if (!el) {
+                el = createOverlayModuleElement(mod);
+                overlayModulesEl.appendChild(el);
+            } else {
+                applyOverlayModuleStyle(el, mod);
+                const identity = getOverlayModuleContentIdentity(mod);
+                if (el.dataset.contentIdentity !== identity) {
+                    el.dataset.contentIdentity = identity;
+                    fillOverlayModuleContent(el, mod);
+                } else if (mod.type === 'customer-display') {
+                    const iframe = el.querySelector('iframe');
+                    const iframeIdentity = getOverlayModuleIframeIdentity(mod);
+                    if (iframe && iframe.dataset.identitySrc !== iframeIdentity) {
+                        iframe.dataset.identitySrc = iframeIdentity;
+                        iframe.src = getOverlayModuleIframeSrc(mod);
+                    }
+                }
+            }
+        });
+        existing.forEach((el, id) => {
+            if (!keep.has(id)) el.remove();
+        });
+        updateOverlaySelectionUi();
+        if (state.layoutMode === 'overlay') {
+            clearPhotoRuntimes();
+            bindPhotoRuntimes(overlayModulesEl);
+        }
+    }
+
+    function setOverlayBgStatus(text) {
+        if (overlayBgStatusEl) overlayBgStatusEl.textContent = text || '';
+    }
+
+    function updateOverlayBgThumb() {
+        const url = state.overlay && state.overlay.imageUrl;
+        if (overlayBgThumbEl) {
+            if (url) {
+                overlayBgThumbEl.src = url;
+                overlayBgThumbEl.hidden = false;
+            } else {
+                overlayBgThumbEl.removeAttribute('src');
+                overlayBgThumbEl.hidden = true;
+            }
+        }
+        if (overlayBgEmptyHintEl) overlayBgEmptyHintEl.hidden = Boolean(url);
+    }
+
+    function applyImageSizeToCanvas(nw, nh) {
+        if (!(nw > 0 && nh > 0)) return;
+        if (state.unit === 'cm') {
+            state.width = Math.round((nw / CM_TO_PX) * 100) / 100;
+            state.height = Math.round((nh / CM_TO_PX) * 100) / 100;
+        } else {
+            state.width = nw;
+            state.height = nh;
+        }
+        state.orientation = nw >= nh ? 'landscape' : 'portrait';
+        if (orientationEl) orientationEl.value = state.orientation;
+        if (canvasWidthEl) canvasWidthEl.value = state.width;
+        if (canvasHeightEl) canvasHeightEl.value = state.height;
+        updateCanvasHint();
+    }
+
+    function loadImageNaturalSize(url) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
+            img.onerror = () => reject(new Error('Could not read image size'));
+            img.src = url;
+        });
+    }
+
+    async function applyOverlayBackgroundUrl(url) {
+        ensureOverlayState();
+        let nw = 0;
+        let nh = 0;
+        try {
+            const size = await loadImageNaturalSize(url);
+            nw = size.w;
+            nh = size.h;
+        } catch (e) { /* keep zeros */ }
+        state.overlay.imageUrl = url;
+        state.overlay.imageNaturalWidth = nw;
+        state.overlay.imageNaturalHeight = nh;
+        if (nw > 0 && nh > 0) applyImageSizeToCanvas(nw, nh);
+        saveState();
+        setOverlayBgStatus(nw ? (nw + '×' + nh + ' px') : 'Image loaded.');
+        updateOverlayBgThumb();
+        renderOverlayCanvas();
+    }
+
+    async function uploadOverlayBackground(file) {
+        if (!file) return;
+        overlayImageUploading = true;
+        setOverlayBgStatus('Uploading…');
+        if (overlayBgPickBtnEl) overlayBgPickBtnEl.disabled = true;
+        try {
+            const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+            const path = `menu-creator-photos/overlay-bg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+            const ref = storageRef(storage, path);
+            await uploadBytes(ref, file);
+            const url = await getDownloadURL(ref);
+            await applyOverlayBackgroundUrl(url);
+        } catch (err) {
+            console.error('Overlay image upload failed:', err);
+            const url = await new Promise((res) => {
+                const reader = new FileReader();
+                reader.onload = () => res(reader.result);
+                reader.readAsDataURL(file);
+            });
+            await applyOverlayBackgroundUrl(url);
+        } finally {
+            overlayImageUploading = false;
+            if (overlayBgPickBtnEl) overlayBgPickBtnEl.disabled = false;
+        }
+    }
+
+    function removeOverlayBackground() {
+        ensureOverlayState();
+        state.overlay.imageUrl = '';
+        state.overlay.imageNaturalWidth = 0;
+        state.overlay.imageNaturalHeight = 0;
+        saveState();
+        setOverlayBgStatus('');
+        updateOverlayBgThumb();
+        renderOverlayCanvas();
+    }
+
+    function addOverlayModule(type) {
+        ensureOverlayState();
+        const resolvedType = type === 'photo' ? 'photo' : 'customer-display';
+        const count = state.overlay.modules.length;
+        const offset = (count % 5) * 4;
+        const mod = normalizeOverlayModule({
+            id: newOverlayId(),
+            type: resolvedType,
+            x: 32 + offset,
+            y: 24 + offset,
+            w: resolvedType === 'photo' ? 40 : 36,
+            h: resolvedType === 'photo' ? 40 : 50,
+            props: getDefaultOverlayModuleProps(resolvedType)
+        });
+        state.overlay.modules.push(mod);
+        state.overlay.selectedId = mod.id;
+        saveState();
+        renderOverlayPanel();
+        renderOverlayCanvas();
+    }
+
+    function deleteOverlayModule(id) {
+        ensureOverlayState();
+        state.overlay.modules = state.overlay.modules.filter((m) => m.id !== id);
+        if (state.overlay.selectedId === id) state.overlay.selectedId = '';
+        saveState();
+        renderOverlayPanel();
+        renderOverlayCanvas();
+    }
+
+    function deleteSelectedOverlayModule() {
+        if (!state.overlay || !state.overlay.selectedId) return;
+        deleteOverlayModule(state.overlay.selectedId);
+    }
+
+    function selectOverlayModule(id, opts) {
+        ensureOverlayState();
+        const nextId = id || '';
+        const skipPanel = opts && opts.skipPanel;
+        if (state.overlay.selectedId !== nextId) {
+            state.overlay.selectedId = nextId;
+            saveState();
+            if (!skipPanel) renderOverlaySelectedProps();
+            renderOverlayModuleList();
+        }
+        updateOverlaySelectionUi();
+    }
+
+    function getSelectedOverlayModule() {
+        ensureOverlayState();
+        return state.overlay.modules.find((m) => m.id === state.overlay.selectedId) || null;
+    }
+
+    function renderOverlayModuleList() {
+        if (!overlayModuleListEl) return;
+        ensureOverlayState();
+        overlayModuleListEl.innerHTML = '';
+        if (state.overlay.modules.length === 0) return;
+        const counts = {};
+        state.overlay.modules.forEach((mod) => {
+            counts[mod.type] = (counts[mod.type] || 0) + 1;
+            const n = counts[mod.type];
+            const row = document.createElement('div');
+            row.className = 'overlay-module-list-item' + (mod.id === state.overlay.selectedId ? ' is-selected' : '');
+            row.dataset.id = mod.id;
+            const label = document.createElement('span');
+            label.textContent = overlayModuleLabel(mod.type) + (n > 1 || state.overlay.modules.length > 1 ? ' ' + n : '');
+            const delBtn = document.createElement('button');
+            delBtn.type = 'button';
+            delBtn.className = 'btn btn-secondary';
+            delBtn.textContent = 'Remove';
+            delBtn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                deleteOverlayModule(mod.id);
+            });
+            row.appendChild(label);
+            row.appendChild(delBtn);
+            row.addEventListener('click', () => selectOverlayModule(mod.id));
+            overlayModuleListEl.appendChild(row);
+        });
+    }
+
+    function renderOverlaySelectedProps() {
+        if (!overlaySelectedPropsEl) return;
+        overlaySelectedPropsEl.innerHTML = '';
+        if (state.layoutMode !== 'overlay') return;
+        const mod = getSelectedOverlayModule();
+        if (!mod) {
+            const hint = document.createElement('p');
+            hint.className = 'form-hint';
+            hint.textContent = state.overlay.modules.length
+                ? 'Select a module on the image to edit it.'
+                : 'Add a gallery or customer display, then drag and resize it on the image.';
+            overlaySelectedPropsEl.appendChild(hint);
+            return;
+        }
+
+        const propsPanel = document.createElement('div');
+        propsPanel.className = 'tile-template-props';
+
+        const sizeTitle = document.createElement('label');
+        sizeTitle.textContent = 'Position & size (%)';
+        propsPanel.appendChild(sizeTitle);
+        const sizeGrid = document.createElement('div');
+        sizeGrid.className = 'overlay-size-row';
+        [
+            ['X', 'x'],
+            ['Y', 'y'],
+            ['Width', 'w'],
+            ['Height', 'h']
+        ].forEach(([labelText, key]) => {
+            const group = document.createElement('div');
+            group.className = 'form-group';
+            const lab = document.createElement('label');
+            lab.textContent = labelText;
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.min = key === 'w' || key === 'h' ? '4' : '0';
+            input.max = '100';
+            input.step = '0.1';
+            input.value = String(Math.round(mod[key] * 10) / 10);
+            input.dataset.overlaySizeKey = key;
+            input.addEventListener('change', () => {
+                const current = getSelectedOverlayModule();
+                if (!current) return;
+                const raw = Number(input.value);
+                if (key === 'w' || key === 'h') current[key] = clampNumber(raw, 4, 100);
+                else current[key] = clampNumber(raw, 0, 100);
+                if (current.x + current.w > 100) current.x = Math.max(0, 100 - current.w);
+                if (current.y + current.h > 100) current.y = Math.max(0, 100 - current.h);
+                saveState();
+                const el = overlayModulesEl && overlayModulesEl.querySelector('.overlay-module[data-id="' + current.id + '"]');
+                if (el) applyOverlayModuleStyle(el, current);
+            });
+            group.appendChild(lab);
+            group.appendChild(input);
+            sizeGrid.appendChild(group);
+        });
+        propsPanel.appendChild(sizeGrid);
+
+        const radiusLabel = document.createElement('label');
+        radiusLabel.textContent = 'Corner radius';
+        const radiusRow = document.createElement('div');
+        radiusRow.className = 'overlay-radius-row';
+        const radiusRange = document.createElement('input');
+        radiusRange.type = 'range';
+        radiusRange.min = '0';
+        radiusRange.max = '48';
+        radiusRange.step = '1';
+        radiusRange.value = String(getOverlayBorderRadius(mod));
+        const radiusInput = document.createElement('input');
+        radiusInput.type = 'number';
+        radiusInput.min = '0';
+        radiusInput.max = '80';
+        radiusInput.step = '1';
+        radiusInput.value = String(getOverlayBorderRadius(mod));
+        const radiusUnit = document.createElement('span');
+        radiusUnit.className = 'form-hint';
+        radiusUnit.textContent = 'px';
+        const applyRadius = (raw, persist) => {
+            const current = getSelectedOverlayModule();
+            if (!current) return;
+            current.props.borderRadius = clampNumber(raw, 0, 80);
+            radiusRange.value = String(current.props.borderRadius);
+            radiusInput.value = String(current.props.borderRadius);
+            const el = overlayModulesEl && overlayModulesEl.querySelector('.overlay-module[data-id="' + current.id + '"]');
+            if (el) applyOverlayModuleStyle(el, current);
+            if (persist) saveState();
+        };
+        radiusRange.addEventListener('input', () => applyRadius(radiusRange.value, false));
+        radiusRange.addEventListener('change', () => applyRadius(radiusRange.value, true));
+        radiusInput.addEventListener('input', () => applyRadius(radiusInput.value, false));
+        radiusInput.addEventListener('change', () => applyRadius(radiusInput.value, true));
+        radiusRow.appendChild(radiusRange);
+        radiusRow.appendChild(radiusInput);
+        radiusRow.appendChild(radiusUnit);
+        propsPanel.appendChild(radiusLabel);
+        propsPanel.appendChild(radiusRow);
+
+        const appendContentScaleControls = () => {
+            const scaleLabel = document.createElement('label');
+            scaleLabel.textContent = 'Content size';
+            const scaleRow = document.createElement('div');
+            scaleRow.className = 'overlay-radius-row';
+            const scalePct = Math.round(getOverlayContentScale(mod) * 100);
+            const scaleRange = document.createElement('input');
+            scaleRange.type = 'range';
+            scaleRange.min = '50';
+            scaleRange.max = '250';
+            scaleRange.step = '5';
+            scaleRange.value = String(scalePct);
+            const scaleInput = document.createElement('input');
+            scaleInput.type = 'number';
+            scaleInput.min = '50';
+            scaleInput.max = '250';
+            scaleInput.step = '5';
+            scaleInput.value = String(scalePct);
+            const scaleUnit = document.createElement('span');
+            scaleUnit.className = 'form-hint';
+            scaleUnit.textContent = '%';
+            const applyScale = (raw, persist) => {
+                const current = getSelectedOverlayModule();
+                if (!current) return;
+                const pct = clampNumber(raw, 50, 250);
+                current.props.contentScale = Math.round(pct) / 100;
+                scaleRange.value = String(Math.round(pct));
+                scaleInput.value = String(Math.round(pct));
+                const el = overlayModulesEl && overlayModulesEl.querySelector('.overlay-module[data-id="' + current.id + '"]');
+                if (el) applyOverlayModuleStyle(el, current);
+                if (persist) saveState();
+            };
+            scaleRange.addEventListener('input', () => applyScale(scaleRange.value, false));
+            scaleRange.addEventListener('change', () => applyScale(scaleRange.value, true));
+            scaleInput.addEventListener('input', () => applyScale(scaleInput.value, false));
+            scaleInput.addEventListener('change', () => applyScale(scaleInput.value, true));
+            scaleRow.appendChild(scaleRange);
+            scaleRow.appendChild(scaleInput);
+            scaleRow.appendChild(scaleUnit);
+            propsPanel.appendChild(scaleLabel);
+            propsPanel.appendChild(scaleRow);
+        };
+
+        if (mod.type === 'photo') {
+            appendPhotoGalleryEditor(propsPanel, {
+                uploadKey: 'overlay-' + mod.id,
+                uploadPathPrefix: 'menu-creator-photos/overlay-' + mod.id,
+                getProps: () => {
+                    const current = getSelectedOverlayModule();
+                    if (!current) return null;
+                    if (!current.props) current.props = {};
+                    return current.props;
+                },
+                onCanvasChanged: () => syncOverlayModuleElements(),
+                onControlsChanged: () => renderOverlaySelectedProps()
+            });
+            if (mod.props && mod.props.useAsCustomerDisplay) appendContentScaleControls();
+        } else {
+            appendContentScaleControls();
+
+            const eventLabel = document.createElement('label');
+            eventLabel.textContent = 'POS event';
+            const eventSelect = document.createElement('select');
+            const selectedEvent = (mod.props.eventKey || '').trim();
+            eventSelect.innerHTML = buildPosEventDropdownHtml(selectedEvent);
+            eventSelect.value = selectedEvent;
+            if (!activeEventKeysLoaded) ensureActiveEventKeysLoaded();
+            eventSelect.addEventListener('change', () => {
+                const current = getSelectedOverlayModule();
+                if (!current) return;
+                current.props.eventKey = eventSelect.value.trim();
+                saveState();
+                syncOverlayModuleElements();
+            });
+            const refreshEventsBtn = document.createElement('button');
+            refreshEventsBtn.type = 'button';
+            refreshEventsBtn.className = 'btn btn-secondary';
+            refreshEventsBtn.textContent = 'Refresh';
+            refreshEventsBtn.title = 'Reload POS event list from Firebase';
+            refreshEventsBtn.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                activeEventKeysLoaded = false;
+                loadActiveEventKeys({ force: true }).then(() => renderOverlaySelectedProps());
+            });
+            const eventSelectRow = document.createElement('div');
+            eventSelectRow.style.display = 'flex';
+            eventSelectRow.style.gap = '0.5rem';
+            eventSelectRow.style.alignItems = 'center';
+            eventSelectRow.style.flexWrap = 'wrap';
+            eventSelect.style.flex = '1';
+            eventSelect.style.minWidth = '8rem';
+            eventSelectRow.appendChild(eventSelect);
+            eventSelectRow.appendChild(refreshEventsBtn);
+
+            const showSettingsWrap = document.createElement('label');
+            showSettingsWrap.className = 'menu-save-new-toggle';
+            const showSettingsInput = document.createElement('input');
+            showSettingsInput.type = 'checkbox';
+            showSettingsInput.checked = Boolean(mod.props.showSettingsButton);
+            showSettingsInput.addEventListener('change', () => {
+                const current = getSelectedOverlayModule();
+                if (!current) return;
+                current.props.showSettingsButton = showSettingsInput.checked;
+                saveState();
+                syncOverlayModuleElements();
+            });
+            const showSettingsText = document.createElement('span');
+            showSettingsText.textContent = 'Show settings button in embed';
+            showSettingsWrap.appendChild(showSettingsInput);
+            showSettingsWrap.appendChild(showSettingsText);
+
+            const hint = document.createElement('span');
+            hint.className = 'form-hint';
+            const posHint = posEventDropdownHint();
+            hint.textContent = posHint
+                ? posHint
+                : 'The display reflows to the box size. Preview or viewer mode lets you interact with it.';
+
+            propsPanel.appendChild(eventLabel);
+            propsPanel.appendChild(eventSelectRow);
+            propsPanel.appendChild(showSettingsWrap);
+            propsPanel.appendChild(hint);
+        }
+        overlaySelectedPropsEl.appendChild(propsPanel);
+    }
+
+    function renderOverlayPanel() {
+        updateOverlayBgThumb();
+        renderOverlayModuleList();
+        renderOverlaySelectedProps();
+    }
+
+    function updateLayoutModeUi() {
+        const mode = state.layoutMode === 'overlay' ? 'overlay' : 'grid';
+        document.body.classList.toggle('layout-mode-overlay', mode === 'overlay');
+        document.body.classList.toggle('layout-mode-grid', mode === 'grid');
+        document.querySelectorAll('[data-layout-mode]').forEach((btn) => {
+            const active = btn.getAttribute('data-layout-mode') === mode;
+            btn.classList.toggle('active', active);
+            btn.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+        if (tileGridEl) tileGridEl.hidden = mode === 'overlay';
+        if (overlayStageEl) overlayStageEl.hidden = mode !== 'overlay';
+        updateCanvasHint();
+    }
+
+    function setLayoutMode(mode) {
+        state.layoutMode = mode === 'overlay' ? 'overlay' : 'grid';
+        ensureOverlayState();
+        saveState();
+        updateLayoutModeUi();
+        if (state.layoutMode === 'overlay') {
+            renderOverlayPanel();
+            ensureActiveEventKeysLoaded();
+        }
+        renderTiles();
+    }
+
+    function renderOverlayCanvas() {
+        if (overlayInteract) return;
+        ensureOverlayState();
+        const { w, h } = getCanvasDimensions();
+        menuCanvasEl.style.width = w + 'px';
+        menuCanvasEl.style.height = h + 'px';
+        menuCanvasEl.style.padding = '0px';
+        if (tileGridEl) {
+            tileGridEl.innerHTML = '';
+            tileGridEl.hidden = true;
+        }
+        if (overlayStageEl) overlayStageEl.hidden = false;
+        const layout = getOverlayStageLayout(w, h);
+        applyOverlayStageLayout(layout);
+        const hasImage = Boolean(state.overlay.imageUrl);
+        if (overlayEmptyStateEl) overlayEmptyStateEl.hidden = hasImage;
+        if (overlayBgImageEl) {
+            if (hasImage) {
+                overlayBgImageEl.src = state.overlay.imageUrl;
+                overlayBgImageEl.hidden = false;
+            } else {
+                overlayBgImageEl.removeAttribute('src');
+                overlayBgImageEl.hidden = true;
+            }
+        }
+        syncOverlayModuleElements();
+        fitCanvasToPreview();
+    }
+
+    function setupOverlayInteractions() {
+        if (!overlayModulesEl) return;
+
+        overlayModulesEl.addEventListener('pointerdown', (e) => {
+            if (!isOverlayEditorActive()) return;
+            if (!e.isPrimary) return;
+            if (e.pointerType === 'mouse' && e.button !== 0) return;
+            const handleEl = e.target.closest('.overlay-handle');
+            const moduleEl = e.target.closest('.overlay-module');
+            if (!moduleEl) {
+                if (state.overlay.selectedId) selectOverlayModule('');
+                return;
+            }
+            e.stopPropagation();
+            e.preventDefault();
+            const id = moduleEl.dataset.id;
+            selectOverlayModule(id);
+            const mod = state.overlay.modules.find((m) => m.id === id);
+            if (!mod) return;
+            const stagePt = clientToOverlayStagePoint(e.clientX, e.clientY);
+            overlayInteract = {
+                pointerId: e.pointerId,
+                mode: handleEl ? 'resize' : 'move',
+                handle: handleEl ? handleEl.getAttribute('data-handle') : '',
+                id,
+                startPt: stagePt,
+                startRect: overlayModToPx(mod, overlayStageLayout.width, overlayStageLayout.height)
+            };
+            try {
+                moduleEl.setPointerCapture(e.pointerId);
+            } catch (err) { /* ignore */ }
+        });
+
+        const onMove = (e) => {
+            if (!overlayInteract || e.pointerId !== overlayInteract.pointerId) return;
+            e.preventDefault();
+            const stageW = overlayStageLayout.width;
+            const stageH = overlayStageLayout.height;
+            const mod = state.overlay.modules.find((m) => m.id === overlayInteract.id);
+            if (!mod || stageW <= 0 || stageH <= 0) return;
+            const stagePt = clientToOverlayStagePoint(e.clientX, e.clientY);
+            const dx = stagePt.x - overlayInteract.startPt.x;
+            const dy = stagePt.y - overlayInteract.startPt.y;
+            let next;
+            if (overlayInteract.mode === 'move') {
+                const w = overlayInteract.startRect.w;
+                const h = overlayInteract.startRect.h;
+                next = {
+                    x: clampNumber(overlayInteract.startRect.x + dx, 0, Math.max(0, stageW - w)),
+                    y: clampNumber(overlayInteract.startRect.y + dy, 0, Math.max(0, stageH - h)),
+                    w,
+                    h
+                };
+            } else {
+                next = applyResizeFromStart(overlayInteract.startRect, overlayInteract.handle, dx, dy, stageW, stageH);
+            }
+            mod.x = (next.x / stageW) * 100;
+            mod.y = (next.y / stageH) * 100;
+            mod.w = (next.w / stageW) * 100;
+            mod.h = (next.h / stageH) * 100;
+            const el = overlayModulesEl.querySelector('.overlay-module[data-id="' + overlayInteract.id + '"]');
+            if (el) applyOverlayModuleStyle(el, mod);
+        };
+
+        const onUp = (e) => {
+            if (!overlayInteract || e.pointerId !== overlayInteract.pointerId) return;
+            overlayInteract = null;
+            saveState();
+            renderOverlaySelectedProps();
+        };
+
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+        window.addEventListener('pointercancel', onUp);
+    }
+
     function getCanvasDimensions() {
         const w = Number(canvasWidthEl.value) || state.width;
         const h = Number(canvasHeightEl.value) || state.height;
@@ -2766,14 +3894,14 @@ import {
     }
 
     function renderTiles() {
-        photoGalleryIntervals.forEach((cleanup) => {
-            try { cleanup(); } catch (_) { /* ignore */ }
-        });
-        photoGalleryIntervals = [];
-        liveSessionPollers.forEach((cleanup) => {
-            try { cleanup(); } catch (_) { /* ignore */ }
-        });
-        liveSessionPollers = [];
+        ensureOverlayState();
+        if (state.layoutMode === 'overlay') {
+            renderOverlayCanvas();
+            return;
+        }
+        clearPhotoRuntimes();
+        if (overlayStageEl) overlayStageEl.hidden = true;
+        if (tileGridEl) tileGridEl.hidden = false;
         const { w, h } = getCanvasDimensions();
         const margin = state.unit === 'cm' ? state.margin * CM_TO_PX : state.margin;
         const innerW = Math.max(0, w - margin * 2);
@@ -2822,65 +3950,14 @@ import {
                     tile.innerHTML = getCustomizationTemplateHtml(customProps);
                 } else if (template === 'photo') {
                     const photoProps = (state.tileTemplateProps && state.tileTemplateProps[colIdx] && state.tileTemplateProps[colIdx][r]) || {};
-                    const { mediaItems, galleryIntervalSeconds } = getGalleryProps(photoProps);
-                    const useAsCustomerDisplay = Boolean(photoProps.useAsCustomerDisplay);
-                    const eventKey = (photoProps.customerDisplayEventKey || '').trim();
-                    if (mediaItems.length === 0 && !useAsCustomerDisplay) {
-                        tile.innerHTML = '<div class="tile-photo-wrap tile-photo-empty"><span class="tile-placeholder">Upload a photo or video</span></div>';
-                    } else {
-                        const interval = Math.max(1, galleryIntervalSeconds);
-                        const mediaHtml = mediaItems.map((item, i) => {
-                            if (item.type === 'video') {
-                                return '<video src="' + escapeHtml(item.url) + '" class="tile-photo-item tile-photo-video' + (i === 0 ? ' tile-photo-visible' : '') + '" data-index="' + i + '" muted playsinline preload="metadata" loop></video>';
-                            }
-                            return '<img src="' + escapeHtml(item.url) + '" alt="" class="tile-photo-item tile-photo-img' + (i === 0 ? ' tile-photo-visible' : '') + '" data-index="' + i + '">';
-                        }).join('');
-                        const galleryHtml = mediaItems.length > 0
-                            ? '<div class="tile-photo-wrap tile-photo-gallery" data-interval="' + interval + '">' + mediaHtml + '</div>'
-                            : '<div class="tile-photo-wrap tile-photo-empty"><span class="tile-placeholder">No gallery media</span></div>';
-                        if (!useAsCustomerDisplay) {
-                            tile.innerHTML = galleryHtml;
-                        } else {
-                            const resolvedEventKey = eventKey || localStorage.getItem('currentEvent') || 'pop-up';
-                            const params = new URLSearchParams();
-                            params.set('event', resolvedEventKey);
-                            params.set('embedded', '1');
-                            params.set('hideSettings', '1');
-                            const src = '../pos/customer-display.html?' + params.toString();
-                            tile.innerHTML = '<div class="tile-photo-display-switch"><div class="tile-photo-layer tile-photo-layer-gallery">' + galleryHtml + '</div><div class="tile-photo-layer tile-photo-layer-display" hidden><iframe class="tile-customer-display-iframe" src="' + escapeHtml(src) + '" loading="lazy" referrerpolicy="no-referrer"></iframe></div></div>';
-                            const switchRoot = tile.querySelector('.tile-photo-display-switch');
-                            const galleryLayer = switchRoot ? switchRoot.querySelector('.tile-photo-layer-gallery') : null;
-                            const displayLayer = switchRoot ? switchRoot.querySelector('.tile-photo-layer-display') : null;
-                            const eventForPolling = resolvedEventKey;
-                            if (galleryLayer && displayLayer) {
-                                let lastState = null;
-                                const setActive = (showDisplay) => {
-                                    if (lastState === showDisplay) return;
-                                    lastState = showDisplay;
-                                    galleryLayer.hidden = showDisplay;
-                                    displayLayer.hidden = !showDisplay;
-                                };
-                                const poll = async () => {
-                                    try {
-                                        const snap = await getDoc(doc(db, 'pos-live', eventForPolling, 'session', 'current'));
-                                        const active = snap.exists() ? hasActiveLiveOrder(snap.data()) : false;
-                                        setActive(active);
-                                    } catch (err) {
-                                        console.error('Live session poll failed:', err);
-                                    }
-                                };
-                                poll();
-                                const pollId = setInterval(poll, 1500);
-                                liveSessionPollers.push(() => clearInterval(pollId));
-                            }
-                        }
-                    }
+                    tile.innerHTML = buildPhotoModuleHtml(photoProps);
                 } else if (template === 'customer-display') {
                     const displayProps = (state.tileTemplateProps && state.tileTemplateProps[colIdx] && state.tileTemplateProps[colIdx][r]) || {};
                     const params = new URLSearchParams();
                     if (displayProps.eventKey) params.set('event', displayProps.eventKey);
                     params.set('embedded', '1');
                     if (!displayProps.showSettingsButton) params.set('hideSettings', '1');
+                    params.set('v', 'greeting-fix-2');
                     const query = params.toString();
                     const src = '../pos/customer-display.html' + (query ? '?' + query : '');
                     tile.innerHTML = '<div class="tile-customer-display-wrap"><iframe class="tile-customer-display-iframe" src="' + escapeHtml(src) + '" loading="lazy" referrerpolicy="no-referrer"></iframe></div>';
@@ -2892,66 +3969,7 @@ import {
             tileGridEl.appendChild(columnDiv);
         });
 
-        tileGridEl.querySelectorAll('.tile-photo-gallery').forEach(el => {
-            const intervalSec = Number(el.dataset.interval) || 3;
-            const items = Array.from(el.querySelectorAll('.tile-photo-item'));
-            if (items.length === 0) return;
-
-            let idx = 0;
-            let timeoutId = null;
-
-            const getItemDurationMs = (item) => {
-                if (item && item.tagName === 'VIDEO') {
-                    const d = Number(item.duration);
-                    if (Number.isFinite(d) && d > 0) return d * 1000;
-                }
-                return Math.max(1, intervalSec) * 1000;
-            };
-
-            const setVisible = (index) => {
-                idx = index;
-                items.forEach((item, i) => {
-                    const isVisible = i === index;
-                    item.classList.toggle('tile-photo-visible', isVisible);
-                    if (item.tagName === 'VIDEO') {
-                        if (isVisible) {
-                            item.currentTime = 0;
-                            item.play().catch(() => { /* ignore autoplay restrictions */ });
-                        } else {
-                            item.pause();
-                        }
-                    }
-                });
-            };
-
-            const scheduleNext = () => {
-                if (items.length <= 1) return;
-                if (timeoutId) clearTimeout(timeoutId);
-                const current = items[idx];
-                const delay = getItemDurationMs(current);
-                timeoutId = setTimeout(() => {
-                    setVisible((idx + 1) % items.length);
-                    scheduleNext();
-                }, delay);
-            };
-
-            items.forEach((item) => {
-                if (item.tagName === 'VIDEO') {
-                    item.addEventListener('loadedmetadata', () => {
-                        if (item.classList.contains('tile-photo-visible')) scheduleNext();
-                    });
-                }
-            });
-
-            setVisible(0);
-            scheduleNext();
-            photoGalleryIntervals.push(() => {
-                if (timeoutId) clearTimeout(timeoutId);
-                items.forEach((item) => {
-                    if (item.tagName === 'VIDEO') item.pause();
-                });
-            });
-        });
+        bindPhotoRuntimes(tileGridEl);
 
         state.columnRows.forEach((_, colIdx) => { syncRowHeightInputs(colIdx); });
         fitCanvasToPreview();
@@ -2989,6 +4007,10 @@ import {
         canvasScalerEl.style.transformOrigin = 'center center';
         canvasScalerEl.style.flexShrink = '0';
         canvasScalerEl.style.transform = 'scale(' + totalScale + ') rotate(' + rot + 'deg)';
+        if (overlayStageEl) {
+            const handleScale = totalScale > 0 ? Math.min(3, Math.max(1, 1 / totalScale)) : 1;
+            overlayStageEl.style.setProperty('--overlay-handle-scale', String(handleScale));
+        }
     }
 
     function debounce(fn, ms) {
@@ -3002,12 +4024,34 @@ import {
     function init() {
         setupViewerModeUi();
         setupPreviewInteractions();
+        setupOverlayInteractions();
         loadViewRotation();
         ensureActiveEventKeysLoaded();
         loadState();
+        ensureOverlayState();
         loadCustomCategories();
         applyStateToForm();
         renderDrinkCategoryOptions('');
+
+        document.querySelectorAll('[data-layout-mode]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                setLayoutMode(btn.getAttribute('data-layout-mode'));
+            });
+        });
+        if (overlayBgPickBtnEl && overlayBgInputEl) {
+            overlayBgPickBtnEl.addEventListener('click', () => overlayBgInputEl.click());
+            overlayBgInputEl.addEventListener('change', () => {
+                const file = overlayBgInputEl.files && overlayBgInputEl.files[0];
+                overlayBgInputEl.value = '';
+                if (file && !overlayImageUploading) uploadOverlayBackground(file);
+            });
+        }
+        if (overlayBgRemoveBtnEl) overlayBgRemoveBtnEl.addEventListener('click', removeOverlayBackground);
+        if (addOverlayModuleBtnEl) {
+            addOverlayModuleBtnEl.addEventListener('click', () => {
+                addOverlayModule(overlayModuleTypeEl ? overlayModuleTypeEl.value : 'customer-display');
+            });
+        }
 
         orientationEl.addEventListener('change', () => {
             state.orientation = orientationEl.value;
@@ -3069,6 +4113,8 @@ import {
             state.tileTemplate = def.tileTemplate.map(arr => arr.slice());
             state.tileTemplateProps = def.tileTemplateProps.map(col => col.map(p => ({ line1: p.line1 || '', line2: p.line2 || '' })));
             state.gap = def.gap;
+            state.layoutMode = def.layoutMode;
+            state.overlay = getDefaultOverlayState();
             try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* ignore */ }
             applyStateToForm();
             renderColumnWidthInputs();
@@ -3169,6 +4215,16 @@ import {
             if (e.key === 'Escape' && categoryModalBackdropEl && !categoryModalBackdropEl.hidden) closeCategoryModal();
             if (e.key === 'Escape' && menuSaveModalBackdropEl && !menuSaveModalBackdropEl.hidden) closeSaveMenuModal();
             if (e.key === 'Escape' && menuLoadModalBackdropEl && !menuLoadModalBackdropEl.hidden) closeLoadMenuModal();
+            if (
+                (e.key === 'Delete' || e.key === 'Backspace') &&
+                isOverlayEditorActive() &&
+                state.overlay &&
+                state.overlay.selectedId &&
+                !isKeydownInEditableField(e.target)
+            ) {
+                e.preventDefault();
+                deleteSelectedOverlayModule();
+            }
         });
         if (confirmSaveMenuBtnEl) confirmSaveMenuBtnEl.addEventListener('click', saveMenuOnline);
         if (cancelSaveMenuBtnEl) cancelSaveMenuBtnEl.addEventListener('click', closeSaveMenuModal);

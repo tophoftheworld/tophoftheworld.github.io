@@ -1,4 +1,4 @@
-const APP_VERSION = "2.0.23"; // bump with index.html ?v= when shipping; v2 Firestore paths
+const APP_VERSION = "2.0.57"; // bump with index.html ?v= when shipping; v2 Firestore paths
 console.log('✅ Admin Payroll script loaded - Version:', APP_VERSION);
 
 // Import Firebase modules
@@ -7,8 +7,11 @@ import {
     getFirestore,
     collection,
     getDocs,
+    getDocsFromServer,
     doc,
     getDoc,
+    getDocFromServer,
+    waitForPendingWrites,
     updateDoc,
     setDoc,
     query,
@@ -18,10 +21,89 @@ import {
     documentId,
     deleteDoc,
     addDoc,
-    serverTimestamp
+    serverTimestamp,
+    deleteField
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 import { deleteObject, getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-storage.js";
-import { formatDate, generatePayrollPeriods, getPeriodDatesFromId } from '../../shared/js/payrollPeriods.js';
+import {
+    formatDate,
+    generatePayrollPeriods,
+    getPeriodDatesFromId,
+    getNextPayrollPeriod,
+    getPreviousPeriodIds,
+    getPayDay
+} from '../../shared/js/payrollPeriods.js?v=20260815-2';
+import {
+    loadBranchesFromFirebase,
+    populateAttendanceBranchSelects,
+    populateAttendanceBranchSelect,
+    attendanceMatchesFilter,
+    getBranchDisplayName
+} from '../../shared/js/branches.js';
+import {
+    buildPayslipBranchData,
+    buildPayslipBreakdownHtml,
+    buildPayslipDocumentHtml,
+    renderPayslipHtmlToPdf
+} from '../../shared/js/payslipPdf.js?v=1';
+import { markPeriodEarningPrepaid } from '../../shared/js/payrollPayments.js?v=20260915-1';
+
+const PERIOD_EARNINGS_COLLECTION = 'payroll_period_earnings_v2';
+const PRIOR_EARNINGS_TOGGLE_KEY = 'payroll_include_prior_earnings_v1';
+const PERIOD_EARNINGS_KINDS = [
+    { value: 'adjustment', label: 'Adjustment' },
+    { value: 'salary_carry', label: 'Salary carry' },
+    { value: 'cash_advance', label: 'Cash advance' },
+    { value: 'reimbursement', label: 'Reimbursement' }
+];
+
+function isPriorEarningsToggleOn() {
+    try {
+        return localStorage.getItem(PRIOR_EARNINGS_TOGGLE_KEY) === '1';
+    } catch {
+        return false;
+    }
+}
+
+function setPriorEarningsToggle(on) {
+    try {
+        localStorage.setItem(PRIOR_EARNINGS_TOGGLE_KEY, on ? '1' : '0');
+    } catch { /* ignore */ }
+}
+
+function periodsForHelpers() {
+    return (typeof window !== 'undefined' && Array.isArray(window.payrollPeriods) && window.payrollPeriods.length)
+        ? window.payrollPeriods
+        : generatePayrollPeriods();
+}
+
+function earningsKindLabel(kind, amount) {
+    if (kind === 'cash_advance') return 'Cash Advance';
+    if (kind === 'reimbursement') return 'Reimbursement';
+    if (kind === 'salary_carry') return 'Salary Carry';
+    if (kind === 'adjustment') return 'Adjustment';
+    if (Number(amount) < 0) return 'Cash Advance';
+    return 'Period Extra';
+}
+
+function sourceRequestCollectionForKind(kind, sourceCollection) {
+    if (sourceCollection) return sourceCollection;
+    if (kind === 'reimbursement') return 'reimbursement_requests';
+    return 'cash_advance_requests';
+}
+
+function isEarningsOpen(line) {
+    const status = line?.status;
+    if (status === 'waived' || status === 'applied') return false;
+    return true;
+}
+
+function payDayIsoFromPeriodId(periodId) {
+    const dates = getPeriodDatesFromId(periodId);
+    if (!dates?.endDate) return null;
+    const payDay = getPayDay(dates.endDate);
+    return `${payDay.getFullYear()}-${String(payDay.getMonth() + 1).padStart(2, '0')}-${String(payDay.getDate()).padStart(2, '0')}`;
+}
 
 // Firebase configuration - you'll need to replace this with your actual Firebase config
 const firebaseConfig = {
@@ -85,48 +167,445 @@ function populatePeriodEarningsEmployeeSelect() {
     if (v && employees[v]) sel.value = v;
 }
 
+function populatePeriodEarningsKindSelect() {
+    const sel = document.getElementById('periodEarningsKind');
+    if (!sel) return;
+    const v = sel.value || 'adjustment';
+    sel.innerHTML = PERIOD_EARNINGS_KINDS.map((k) =>
+        `<option value="${k.value}">${k.label}</option>`
+    ).join('');
+    sel.value = PERIOD_EARNINGS_KINDS.some((k) => k.value === v) ? v : 'adjustment';
+}
+
+async function clearCashAdvanceRequestStamps(sourceRequestId, mode = 'waived', kind = null, sourceCollection = null) {
+    if (!sourceRequestId) return;
+    const collectionName = sourceRequestCollectionForKind(kind, sourceCollection);
+    try {
+        const requestRef = doc(db, collectionName, sourceRequestId);
+        const snap = await getDoc(requestRef);
+        if (!snap.exists()) {
+            // Fallback: try the other collection once
+            const alt = collectionName === 'reimbursement_requests' ? 'cash_advance_requests' : 'reimbursement_requests';
+            const altRef = doc(db, alt, sourceRequestId);
+            const altSnap = await getDoc(altRef);
+            if (!altSnap.exists()) return;
+            const patch = {
+                appliedPeriodId: null,
+                appliedPayDay: null,
+                appliedEarningsId: null,
+                appliedTarget: null,
+                appliedAt: null
+            };
+            if (mode === 'waived') {
+                patch.status = 'waived';
+                patch.waivedAt = new Date().toISOString();
+            }
+            await updateDoc(altRef, patch);
+            return;
+        }
+        const patch = {
+            appliedPeriodId: null,
+            appliedPayDay: null,
+            appliedEarningsId: null,
+            appliedTarget: null,
+            appliedAt: null
+        };
+        if (mode === 'waived') {
+            patch.status = 'waived';
+            patch.waivedAt = new Date().toISOString();
+        } else if (mode === 'sync') {
+            delete patch.appliedPeriodId;
+            delete patch.appliedPayDay;
+            delete patch.appliedEarningsId;
+            delete patch.appliedTarget;
+            delete patch.appliedAt;
+        }
+        await updateDoc(requestRef, patch);
+    } catch (err) {
+        console.warn(`Could not update ${collectionName} stamps:`, err);
+    }
+}
+
+async function syncCashAdvanceRequestAfterEdit(sourceRequestId, earningsId, periodId, kind = null, sourceCollection = null) {
+    if (!sourceRequestId) return;
+    const collectionName = sourceRequestCollectionForKind(kind, sourceCollection);
+    try {
+        await updateDoc(doc(db, collectionName, sourceRequestId), {
+            appliedTarget: PERIOD_EARNINGS_COLLECTION,
+            appliedPeriodId: periodId || null,
+            appliedPayDay: payDayIsoFromPeriodId(periodId),
+            appliedEarningsId: earningsId || null,
+            appliedAt: new Date().toISOString(),
+            status: 'approved'
+        });
+    } catch (err) {
+        // Fallback try other collection
+        try {
+            const alt = collectionName === 'reimbursement_requests' ? 'cash_advance_requests' : 'reimbursement_requests';
+            await updateDoc(doc(db, alt, sourceRequestId), {
+                appliedTarget: PERIOD_EARNINGS_COLLECTION,
+                appliedPeriodId: periodId || null,
+                appliedPayDay: payDayIsoFromPeriodId(periodId),
+                appliedEarningsId: earningsId || null,
+                appliedAt: new Date().toISOString(),
+                status: 'approved'
+            });
+        } catch (err2) {
+            console.warn(`Could not sync request stamps after edit:`, err2);
+        }
+    }
+}
+
+async function reloadPayrollAfterEarningsChange() {
+    const periodId = periodSelect?.value;
+    if (periodId) await loadData(periodId);
+    await refreshPeriodEarningsTable();
+    if (currentEmployeeView) {
+        const container = document.getElementById('employee-details-table');
+        if (container) await loadEmployeeDetailsAsMainTable(currentEmployeeView, container);
+        updateViewMode();
+    }
+}
+
+function showConfirmModal({ title, message, detail = '', okText = 'OK', cancelText = 'Cancel', danger = false } = {}) {
+    const modal = document.getElementById('confirmModal');
+    const titleEl = document.getElementById('confirmTitle');
+    const messageEl = document.getElementById('confirmMessage');
+    const detailEl = document.getElementById('confirmDetail');
+    const okBtn = document.getElementById('confirmOk');
+    const cancelBtn = document.getElementById('confirmCancel');
+    if (!modal || !titleEl || !messageEl || !okBtn || !cancelBtn) return Promise.resolve(false);
+
+    titleEl.textContent = title || 'Confirm';
+    messageEl.textContent = message || '';
+    if (detailEl) {
+        if (detail) {
+            detailEl.textContent = detail;
+            detailEl.hidden = false;
+        } else {
+            detailEl.textContent = '';
+            detailEl.hidden = true;
+        }
+    }
+    okBtn.textContent = okText;
+    cancelBtn.textContent = cancelText;
+    okBtn.className = danger ? 'submit-btn submit-btn--danger' : 'submit-btn';
+    cancelBtn.style.display = 'inline-flex';
+
+    modal.style.display = 'flex';
+    modal.setAttribute('aria-hidden', 'false');
+
+    return new Promise((resolve) => {
+        const cleanup = () => {
+            okBtn.removeEventListener('click', handleOk);
+            cancelBtn.removeEventListener('click', handleCancel);
+            modal.removeEventListener('click', handleOutside);
+            document.removeEventListener('keydown', handleKey);
+            modal.style.display = 'none';
+            modal.setAttribute('aria-hidden', 'true');
+            okBtn.className = 'submit-btn';
+        };
+        const handleOk = () => {
+            cleanup();
+            resolve(true);
+        };
+        const handleCancel = () => {
+            cleanup();
+            resolve(false);
+        };
+        const handleOutside = (e) => {
+            if (e.target === modal) handleCancel();
+        };
+        const handleKey = (e) => {
+            if (e.key === 'Escape') handleCancel();
+        };
+        okBtn.addEventListener('click', handleOk);
+        cancelBtn.addEventListener('click', handleCancel);
+        modal.addEventListener('click', handleOutside);
+        document.addEventListener('keydown', handleKey);
+        okBtn.focus();
+    });
+}
+
+let pendingPeriodEarningEdit = null;
+
+function closeEditPeriodEarningModal() {
+    const modal = document.getElementById('editPeriodEarningModal');
+    if (modal) {
+        modal.style.display = 'none';
+        modal.setAttribute('aria-hidden', 'true');
+    }
+    pendingPeriodEarningEdit = null;
+}
+
+function openEditPeriodEarningModal(docId, line) {
+    pendingPeriodEarningEdit = { docId, line };
+    const modal = document.getElementById('editPeriodEarningModal');
+    const amountEl = document.getElementById('editPeriodEarningAmount');
+    const noteEl = document.getElementById('editPeriodEarningNote');
+    const titleEl = document.getElementById('editPeriodEarningTitle');
+    if (!modal || !amountEl || !noteEl) return;
+    const label = earningsKindLabel(line?.kind, line?.amount);
+    if (titleEl) titleEl.textContent = `Edit ${label}`;
+    amountEl.value = Number.isFinite(Number(line?.amount)) ? Number(line.amount) : '';
+    noteEl.value = line?.note || '';
+    modal.style.display = 'flex';
+    modal.setAttribute('aria-hidden', 'false');
+    amountEl.focus();
+    amountEl.select();
+}
+
+async function submitEditPeriodEarning(ev) {
+    ev.preventDefault();
+    if (!pendingPeriodEarningEdit) return;
+    const { docId, line } = pendingPeriodEarningEdit;
+    const amount = parseFloat(document.getElementById('editPeriodEarningAmount')?.value, 10);
+    const note = (document.getElementById('editPeriodEarningNote')?.value || '').trim();
+    if (!Number.isFinite(amount)) {
+        showToast('Enter a valid amount', 'error');
+        return;
+    }
+    try {
+        const patch = {
+            amount,
+            note: String(note).slice(0, 200),
+            originPeriodId: line?.originPeriodId || line?.periodId || periodSelect.value
+        };
+        if (!line?.status) patch.status = 'open';
+        await updateDoc(doc(db, PERIOD_EARNINGS_COLLECTION, docId), patch);
+        if (line?.sourceRequestId) {
+            await syncCashAdvanceRequestAfterEdit(
+                line.sourceRequestId,
+                docId,
+                line.periodId || periodSelect.value,
+                line.kind,
+                line.sourceCollection
+            );
+        }
+        closeEditPeriodEarningModal();
+        showToast('Updated. Reloading payroll…');
+        await reloadPayrollAfterEarningsChange();
+    } catch (err) {
+        console.error(err);
+        showToast('Could not update', 'error');
+    }
+}
+
+function editPeriodEarningLine(docId, line) {
+    openEditPeriodEarningModal(docId, line);
+}
+
+async function waiveOrDeletePeriodEarningLine(docId, line) {
+    const label = earningsKindLabel(line?.kind, line?.amount);
+    const confirmed = await showConfirmModal({
+        title: `Waive this ${label}?`,
+        message: 'It will no longer affect payroll totals for this cutoff.',
+        okText: 'Waive',
+        danger: true
+    });
+    if (!confirmed) return;
+    try {
+        await updateDoc(doc(db, PERIOD_EARNINGS_COLLECTION, docId), {
+            status: 'waived',
+            waivedAt: new Date().toISOString()
+        });
+        if (line?.sourceRequestId) {
+            await clearCashAdvanceRequestStamps(line.sourceRequestId, 'waived', line.kind, line.sourceCollection);
+        }
+        showToast('Waived. Reloading payroll…');
+        await reloadPayrollAfterEarningsChange();
+    } catch (err) {
+        console.error(err);
+        showToast('Could not waive line', 'error');
+    }
+}
+
+async function deferPeriodEarningLine(docId, line) {
+    const fromPeriodId = line?.periodId || periodSelect.value;
+    const next = getNextPayrollPeriod(fromPeriodId, periodsForHelpers());
+    if (!next?.id) {
+        showToast('Could not resolve next cutoff', 'error');
+        return;
+    }
+    const label = earningsKindLabel(line?.kind, line?.amount);
+    const confirmed = await showConfirmModal({
+        title: 'Defer to next cutoff?',
+        message: `Move this ${label} to the next payroll period.`,
+        detail: next.label || next.id,
+        okText: 'Defer'
+    });
+    if (!confirmed) return;
+    try {
+        const payDayIso = payDayIsoFromPeriodId(next.id);
+        await updateDoc(doc(db, PERIOD_EARNINGS_COLLECTION, docId), {
+            periodId: next.id,
+            originPeriodId: line?.originPeriodId || fromPeriodId,
+            status: 'open',
+            payDay: payDayIso,
+            deferredAt: new Date().toISOString(),
+            deferredFromPeriodId: fromPeriodId
+        });
+        if (line?.sourceRequestId) {
+            await syncCashAdvanceRequestAfterEdit(line.sourceRequestId, docId, next.id, line.kind, line.sourceCollection);
+        }
+        showToast(`Deferred to ${next.label || next.id}. Reloading…`);
+        await reloadPayrollAfterEarningsChange();
+    } catch (err) {
+        console.error(err);
+        showToast('Could not defer', 'error');
+    }
+}
+
+async function markPeriodEarningAsPrepaid(docId, line) {
+    if (line?.kind !== 'reimbursement') {
+        showToast('Only reimbursements can be marked prepaid', 'error');
+        return;
+    }
+    if (line?.prePaid || Number(line?.prePaidAmount) > 0) {
+        showToast('Already marked prepaid', 'error');
+        return;
+    }
+    const amount = Math.abs(Number(line?.amount) || 0);
+    if (amount <= 0) {
+        showToast('Invalid reimbursement amount', 'error');
+        return;
+    }
+    const confirmed = await showConfirmModal({
+        title: 'Mark reimbursement as prepaid?',
+        message: 'Keeps this line on the payslip, and adds the amount to paid for this period so the payroll transfer does not include it again.',
+        detail: `₱${amount.toFixed(2)}`,
+        okText: 'Mark prepaid'
+    });
+    if (!confirmed) return;
+    try {
+        const result = await markPeriodEarningPrepaid(db, {
+            earningsDocId: docId,
+            employeeId: line.employeeId || currentEmployeeView || null,
+            periodId: line.periodId || periodSelect.value,
+            amount,
+            sourceRequestId: line.sourceRequestId || null,
+            note: 'Already paid out (separate transfer)'
+        });
+        if (result.alreadyPrepaid) {
+            showToast('Already marked prepaid');
+        } else {
+            const paymentData = result.paymentResult?.paymentData;
+            const empId = line.employeeId || currentEmployeeView;
+            if (paymentData && empId) {
+                applyVerifiedPaymentToLocalState(
+                    line.periodId || periodSelect.value,
+                    empId,
+                    paymentData
+                );
+            }
+            showToast('Marked prepaid. Reloading…');
+        }
+        await reloadPayrollAfterEarningsChange();
+    } catch (err) {
+        console.error(err);
+        showToast(err?.message || 'Could not mark prepaid', 'error');
+    }
+}
+
+function bindPeriodEarningActionButtons(root) {
+    if (!root) return;
+    root.querySelectorAll('[data-pe-action]').forEach((btn) => {
+        if (btn._peBound) return;
+        btn._peBound = true;
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const action = btn.getAttribute('data-pe-action');
+            const docId = btn.getAttribute('data-doc-id');
+            if (!docId) return;
+            let line = null;
+            try {
+                const raw = btn.getAttribute('data-line') || '{}';
+                line = raw.includes('%') ? JSON.parse(decodeURIComponent(raw)) : JSON.parse(raw);
+            } catch {
+                line = {};
+            }
+            line.id = docId;
+            if (action === 'edit') await editPeriodEarningLine(docId, line);
+            else if (action === 'waive') await waiveOrDeletePeriodEarningLine(docId, line);
+            else if (action === 'defer') await deferPeriodEarningLine(docId, line);
+            else if (action === 'mark_prepaid') await markPeriodEarningAsPrepaid(docId, line);
+        });
+    });
+}
+
+function periodEarningActionsHtml(line) {
+    const encoded = encodeURIComponent(JSON.stringify({
+        amount: line.amount,
+        note: line.note || '',
+        kind: line.kind || null,
+        periodId: line.periodId || periodSelect?.value || null,
+        originPeriodId: line.originPeriodId || null,
+        sourceRequestId: line.sourceRequestId || null,
+        sourceCollection: line.sourceCollection || null,
+        status: line.status || null,
+        fromPriorCutoff: !!line.fromPriorCutoff,
+        employeeId: line.employeeId || null,
+        prePaid: !!line.prePaid,
+        prePaidAmount: Number(line.prePaidAmount || 0)
+    }));
+    const canMarkPrepaid = line.kind === 'reimbursement'
+        && !line.prePaid
+        && !(Number(line.prePaidAmount) > 0)
+        && Number(line.amount) > 0;
+    const prepaidBtn = canMarkPrepaid
+        ? `<button type="button" class="action-btn" data-pe-action="mark_prepaid" data-doc-id="${escapeHtml(line.id)}" data-line="${encoded}" title="Count this reimbursement toward paid amount (already transferred separately)">Mark prepaid</button>`
+        : '';
+    return `
+        <div class="action-buttons-container period-earning-actions">
+            <button type="button" class="action-btn" data-pe-action="edit" data-doc-id="${escapeHtml(line.id)}" data-line="${encoded}">Edit</button>
+            <button type="button" class="action-btn" data-pe-action="defer" data-doc-id="${escapeHtml(line.id)}" data-line="${encoded}" title="Move to next cutoff">Defer</button>
+            ${prepaidBtn}
+            <button type="button" class="action-btn action-btn--waive" data-pe-action="waive" data-doc-id="${escapeHtml(line.id)}" data-line="${encoded}">Waive</button>
+        </div>
+    `;
+}
+
 async function refreshPeriodEarningsTable() {
     const tbody = document.getElementById('periodEarningsTableBody');
     const periodId = periodSelect.value;
     if (!tbody || !periodId) return;
-    tbody.innerHTML = '<tr><td colspan="5">Loading…</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6">Loading…</td></tr>';
     try {
-        const q = query(collection(db, 'payroll_period_earnings_v2'), where('periodId', '==', periodId));
+        const q = query(collection(db, PERIOD_EARNINGS_COLLECTION), where('periodId', '==', periodId));
         const snap = await getDocs(q);
         tbody.innerHTML = '';
-        if (snap.empty) {
-            tbody.innerHTML = '<tr><td colspan="5">No extra earnings for this period.</td></tr>';
-            return;
-        }
+        const rows = [];
         snap.forEach((d) => {
             const r = d.data();
+            if (r.status === 'waived') return;
+            rows.push({ id: d.id, ...r });
+        });
+        if (!rows.length) {
+            tbody.innerHTML = '<tr><td colspan="6">No extra earnings for this period.</td></tr>';
+            return;
+        }
+        rows.forEach((r) => {
             const name = employees[r.employeeId] || r.employeeId;
+            const amt = Number(r.amount || 0);
+            const kindLabel = earningsKindLabel(r.kind, amt);
+            const prepaidNote = (r.prePaid || Number(r.prePaidAmount) > 0) ? ' [Prepaid]' : '';
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td>${escapeHtml(String(name))}</td>
                 <td>${escapeHtml(String(r.employeeId || ''))}</td>
-                <td>₱${Number(r.amount || 0).toFixed(2)}</td>
+                <td style="${amt < 0 ? 'color:#b91c1c;' : ''}">₱${amt.toFixed(2)}</td>
+                <td>${escapeHtml(String(kindLabel))}${prepaidNote}</td>
                 <td>${escapeHtml(String(r.note || ''))}</td>
-                <td><button type="button" class="cancel-btn period-earnings-delete" data-doc-id="${d.id}">Delete</button></td>`;
+                <td>${periodEarningActionsHtml({ ...r, id: r.id })}</td>`;
             tbody.appendChild(tr);
         });
-        tbody.querySelectorAll('.period-earnings-delete').forEach((btn) => {
-            btn.addEventListener('click', async () => {
-                if (!confirm('Delete this earnings line?')) return;
-                try {
-                    await deleteDoc(doc(db, 'payroll_period_earnings_v2', btn.getAttribute('data-doc-id')));
-                    showToast('Deleted. Reloading payroll…');
-                    await loadData(periodSelect.value);
-                    await refreshPeriodEarningsTable();
-                } catch (err) {
-                    console.error(err);
-                    showToast('Could not delete', 'error');
-                }
-            });
+        tbody.querySelectorAll('[data-pe-action]').forEach((btn) => {
+            btn._peBound = false;
         });
+        bindPeriodEarningActionButtons(tbody);
     } catch (e) {
         console.error(e);
-        tbody.innerHTML = '<tr><td colspan="5">Error loading earnings.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6">Error loading earnings.</td></tr>';
     }
 }
 
@@ -134,6 +613,11 @@ async function openPeriodEarningsModal() {
     const modal = document.getElementById('periodEarningsModal');
     if (!modal) return;
     populatePeriodEarningsEmployeeSelect();
+    populatePeriodEarningsKindSelect();
+    const editId = document.getElementById('periodEarningsEditId');
+    if (editId) editId.value = '';
+    const submitBtn = document.querySelector('#periodEarningsForm button[type="submit"]');
+    if (submitBtn) submitBtn.textContent = 'Add line';
     modal.style.display = 'flex';
     modal.setAttribute('aria-hidden', 'false');
     await refreshPeriodEarningsTable();
@@ -152,6 +636,8 @@ async function submitPeriodEarning(ev) {
     const employeeId = document.getElementById('periodEarningsEmployeeId').value.trim();
     const amount = parseFloat(document.getElementById('periodEarningsAmount').value, 10);
     const note = document.getElementById('periodEarningsNote').value.trim();
+    const kind = document.getElementById('periodEarningsKind')?.value || 'adjustment';
+    const editId = document.getElementById('periodEarningsEditId')?.value?.trim() || '';
     if (!employeeId || !employees[employeeId]) {
         showToast('Select a valid employee', 'error');
         return;
@@ -161,16 +647,39 @@ async function submitPeriodEarning(ev) {
         return;
     }
     try {
-        await addDoc(collection(db, 'payroll_period_earnings_v2'), {
-            periodId,
-            employeeId,
-            amount,
-            note,
-            createdAt: serverTimestamp()
-        });
-        showToast('Line added. Reloading payroll…');
+        if (editId) {
+            await updateDoc(doc(db, PERIOD_EARNINGS_COLLECTION, editId), {
+                employeeId,
+                amount,
+                note,
+                kind,
+                status: 'open'
+            });
+            showToast('Line updated. Reloading payroll…');
+        } else {
+            const finalAmount = kind === 'cash_advance'
+                ? -Math.abs(amount)
+                : (kind === 'reimbursement' ? Math.abs(amount) : amount);
+            await addDoc(collection(db, PERIOD_EARNINGS_COLLECTION), {
+                periodId,
+                originPeriodId: periodId,
+                employeeId,
+                amount: finalAmount,
+                note,
+                kind,
+                status: 'open',
+                payDay: payDayIsoFromPeriodId(periodId),
+                createdAt: serverTimestamp()
+            });
+            showToast('Line added. Reloading payroll…');
+        }
         document.getElementById('periodEarningsAmount').value = '';
         document.getElementById('periodEarningsNote').value = '';
+        if (document.getElementById('periodEarningsEditId')) {
+            document.getElementById('periodEarningsEditId').value = '';
+        }
+        const submitBtn = document.querySelector('#periodEarningsForm button[type="submit"]');
+        if (submitBtn) submitBtn.textContent = 'Add line';
         await loadData(periodSelect.value);
         await refreshPeriodEarningsTable();
     } catch (err) {
@@ -255,12 +764,35 @@ function mergeEmpRates(employee, periodId) {
     return PayCalculator.mergeEmployeeRatesForPeriod(employee, calcPeriodId(periodId));
 }
 
+function employeeIncludesMealAllowance(employee, periodId) {
+    const merged = mergeEmpRates(employee, periodId) || employee;
+    if (typeof PayCalculator?.includesMealAllowance === 'function') {
+        return PayCalculator.includesMealAllowance(merged);
+    }
+    return (merged?.payScheme || 'standard') !== 'inclusive';
+}
+
+function applyMealAllowanceControlState(checkboxEl, employee) {
+    if (!checkboxEl) return;
+    const includesMeal = employeeIncludesMealAllowance(employee);
+    const label = document.querySelector(`label[for="${checkboxEl.id}"]`);
+    if (!includesMeal) {
+        checkboxEl.checked = false;
+        checkboxEl.disabled = true;
+        if (label) label.textContent = 'Meal already included in daily rate';
+    } else {
+        checkboxEl.disabled = false;
+        if (label) label.textContent = 'Include meal allowance (₱150 full day / ₱75 half day)';
+    }
+}
+
 function calcTotalPaySimple(dates, employee, periodId) {
     if (!payCalculator) {
         const t = employee?.totalPayWithBonus;
-        return Number.isFinite(t) ? Number(t) : 0;
+        return Number.isFinite(t) ? Number(t) : (Number(employee?.periodEarningsTotal) || 0);
     }
-    return payCalculator.calculateTotalPay(dates || [], mergeEmpRates(employee, periodId), 'simple');
+    const base = payCalculator.calculateTotalPay(dates || [], mergeEmpRates(employee, periodId), 'simple');
+    return base + (Number(employee?.periodEarningsTotal) || 0);
 }
 
 function calcTotalPayDetailed(dates, employee, periodId) {
@@ -269,7 +801,151 @@ function calcTotalPayDetailed(dates, employee, periodId) {
         const base = Number.isFinite(t) ? Number(t) : 0;
         return { total: base, entries: [], breakdown: {} };
     }
-    return payCalculator.calculateTotalPay(dates || [], mergeEmpRates(employee, periodId), 'detailed');
+    const result = payCalculator.calculateTotalPay(dates || [], mergeEmpRates(employee, periodId), 'detailed');
+    const extras = Number(employee?.periodEarningsTotal) || 0;
+    if (extras) {
+        result.total = (Number(result.total) || 0) + extras;
+        result.periodEarningsTotal = extras;
+        result.periodEarningsLines = employee?.periodEarningsLines || [];
+    }
+    return result;
+}
+
+async function loadPeriodEarningsForPeriod(periodId) {
+    const byEmployee = {};
+    if (!periodId) return byEmployee;
+
+    const pushLine = (d, fromPriorCutoff) => {
+        const r = d.data();
+        if (r.status === 'waived') return;
+        if (fromPriorCutoff && !isEarningsOpen(r)) return;
+        if (fromPriorCutoff && r.status === 'applied') return;
+        const eid = r.employeeId;
+        if (!eid) return;
+        if (!byEmployee[eid]) {
+            byEmployee[eid] = { total: 0, lines: [] };
+        }
+        // Skip if already loaded for current period (same doc)
+        if (byEmployee[eid].lines.some((l) => l.id === d.id)) return;
+        const amt = Number(r.amount) || 0;
+        byEmployee[eid].total += amt;
+        byEmployee[eid].lines.push({
+            id: d.id,
+            amount: amt,
+            note: r.note || '',
+            kind: r.kind || null,
+            status: r.status || 'open',
+            periodId: r.periodId || periodId,
+            originPeriodId: r.originPeriodId || r.periodId || null,
+            sourceRequestId: r.sourceRequestId || null,
+            payDay: r.payDay || null,
+            requestedAt: r.requestedAt || null,
+            createdAt: r.createdAt || null,
+            fromPriorCutoff: !!fromPriorCutoff
+        });
+    };
+
+    try {
+        const q = query(collection(db, PERIOD_EARNINGS_COLLECTION), where('periodId', '==', periodId));
+        const snap = await getDocs(q);
+        snap.forEach((d) => pushLine(d, false));
+
+        if (isPriorEarningsToggleOn()) {
+            const priorIds = getPreviousPeriodIds(periodId, 2, periodsForHelpers());
+            for (const priorId of priorIds) {
+                const pq = query(collection(db, PERIOD_EARNINGS_COLLECTION), where('periodId', '==', priorId));
+                const pSnap = await getDocs(pq);
+                pSnap.forEach((d) => {
+                    const r = d.data();
+                    // Only overlay still-open lines that remain on the prior period (not yet deferred forward)
+                    if (r.status === 'waived' || r.status === 'applied') return;
+                    pushLine(d, true);
+                });
+            }
+        }
+    } catch (err) {
+        console.error('Failed to load period earnings:', err);
+    }
+    return byEmployee;
+}
+
+function applyPeriodEarningsToAttendanceData(attendanceData, earningsByEmployee) {
+    Object.keys(attendanceData || {}).forEach((employeeId) => {
+        const bucket = earningsByEmployee[employeeId];
+        attendanceData[employeeId].periodEarningsTotal = bucket ? bucket.total : 0;
+        attendanceData[employeeId].periodEarningsLines = bucket ? bucket.lines : [];
+    });
+    Object.keys(earningsByEmployee || {}).forEach((employeeId) => {
+        if (attendanceData[employeeId]) return;
+        const name = employees[employeeId] || employeeId;
+        attendanceData[employeeId] = {
+            id: employeeId,
+            name,
+            baseRate: 750,
+            salesBonusEligible: false,
+            payType: 'hourly',
+            dates: [],
+            periodEarningsTotal: earningsByEmployee[employeeId].total,
+            periodEarningsLines: earningsByEmployee[employeeId].lines
+        };
+    });
+}
+
+/** Format request/created date for period-earning rows (local calendar day). */
+function formatEarningsRequestDate(line) {
+    const raw = line?.requestedAt || line?.createdAt;
+    if (!raw) return '—';
+    try {
+        let d;
+        if (typeof raw.toDate === 'function') d = raw.toDate();
+        else if (typeof raw.toMillis === 'function') d = new Date(raw.toMillis());
+        else if (typeof raw === 'string') d = new Date(raw.includes('T') ? raw : raw + 'T00:00:00');
+        else if (typeof raw.seconds === 'number') d = new Date(raw.seconds * 1000);
+        else d = new Date(raw);
+        if (Number.isNaN(d.getTime())) return '—';
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch (_) {
+        return '—';
+    }
+}
+
+function buildPeriodEarningsTableRowHtml(line, showSalesBonus) {
+    const amt = Number(line.amount || 0);
+    const label = earningsKindLabel(line.kind, amt);
+    const priorTag = line.fromPriorCutoff ? ' · Prior cutoff' : '';
+    const prepaidTag = (line.prePaid || Number(line.prePaidAmount) > 0) ? ' · Prepaid' : '';
+    const dateLabel = formatEarningsRequestDate(line);
+    const salesCell = showSalesBonus ? '<td>—</td>' : '';
+    return `
+        <td class="date-cell">
+            <span class="date-day">${escapeHtml(dateLabel)}</span>
+            ${line.fromPriorCutoff ? '<span class="leave-badge" style="background:#fef3c7;color:#92400e;">Prior</span>' : ''}
+            ${(line.prePaid || Number(line.prePaidAmount) > 0) ? '<span class="leave-badge" style="background:#dbeafe;color:#1e40af;">Prepaid</span>' : ''}
+        </td>
+        <td><span class="deduction-label">${escapeHtml(label)}${priorTag}${prepaidTag}</span></td>
+        <td>—</td>
+        <td>—</td>
+        <td>—</td>
+        <td>—</td>
+        ${salesCell}
+        <td class="deduction-amount" style="${amt < 0 ? 'color:#b91c1c;' : ''}">₱${amt.toFixed(2)}</td>
+        <td class="action-cell">${periodEarningActionsHtml(line)}</td>
+    `;
+}
+
+function appendPeriodEarningsRows(detailTableBody, lines, showSalesBonus) {
+    if (!detailTableBody || !lines?.length) return;
+    lines.forEach((line) => {
+        if (line.status === 'waived') return;
+        const isAdvance = line.kind === 'cash_advance' || (Number(line.amount) < 0 && line.kind !== 'reimbursement');
+        const row = document.createElement('tr');
+        row.className = isAdvance ? 'period-earning-row period-earning-row--advance' : 'period-earning-row';
+        if (line.kind === 'reimbursement') row.classList.add('period-earning-row--reimbursement');
+        if (line.fromPriorCutoff) row.classList.add('period-earning-row--prior');
+        row.innerHTML = buildPeriodEarningsTableRowHtml(line, showSalesBonus);
+        detailTableBody.appendChild(row);
+    });
+    bindPeriodEarningActionButtons(detailTableBody);
 }
 
 function upsertEmployeeRateHistory(rateHistory, periodId, fields) {
@@ -293,6 +969,90 @@ function v2PaymentDocRef(periodId, employeeId) {
 
 function periodPaymentsCacheKey(periodId) {
     return `payroll_period_payments_v2_${periodId}`;
+}
+
+function readPeriodPaymentsCacheMap(periodId) {
+    const cacheKey = periodPaymentsCacheKey(periodId);
+    try {
+        const raw = localStorage.getItem(cacheKey);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        const data = parsed?.data;
+        if (!data || typeof data !== 'object') return null;
+        return data;
+    } catch (_) {
+        return null;
+    }
+}
+
+function writePeriodPaymentsCacheMap(periodId, data) {
+    const cacheKey = periodPaymentsCacheKey(periodId);
+    try {
+        localStorage.setItem(cacheKey, JSON.stringify({
+            data: data || {},
+            timestamp: Date.now()
+        }));
+    } catch (e) {
+        console.warn('Could not write period payments cache:', e);
+    }
+}
+
+/** Balance from live period total minus accumulated payments.
+ *  Surplus is overpayment only: cash actually paid above what is payable.
+ *  A negative period net (advances/penalties) is not surplus. */
+function getPaymentBalance(currentTotalPay, paymentData) {
+    const total = Number(currentTotalPay) || 0;
+    const paid = paymentData ? (Number(paymentData.paymentAmount) || 0) : 0;
+    const payable = Math.max(0, Math.round(total * 100) / 100);
+    let remaining = Math.round((payable - paid) * 100) / 100;
+    if (Math.abs(remaining) < 0.01) remaining = 0;
+    const surplus = (paid > 0 && remaining < 0) ? Math.round((-remaining) * 100) / 100 : 0;
+    const due = remaining > 0 ? remaining : 0;
+    return {
+        total,
+        paid,
+        remaining: due,
+        surplus,
+        rawRemaining: Math.round((total - paid) * 100) / 100
+    };
+}
+
+function getPaymentStatusKind(bal) {
+    if (bal.surplus > 0) return 'surplus';
+    if (bal.paid > 0 && bal.remaining <= 0) return 'paid';
+    if (bal.paid > 0 && bal.remaining > 0) return 'partial';
+    if (bal.remaining <= 0) return 'none';
+    return 'unpaid';
+}
+
+function paymentStatusLabel(kind) {
+    if (kind === 'surplus') return 'Surplus';
+    if (kind === 'paid') return 'Paid';
+    if (kind === 'partial') return 'Partial';
+    if (kind === 'none') return 'No pay due';
+    return 'Unpaid';
+}
+
+/** Remaining to pay (never negative). Use getPaymentBalance for surplus. */
+function getPayableRemaining(currentTotalPay, paymentData) {
+    return getPaymentBalance(currentTotalPay, paymentData).remaining;
+}
+
+function formatPayableCell(totalPay, paymentData) {
+    const bal = getPaymentBalance(totalPay, paymentData);
+    if (bal.surplus > 0) {
+        return {
+            amount: bal.surplus,
+            className: 'surplus-amount',
+            label: `₱${bal.surplus.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} surplus`
+        };
+    }
+    const settled = bal.remaining <= 0;
+    return {
+        amount: bal.remaining,
+        className: settled && bal.paid > 0 ? 'paid-amount' : (settled ? '' : 'payable-amount'),
+        label: `₱${bal.remaining.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    };
 }
 
 async function loadHolidays() {
@@ -495,6 +1255,7 @@ const cancelEditBtn = document.getElementById('cancelEditBtn');
 const employeeEditForm = document.getElementById('employeeEditForm');
 const editEmployeeName = document.getElementById('editEmployeeName');
 const editBaseRate = document.getElementById('editBaseRate');
+const editPayScheme = document.getElementById('editPayScheme');
 const editEmployeeId = document.getElementById('editEmployeeId');
 const editNickname = document.getElementById('editNickname');
 
@@ -568,9 +1329,44 @@ document.body.appendChild(refreshIndicator);
 closeEditModal.addEventListener('click', closeEditEmployeeModal);
 cancelEditBtn.addEventListener('click', closeEditEmployeeModal);
 employeeEditForm.addEventListener('submit', saveEmployeeChanges);
+editPayScheme?.addEventListener('change', () => {
+    const hint = document.getElementById('editPaySchemeHint');
+    if (hint) {
+        hint.textContent = editPayScheme.value === 'inclusive'
+            ? 'Meal is already part of the daily rate, so it isn’t added again.'
+            : '₱150 is added on top of the daily base (₱75 half day).';
+    }
+});
 
 closeShiftEditModalBtn.addEventListener('click', closeShiftEditModal);
 cancelShiftEditBtn.addEventListener('click', closeShiftEditModal);
+const deleteShiftLogBtn = document.getElementById('deleteShiftLogBtn');
+if (deleteShiftLogBtn) {
+    deleteShiftLogBtn.addEventListener('click', async () => {
+        const employeeId = document.getElementById('editShiftEmployeeId')?.value;
+        const dateStr = document.getElementById('editShiftDate')?.value;
+        const deleted = await deleteAttendanceEntry(employeeId, dateStr);
+        if (deleted) closeShiftEditModal();
+    });
+}
+const removeTimeInBtn = document.getElementById('removeTimeInBtn');
+if (removeTimeInBtn) {
+    removeTimeInBtn.addEventListener('click', async () => {
+        const employeeId = document.getElementById('editShiftEmployeeId')?.value;
+        const dateStr = document.getElementById('editShiftDate')?.value;
+        const removed = await deletePunchFromEntry(employeeId, dateStr, 'in');
+        if (removed) closeShiftEditModal();
+    });
+}
+const removeTimeOutBtn = document.getElementById('removeTimeOutBtn');
+if (removeTimeOutBtn) {
+    removeTimeOutBtn.addEventListener('click', async () => {
+        const employeeId = document.getElementById('editShiftEmployeeId')?.value;
+        const dateStr = document.getElementById('editShiftDate')?.value;
+        const removed = await deletePunchFromEntry(employeeId, dateStr, 'out');
+        if (removed) closeShiftEditModal();
+    });
+}
 shiftEditForm.addEventListener('submit', saveShiftChanges);
 
 closeBatchEditModalBtn.addEventListener('click', closeBatchEditModal);
@@ -592,6 +1388,18 @@ const periodEarningsModalEl = document.getElementById('periodEarningsModal');
 if (periodEarningsModalEl) {
     periodEarningsModalEl.addEventListener('click', (e) => {
         if (e.target === periodEarningsModalEl) closePeriodEarningsModal();
+    });
+}
+const editPeriodEarningFormEl = document.getElementById('editPeriodEarningForm');
+if (editPeriodEarningFormEl) editPeriodEarningFormEl.addEventListener('submit', submitEditPeriodEarning);
+const editPeriodEarningCloseEl = document.getElementById('editPeriodEarningModalClose');
+if (editPeriodEarningCloseEl) editPeriodEarningCloseEl.addEventListener('click', closeEditPeriodEarningModal);
+const editPeriodEarningCancelEl = document.getElementById('editPeriodEarningCancel');
+if (editPeriodEarningCancelEl) editPeriodEarningCancelEl.addEventListener('click', closeEditPeriodEarningModal);
+const editPeriodEarningModalEl = document.getElementById('editPeriodEarningModal');
+if (editPeriodEarningModalEl) {
+    editPeriodEarningModalEl.addEventListener('click', (e) => {
+        if (e.target === editPeriodEarningModalEl) closeEditPeriodEarningModal();
     });
 }
 
@@ -625,6 +1433,42 @@ addShiftFixedPay.addEventListener('change', function() {
         addShiftFixedAmount.value = '';
     }
 });
+
+function togglePaidLeaveMode(modalType, isPaidLeave) {
+    const workFields = document.getElementById(modalType === 'add' ? 'addShiftWorkFields' : 'editShiftWorkFields');
+    const submitBtn = document.getElementById(modalType === 'add' ? 'addShiftSubmitBtn' : 'editShiftSubmitBtn');
+    const requiredIds = modalType === 'add'
+        ? ['addShiftBranch', 'addShiftSchedule', 'addShiftTimeIn', 'addShiftTimeOut']
+        : ['editShiftBranch', 'editShiftSchedule'];
+
+    if (workFields) {
+        workFields.style.display = isPaidLeave ? 'none' : '';
+    }
+    requiredIds.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.required = !isPaidLeave;
+    });
+    if (submitBtn) {
+        if (modalType === 'add') {
+            submitBtn.textContent = isPaidLeave ? 'Add Leave' : 'Add Shift';
+        } else {
+            submitBtn.textContent = isPaidLeave ? 'Save Leave' : 'Save Changes';
+        }
+    }
+}
+
+const addShiftPaidLeave = document.getElementById('addShiftPaidLeave');
+if (addShiftPaidLeave) {
+    addShiftPaidLeave.addEventListener('change', function () {
+        togglePaidLeaveMode('add', this.checked);
+    });
+}
+const editShiftPaidLeave = document.getElementById('editShiftPaidLeave');
+if (editShiftPaidLeave) {
+    editShiftPaidLeave.addEventListener('change', function () {
+        togglePaidLeaveMode('edit', this.checked);
+    });
+}
 
 
 // Global data store
@@ -686,7 +1530,10 @@ function saveSummaryToCache(periodId, branchId, attendance, paymentStatus = {}) 
             payType: employee?.payType || 'hourly',
             monthlySalary: Number(employee?.monthlySalary || 0),
             periodGross: employee?.periodGross ?? null,
+            periodFixedAmount: Number(employee?.periodFixedAmount || 0),
+            payScheme: employee?.payScheme === 'inclusive' ? 'inclusive' : 'standard',
             salesBonusEligible: !!employee?.salesBonusEligible,
+            createdAt: employee?.createdAt || null,
             daysWorked: Number(employee?.daysWorked || 0),
             lateHours: Number(employee?.lateHours || 0),
             lastClockIn: employee?.lastClockIn ? new Date(employee.lastClockIn).toISOString() : null,
@@ -750,7 +1597,10 @@ function hydrateFromSummaryCache(summaryCache) {
             payType: summary?.payType || 'hourly',
             monthlySalary: Number(summary?.monthlySalary || 0),
             periodGross: summary?.periodGross ?? null,
+            periodFixedAmount: Number(summary?.periodFixedAmount || 0),
+            payScheme: summary?.payScheme === 'inclusive' ? 'inclusive' : 'standard',
             totalPayWithBonus: Number(summary?.totalPayWithBonus || 0),
+            createdAt: summary?.createdAt || null,
             _summaryOnly: true
         };
     });
@@ -764,8 +1614,15 @@ function hydrateFromSummaryCache(summaryCache) {
 }
 
 function getEmployeeTotalPayForTable(employee, periodId) {
-    if (employee?.dates?.length > 0) {
-        return calcTotalPaySimple(employee.dates, employee, periodId);
+    const resolvedPayType =
+        (typeof PayCalculator?.getRateForPeriod === 'function'
+            ? PayCalculator.getRateForPeriod(employee, periodId).payType
+            : null) ||
+        employee?.payType ||
+        'hourly';
+    // Monthly/hybrid can have pay with zero attendance days (fixed cutoff amount)
+    if (employee?.dates?.length > 0 || resolvedPayType === 'monthly' || resolvedPayType === 'hybrid') {
+        return calcTotalPaySimple(employee?.dates || [], employee, periodId);
     }
     if (employee?._summaryOnly && Number.isFinite(employee.totalPayWithBonus)) {
         return Number(employee.totalPayWithBonus);
@@ -804,6 +1661,9 @@ function applyBranchFilterChange() {
     if (summaryCache && hydrateFromSummaryCache(summaryCache)) {
         summaryModeActive = true;
         filterData({ skipPaymentFetch: true });
+        queueMicrotask(() => {
+            void loadPaymentDataAndRender({ forcePaymentRefresh: true });
+        });
         return;
     }
 
@@ -816,6 +1676,9 @@ function applyBranchFilterChange() {
             if (rec && rec._summaryOnly) delete rec._summaryOnly;
         });
         filterData({ skipPaymentFetch: true });
+        queueMicrotask(() => {
+            void loadPaymentDataAndRender({ forcePaymentRefresh: true });
+        });
         return;
     }
 
@@ -824,9 +1687,66 @@ function applyBranchFilterChange() {
 }
 
 /** True if employee should count toward active headcount / unpaid (includes summary-only rows with no date rows). */
-function employeeHasRosterPayActivity(employee) {
+function getEmployeeCreatedAtMs(employee) {
+    const createdAt = employee?.createdAt;
+    if (!createdAt) return null;
+    if (typeof createdAt.toMillis === 'function') return createdAt.toMillis();
+    if (typeof createdAt.seconds === 'number') return createdAt.seconds * 1000;
+    const parsed = new Date(createdAt);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
+}
+
+/** Employees added after a cutoff ends should not appear on that past period. */
+function employeeWasOnRosterForPeriod(employee, periodId) {
+    const createdMs = getEmployeeCreatedAtMs(employee);
+    if (createdMs == null) return true; // legacy records without createdAt
+    try {
+        const { endDate } = getPeriodDates(periodId);
+        const periodEndMs = new Date(
+            endDate.getFullYear(),
+            endDate.getMonth(),
+            endDate.getDate(),
+            23, 59, 59, 999
+        ).getTime();
+        return createdMs <= periodEndMs;
+    } catch (err) {
+        return true;
+    }
+}
+
+function employeeHasRosterPayActivity(employee, periodId) {
     if (!employee) return false;
-    if (employee.dates && employee.dates.some((d) => d && d.timeIn)) return true;
+    // Attendance in this period always counts (even if createdAt is missing/odd)
+    if (employee.dates && employee.dates.some((d) => d && (d.timeIn || d.isPaidLeave))) return true;
+    if (Number(employee.periodEarningsTotal)) return true;
+    if (!employeeWasOnRosterForPeriod(employee, periodId)) return false;
+
+    const pid = calcPeriodId(periodId);
+    const payType =
+        (typeof PayCalculator?.getRateForPeriod === 'function'
+            ? PayCalculator.getRateForPeriod(employee, pid).payType
+            : null) ||
+        employee.payType ||
+        'hourly';
+
+    // Monthly / hybrid: owed even with zero shifts this cutoff
+    if (payType === 'monthly' || payType === 'hybrid') {
+        const total = getEmployeeTotalPayForTable(employee, pid);
+        if (Number.isFinite(total) && total > 0) return true;
+        // Still treat as active if configured with salary/fixed amount even before totals hydrate
+        const rates =
+            typeof PayCalculator?.getRateForPeriod === 'function'
+                ? PayCalculator.getRateForPeriod(employee, pid)
+                : employee;
+        if (payType === 'monthly') {
+            const monthly = Number(rates.monthlySalary) || 0;
+            const periodGross = Number(rates.periodGross);
+            if (Number.isFinite(periodGross) && periodGross > 0) return true;
+            if (monthly > 0) return true;
+        }
+        if (payType === 'hybrid' && (Number(rates.periodFixedAmount) || 0) > 0) return true;
+    }
+
     if (employee._summaryOnly) {
         if (Number(employee.daysWorked) > 0) return true;
         const t = employee.totalPayWithBonus;
@@ -1349,8 +2269,9 @@ async function loadSingleEmployeeData(employeeId, periodId = null) {
             // Only proceed if date is in range
             if (dateObjNoTime >= startDateNoTime && dateObjNoTime <= endDateNoTime) {
                 // Add branch filter condition
+                const isPaidLeave = dateData.isPaidLeave === true;
                 const branchName = dateData.clockIn?.branch || "N/A";
-                const branchMatches = branch === 'all' || branchName === getBranchName(branch);
+                const branchMatches = isPaidLeave || branch === 'all' || attendanceMatchesFilter(branchName, branch);
 
                 if (branchMatches) {
                     // Now we load the full data including photos
@@ -1377,11 +2298,14 @@ async function loadSingleEmployeeData(employeeId, periodId = null) {
                         timeOut: dateData.clockOut?.time || null,
                         timeInPhoto: dateData.clockIn?.selfie || null,
                         timeOutPhoto: dateData.clockOut?.selfie || null,
+                        timeInLocation: extractPunchLocation(dateData.clockIn),
+                        timeOutLocation: extractPunchLocation(dateData.clockOut),
                         hasOTPay: dateData.hasOTPay || false,
                         transpoAllowance: dateData.transpoAllowance || 0,
                         hasFixedPay: dateData.hasFixedPay || false,
                         fixedPayAmount: dateData.fixedPayAmount || 0,
                         hasDoublePay: dateData.hasDoublePay || false,
+                        isPaidLeave: dateData.isPaidLeave === true,
                         hasMealAllowance: dateData.hasMealAllowance !== false // Default to true
                     });
                 }
@@ -1492,6 +2416,10 @@ async function loadData(selectedPeriodId = null, options = {}) {
             summaryModeActive = true;
             filterData({ skipPaymentFetch: true });
             hideLoading();
+
+            queueMicrotask(() => {
+                void loadPaymentDataAndRender({ forcePaymentRefresh: true });
+            });
 
             if (!summaryReconcileInProgress) {
                 queueMicrotask(async () => {
@@ -1680,10 +2608,28 @@ async function loadData(selectedPeriodId = null, options = {}) {
                     attendanceData[employeeId].monthlySalary = employeeData.monthlySalary || 0;
                     attendanceData[employeeId].periodGross =
                         employeeData.periodGross != null ? employeeData.periodGross : null;
+                    attendanceData[employeeId].periodFixedAmount =
+                        employeeData.periodFixedAmount != null ? Number(employeeData.periodFixedAmount) || 0 : 0;
+                    attendanceData[employeeId].payScheme =
+                        employeeData.payScheme === 'inclusive' ? 'inclusive' : 'standard';
+                    attendanceData[employeeId].bankName = employeeData.bankName || '';
+                    attendanceData[employeeId].bankAccountName = employeeData.bankAccountName || '';
+                    attendanceData[employeeId].bankAccountNumber = employeeData.bankAccountNumber || '';
+                    attendanceData[employeeId].transferMode = employeeData.transferMode || employeeData.modeOfTransfer || '';
+                    attendanceData[employeeId].gotymeQrUrl = employeeData.gotymeQrUrl || '';
+                    attendanceData[employeeId].bdoQrUrl = employeeData.bdoQrUrl || '';
+                    attendanceData[employeeId].preferredBank = employeeData.preferredBank || employeeData.bankName || '';
+                    attendanceData[employeeId].bankAccounts = employeeData.bankAccounts || {};
+                    if (employeeData.createdAt) {
+                        const createdMs = getEmployeeCreatedAtMs({ createdAt: employeeData.createdAt });
+                        attendanceData[employeeId].createdAt = createdMs != null
+                            ? new Date(createdMs).toISOString()
+                            : null;
+                    }
 
-                    const effectiveRate =
-                        PayCalculator.getRateForPeriod(attendanceData[employeeId], periodId).baseRate ||
-                        currentLiveRate;
+                    const rateForPeriod = PayCalculator.getRateForPeriod(attendanceData[employeeId], periodId);
+                    const effectiveRate = rateForPeriod.baseRate || currentLiveRate;
+                    attendanceData[employeeId].payScheme = rateForPeriod.payScheme || attendanceData[employeeId].payScheme;
 
                     // Base rate on bucket reflects period-effective rate for table display
                     const existingRate = attendanceData[employeeId].baseRate || 0;
@@ -1763,11 +2709,14 @@ async function loadData(selectedPeriodId = null, options = {}) {
                         timeOut: dateData.clockOut?.time || null,
                         timeInPhoto: null,
                         timeOutPhoto: null,
+                        timeInLocation: extractPunchLocation(dateData.clockIn),
+                        timeOutLocation: extractPunchLocation(dateData.clockOut),
                         hasOTPay: dateData.hasOTPay || false,
                         transpoAllowance: dateData.transpoAllowance || 0,
                         hasFixedPay: dateData.hasFixedPay || false,
                         fixedPayAmount: dateData.fixedPayAmount || 0,
                         hasDoublePay: dateData.hasDoublePay || false,
+                        isPaidLeave: dateData.isPaidLeave === true,
                         hasMealAllowance: dateData.hasMealAllowance !== false,
                         salesBonus: dateData.salesBonus || 0
                     };
@@ -1795,7 +2744,7 @@ async function loadData(selectedPeriodId = null, options = {}) {
                     }
 
                     // Update stats
-                    if (dateData.clockIn && dateData.clockOut) daysWorkedCount++;
+                    if (dateData.isPaidLeave || (dateData.clockIn && dateData.clockOut)) daysWorkedCount++;
 
                     if (dateData.clockIn?.shift) {
                         const scheduled = SHIFT_SCHEDULES[dateData.clockIn.shift]?.timeIn || "9:30 AM";
@@ -1857,10 +2806,13 @@ async function loadData(selectedPeriodId = null, options = {}) {
                 total: empLoadTotal
             });
             try {
-                window.paymentStatus = await loadAllPaymentConfirmations(periodId);
+                const prefetched = await loadAllPaymentConfirmations(periodId, { forceRefresh: true });
+                window.paymentStatus = {
+                    ...(window.paymentStatus || {}),
+                    ...prefetched
+                };
             } catch (payErr) {
                 console.warn('Payment prefetch for progressive load:', payErr);
-                window.paymentStatus = {};
             }
             if (myRun !== loadDataRunId) return;
             filterData({ skipPaymentFetch: true });
@@ -1952,13 +2904,13 @@ async function loadData(selectedPeriodId = null, options = {}) {
             total: empLoadTotal
         });
 
+        const earningsByEmployee = await loadPeriodEarningsForPeriod(periodId);
+        applyPeriodEarningsToAttendanceData(attendanceData, earningsByEmployee);
+        if (myRun !== loadDataRunId) return;
+
         for (const employeeId of Object.keys(attendanceData)) {
             const employee = attendanceData[employeeId];
-            if (employee.dates && employee.dates.length > 0) {
-                employee.totalPayWithBonus = calcTotalPaySimple(employee.dates, employee, periodId);
-            } else {
-                employee.totalPayWithBonus = 0;
-            }
+            employee.totalPayWithBonus = calcTotalPaySimple(employee.dates || [], employee, periodId);
         }
 
         Object.values(attendanceData).forEach((rec) => {
@@ -2077,15 +3029,14 @@ function filterData(options = {}) {
 
         // Apply branch filter if needed
         if (branch !== 'all') {
-            const branchName = getBranchName(branch);
             filteredData[employeeId].dates = filteredData[employeeId].dates.filter(date => {
-                return date.branch === branchName;
+                return date.isPaidLeave || attendanceMatchesFilter(date.branch, branch);
             });
         }
 
         // Recalculate metrics based on filtered dates
         filteredData[employeeId].dates.forEach(date => {
-            if (date.timeIn || date.timeOut) {
+            if (date.isPaidLeave || (date.timeIn && date.timeOut)) {
                 daysWorkedCount++;
             }
 
@@ -2111,31 +3062,53 @@ function filterData(options = {}) {
         }
 
         if (!filteredData[employeeId]._summaryOnly) {
-            filteredData[employeeId].totalPayWithBonus =
-                filteredData[employeeId].dates?.length > 0
-                    ? calcTotalPaySimple(filteredData[employeeId].dates, filteredData[employeeId], period)
-                    : 0;
+            const payType =
+                (typeof PayCalculator?.getRateForPeriod === 'function'
+                    ? PayCalculator.getRateForPeriod(filteredData[employeeId], period).payType
+                    : null) ||
+                filteredData[employeeId].payType ||
+                'hourly';
+            const hasDates = filteredData[employeeId].dates?.length > 0;
+            // Monthly/hybrid still earn with zero attendance days this cutoff
+            if (hasDates || payType === 'monthly' || payType === 'hybrid' || Number(filteredData[employeeId].periodEarningsTotal)) {
+                filteredData[employeeId].totalPayWithBonus = calcTotalPaySimple(
+                    filteredData[employeeId].dates || [],
+                    filteredData[employeeId],
+                    period
+                );
+            } else {
+                filteredData[employeeId].totalPayWithBonus = 0;
+            }
         }
     });
 
     if (options.skipPaymentFetch) {
         renderEmployeeTable();
         updateSummaryCards();
+        updatePayModeButtonState();
     } else {
         loadPaymentDataAndRender();
     }
 }
 
 // Load payment data and render table
-async function loadPaymentDataAndRender() {
+async function loadPaymentDataAndRender({ forcePaymentRefresh = false } = {}) {
     const periodId = periodSelect.value;
     
     try {
-        // Load payment confirmations
-        const paymentStatuses = await loadAllPaymentConfirmations(periodId);
-        
-        // Store payment status globally so renderEmployeeTable can access it
-        window.paymentStatus = paymentStatuses;
+        // Clear cache first so we never paint unpaid over a just-saved payment
+        if (forcePaymentRefresh) {
+            localStorage.removeItem(periodPaymentsCacheKey(periodId));
+        }
+
+        const paymentStatuses = await loadAllPaymentConfirmations(periodId, {
+            forceRefresh: forcePaymentRefresh
+        });
+
+        window.paymentStatus = {
+            ...(window.paymentStatus || {}),
+            ...paymentStatuses
+        };
         
         // Render the table with payment data
         renderEmployeeTable();
@@ -2143,15 +3116,15 @@ async function loadPaymentDataAndRender() {
         // Update summary cards after rendering
         updateSummaryCards();
         
-        // Clear payment status cache and force update indicators
-        localStorage.removeItem(periodPaymentsCacheKey(periodId));
         await updateEmployeePaymentStatus(true);
+        updatePayModeButtonState();
         
     } catch (error) {
         console.error('Error loading payment data:', error);
         // Still render table even if payment data fails
         renderEmployeeTable();
         updateSummaryCards();
+        updatePayModeButtonState();
     }
 }
 
@@ -2172,7 +3145,7 @@ function updateSummaryCards() {
     const holidays = countHolidaysInPeriod(startDate, endDate);
 
     Object.values(filteredData).forEach((employee) => {
-        if (!employeeHasRosterPayActivity(employee)) return;
+        if (!employeeHasRosterPayActivity(employee, period)) return;
         totalPayrollAmount += getEmployeeTotalPayForTable(employee, period);
         activeEmployees++;
     });
@@ -2206,14 +3179,14 @@ function updateSummaryCards() {
         // Get payment statuses (we'll need to make this synchronous for the calculation)
         loadAllPaymentConfirmations(periodId).then(paymentStatuses => {
             Object.entries(filteredData).forEach(([employeeId, employee]) => {
-                if (!employeeHasRosterPayActivity(employee)) return;
+                if (!employeeHasRosterPayActivity(employee, periodId)) return;
                 const branchSpecificPay = getEmployeeTotalPayForTable(employee, periodId);
                 const paymentData = paymentStatuses[employeeId];
 
                 if (!paymentData) {
                     unpaidAmount += branchSpecificPay;
                 } else {
-                    unpaidAmount += paymentData.remainingAmount || 0;
+                    unpaidAmount += getPayableRemaining(branchSpecificPay, paymentData);
                 }
             });
 
@@ -2317,6 +3290,23 @@ function createEmployeeSpecificSummaryCards(employeeId) {
     const showSalesBonus = employee.salesBonusEligible;
     const periodId = periodSelect.value;
     const rateForPeriod = PayCalculator.getRateForPeriod(employee, periodId);
+    const totalPay = calcTotalPaySimple(employee.dates, employee, periodId);
+    const paymentStatus = window.paymentStatus || {};
+    const bal = getPaymentBalance(totalPay, paymentStatus[employeeId]);
+    const remainingSubtitle = bal.remaining > 0
+        ? 'Still to pay'
+        : (bal.paid > 0 ? 'Fully paid' : 'Nothing to pay');
+    const balanceCard = bal.surplus > 0
+        ? `<div class="summary-card">
+                <div class="card-title">Surplus</div>
+                <div class="card-value" style="color:#0369a1;">₱${bal.surplus.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div class="card-subtitle">Paid above period total</div>
+            </div>`
+        : `<div class="summary-card">
+                <div class="card-title">Remaining</div>
+                <div class="card-value ${bal.remaining <= 0 && bal.paid > 0 ? 'paid-amount' : (bal.remaining > 0 ? 'payable-amount' : '')}">₱${bal.remaining.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div class="card-subtitle">${remainingSubtitle}</div>
+            </div>`;
 
     // Create new summary card HTML
     const summaryCardsHTML = `
@@ -2329,7 +3319,7 @@ function createEmployeeSpecificSummaryCards(employeeId) {
             <div class="summary-card">
                 <div class="card-title">Base Rate</div>
                 <div class="card-value">₱${(rateForPeriod.baseRate || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                <div class="card-subtitle">Per day</div>
+                <div class="card-subtitle">${rateForPeriod.payScheme === 'inclusive' ? 'Meal included in daily rate' : 'Per day + meal allowance'}</div>
             </div>
             <div class="summary-card">
                 <div class="card-title">Days Worked</div>
@@ -2339,9 +3329,10 @@ function createEmployeeSpecificSummaryCards(employeeId) {
 
             <div class="summary-card">
                 <div class="card-title">Total Pay</div>
-                <div class="card-value">₱${calcTotalPaySimple(employee.dates, employee, periodId).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div class="card-value">₱${totalPay.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                 <div class="card-subtitle">For this period</div>
             </div>
+            ${balanceCard}
             ${showSalesBonus ? `
             <div class="summary-card">
                 <div class="card-title">Sales Bonus</div>
@@ -2429,12 +3420,12 @@ function renderMobileCards(cardData) {
             employeeCardsMobileEl.appendChild(card);
             return;
         }
-        const { employeeId, employee, totalPay, payableAmount, payableClass, showPaymentButton, daysWorked } = item;
+        const { employeeId, employee, totalPay, payableDisplay, surplus, paid, remaining, showPaymentButton, daysWorked } = item;
         const name = employee.name || employees[employeeId] || 'Unknown Employee';
         const photoUrl = employee.lastClockInPhoto || '';
         const totalPayStr = totalPay.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        const isPaid = payableClass === 'paid-amount' || payableAmount <= 0;
-        const statusLabel = isPaid ? 'Paid' : 'Unpaid';
+        const statusKind = getPaymentStatusKind({ surplus, paid, remaining });
+        const statusLabel = paymentStatusLabel(statusKind);
 
         const card = document.createElement('div');
         card.className = 'employee-card-mobile';
@@ -2442,7 +3433,8 @@ function renderMobileCards(cardData) {
 
         /* Badge and Pay only in disbursement period (today > period end), same as desktop. Pay button only when unpaid. */
         const showBadge = showPaymentButton;
-        const showPayButton = showPaymentButton && !isPaid;
+        const showPayButton = showPaymentButton && (statusKind === 'unpaid' || statusKind === 'partial');
+        const showSurplusAdjust = showPaymentButton && statusKind === 'surplus';
         card.innerHTML = `
             <div class="employee-card-mobile__main">
                 ${photoUrl
@@ -2451,13 +3443,14 @@ function renderMobileCards(cardData) {
                 }
                 <div class="employee-card-mobile__info">
                     <div class="employee-card-mobile__name">${escapeHtml(name)}</div>
-                    <div class="employee-card-mobile__meta">${daysWorked} days</div>
+                    <div class="employee-card-mobile__meta">${daysWorked} days${surplus > 0 ? ` · ${payableDisplay || ''}` : ''}</div>
                 </div>
             </div>
             <div class="employee-card-mobile__right">
                 <div class="employee-card-mobile__salary">₱${totalPayStr}</div>
-                ${showBadge ? `<span class="employee-card-mobile__status-badge ${isPaid ? 'paid' : 'unpaid'}">${statusLabel}</span>` : ''}
+                ${showBadge ? `<span class="employee-card-mobile__status-badge ${statusKind}">${statusLabel}</span>` : ''}
                 ${showPayButton ? `<button type="button" class="action-btn payment-btn" data-employee-id="${employeeId}">Pay</button>` : ''}
+                ${showSurplusAdjust ? `<button type="button" class="action-btn adjust-surplus-btn" data-employee-id="${employeeId}">Adjust surplus</button>` : ''}
             </div>
         `;
 
@@ -2470,7 +3463,7 @@ function renderMobileCards(cardData) {
     employeeCardsMobileEl.querySelectorAll('.employee-card-mobile').forEach(cardEl => {
         cardEl.addEventListener('click', function (e) {
             if (this.classList.contains('employee-card-mobile--loading')) return;
-            if (e.target.closest('.payment-btn') || e.target.closest('img.thumb')) return;
+            if (e.target.closest('.payment-btn') || e.target.closest('.adjust-surplus-btn') || e.target.closest('img.thumb') || e.target.closest('.punch-location-chip')) return;
             const employeeId = this.dataset.employeeId;
             if (!employeeId) return;
             if (isMobileLayout()) {
@@ -2501,7 +3494,14 @@ function renderMobileCards(cardData) {
     employeeCardsMobileEl.querySelectorAll('.payment-btn').forEach(btn => {
         btn.addEventListener('click', function (e) {
             e.stopPropagation();
-            openPaymentModal(this.dataset.employeeId);
+            openPayMode(this.dataset.employeeId);
+        });
+    });
+
+    employeeCardsMobileEl.querySelectorAll('.adjust-surplus-btn').forEach(btn => {
+        btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            openAdjustSurplusModal(this.dataset.employeeId);
         });
     });
 }
@@ -2531,6 +3531,563 @@ function photoThumbDeferredHtml(photoUrl, altText, extraClass) {
     return `<img class="${cls}" alt="${alt}" data-photo="${esc}" data-src="${esc}" decoding="async" loading="lazy">`;
 }
 
+function extractPunchLocation(punch) {
+    if (!punch || !punch.location) return null;
+    const loc = punch.location;
+    const lat = Number(loc.lat);
+    const lng = Number(loc.lng);
+    const accuracy = Number(loc.accuracy);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        return {
+            lat,
+            lng,
+            accuracy: Number.isFinite(accuracy) ? accuracy : null,
+            status: loc.status || 'ok'
+        };
+    }
+    if (loc.status && loc.status !== 'ok') {
+        return { status: loc.status };
+    }
+    return null;
+}
+
+function punchLocationMapsUrl(lat, lng) {
+    return `https://www.google.com/maps?q=${lat},${lng}`;
+}
+
+const BRANCH_PUNCH_SITES = {
+    'SM North': {
+        lat: 14.65660,
+        lng: 121.03237,
+        label: 'SM North',
+        radiusMeters: 250
+    },
+    'Podium': {
+        lat: 14.58564,
+        lng: 121.05948,
+        label: 'Podium',
+        radiusMeters: 200
+    }
+};
+
+const PUNCH_ICON_CLOSE = '<svg class="punch-location-chip__svg" viewBox="0 0 16 16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M4 4l8 8M12 4l-8 8"/></svg>';
+const PUNCH_ICON_PIN = '<svg class="punch-location-chip__svg" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 1.5a4.5 4.5 0 0 0-4.5 4.5c0 3.3 4.5 8.5 4.5 8.5s4.5-5.2 4.5-8.5A4.5 4.5 0 0 0 8 1.5zm0 6.1a1.6 1.6 0 1 1 0-3.2 1.6 1.6 0 0 1 0 3.2z"/></svg>';
+
+const punchPlaceCache = new Map();
+const GENERIC_PLACE_NAMES = new Set([
+    'manila',
+    'metro manila',
+    'national capital region',
+    'ncr',
+    'philippines',
+    'southern manila district',
+    'eastern manila district',
+    'northern manila district'
+]);
+
+function distanceMeters(lat1, lng1, lat2, lng2) {
+    const R = 6371000;
+    const toRad = (deg) => deg * Math.PI / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+function formatDistanceMeters(meters) {
+    if (!Number.isFinite(meters)) return '';
+    if (meters < 1000) return `${Math.round(meters)} m`;
+    return `${(meters / 1000).toFixed(1)} km`;
+}
+
+function formatDistanceFromSite(meters, siteLabel) {
+    const dist = formatDistanceMeters(meters);
+    if (!dist || !siteLabel) return '';
+    return `${dist} from ${siteLabel}`;
+}
+
+function getPunchSite(branch) {
+    return BRANCH_PUNCH_SITES[branch] || null;
+}
+
+function punchPlaceCacheKey(lat, lng) {
+    return `${Number(lat).toFixed(4)},${Number(lng).toFixed(4)}`;
+}
+
+function isGenericPlaceName(name) {
+    const n = String(name || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (!n) return true;
+    if (GENERIC_PLACE_NAMES.has(n)) return true;
+    if (/^district\s*[ivx\d]+$/i.test(n)) return true;
+    return false;
+}
+
+function normalizePhCityName(name) {
+    const n = String(name || '').replace(/\s+/g, ' ').trim();
+    if (!n) return '';
+    if (/city$/i.test(n)) return n.replace(/\bcity$/i, 'City');
+    const withCity = {
+        'Makati': 'Makati City',
+        'Pasig': 'Pasig City',
+        'Mandaluyong': 'Mandaluyong City',
+        'Taguig': 'Taguig City',
+        'Parañaque': 'Parañaque City',
+        'Paranaque': 'Parañaque City',
+        'Las Piñas': 'Las Piñas City',
+        'Las Pinas': 'Las Piñas City',
+        'Valenzuela': 'Valenzuela City',
+        'Malabon': 'Malabon City',
+        'Navotas': 'Navotas City',
+        'Muntinlupa': 'Muntinlupa City',
+        'Marikina': 'Marikina City',
+        'Pasay': 'Pasay City',
+        'Caloocan': 'Caloocan City',
+        'San Juan': 'San Juan City',
+        'Quezon': 'Quezon City'
+    };
+    return withCity[n] || n;
+}
+
+function firstUsefulPlace(names) {
+    for (const raw of names) {
+        const n = String(raw || '').replace(/\s+/g, ' ').trim();
+        if (n && !isGenericPlaceName(n)) return n;
+    }
+    return '';
+}
+
+function formatNominatimPlace(data) {
+    const addr = data && data.address ? data.address : {};
+    const specific = firstUsefulPlace([
+        addr.neighbourhood,
+        addr.suburb,
+        addr.quarter,
+        addr.village,
+        addr.hamlet,
+        addr.residential
+    ]);
+    const city = normalizePhCityName(firstUsefulPlace([
+        addr.city,
+        addr.municipality,
+        addr.town
+    ]));
+    if (specific && city && !city.toLowerCase().includes(specific.toLowerCase())) {
+        return `${specific}, ${city}`;
+    }
+    if (city) return city;
+    if (specific) return specific;
+    return 'Unknown area';
+}
+
+function formatPunchPlaceName(data) {
+    if (!data || typeof data !== 'object') return 'Unknown area';
+    const city = normalizePhCityName(data.city);
+    const locality = String(data.locality || '').replace(/\s+/g, ' ').trim();
+    const usefulCity = city && !isGenericPlaceName(city) ? city : '';
+    const usefulLocality = locality && !isGenericPlaceName(locality) ? locality : '';
+    if (usefulLocality && usefulCity && usefulLocality.toLowerCase() !== usefulCity.toLowerCase()) {
+        return `${usefulLocality}, ${usefulCity}`;
+    }
+    if (usefulCity) return usefulCity;
+    if (usefulLocality) return usefulLocality;
+    const admin = Array.isArray(data.localityInfo?.administrative) ? data.localityInfo.administrative : [];
+    const cityAdmin = admin.find((a) => a?.name && !isGenericPlaceName(a.name) && /city/i.test(a.name));
+    if (cityAdmin?.name) return normalizePhCityName(cityAdmin.name);
+    return 'Unknown area';
+}
+
+function formatNominatimPlaceDetailed(data) {
+    const short = formatNominatimPlace(data);
+    const addr = data && data.address ? data.address : {};
+    const road = firstUsefulPlace([
+        addr.road,
+        addr.pedestrian,
+        addr.footway,
+        addr.residential
+    ]);
+    if (road && short && !short.toLowerCase().includes(road.toLowerCase())) {
+        return `${road}, ${short}`;
+    }
+    return short || 'Unknown area';
+}
+
+function lookupPunchPlaceDetailed(lat, lng) {
+    const key = `${punchPlaceCacheKey(lat, lng)}:detail`;
+    if (punchPlaceCache.has(key)) return punchPlaceCache.get(key);
+    const nominatimUrl = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}&zoom=18&addressdetails=1`;
+    const pending = fetch(nominatimUrl, { headers: { Accept: 'application/json' } })
+        .then((res) => {
+            if (!res.ok) throw new Error('nominatim failed');
+            return res.json();
+        })
+        .then((data) => formatNominatimPlaceDetailed(data))
+        .catch(() => lookupPunchPlaceName(lat, lng));
+    punchPlaceCache.set(key, pending);
+    return pending;
+}
+
+function lookupPunchPlaceName(lat, lng) {
+    const key = punchPlaceCacheKey(lat, lng);
+    if (punchPlaceCache.has(key)) return punchPlaceCache.get(key);
+    const nominatimUrl = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}&zoom=16&addressdetails=1`;
+    const pending = fetch(nominatimUrl, { headers: { Accept: 'application/json' } })
+        .then((res) => {
+            if (!res.ok) throw new Error('nominatim failed');
+            return res.json();
+        })
+        .then((data) => formatNominatimPlace(data))
+        .catch(() => fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lng)}&localityLanguage=en`)
+            .then((res) => {
+                if (!res.ok) throw new Error('geocode failed');
+                return res.json();
+            })
+            .then((data) => formatPunchPlaceName(data)))
+        .catch(() => `${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}`);
+    punchPlaceCache.set(key, pending);
+    return pending;
+}
+
+function splitPlaceLines(name) {
+    const trimmed = String(name || '').replace(/\s+/g, ' ').trim();
+    if (!trimmed) return { line1: '', line2: '' };
+    const comma = trimmed.indexOf(',');
+    if (comma === -1) return { line1: trimmed, line2: '' };
+    return {
+        line1: trimmed.slice(0, comma).trim(),
+        line2: trimmed.slice(comma + 1).trim()
+    };
+}
+
+function hydratePunchLocations(rootNode) {
+    const root = rootNode || document;
+    root.querySelectorAll('.punch-location-chip[data-geocode="1"]').forEach((chip) => {
+        if (chip.dataset.geocoded === '1') return;
+        const lat = chip.dataset.lat;
+        const lng = chip.dataset.lng;
+        const placeEl = chip.querySelector('.punch-location-chip__place');
+        if (!lat || !lng || !placeEl) return;
+        chip.dataset.geocoded = '1';
+        lookupPunchPlaceName(lat, lng).then((name) => {
+            const { line1, line2 } = splitPlaceLines(name);
+            placeEl.textContent = line1 || name;
+            chip.dataset.place = name;
+            chip.title = name;
+            const textEl = chip.querySelector('.punch-location-chip__text');
+            if (!textEl) return;
+            let subEl = chip.querySelector('.punch-location-chip__sub');
+            if (line2) {
+                if (!subEl) {
+                    subEl = document.createElement('span');
+                    subEl.className = 'punch-location-chip__sub';
+                    textEl.appendChild(subEl);
+                }
+                subEl.textContent = line2;
+            } else if (subEl) {
+                subEl.remove();
+            }
+        });
+    });
+}
+
+function punchKindLabel(kind, { sentenceCase = false } = {}) {
+    if (kind === 'out') return sentenceCase ? 'Time out location' : 'Time Out Location';
+    return sentenceCase ? 'Time in location' : 'Time In Location';
+}
+
+function punchLocationChipHtml({ modifier, icon, label, sub, placePending, lat, lng, accuracy, branch, site, distance, onsite, title, kind }) {
+    const geocode = placePending ? '1' : '0';
+    const acc = Number.isFinite(Number(accuracy)) ? String(Math.round(Number(accuracy))) : '';
+    const dist = Number.isFinite(Number(distance)) ? String(Math.round(Number(distance))) : '';
+    const punchKind = kind === 'out' ? 'out' : 'in';
+    const labelClass = placePending ? ' punch-location-chip__place' : '';
+    const subHtml = sub
+        ? `<span class="punch-location-chip__sub">${sub}</span>`
+        : '';
+    return `<button type="button" class="punch-location-chip punch-location-chip--${modifier}" title="${escapeHtml(title || 'View map')}" data-lat="${lat}" data-lng="${lng}" data-accuracy="${escapeHtml(acc)}" data-branch="${escapeHtml(branch || '')}" data-site="${escapeHtml(site || '')}" data-distance="${escapeHtml(dist)}" data-onsite="${onsite ? '1' : '0'}" data-geocode="${geocode}" data-kind="${punchKind}">
+        <span class="punch-location-chip__icon" aria-hidden="true">${icon}</span>
+        <span class="punch-location-chip__text">
+            <span class="punch-location-chip__label${labelClass}">${escapeHtml(label)}</span>
+            ${subHtml}
+        </span>
+    </button>`;
+}
+
+function punchLocationHtml(location, branch, kind) {
+    if (location && Number.isFinite(Number(location.lat)) && Number.isFinite(Number(location.lng))) {
+        const lat = Number(location.lat);
+        const lng = Number(location.lng);
+        const site = getPunchSite(branch);
+        if (site) {
+            const distance = distanceMeters(lat, lng, site.lat, site.lng);
+            const onsite = distance <= site.radiusMeters;
+            const dist = formatDistanceMeters(distance);
+            const distanceLabel = formatDistanceFromSite(distance, site.label);
+            return punchLocationChipHtml({
+                modifier: onsite ? 'onsite' : 'offsite',
+                icon: onsite ? PUNCH_ICON_PIN : PUNCH_ICON_CLOSE,
+                label: onsite ? site.label : `${dist} from`,
+                sub: onsite ? '' : escapeHtml(site.label),
+                lat,
+                lng,
+                accuracy: location.accuracy,
+                branch,
+                site: site.label,
+                distance,
+                onsite,
+                title: onsite ? site.label : distanceLabel,
+                kind
+            });
+        }
+        return punchLocationChipHtml({
+            modifier: 'place',
+            icon: PUNCH_ICON_PIN,
+            label: 'Looking up area…',
+            placePending: true,
+            lat,
+            lng,
+            accuracy: location.accuracy,
+            branch,
+            title: 'View map',
+            kind
+        });
+    }
+    if (location && location.status && location.status !== 'ok') {
+        const labels = {
+            denied: 'Location blocked',
+            unavailable: 'Location unavailable',
+            timeout: 'Location timed out',
+            unsupported: 'Location unsupported'
+        };
+        return `<span class="punch-location-missing">${labels[location.status] || 'Not captured'}</span>`;
+    }
+    return `<span class="punch-location-missing">Not captured</span>`;
+}
+
+function punchLocationCellHtml(location, branch, kind) {
+    if (!location) return '';
+    if (Number.isFinite(Number(location.lat)) && Number.isFinite(Number(location.lng))) {
+        return `<div class="punch-location-wrap">${punchLocationHtml(location, branch, kind)}</div>`;
+    }
+    if (location.status && location.status !== 'ok') {
+        return `<div class="punch-location-wrap">${punchLocationHtml(location, branch, kind)}</div>`;
+    }
+    return '';
+}
+
+function locationBreakdownHtml(dateEntry) {
+    if (!dateEntry || dateEntry.isPaidLeave) return '';
+    const branch = dateEntry.branch || '';
+    return `
+    <div class="location-breakdown">
+        <h4>Clock Location</h4>
+        <table class="breakdown-table">
+            <tr>
+                <td>Time In</td>
+                <td>${punchLocationHtml(dateEntry.timeInLocation, branch, 'in')}</td>
+            </tr>
+            <tr>
+                <td>Time Out</td>
+                <td>${punchLocationHtml(dateEntry.timeOutLocation, branch, 'out')}</td>
+            </tr>
+        </table>
+    </div>`;
+}
+
+let punchLeafletMap = null;
+
+function loadLeaflet() {
+    if (window.L) return Promise.resolve(window.L);
+    if (loadLeaflet._pending) return loadLeaflet._pending;
+    loadLeaflet._pending = new Promise((resolve, reject) => {
+        const css = document.createElement('link');
+        css.rel = 'stylesheet';
+        css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+        css.integrity = 'sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=';
+        css.crossOrigin = '';
+        document.head.appendChild(css);
+        const script = document.createElement('script');
+        script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+        script.integrity = 'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=';
+        script.crossOrigin = '';
+        script.onload = () => resolve(window.L);
+        script.onerror = () => reject(new Error('Failed to load map'));
+        document.body.appendChild(script);
+    });
+    return loadLeaflet._pending;
+}
+
+function punchMapPinIcon(color) {
+    const html = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="40" viewBox="0 0 28 40" aria-hidden="true"><path fill="${color}" stroke="#fff" stroke-width="2" d="M14 1.5c-6.3 0-11.5 5.1-11.5 11.4 0 8.4 11.5 25.1 11.5 25.1S25.5 21.3 25.5 12.9C25.5 6.6 20.3 1.5 14 1.5z"/><circle fill="#fff" cx="14" cy="13" r="4.2"/></svg>`;
+    return window.L.divIcon({
+        className: 'punch-map-pin',
+        html,
+        iconSize: [28, 40],
+        iconAnchor: [14, 40],
+        popupAnchor: [0, -34]
+    });
+}
+
+function destroyPunchLeafletMap() {
+    if (punchLeafletMap) {
+        punchLeafletMap.remove();
+        punchLeafletMap = null;
+    }
+    const canvas = document.getElementById('punchMapCanvas');
+    if (canvas) canvas.innerHTML = '';
+    const legend = document.getElementById('punchMapLegend');
+    if (legend) legend.hidden = true;
+}
+
+function renderPunchLeafletMap(staffLat, staffLng, site, onsite, punchLabel) {
+    const canvas = document.getElementById('punchMapCanvas');
+    const legend = document.getElementById('punchMapLegend');
+    const legendStore = document.getElementById('punchMapLegendStore');
+    const legendStaff = document.getElementById('punchMapLegendStaff');
+    if (!canvas || !window.L) return;
+
+    destroyPunchLeafletMap();
+
+    const staffPinLabel = punchLabel || 'Time In Location';
+    const hasSite = site && Number.isFinite(site.lat) && Number.isFinite(site.lng);
+    const showDistance = hasSite && !onsite;
+    const staffLatLng = [staffLat, staffLng];
+    punchLeafletMap = window.L.map(canvas, {
+        scrollWheelZoom: true,
+        attributionControl: true
+    });
+    window.L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 20,
+        subdomains: 'abcd',
+        attribution: '&copy; OpenStreetMap &copy; CARTO'
+    }).addTo(punchLeafletMap);
+
+    const staffColor = showDistance ? '#e11d48' : '#16a34a';
+    window.L.marker(staffLatLng, { icon: punchMapPinIcon(staffColor) })
+        .addTo(punchLeafletMap)
+        .bindPopup(showDistance ? staffPinLabel : (hasSite ? 'On site' : staffPinLabel));
+
+    if (showDistance) {
+        const storeLatLng = [site.lat, site.lng];
+        window.L.marker(storeLatLng, { icon: punchMapPinIcon('#16a34a') })
+            .addTo(punchLeafletMap)
+            .bindPopup(site.label || 'Store');
+        window.L.polyline([staffLatLng, storeLatLng], {
+            color: '#e11d48',
+            weight: 3,
+            opacity: 0.9,
+            dashArray: '8 6'
+        }).addTo(punchLeafletMap);
+        punchLeafletMap.fitBounds([staffLatLng, storeLatLng], { padding: [36, 36], maxZoom: 16 });
+        if (legend) legend.hidden = false;
+        if (legendStore) legendStore.textContent = site.label || 'Store';
+        if (legendStaff) legendStaff.textContent = staffPinLabel;
+    } else {
+        punchLeafletMap.setView(staffLatLng, 16);
+        if (legend) legend.hidden = true;
+    }
+
+    requestAnimationFrame(() => {
+        punchLeafletMap?.invalidateSize();
+    });
+}
+
+function closePunchMapModal() {
+    const modal = document.getElementById('punchMapModal');
+    if (modal) {
+        modal.style.display = 'none';
+        modal.setAttribute('aria-hidden', 'true');
+    }
+    destroyPunchLeafletMap();
+}
+
+function openPunchMapModal(chip) {
+    const modal = document.getElementById('punchMapModal');
+    const titleEl = document.getElementById('punchMapModalTitle');
+    const metaEl = document.getElementById('punchMapModalMeta');
+    const placeWrap = document.getElementById('punchMapModalPlaceWrap');
+    const placeEl = document.getElementById('punchMapModalPlace');
+    const external = document.getElementById('punchMapOpenExternal');
+    const canvas = document.getElementById('punchMapCanvas');
+    if (!modal || !canvas || !chip) return;
+
+    const lat = Number(chip.dataset.lat);
+    const lng = Number(chip.dataset.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+    const knownPlace = chip.dataset.place || chip.querySelector('.punch-location-chip__place')?.textContent || '';
+    const lookingUp = !knownPlace || knownPlace === 'Looking up area…';
+    const accuracy = Number(chip.dataset.accuracy);
+    const punchKind = chip.dataset.kind === 'out' ? 'out' : 'in';
+    const punchLabel = punchKindLabel(punchKind);
+    const site = getPunchSite(chip.dataset.branch);
+    let onsite = chip.dataset.onsite === '1';
+    let distance = Number(chip.dataset.distance);
+    if (site) {
+        distance = distanceMeters(lat, lng, site.lat, site.lng);
+        onsite = Number.isFinite(distance) && distance <= site.radiusMeters;
+    }
+
+    if (titleEl) {
+        if (site && Number.isFinite(distance)) {
+            titleEl.textContent = onsite
+                ? `On site at ${site.label}`
+                : `${formatDistanceMeters(distance)} away from ${site.label}`;
+        } else {
+            titleEl.textContent = punchLabel;
+        }
+    }
+
+    const placeCaption = document.getElementById('punchMapModalPlaceCaption');
+    if (placeCaption) placeCaption.textContent = punchKindLabel(punchKind, { sentenceCase: true });
+
+    const metaParts = [];
+    if (Number.isFinite(accuracy)) {
+        metaParts.push(`GPS ±${Math.round(accuracy)} m`);
+    }
+    if (metaEl) metaEl.textContent = metaParts.join(' · ');
+
+    if (placeWrap && placeEl) {
+        placeWrap.hidden = false;
+        placeEl.textContent = lookingUp ? 'Looking up area…' : knownPlace;
+        lookupPunchPlaceDetailed(lat, lng).then((name) => {
+            if (placeEl) placeEl.textContent = name || knownPlace || 'Unknown area';
+        }).catch(() => {
+            if (placeEl && lookingUp) placeEl.textContent = 'Unknown area';
+        });
+    }
+
+    if (external) {
+        if (site && !onsite) {
+            external.href = `https://www.google.com/maps/dir/${lat},${lng}/${site.lat},${site.lng}`;
+        } else {
+            external.href = punchLocationMapsUrl(lat, lng);
+        }
+        external.style.display = 'inline-block';
+    }
+
+    canvas.textContent = 'Loading map…';
+    modal.style.display = 'flex';
+    modal.setAttribute('aria-hidden', 'false');
+
+    loadLeaflet()
+        .then(() => renderPunchLeafletMap(lat, lng, site, onsite, punchLabel))
+        .catch(() => {
+            canvas.textContent = 'Could not load map.';
+        });
+}
+
+(function bindPunchLocationUiOnce() {
+    if (bindPunchLocationUiOnce._done) return;
+    bindPunchLocationUiOnce._done = true;
+    document.addEventListener('click', (e) => {
+        const chip = e.target.closest('.punch-location-chip');
+        if (!chip) return;
+        e.preventDefault();
+        e.stopPropagation();
+        openPunchMapModal(chip);
+    });
+})();
+
 /** After DOM update: assign real `src` on idle / next frame so image fetches do not block first paint. */
 function scheduleDeferredThumbLoads(rootNode) {
     if (!rootNode) return;
@@ -2542,6 +4099,7 @@ function scheduleDeferredThumbLoads(rootNode) {
             img.removeAttribute('data-src');
             img.classList.remove('thumb-deferred');
         });
+        hydratePunchLocations(rootNode);
     };
     if (typeof requestIdleCallback === 'function') {
         requestIdleCallback(hydrate, { timeout: 400 });
@@ -2568,21 +4126,27 @@ function openMobileEmployeeDetail(employeeId) {
     const totalPay = calcTotalPaySimple(employee.dates || [], employee, periodSelect.value);
     const paymentStatus = window.paymentStatus || {};
     const empPayment = paymentStatus[employeeId];
-    const remaining = empPayment ? Math.max(0, empPayment.remainingAmount || 0) : totalPay;
-    const isPaid = remaining <= 0;
-    const daysWorked = employee.dates ? employee.dates.filter(d => d.timeIn && d.timeOut).length : 0;
+    const bal = getPaymentBalance(totalPay, empPayment);
+    const statusKind = getPaymentStatusKind(bal);
+    const statusLabel = paymentStatusLabel(statusKind);
+    const daysWorked = employee.dates ? employee.dates.filter(d => d.isPaidLeave || (d.timeIn && d.timeOut)).length : 0;
 
     employeeDetailMobileName.textContent = name;
     const totalPayStr = totalPay.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const statusLabel = isPaid ? 'Paid' : 'Unpaid';
     const period = periodSelect.value;
     const { endDate } = getPeriodDates(period);
     const showPaymentButton = new Date() > endDate;
-    employeeDetailMobileSummary.className = 'employee-detail-mobile__summary' + (isPaid ? ' employee-detail-mobile__summary--paid' : '');
+    employeeDetailMobileSummary.className = 'employee-detail-mobile__summary' + (statusKind === 'paid' || statusKind === 'surplus' ? ' employee-detail-mobile__summary--paid' : '');
     const statusRowHtml = showPaymentButton
         ? `<div class="employee-detail-mobile__summary-row">
             <span class="employee-detail-mobile__summary-label">Status</span>
-            <span class="employee-detail-mobile__summary-value employee-detail-mobile__summary-status ${isPaid ? 'employee-detail-mobile__summary-status--paid' : 'employee-detail-mobile__summary-status--unpaid'}">${statusLabel}</span>
+            <span class="employee-detail-mobile__summary-value employee-detail-mobile__summary-status employee-detail-mobile__summary-status--${statusKind}">${statusLabel}</span>
+        </div>`
+        : '';
+    const surplusRowHtml = bal.surplus > 0
+        ? `<div class="employee-detail-mobile__summary-row">
+            <span class="employee-detail-mobile__summary-label">Surplus</span>
+            <span class="employee-detail-mobile__summary-value" style="color:#0369a1;">₱${bal.surplus.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
         </div>`
         : '';
     employeeDetailMobileSummary.innerHTML = `
@@ -2595,19 +4159,37 @@ function openMobileEmployeeDetail(employeeId) {
                 <span class="employee-detail-mobile__summary-label">Total pay</span>
                 <span class="employee-detail-mobile__summary-value">₱${totalPayStr}</span>
             </div>
+            ${surplusRowHtml}
             ${statusRowHtml}
         </div>
     `;
     employeeDetailMobileActions.innerHTML = '';
-    if (showPaymentButton && !isPaid) {
+    if (showPaymentButton && (statusKind === 'unpaid' || statusKind === 'partial')) {
         const payBtn = document.createElement('button');
         payBtn.type = 'button';
         payBtn.className = 'action-btn payment-btn';
         payBtn.textContent = 'Record payment';
         payBtn.dataset.employeeId = employeeId;
-        payBtn.addEventListener('click', function () { openPaymentModal(employeeId); });
+        payBtn.addEventListener('click', function () { openPayMode(employeeId); });
         employeeDetailMobileActions.appendChild(payBtn);
     }
+    if (showPaymentButton && statusKind === 'surplus') {
+        const adjustBtn = document.createElement('button');
+        adjustBtn.type = 'button';
+        adjustBtn.className = 'action-btn adjust-surplus-btn';
+        adjustBtn.textContent = 'Adjust surplus';
+        adjustBtn.addEventListener('click', function () { openAdjustSurplusModal(employeeId); });
+        employeeDetailMobileActions.appendChild(adjustBtn);
+    }
+
+    const payslipMobileBtn = document.createElement('button');
+    payslipMobileBtn.type = 'button';
+    payslipMobileBtn.className = 'action-btn';
+    payslipMobileBtn.textContent = 'Download Payslip';
+    payslipMobileBtn.addEventListener('click', function () {
+        generateAdminEmployeePayslipPDF(employeeId, payslipMobileBtn);
+    });
+    employeeDetailMobileActions.appendChild(payslipMobileBtn);
 
     const finishMobileDayCards = () => {
         renderMobileDayCards(employeeId);
@@ -2654,14 +4236,14 @@ function renderMobileDayCards(employeeId) {
 
     employeeDetailMobileDayCards.innerHTML = '';
     dates.forEach(dateEntry => {
-        const dailyPay = dateEntry.timeIn && dateEntry.timeOut
+        const dailyPay = dateEntry.isPaidLeave || (dateEntry.timeIn && dateEntry.timeOut)
             ? payCalculator.calculateDailyPay(dateEntry, employee, 'simple')
             : 0;
         const dateLabel = formatReadableDate(dateEntry.date);
-        const timeInStr = dateEntry.timeIn ? formatTimeWithoutSeconds(dateEntry.timeIn) : '–';
-        const timeOutStr = dateEntry.timeOut ? formatTimeWithoutSeconds(dateEntry.timeOut) : '–';
-        const branch = dateEntry.branch || '–';
-        const shift = dateEntry.shift || '–';
+        const timeInStr = dateEntry.isPaidLeave ? '—' : (dateEntry.timeIn ? formatTimeWithoutSeconds(dateEntry.timeIn) : '–');
+        const timeOutStr = dateEntry.isPaidLeave ? '—' : (dateEntry.timeOut ? formatTimeWithoutSeconds(dateEntry.timeOut) : '–');
+        const branch = dateEntry.isPaidLeave ? '—' : (dateEntry.branch || '–');
+        const shift = dateEntry.isPaidLeave ? '—' : (dateEntry.shift || '–');
         const timeInPhoto = dateEntry.timeInPhoto || '';
         const timeOutPhoto = dateEntry.timeOutPhoto || '';
 
@@ -2669,19 +4251,160 @@ function renderMobileDayCards(employeeId) {
         card.className = 'employee-detail-mobile__day-card';
         card.innerHTML = `
             <div class="employee-detail-mobile__day-card__left">
-                <div class="employee-detail-mobile__day-card__date">${dateLabel}</div>
+                <div class="employee-detail-mobile__day-card__date">${dateLabel}${dateEntry.isPaidLeave ? ' · Paid Leave' : ''}</div>
                 <div class="employee-detail-mobile__day-card__photos">
                     ${photoThumbDeferredHtml(timeInPhoto, 'Clock-in', 'employee-detail-mobile__day-card__thumb')}
                     ${photoThumbDeferredHtml(timeOutPhoto, 'Clock-out', 'employee-detail-mobile__day-card__thumb')}
                 </div>
-                <div class="employee-detail-mobile__day-card__meta">${branch} · ${shift} · ${timeInStr} – ${timeOutStr}</div>
+                <div class="employee-detail-mobile__day-card__meta">${dateEntry.isPaidLeave ? 'No shift' : `${branch} · ${shift} · ${timeInStr} – ${timeOutStr}`}</div>
+                ${dateEntry.isPaidLeave ? '' : `<div class="employee-detail-mobile__day-card__location">In ${punchLocationHtml(dateEntry.timeInLocation, dateEntry.branch, 'in')} · Out ${punchLocationHtml(dateEntry.timeOutLocation, dateEntry.branch, 'out')}</div>`}
             </div>
             <div class="employee-detail-mobile__day-card__pay">₱${dailyPay.toFixed(2)}</div>
         `;
         employeeDetailMobileDayCards.appendChild(card);
     });
 
+    (employee.periodEarningsLines || []).forEach((line) => {
+        if (line.status === 'waived') return;
+        const amt = Number(line.amount || 0);
+        const dateLabel = formatEarningsRequestDate(line);
+        const label = earningsKindLabel(line.kind, amt);
+        const card = document.createElement('div');
+        card.className = 'employee-detail-mobile__day-card';
+        card.innerHTML = `
+            <div class="employee-detail-mobile__day-card__left">
+                <div class="employee-detail-mobile__day-card__date">${escapeHtml(dateLabel)}${line.fromPriorCutoff ? ' · Prior' : ''}</div>
+                <div class="employee-detail-mobile__day-card__meta">${escapeHtml(label)}${(line.prePaid || Number(line.prePaidAmount) > 0) ? ' · Prepaid' : ''}</div>
+                <div class="period-earning-actions period-earning-actions--row">
+                    <button type="button" class="action-btn" data-pe-action="edit" data-doc-id="${escapeHtml(line.id)}" data-line="${encodeURIComponent(JSON.stringify(line))}">Edit</button>
+                    <button type="button" class="action-btn" data-pe-action="defer" data-doc-id="${escapeHtml(line.id)}" data-line="${encodeURIComponent(JSON.stringify(line))}">Defer</button>
+                    ${line.kind === 'reimbursement' && !line.prePaid && !(Number(line.prePaidAmount) > 0) && Number(line.amount) > 0
+                        ? `<button type="button" class="action-btn" data-pe-action="mark_prepaid" data-doc-id="${escapeHtml(line.id)}" data-line="${encodeURIComponent(JSON.stringify(line))}">Mark prepaid</button>`
+                        : ''}
+                    <button type="button" class="action-btn action-btn--waive" data-pe-action="waive" data-doc-id="${escapeHtml(line.id)}" data-line="${encodeURIComponent(JSON.stringify(line))}">Waive</button>
+                </div>
+            </div>
+            <div class="employee-detail-mobile__day-card__pay" style="${amt < 0 ? 'color:#b91c1c;' : ''}">₱${amt.toFixed(2)}</div>
+        `;
+        employeeDetailMobileDayCards.appendChild(card);
+    });
+    bindPeriodEarningActionButtons(employeeDetailMobileDayCards);
+
     scheduleDeferredThumbLoads(employeeDetailMobileDayCards);
+}
+
+const EMPLOYEE_TABLE_SORT_DEFAULT_DIR = {
+    name: 'asc',
+    daysWorked: 'desc',
+    lateness: 'desc',
+    balance: 'desc',
+    lastClockIn: 'desc'
+};
+
+let employeeTableSort = { column: null, direction: 'asc' };
+
+function getEmployeeDisplayName(employeeId, employee) {
+    return (employee?.name || employees[employeeId] || 'Unknown Employee').toString().trim();
+}
+
+function getEmployeeAvgLatenessMinutes(employee) {
+    const daysWorked = Number(employee?.daysWorked || 0);
+    const lateHours = Number(employee?.lateHours || 0);
+    return daysWorked > 0 ? (lateHours / daysWorked) * 60 : 0;
+}
+
+function getLastClockInMs(employee) {
+    if (!employee?.lastClockIn) return null;
+    const dateObj = employee.lastClockIn instanceof Date
+        ? employee.lastClockIn
+        : new Date(employee.lastClockIn);
+    const ms = dateObj.getTime();
+    return Number.isNaN(ms) ? null : ms;
+}
+
+/** Signed balance for sorting: remaining due is positive; surplus is negative. */
+function getEmployeeBalanceSortValue(employeeId, employee) {
+    const periodId = periodSelect?.value;
+    const totalPay = getEmployeeTotalPayForTable(employee, periodId);
+    const bal = getPaymentBalance(totalPay, (window.paymentStatus || {})[employeeId]);
+    if (bal.surplus > 0) return -bal.surplus;
+    return bal.remaining;
+}
+
+function compareEmployeeTableRows(a, b) {
+    const [idA, empA] = a;
+    const [idB, empB] = b;
+    const column = employeeTableSort.column;
+    const dir = employeeTableSort.direction === 'desc' ? -1 : 1;
+    let cmp = 0;
+
+    if (column === 'name') {
+        cmp = getEmployeeDisplayName(idA, empA).localeCompare(
+            getEmployeeDisplayName(idB, empB),
+            undefined,
+            { sensitivity: 'base' }
+        );
+    } else if (column === 'daysWorked') {
+        cmp = Number(empA?.daysWorked || 0) - Number(empB?.daysWorked || 0);
+    } else if (column === 'lateness') {
+        cmp = getEmployeeAvgLatenessMinutes(empA) - getEmployeeAvgLatenessMinutes(empB);
+    } else if (column === 'balance') {
+        cmp = getEmployeeBalanceSortValue(idA, empA) - getEmployeeBalanceSortValue(idB, empB);
+    } else if (column === 'lastClockIn') {
+        const msA = getLastClockInMs(empA);
+        const msB = getLastClockInMs(empB);
+        if (msA == null && msB == null) cmp = 0;
+        else if (msA == null) return 1;
+        else if (msB == null) return -1;
+        else cmp = msA - msB;
+    }
+
+    if (cmp === 0) {
+        return getEmployeeDisplayName(idA, empA).localeCompare(
+            getEmployeeDisplayName(idB, empB),
+            undefined,
+            { sensitivity: 'base' }
+        );
+    }
+    return cmp * dir;
+}
+
+function updateEmployeeTableSortHeaders() {
+    document.querySelectorAll('#employeeTable thead th.sortable').forEach((header) => {
+        const active = header.dataset.sort === employeeTableSort.column;
+        header.classList.toggle('sorted-asc', active && employeeTableSort.direction === 'asc');
+        header.classList.toggle('sorted-desc', active && employeeTableSort.direction === 'desc');
+        if (!active) {
+            header.setAttribute('aria-sort', 'none');
+        } else {
+            header.setAttribute('aria-sort', employeeTableSort.direction === 'desc' ? 'descending' : 'ascending');
+        }
+    });
+}
+
+function setupEmployeeTableSorting() {
+    document.querySelectorAll('#employeeTable thead th.sortable').forEach((header) => {
+        header.setAttribute('tabindex', '0');
+        header.setAttribute('aria-sort', 'none');
+        const applySort = () => {
+            const column = header.dataset.sort;
+            if (employeeTableSort.column === column) {
+                employeeTableSort.direction = employeeTableSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                employeeTableSort.column = column;
+                employeeTableSort.direction = EMPLOYEE_TABLE_SORT_DEFAULT_DIR[column] || 'asc';
+            }
+            updateEmployeeTableSortHeaders();
+            renderEmployeeTable();
+        };
+        header.addEventListener('click', applySort);
+        header.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                applySort();
+            }
+        });
+    });
 }
 
 function renderEmployeeTable() {
@@ -2691,35 +4414,47 @@ function renderEmployeeTable() {
     let filteredEmployees;
 
     if (activeOnlyToggle.checked) {
-        // If checked, only show employees with clock-in records
+        // Active = clock-ins this period, OR monthly/hybrid with pay configured
+        const periodId = periodSelect.value;
         filteredEmployees = Object.entries(filteredData).filter(([_, employee]) =>
-            employee.dates && employee.dates.some(date => date.timeIn)
+            employeeHasRosterPayActivity(employee, periodId)
         );
     } else {
-        // If unchecked, show ALL employees
+        // If unchecked, show ALL employees who existed during this period
+        const periodId = periodSelect.value;
         const allEmployees = {};
 
         // First add all employees from filteredData
         Object.entries(filteredData).forEach(([id, data]) => {
-            allEmployees[id] = data;
+            if (employeeWasOnRosterForPeriod(data, periodId) || (data.dates && data.dates.some((d) => d && (d.timeIn || d.isPaidLeave)))) {
+                allEmployees[id] = data;
+            }
         });
 
         // Then add any missing employees from the main employees object
         Object.keys(employees).forEach(id => {
             if (!allEmployees[id]) {
-                allEmployees[id] = {
+                const stub = {
                     id: id,
                     name: employees[id],
                     dates: [],
                     daysWorked: 0,
                     lateHours: 0,
                     baseRate: 0,
-                    salesBonusEligible: false
+                    salesBonusEligible: false,
+                    createdAt: filteredData[id]?.createdAt || attendanceData[id]?.createdAt || null
                 };
+                if (employeeWasOnRosterForPeriod(stub, periodId)) {
+                    allEmployees[id] = stub;
+                }
             }
         });
 
         filteredEmployees = Object.entries(allEmployees);
+    }
+
+    if (employeeTableSort.column) {
+        filteredEmployees.sort(compareEmployeeTableRows);
     }
 
     if (filteredEmployees.length === 0) {
@@ -2744,7 +4479,11 @@ function renderEmployeeTable() {
             row.classList.add('payroll-row-loading');
             const dispName = escapeHtml(employee.name || employees[employeeId] || 'Unknown Employee');
             row.innerHTML = `
-        <td><span class="employee-name">${dispName}</span></td>
+        <td>
+          <div class="employee-name-cell">
+            <span class="employee-name">${dispName}</span>
+          </div>
+        </td>
         <td colspan="7" class="payroll-row-loading__cells">
           <span class="payroll-row-loading__shimmer"></span>
           <span class="payroll-row-loading__hint">Loading attendance…</span>
@@ -2802,10 +4541,21 @@ function renderEmployeeTable() {
             // });
         }
 
-        const payResult = getEmployeeTotalPayForTable(employee, period);
-        // console.log('PayCalculator result:', payResult);
+        const totalPay = getEmployeeTotalPayForTable(employee, period);
 
-        const paymentButtonHtml = showPaymentButton ? `
+        // Get payment status for this employee
+        const paymentStatus = window.paymentStatus || {};
+        const employeePayment = paymentStatus[employeeId];
+        const payableCell = formatPayableCell(totalPay, employeePayment);
+        const payableAmount = payableCell.amount;
+        const payableClass = payableCell.className;
+        const payableDisplay = payableCell.label;
+        const payBal = getPaymentBalance(totalPay, employeePayment);
+        const statusKind = getPaymentStatusKind(payBal);
+        const showPayAction = showPaymentButton && (statusKind === 'unpaid' || statusKind === 'partial');
+        const showSurplusAdjust = showPaymentButton && statusKind === 'surplus';
+
+        const paymentButtonHtml = showPayAction ? `
         <button class="action-btn payment-btn" data-employee-id="${employeeId}">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect>
@@ -2815,28 +4565,11 @@ function renderEmployeeTable() {
         </button>
         ` : '';
 
-        // Calculate payable amount (remaining amount to pay)
-        const totalPay = getEmployeeTotalPayForTable(employee, period);
-        
-        // Get payment status for this employee
-        const paymentStatus = window.paymentStatus || {};
-        const employeePayment = paymentStatus[employeeId];
-        let payableAmount = totalPay;
-        let payableClass = 'payable-amount';
-        
-        if (employeePayment) {
-            payableAmount = employeePayment.remainingAmount || 0;
-            // Ensure we don't show negative zero
-            payableAmount = Math.max(0, payableAmount);
-            
-            // Fix rounding issues - round to 2 decimal places and treat very small amounts as 0
-            payableAmount = Math.round(payableAmount * 100) / 100;
-            if (payableAmount < 0.01) {
-                payableAmount = 0;
-            }
-            
-            payableClass = payableAmount <= 0 ? 'paid-amount' : 'payable-amount';
-        }
+        const adjustSurplusButtonHtml = showSurplusAdjust ? `
+        <button type="button" class="action-btn adjust-surplus-btn" data-employee-id="${employeeId}" title="Correct over-recorded payment total">
+            Adjust surplus
+        </button>
+        ` : '';
 
         mobileCardData.push({
             employeeId,
@@ -2844,19 +4577,25 @@ function renderEmployeeTable() {
             totalPay,
             payableAmount,
             payableClass,
+            payableDisplay,
+            surplus: payBal.surplus,
+            paid: payBal.paid,
+            remaining: payBal.remaining,
             showPaymentButton,
             daysWorked
         });
 
         row.innerHTML = `
         <td>
-            <span class="employee-name">${employee.name || employees[employeeId] || 'Unknown Employee'}</span>
+            <div class="employee-name-cell">
+                <span class="employee-name">${employee.name || employees[employeeId] || 'Unknown Employee'}</span>
+            </div>
         </td>
         <td>${daysWorked}</td>
         <td class="${getLatnessColorClass(daysWorked > 0 ? (lateHours / daysWorked * 60) : 0)}">${daysWorked > 0 ? (lateHours / daysWorked * 60).toFixed(1) : '0.0'}</td>
         <td class="base-rate">₱${(employee.baseRate || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
         <td>₱${totalPay.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-        <td class="${payableClass}">₱${payableAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        <td class="${payableClass}">${payableDisplay}</td>
         <td class="time-cell">
             ${employee.lastClockInPhoto ? photoThumbDeferredHtml(employee.lastClockInPhoto, 'Last clock-in') : ''}
             <span class="date-readable">${lastClockIn}</span>
@@ -2877,6 +4616,7 @@ function renderEmployeeTable() {
                         Edit
                     </button>
                     ${paymentButtonHtml}
+                    ${adjustSurplusButtonHtml}
                 </div>
             </td>
         `;
@@ -2904,7 +4644,7 @@ function renderEmployeeTable() {
     document.querySelectorAll('.expandable-row').forEach(row => {
         row.addEventListener('click', function (e) {
             // Don't expand if clicking on a button or punch photo
-            if (e.target.tagName === 'BUTTON' || e.target.closest('button') || e.target.closest('img.thumb')) {
+            if (e.target.tagName === 'BUTTON' || e.target.closest('button') || e.target.closest('img.thumb') || e.target.closest('.punch-location-chip')) {
                 return;
             }
             if (this.classList.contains('payroll-row-loading')) {
@@ -2988,7 +4728,14 @@ function renderEmployeeTable() {
         btn.addEventListener('click', function (e) {
             e.stopPropagation();
             const employeeId = this.dataset.employeeId;
-            openPaymentModal(employeeId);
+            openPayMode(employeeId);
+        });
+    });
+
+    document.querySelectorAll('.adjust-surplus-btn').forEach(btn => {
+        btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            openAdjustSurplusModal(this.dataset.employeeId);
         });
     });
 
@@ -3024,54 +4771,136 @@ function renderEmployeeTable() {
     setTimeout(updateEmployeePaymentStatus, 500);
 }
 
-async function loadAllPaymentConfirmations(periodId) {
+async function loadAllPaymentConfirmations(periodId, { forceRefresh = false } = {}) {
     const cacheKey = periodPaymentsCacheKey(periodId);
+    const previousStatus = (window.paymentStatus && typeof window.paymentStatus === 'object')
+        ? { ...window.paymentStatus }
+        : {};
 
-    // Try cache first
-    const cached = localStorage.getItem(cacheKey);
-    if (cached) {
-        const parsedCache = JSON.parse(cached);
-        const cacheAge = Date.now() - (parsedCache.timestamp || 0);
-        if (cacheAge < 5 * 60 * 1000) { // 5 minute cache
-            return parsedCache.data;
+    if (forceRefresh) {
+        localStorage.removeItem(cacheKey);
+    } else {
+        // Try cache first
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+            try {
+                const parsedCache = JSON.parse(cached);
+                const cacheAge = Date.now() - (parsedCache.timestamp || 0);
+                if (cacheAge < 5 * 60 * 1000) { // 5 minute cache
+                    const cachedData = parsedCache.data || {};
+                    if (Object.keys(cachedData).length > 0) {
+                        return cachedData;
+                    }
+                    localStorage.removeItem(cacheKey);
+                }
+            } catch (_) {
+                localStorage.removeItem(cacheKey);
+            }
         }
     }
 
     if (!navigator.onLine) {
-        return cached ? JSON.parse(cached).data : {};
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+            try {
+                return JSON.parse(cached).data || previousStatus;
+            } catch (_) {
+                return previousStatus;
+            }
+        }
+        return previousStatus;
     }
 
     try {
         const paymentsRef = v2PaymentsCollRef(periodId);
-        const snapshot = await getDocs(paymentsRef);
+        // After a pay confirm, force server read so a stale cache/offline snapshot
+        // cannot keep the employee marked unpaid in Pay Mode.
+        const snapshot = forceRefresh
+            ? await getDocsFromServer(paymentsRef)
+            : await getDocs(paymentsRef);
 
         const paymentStatus = {};
         snapshot.forEach((d) => {
             const employeeId = d.id;
-            const paymentData = d.data();
-            paymentStatus[employeeId] = {
-                paid: true,
-                paymentAmount: paymentData.paymentAmount || 0,
-                totalPay: paymentData.totalPay || 0,
-                remainingAmount: paymentData.remainingAmount || 0,
-                paymentType: paymentData.paymentType || 'full',
-                cashAdvanceNote: paymentData.cashAdvanceNote || '',
-                transferMethod: paymentData.transferMethod || '',
-                note: paymentData.note || '',
-                uploadedAt: paymentData.uploadedAt || ''
-            };
+            const paymentData = d.data() || {};
+            paymentStatus[employeeId] = normalizePaymentStatusRecord(paymentData);
         });
 
-        localStorage.setItem(cacheKey, JSON.stringify({
-            data: paymentStatus,
-            timestamp: Date.now()
-        }));
+        if (snapshot.empty) {
+            const knownIds = Object.keys(previousStatus);
+            if (knownIds.length > 0) {
+                const verified = await fetchPaymentStatusForEmployeeIds(periodId, knownIds);
+                if (Object.keys(verified).length > 0) {
+                    writePeriodPaymentsCacheMap(periodId, verified);
+                    return verified;
+                }
+                return previousStatus;
+            }
+            return {};
+        }
+
+        writePeriodPaymentsCacheMap(periodId, paymentStatus);
 
         return paymentStatus;
     } catch (error) {
         console.error("Error loading payment confirmations:", error);
-        return cached ? JSON.parse(cached).data : {};
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+            try {
+                return JSON.parse(cached).data || previousStatus;
+            } catch (_) {
+                return previousStatus;
+            }
+        }
+        // Never wipe known in-memory payments on a failed refresh
+        return previousStatus;
     }
+}
+
+function normalizePaymentStatusRecord(paymentData = {}) {
+    return {
+        paid: true,
+        paymentAmount: Number(paymentData.paymentAmount) || 0,
+        totalPay: Number(paymentData.totalPay) || 0,
+        remainingAmount: Number(paymentData.remainingAmount) || 0,
+        paymentType: paymentData.paymentType || 'full',
+        cashAdvanceNote: paymentData.cashAdvanceNote || '',
+        transferMethod: paymentData.transferMethod || '',
+        note: paymentData.note || '',
+        uploadedAt: paymentData.uploadedAt || '',
+        screenshotUrl: paymentData.screenshotUrl || null
+    };
+}
+
+/** After a server-verified pay, keep memory + localStorage + summary in sync for refresh. */
+function applyVerifiedPaymentToLocalState(periodId, employeeId, paymentData) {
+    const normalized = normalizePaymentStatusRecord(paymentData);
+    if (!window.paymentStatus) window.paymentStatus = {};
+    window.paymentStatus[employeeId] = normalized;
+
+    const cachedMap = readPeriodPaymentsCacheMap(periodId) || {};
+    writePeriodPaymentsCacheMap(periodId, { ...cachedMap, [employeeId]: normalized });
+
+    const branchId = getSelectedBranchFilter();
+    if (attendanceData && Object.keys(attendanceData).length) {
+        saveSummaryToCache(periodId, branchId, attendanceData, window.paymentStatus);
+    }
+}
+
+async function fetchPaymentStatusForEmployeeIds(periodId, employeeIds) {
+    const paymentStatus = {};
+    const ids = [...new Set((employeeIds || []).filter(Boolean))];
+    await Promise.all(ids.map(async (employeeId) => {
+        try {
+            const snap = await getDocFromServer(v2PaymentDocRef(periodId, employeeId));
+            if (snap.exists()) {
+                paymentStatus[employeeId] = normalizePaymentStatusRecord(snap.data() || {});
+            }
+        } catch (err) {
+            console.warn('[Payment] Could not verify payment doc for', employeeId, err);
+        }
+    }));
+    return paymentStatus;
 }
 
 // Replace the updateEmployeePaymentStatus function with this:
@@ -3092,8 +4921,10 @@ async function updateEmployeePaymentStatus(forceUpdate = false) {
 
     const employeeRows = document.querySelectorAll('.expandable-row');
 
-    // Get all payment statuses at once
-    const paymentStatuses = await loadAllPaymentConfirmations(periodId);
+    // Prefer live in-memory status (just-saved payments) over a second network round-trip
+    const paymentStatuses = (window.paymentStatus && Object.keys(window.paymentStatus).length)
+        ? window.paymentStatus
+        : await loadAllPaymentConfirmations(periodId, { forceRefresh: !!forceUpdate });
 
     // Update all rows instantly
     employeeRows.forEach(row => {
@@ -3113,59 +4944,18 @@ async function updateEmployeePaymentStatus(forceUpdate = false) {
         const employeeData = filteredData[employeeId];
         if (!employeeData) return;
         
-        const totalPay = calcTotalPaySimple(employeeData.dates || [], employeeData, periodId);
+        const totalPay = getEmployeeTotalPayForTable(employeeData, periodId);
         
-        // Get remaining amount from payment data if exists, otherwise use total pay
+        // Remaining / surplus from live total − amount already paid
         const paymentData = paymentStatuses[employeeId];
-        let remainingAmount = paymentData ? Math.max(0, paymentData.remainingAmount || 0) : totalPay;
-        
-        // Fix rounding issues - round to 2 decimal places and treat very small amounts as 0
-        remainingAmount = Math.round(remainingAmount * 100) / 100;
-        if (remainingAmount < 0.01) {
-            remainingAmount = 0;
-        }
-        
-        if (remainingAmount <= 0) {
-            // Fully paid
-            indicator.innerHTML = '💸 Paid';
-            indicator.style.cssText = `
-                color: #2b9348;
-                font-size: 0.8rem;
-                font-weight: 600;
-                margin-left: 0.5rem;
-                background: rgba(43, 147, 72, 0.1);
-                padding: 2px 6px;
-                border-radius: 12px;
-            `;
-        } else if (paymentData && paymentData.paymentAmount > 0) {
-            // Partially paid (has payment record but remaining amount > 0)
-            indicator.innerHTML = '💰 Partially Paid';
-            indicator.style.cssText = `
-                color: #3498db;
-                font-size: 0.8rem;
-                font-weight: 600;
-                margin-left: 0.5rem;
-                background: rgba(52, 152, 219, 0.1);
-                padding: 2px 6px;
-                border-radius: 12px;
-            `;
-        } else {
-            // No payment made
-            indicator.innerHTML = '⏳ Not yet paid';
-            indicator.style.cssText = `
-                color: #e63946;
-                font-size: 0.8rem;
-                font-weight: 600;
-                margin-left: 0.5rem;
-                background: rgba(230, 57, 70, 0.1);
-                padding: 2px 6px;
-                border-radius: 12px;
-            `;
-        }
+        const bal = getPaymentBalance(totalPay, paymentData);
+        const kind = getPaymentStatusKind(bal);
+        indicator.className = `payment-status-indicator payment-status-indicator--${kind}`;
+        indicator.textContent = paymentStatusLabel(kind);
 
-        const employeeName = row.querySelector('.employee-name');
-        if (employeeName) {
-            employeeName.appendChild(indicator);
+        const nameCell = row.querySelector('.employee-name-cell') || row.querySelector('.employee-name')?.parentElement;
+        if (nameCell) {
+            nameCell.appendChild(indicator);
         }
     });
 }
@@ -3282,8 +5072,9 @@ async function loadEmployeeDetails(employeeId, detailRow) {
             // Only proceed if date is in range
             if (dateObjNoTime >= startDateNoTime && dateObjNoTime <= endDateNoTime) {
                 // Add branch filter condition
+                const isPaidLeave = dateData.isPaidLeave === true;
                 const branchName = dateData.clockIn?.branch || "N/A";
-                const branchMatches = branch === 'all' || branchName === getBranchName(branch);
+                const branchMatches = isPaidLeave || branch === 'all' || attendanceMatchesFilter(branchName, branch);
 
                 if (branchMatches) {
                     const shiftType = dateData.clockIn?.shift || "Custom";
@@ -3309,11 +5100,14 @@ async function loadEmployeeDetails(employeeId, detailRow) {
                         timeOut: dateData.clockOut?.time || null,
                         timeInPhoto: dateData.clockIn?.selfie || null,
                         timeOutPhoto: dateData.clockOut?.selfie || null,
+                        timeInLocation: extractPunchLocation(dateData.clockIn),
+                        timeOutLocation: extractPunchLocation(dateData.clockOut),
                         hasOTPay: dateData.hasOTPay || false,
                         transpoAllowance: dateData.transpoAllowance || 0,
                         hasFixedPay: dateData.hasFixedPay || false,
                         fixedPayAmount: dateData.fixedPayAmount || 0,
                         hasDoublePay: dateData.hasDoublePay || false,
+                        isPaidLeave: dateData.isPaidLeave === true,
                         hasMealAllowance: dateData.hasMealAllowance !== false // Default to true
                     });
 
@@ -3342,6 +5136,8 @@ async function loadEmployeeDetails(employeeId, detailRow) {
                         // Update with photos
                         mainDateEntry.timeInPhoto = dateData.clockIn?.selfie || null;
                         mainDateEntry.timeOutPhoto = dateData.clockOut?.selfie || null;
+                        mainDateEntry.timeInLocation = extractPunchLocation(dateData.clockIn);
+                        mainDateEntry.timeOutLocation = extractPunchLocation(dateData.clockOut);
                     }
                 }
             }
@@ -3391,7 +5187,7 @@ async function loadEmployeeDetails(employeeId, detailRow) {
                 if (date.scheduledIn && payCalculator.compareTimes(date.timeIn, date.scheduledIn) > 0) {
                     status = 'Late';
                     statusClass = 'late';
-                } else if (date.scheduledOut && payCalculator.compareTimes(date.timeOut, date.scheduledOut) < 0) {
+                } else if (date.scheduledOut && payCalculator.getUndertimeMinutes(date.timeIn, date.timeOut, date.scheduledIn, date.scheduledOut) > 0) {
                     status = 'Early Out';
                     statusClass = 'early';
                 } else {
@@ -3412,28 +5208,31 @@ async function loadEmployeeDetails(employeeId, detailRow) {
                 <td class="date-cell">
                     <span class="date-day">${formatReadableDate(date.date)}</span>
                     <span class="date-dow">${dayOfWeek}</span>
+                    ${date.isPaidLeave ? '<span class="leave-badge">Paid Leave</span>' : ''}
                     ${HOLIDAYS_2025[date.date] ?
                                 `<span class="holiday-badge ${HOLIDAYS_2025[date.date].type}">${HOLIDAYS_2025[date.date].name}</span>` :
                                 ''}
                 </td>
-                <td>${date.branch || 'N/A'}</td>
-                <td>${date.shift || 'N/A'}</td>
+                <td>${date.isPaidLeave ? '—' : (date.branch || 'N/A')}</td>
+                <td>${date.isPaidLeave ? '—' : (date.shift || 'N/A')}</td>
                 <td class="time-cell">
-                    ${date.timeInPhoto ? photoThumbDeferredHtml(date.timeInPhoto, 'Clock-in') : '<div style="height: 8px;"></div>'}
-                    ${date.timeIn ? formatTimeWithoutSeconds(date.timeIn) : 'N/A'}
+                    ${date.isPaidLeave ? '—' : (date.timeInPhoto ? photoThumbDeferredHtml(date.timeInPhoto, 'Clock-in') : '<div style="height: 8px;"></div>')}
+                    ${date.isPaidLeave ? '—' : (date.timeIn ? formatTimeWithoutSeconds(date.timeIn) : 'N/A')}
+                    ${date.isPaidLeave ? '' : punchLocationCellHtml(date.timeInLocation, date.branch, 'in')}
                 </td>
                 <td class="time-cell">
-                    ${date.timeOutPhoto ? photoThumbDeferredHtml(date.timeOutPhoto, 'Clock-out') : '<div style="height: 8px;"></div>'}
-                    ${date.timeOut ? formatTimeWithoutSeconds(date.timeOut) : 'N/A'}
+                    ${date.isPaidLeave ? '—' : (date.timeOutPhoto ? photoThumbDeferredHtml(date.timeOutPhoto, 'Clock-out') : '<div style="height: 8px;"></div>')}
+                    ${date.isPaidLeave ? '—' : (date.timeOut ? formatTimeWithoutSeconds(date.timeOut) : 'N/A')}
+                    ${date.isPaidLeave ? '' : punchLocationCellHtml(date.timeOutLocation, date.branch, 'out')}
                 </td>
-                <td>${date.scheduledIn && date.timeIn ?
+                <td>${date.isPaidLeave ? '—' : (date.scheduledIn && date.timeIn ?
                     (payCalculator.compareTimes(date.timeIn, date.scheduledIn) > 0 ?
                         (payCalculator.compareTimes(date.timeIn, date.scheduledIn) / 60).toFixed(1) :
                         '0.0') :
-                    'N/A'}
+                    'N/A')}
                 </td>
                 ${showSalesBonus ? `<td>₱${dailySalesBonus.toFixed(2)}</td>` : ''}
-                <td>₱${date.timeIn && date.timeOut ?
+                <td>₱${date.isPaidLeave || (date.timeIn && date.timeOut) ?
                     payCalculator.calculateDailyPay(date, employeeData, 'simple').toFixed(2) :
                     '0.00'}</td>
                 <td class="action-cell">
@@ -3458,6 +5257,9 @@ async function loadEmployeeDetails(employeeId, detailRow) {
 
             detailTableBody.appendChild(detailRowItem);
         });
+
+        const earningsLines = employeeData?.periodEarningsLines || [];
+        appendPeriodEarningsRows(detailTableBody, earningsLines, showSalesBonus);
 
         // Replace loading indicator with table
         detailRow.querySelector('.detail-content').innerHTML = '';
@@ -3511,7 +5313,7 @@ async function loadEmployeeDetails(employeeId, detailRow) {
                 e.stopPropagation();
                 const row = this.closest('.expandable-row');
                 const employeeId = row.dataset.employeeId;
-                openPaymentModal(employeeId);
+                openPayMode(employeeId);
             });
         });
 
@@ -3918,7 +5720,7 @@ function compareTimes(t1, t2) {
     return minutes1 - minutes2; // > 0 means late
 }
 
-// Helper function to get branch name from branch ID
+// Helper function to get branch name from branch ID (category label for UI)
 function getBranchName(branchId) {
     const branchMap = {
         'podium': 'Podium',
@@ -3928,7 +5730,7 @@ function getBranchName(branchId) {
         'other': 'Other Events'
     };
 
-    return branchMap[branchId] || 'All Branches';
+    return branchMap[branchId] || getBranchDisplayName(branchId) || 'All Branches';
 }
 
 // Export data to CSV
@@ -3961,8 +5763,9 @@ function exportPayrollCSV() {
         // Get filtered employees (active only if toggle is checked)
         let employeesToExport;
         if (activeOnlyToggle.checked) {
+            const periodId = periodSelect.value;
             employeesToExport = Object.entries(filteredData).filter(([_, employee]) =>
-                employee.dates && employee.dates.some(date => date.timeIn)
+                employeeHasRosterPayActivity(employee, periodId)
             );
         } else {
             employeesToExport = Object.entries(filteredData);
@@ -4127,7 +5930,7 @@ async function createZipArchive() {
                 if (date.timeIn && date.timeOut) {
                     if (date.scheduledIn && payCalculator.compareTimes(date.timeIn, date.scheduledIn) > 0) {
                         status = 'Late';
-                    } else if (date.scheduledOut && payCalculator.compareTimes(date.timeOut, date.scheduledOut) < 0) {
+                    } else if (date.scheduledOut && payCalculator.getUndertimeMinutes(date.timeIn, date.timeOut, date.scheduledIn, date.scheduledOut) > 0) {
                         status = 'Early Out';
                     } else {
                         status = 'Present';
@@ -4686,11 +6489,34 @@ function updateViewModeImpl() {
                 <rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect>
                 <line x1="1" y1="10" x2="23" y2="10"></line>
             </svg>
-            Upload Payment Confirmation
+            Pay
         `;
         paymentBtn.addEventListener('click', function () {
-            openPaymentModal(currentEmployeeView);
+            openPayMode(currentEmployeeView);
         });
+
+        const periodIdForActions = periodSelect.value;
+        const totalPayForActions = employee
+            ? getEmployeeTotalPayForTable(employee, periodIdForActions)
+            : 0;
+        const empPaymentForActions = (window.paymentStatus || {})[currentEmployeeView];
+        const balForActions = getPaymentBalance(totalPayForActions, empPaymentForActions);
+        const statusKindForActions = getPaymentStatusKind(balForActions);
+        const { endDate: periodEndForActions } = getPeriodDates(periodIdForActions);
+        const showPayInView = new Date() > periodEndForActions
+            && (statusKindForActions === 'unpaid' || statusKindForActions === 'partial');
+        const showSurplusAdjustInView = new Date() > periodEndForActions && statusKindForActions === 'surplus';
+
+        let adjustSurplusViewBtn = null;
+        if (showSurplusAdjustInView) {
+            adjustSurplusViewBtn = document.createElement('button');
+            adjustSurplusViewBtn.type = 'button';
+            adjustSurplusViewBtn.className = 'edit-btn adjust-surplus-btn';
+            adjustSurplusViewBtn.textContent = 'Adjust surplus';
+            adjustSurplusViewBtn.addEventListener('click', function () {
+                openAdjustSurplusModal(currentEmployeeView);
+            });
+        }
 
         // Add the employee name heading first
         const summaryCards = document.querySelector('.summary-cards');
@@ -4709,7 +6535,22 @@ function updateViewModeImpl() {
         actionButtonsContainer.appendChild(editBtn);
         actionButtonsContainer.appendChild(batchEditBtn);
         actionButtonsContainer.appendChild(addShiftBtn);
-        actionButtonsContainer.appendChild(paymentBtn);
+        if (showPayInView) actionButtonsContainer.appendChild(paymentBtn);
+        if (adjustSurplusViewBtn) actionButtonsContainer.appendChild(adjustSurplusViewBtn);
+
+        const payslipBtn = document.createElement('button');
+        payslipBtn.className = 'edit-btn download-payslip-admin-btn';
+        payslipBtn.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            Download Payslip
+        `;
+        payslipBtn.addEventListener('click', () => generateAdminEmployeePayslipPDF(currentEmployeeView, payslipBtn));
+        actionButtonsContainer.appendChild(payslipBtn);
 
         // Add the container after the heading
         employeeNameHeading.insertAdjacentElement('afterend', actionButtonsContainer);
@@ -4949,8 +6790,9 @@ async function loadEmployeeDetailsAsMainTable(employeeId, container, preloadedDa
             // Only proceed if date is in range
             if (dateObjNoTime >= startDateNoTime && dateObjNoTime <= endDateNoTime) {
                 // Add branch filter condition
+                const isPaidLeave = dateData.isPaidLeave === true;
                 const branchName = dateData.clockIn?.branch || "N/A";
-                const branchMatches = branch === 'all' || branchName === getBranchName(branch);
+                const branchMatches = isPaidLeave || branch === 'all' || attendanceMatchesFilter(branchName, branch);
 
                 if (branchMatches) {
                     // Now we load the full data including photos
@@ -4977,17 +6819,30 @@ async function loadEmployeeDetailsAsMainTable(employeeId, container, preloadedDa
                         timeOut: dateData.clockOut?.time || null,
                         timeInPhoto: dateData.clockIn?.selfie || null,
                         timeOutPhoto: dateData.clockOut?.selfie || null,
+                        timeInLocation: extractPunchLocation(dateData.clockIn),
+                        timeOutLocation: extractPunchLocation(dateData.clockOut),
                         hasOTPay: dateData.hasOTPay || false,
                         transpoAllowance: dateData.transpoAllowance || 0,
                         hasFixedPay: dateData.hasFixedPay || false,
                         fixedPayAmount: dateData.fixedPayAmount || 0,
                         hasDoublePay: dateData.hasDoublePay || false,
+                        isPaidLeave: dateData.isPaidLeave === true,
                         hasMealAllowance: dateData.hasMealAllowance !== false // Default to true
                     });
                 }
             }
         });
         } // Close the else block
+
+        if (filteredData[employeeId] && Array.isArray(filteredData[employeeId].dates)) {
+            dates.forEach((fresh) => {
+                const existing = filteredData[employeeId].dates.find(d => d.date === fresh.date);
+                if (existing) {
+                    existing.timeInLocation = fresh.timeInLocation;
+                    existing.timeOutLocation = fresh.timeOutLocation;
+                }
+            });
+        }
 
         // Create the employee details table
         const detailTable = document.createElement('table');
@@ -5041,28 +6896,31 @@ async function loadEmployeeDetailsAsMainTable(employeeId, container, preloadedDa
             <td class="date-cell">
                 <span class="date-day">${formatReadableDate(date.date)}</span>
                 <span class="date-dow">${dayOfWeek}</span>
+                ${date.isPaidLeave ? '<span class="leave-badge">Paid Leave</span>' : ''}
                 ${HOLIDAYS_2025[date.date] ?
                                 `<span class="holiday-badge ${HOLIDAYS_2025[date.date].type}">${HOLIDAYS_2025[date.date].name}</span>` :
                                 ''}
             </td>
-            <td>${date.branch || 'N/A'}</td>
-            <td>${date.shift || 'N/A'}</td>
+            <td>${date.isPaidLeave ? '—' : (date.branch || 'N/A')}</td>
+            <td>${date.isPaidLeave ? '—' : (date.shift || 'N/A')}</td>
             <td class="time-cell">
-                ${date.timeInPhoto ? photoThumbDeferredHtml(date.timeInPhoto, 'Clock-in') : '<div style="height: 8px;"></div>'}
-                ${date.timeIn ? formatTimeWithoutSeconds(date.timeIn) : 'N/A'}
+                ${date.isPaidLeave ? '—' : (date.timeInPhoto ? photoThumbDeferredHtml(date.timeInPhoto, 'Clock-in') : '<div style="height: 8px;"></div>')}
+                ${date.isPaidLeave ? '—' : (date.timeIn ? formatTimeWithoutSeconds(date.timeIn) : 'N/A')}
+                ${date.isPaidLeave ? '' : punchLocationCellHtml(date.timeInLocation, date.branch, 'in')}
             </td>
             <td class="time-cell">
-                ${date.timeOutPhoto ? photoThumbDeferredHtml(date.timeOutPhoto, 'Clock-out') : '<div style="height: 8px;"></div>'}
-                ${date.timeOut ? formatTimeWithoutSeconds(date.timeOut) : 'N/A'}
+                ${date.isPaidLeave ? '—' : (date.timeOutPhoto ? photoThumbDeferredHtml(date.timeOutPhoto, 'Clock-out') : '<div style="height: 8px;"></div>')}
+                ${date.isPaidLeave ? '—' : (date.timeOut ? formatTimeWithoutSeconds(date.timeOut) : 'N/A')}
+                ${date.isPaidLeave ? '' : punchLocationCellHtml(date.timeOutLocation, date.branch, 'out')}
             </td>
-            <td>${date.scheduledIn && date.timeIn ?
+            <td>${date.isPaidLeave ? '—' : (date.scheduledIn && date.timeIn ?
                     (payCalculator.compareTimes(date.timeIn, date.scheduledIn) > 0 ?
                         (payCalculator.compareTimes(date.timeIn, date.scheduledIn) / 60).toFixed(1) :
                         '0.0') :
-                    'N/A'}
+                    'N/A')}
             </td>
             ${showSalesBonus ? `<td>₱${dailySalesBonus.toFixed(2)}</td>` : ''}
-            <td>₱${date.timeIn && date.timeOut ?
+            <td>₱${date.isPaidLeave || (date.timeIn && date.timeOut) ?
                     payCalculator.calculateDailyPay(date, employeeData, 'simple').toFixed(2) :
                     '0.00'}</td>
             <td class="action-cell">
@@ -5113,11 +6971,14 @@ async function loadEmployeeDetailsAsMainTable(employeeId, container, preloadedDa
             detailTableBody.appendChild(breakdownRow);
         });
 
+        const earningsLinesMain = employeeData?.periodEarningsLines || [];
+        appendPeriodEarningsRows(detailTableBody, earningsLinesMain, showSalesBonus);
+
         // Add event listeners for expandable rows
         detailTable.querySelectorAll('.expandable-row').forEach(row => {
             row.addEventListener('click', function (e) {
                 // Don't expand if clicking on a button or punch photo
-                if (e.target.tagName === 'BUTTON' || e.target.closest('button') || e.target.closest('img.thumb')) {
+                if (e.target.tagName === 'BUTTON' || e.target.closest('button') || e.target.closest('img.thumb') || e.target.closest('.punch-location-chip')) {
                     return;
                 }
 
@@ -5184,16 +7045,17 @@ function loadPayBreakdown(employeeId, dateStr, detailRow) {
     const dateEntry = employee.dates.find(d => d.date === dateStr);
 
     if (!dateEntry || !dateEntry.timeIn || !dateEntry.timeOut) {
-        detailRow.querySelector('.detail-content').innerHTML = '<div class="no-data">No attendance data for breakdown</div>';
+        const locHtml = dateEntry ? locationBreakdownHtml(dateEntry) : '';
+        detailRow.querySelector('.detail-content').innerHTML = locHtml
+            ? `<div class="pay-breakdown"><div class="no-data">No attendance data for pay breakdown</div>${locHtml}</div>`
+            : '<div class="no-data">No attendance data for breakdown</div>';
+        hydratePunchLocations(detailRow);
         detailRow.dataset.loaded = 'true';
         return;
     }
 
     // Use PayCalculator for breakdown
-    const employeeData = {
-        baseRate: employee.baseRate || 0,
-        salesBonusEligible: employee.salesBonusEligible || false
-    };
+    const employeeData = mergeEmpRates(employee, periodSelect.value);
 
     // Clean the dateEntry to remove seconds from times
     const cleanDateObj = { ...dateEntry };
@@ -5347,9 +7209,11 @@ function loadPayBreakdown(employeeId, dateStr, detailRow) {
         }
     }
 
+    breakdownHTML += locationBreakdownHtml(dateEntry);
     breakdownHTML += '</div>';
 
     detailRow.querySelector('.detail-content').innerHTML = breakdownHTML;
+    hydratePunchLocations(detailRow);
     detailRow.dataset.loaded = 'true';
 }
 
@@ -5504,121 +7368,170 @@ async function cleanupOrphanedPhotos() {
     }
 }
 
-// 2. Now add a function to handle the deletion of an attendance entry
-async function deleteAttendanceEntry(employeeId, dateStr) {
-    if (!employeeId || !dateStr) {
-        console.error("Missing required parameters for deletion");
-        return;
+async function deleteStoredSelfie(selfieUrl) {
+    if (!selfieUrl || !selfieUrl.includes('firebasestorage.googleapis.com')) return;
+    try {
+        const storageUrl = new URL(selfieUrl);
+        const encodedPath = storageUrl.pathname.split('/o/')[1];
+        if (!encodedPath) return;
+        const path = decodeURIComponent(encodedPath.split('?')[0]);
+        await deleteObject(storageRef(storage, path));
+    } catch (photoError) {
+        console.warn("Could not delete punch photo:", photoError);
+    }
+}
+
+function refreshAttendanceAfterEntryChange(employeeId) {
+    if (attendanceData[employeeId]) {
+        let daysWorkedCount = 0;
+        let totalLateHours = 0;
+        attendanceData[employeeId].dates.forEach(date => {
+            if (date.isPaidLeave || (date.timeIn && date.timeOut)) {
+                daysWorkedCount++;
+            }
+            if (date.scheduledIn && date.timeIn) {
+                const lateMinutes = payCalculator.compareTimes(date.timeIn, date.scheduledIn);
+                if (lateMinutes > 0) totalLateHours += lateMinutes / 60;
+            }
+        });
+        attendanceData[employeeId].daysWorked = daysWorkedCount;
+        attendanceData[employeeId].lateHours = totalLateHours;
     }
 
-    // Show a confirmation dialog
-    if (!confirm(`Are you sure you want to delete the attendance record for ${dateStr}?`)) {
-        return; // User cancelled
+    const periodId = periodSelect.value;
+    const branchId = branchSelect.value;
+    saveToCache(getCacheKey(periodId, branchId), attendanceData);
+
+    if (currentEmployeeView) {
+        const container = document.getElementById('employee-details-table');
+        if (container) {
+            loadEmployeeDetailsAsMainTable(employeeId, container);
+        }
+        updateViewMode();
+    } else {
+        filterData();
+    }
+}
+
+function syncRemovePunchButtons(dateEntry) {
+    const inBtn = document.getElementById('removeTimeInBtn');
+    const outBtn = document.getElementById('removeTimeOutBtn');
+    const isLeave = !!(dateEntry && dateEntry.isPaidLeave);
+    if (inBtn) inBtn.style.display = (!isLeave && dateEntry?.timeIn) ? 'inline-block' : 'none';
+    if (outBtn) outBtn.style.display = (!isLeave && dateEntry?.timeOut) ? 'inline-block' : 'none';
+}
+
+function applyLocalPunchRemoval(employeeId, dateStr, kind) {
+    const patch = (employee) => {
+        if (!employee?.dates) return;
+        const dateEntry = employee.dates.find(d => d.date === dateStr);
+        if (!dateEntry) return;
+        if (kind === 'in') {
+            dateEntry.timeIn = null;
+            dateEntry.timeInPhoto = null;
+            dateEntry.timeInLocation = null;
+        } else {
+            dateEntry.timeOut = null;
+            dateEntry.timeOutPhoto = null;
+            dateEntry.timeOutLocation = null;
+        }
+    };
+    patch(attendanceData[employeeId]);
+    patch(filteredData[employeeId]);
+}
+
+// 2. Now add a function to handle the deletion of an attendance entry
+async function deleteAttendanceEntry(employeeId, dateStr, { skipConfirm = false } = {}) {
+    if (!employeeId || !dateStr) {
+        console.error("Missing required parameters for deletion");
+        return false;
+    }
+
+    if (!skipConfirm && !confirm(`Are you sure you want to delete the attendance record for ${dateStr}?`)) {
+        return false;
     }
 
     showLoading("Deleting attendance entry...");
 
     try {
-        // First, fetch the document to get the image URLs before deletion
         const entryRef = doc(db, "attendance_v2", employeeId, "dates", dateStr);
         const docSnap = await getDoc(entryRef);
 
         if (docSnap.exists()) {
             const data = docSnap.data();
-            const clockInSelfie = data.clockIn?.selfie;
-            const clockOutSelfie = data.clockOut?.selfie;
-
-            // Delete photo files from storage if they exist
-            if (clockInSelfie && clockInSelfie.includes('firebasestorage.googleapis.com')) {
-                try {
-                    // Get the storage path from the URL
-                    const storageUrl = new URL(clockInSelfie);
-                    const pathWithQuery = storageUrl.pathname;
-                    // The path typically starts with /v0/b/PROJECT_ID/o/
-                    // Extract just the path part after /o/
-                    const encodedPath = pathWithQuery.split('/o/')[1];
-                    if (encodedPath) {
-                        // The path is URL encoded, so decode it
-                        const path = decodeURIComponent(encodedPath.split('?')[0]);
-                        const photoRef = storageRef(storage, path);
-                        await deleteObject(photoRef);
-                        console.log("Clock-in photo deleted from storage:", path);
-                    }
-                } catch (photoError) {
-                    console.warn("Could not delete clock-in photo:", photoError);
-                }
-            }
-
-            if (clockOutSelfie && clockOutSelfie.includes('firebasestorage.googleapis.com')) {
-                try {
-                    const storageUrl = new URL(clockOutSelfie);
-                    const pathWithQuery = storageUrl.pathname;
-                    const encodedPath = pathWithQuery.split('/o/')[1];
-                    if (encodedPath) {
-                        const path = decodeURIComponent(encodedPath.split('?')[0]);
-                        const photoRef = storageRef(storage, path);
-                        await deleteObject(photoRef);
-                        console.log("Clock-out photo deleted from storage:", path);
-                    }
-                } catch (photoError) {
-                    console.warn("Could not delete clock-out photo:", photoError);
-                }
-            }
+            await deleteStoredSelfie(data.clockIn?.selfie);
+            await deleteStoredSelfie(data.clockOut?.selfie);
         }
 
-        // Delete the document from Firestore
         await deleteDoc(entryRef);
 
         console.log(`Deleted attendance entry for ${employeeId} on ${dateStr}`);
-        
-        // Remove from local data
+
         if (attendanceData[employeeId]) {
             attendanceData[employeeId].dates = attendanceData[employeeId].dates.filter(date => date.date !== dateStr);
-            
-            // Recalculate metrics
-            let daysWorkedCount = 0;
-            let totalLateHours = 0;
-            
-            attendanceData[employeeId].dates.forEach(date => {
-                if (date.timeIn && date.timeOut) {
-                    daysWorkedCount++;
-                }
-                
-                if (date.scheduledIn && date.timeIn) {
-                    const lateMinutes = payCalculator.compareTimes(date.timeIn, date.scheduledIn);
-                    if (lateMinutes > 0) totalLateHours += lateMinutes / 60;
-                }
-            });
-            
-            attendanceData[employeeId].daysWorked = daysWorkedCount;
-            attendanceData[employeeId].lateHours = totalLateHours;
         }
-        
-        // Update cache
-        const periodId = periodSelect.value;
-        const branchId = branchSelect.value;
-        const cacheKey = getCacheKey(periodId, branchId);
-        saveToCache(cacheKey, attendanceData);
-        
-        // Reload the view to reflect changes
-        if (currentEmployeeView) {
-            // If we're in the single employee view, reload just that view
-            const container = document.getElementById('employee-details-table');
-            if (container) {
-                loadEmployeeDetailsAsMainTable(employeeId, container);
-            }
-            
-            // Also update the summary cards
-            updateViewMode();
-        } else {
-            // Otherwise reload all data
-            filterData();
+        if (filteredData[employeeId]) {
+            filteredData[employeeId].dates = filteredData[employeeId].dates.filter(date => date.date !== dateStr);
         }
-        
+
+        refreshAttendanceAfterEntryChange(employeeId);
         showToast('Attendance entry deleted successfully');
+        return true;
     } catch (error) {
         console.error("Error deleting attendance entry:", error);
         alert("Failed to delete attendance entry: " + error.message);
+        return false;
+    } finally {
+        hideLoading();
+    }
+}
+
+async function deletePunchFromEntry(employeeId, dateStr, kind) {
+    if (!employeeId || !dateStr || (kind !== 'in' && kind !== 'out')) return false;
+
+    const label = kind === 'out' ? 'Time Out' : 'Time In';
+    const entryRef = doc(db, "attendance_v2", employeeId, "dates", dateStr);
+    const docSnap = await getDoc(entryRef);
+    if (!docSnap.exists()) {
+        showToast('No attendance record found for that date.', 'error');
+        return false;
+    }
+
+    const data = docSnap.data();
+    const hasIn = !!(data.clockIn && (data.clockIn.time || data.clockIn.timestamp));
+    const hasOut = !!(data.clockOut && (data.clockOut.time || data.clockOut.timestamp));
+    if (kind === 'in' && !hasIn) {
+        showToast('There is no Time In punch to remove.', 'error');
+        return false;
+    }
+    if (kind === 'out' && !hasOut) {
+        showToast('There is no Time Out punch to remove.', 'error');
+        return false;
+    }
+
+    const isLast = (kind === 'in' && !hasOut) || (kind === 'out' && !hasIn);
+    const confirmMsg = isLast
+        ? `Remove ${label}? This is the only punch left, so the whole log for ${dateStr} will be deleted.`
+        : `Remove the ${label} punch for ${dateStr}? The other punch will stay.`;
+    if (!confirm(confirmMsg)) return false;
+
+    if (isLast) {
+        return deleteAttendanceEntry(employeeId, dateStr, { skipConfirm: true });
+    }
+
+    showLoading(`Removing ${label}...`);
+    try {
+        const selfie = kind === 'in' ? data.clockIn?.selfie : data.clockOut?.selfie;
+        await deleteStoredSelfie(selfie);
+        await updateDoc(entryRef, kind === 'in' ? { clockIn: deleteField() } : { clockOut: deleteField() });
+        applyLocalPunchRemoval(employeeId, dateStr, kind);
+        refreshAttendanceAfterEntryChange(employeeId);
+        showToast(`${label} removed`);
+        return true;
+    } catch (error) {
+        console.error(`Error removing ${label}:`, error);
+        alert(`Failed to remove ${label}: ${error.message}`);
+        return false;
     } finally {
         hideLoading();
     }
@@ -5650,13 +7563,25 @@ document.querySelectorAll('.base-rate-input').forEach(input => {
             const payType = prev.payType || attendanceData[employeeId].payType || 'hourly';
             const monthlySalary = prev.monthlySalary != null ? prev.monthlySalary : (attendanceData[employeeId].monthlySalary || 0);
             const periodGross = prev.periodGross != null ? prev.periodGross : attendanceData[employeeId].periodGross;
+            const periodFixedAmount = prev.periodFixedAmount != null
+                ? prev.periodFixedAmount
+                : (attendanceData[employeeId].periodFixedAmount || 0);
+            const payScheme = prev.payScheme === 'inclusive' || attendanceData[employeeId].payScheme === 'inclusive'
+                ? 'inclusive'
+                : 'standard';
             const rh = upsertEmployeeRateHistory(prev.rateHistory, periodId, {
                 baseRate: newBaseRate,
                 payType,
                 monthlySalary,
+                periodFixedAmount,
+                payScheme,
                 ...(periodGross != null && periodGross !== '' ? { periodGross } : {})
             });
             attendanceData[employeeId].rateHistory = rh;
+            attendanceData[employeeId].payType = payType;
+            attendanceData[employeeId].monthlySalary = monthlySalary;
+            attendanceData[employeeId].periodFixedAmount = periodFixedAmount;
+            attendanceData[employeeId].payScheme = payScheme;
             await updateDoc(employeeDocRef, {
                 baseRate: newBaseRate,
                 rateHistory: rh
@@ -5681,6 +7606,18 @@ function openEditEmployeeModal(employeeId) {
     editEmployeeName.value = employees[employeeId] || '';
     // Show current live rate, not cached period rate
     editBaseRate.value = PayCalculator.getRateForPeriod(employee, periodSelect.value).baseRate || 0;
+    const currentScheme = PayCalculator.getRateForPeriod(employee, periodSelect.value).payScheme
+        || employee.payScheme
+        || 'standard';
+    if (editPayScheme) {
+        editPayScheme.value = currentScheme === 'inclusive' ? 'inclusive' : 'standard';
+        const hint = document.getElementById('editPaySchemeHint');
+        if (hint) {
+            hint.textContent = editPayScheme.value === 'inclusive'
+                ? 'Meal is already part of the daily rate, so it isn’t added again.'
+                : '₱150 is added on top of the daily base (₱75 half day).';
+        }
+    }
 
     // Set nickname - use stored nickname or generate default
     const storedNickname = employee.nickname;
@@ -5719,6 +7656,7 @@ async function saveEmployeeChanges(e) {
     const employeeId = editEmployeeId.value;
     const newName = editEmployeeName.value.trim();
     const newBaseRate = parseFloat(editBaseRate.value) || 0;
+    const newPayScheme = editPayScheme?.value === 'inclusive' ? 'inclusive' : 'standard';
     const newNickname = editNickname.value.trim();
     const newSalesBonusEligible = editSalesBonus.checked;
 
@@ -5728,6 +7666,7 @@ async function saveEmployeeChanges(e) {
 
         employees[employeeId] = newName;
         attendanceData[employeeId].baseRate = newBaseRate;
+        attendanceData[employeeId].payScheme = newPayScheme;
         attendanceData[employeeId].nickname = newNickname;
         attendanceData[employeeId].salesBonusEligible = newSalesBonusEligible;
 
@@ -5737,17 +7676,27 @@ async function saveEmployeeChanges(e) {
         const payType = prevData.payType || attendanceData[employeeId].payType || 'hourly';
         const monthlySalary = prevData.monthlySalary != null ? prevData.monthlySalary : (attendanceData[employeeId].monthlySalary || 0);
         const periodGross = prevData.periodGross != null ? prevData.periodGross : attendanceData[employeeId].periodGross;
+        const periodFixedAmount = prevData.periodFixedAmount != null
+            ? prevData.periodFixedAmount
+            : (attendanceData[employeeId].periodFixedAmount || 0);
         const rateHistory = upsertEmployeeRateHistory(prevData.rateHistory, periodId, {
             baseRate: newBaseRate,
             payType,
             monthlySalary,
+            periodFixedAmount,
+            payScheme: newPayScheme,
             ...(periodGross != null && periodGross !== '' ? { periodGross } : {})
         });
         attendanceData[employeeId].rateHistory = rateHistory;
+        attendanceData[employeeId].payType = payType;
+        attendanceData[employeeId].monthlySalary = monthlySalary;
+        attendanceData[employeeId].periodFixedAmount = periodFixedAmount;
+        attendanceData[employeeId].payScheme = newPayScheme;
 
         await setDoc(employeeDocRef, {
             name: newName,
             baseRate: newBaseRate,
+            payScheme: newPayScheme,
             nickname: newNickname,
             salesBonusEligible: newSalesBonusEligible,
             rateHistory
@@ -5799,6 +7748,20 @@ const activeOnlyToggle = document.getElementById('activeOnlyToggle');
 
 // Add this to your DOMContentLoaded event listener setup
 activeOnlyToggle.addEventListener('change', filterData);
+
+const includePriorEarningsToggle = document.getElementById('includePriorEarningsToggle');
+if (includePriorEarningsToggle) {
+    includePriorEarningsToggle.checked = isPriorEarningsToggleOn();
+    includePriorEarningsToggle.addEventListener('change', async () => {
+        setPriorEarningsToggle(includePriorEarningsToggle.checked);
+        showToast(includePriorEarningsToggle.checked
+            ? 'Including open lines from previous 2 cutoffs'
+            : 'Showing current period lines only');
+        if (periodSelect?.value) {
+            await loadData(periodSelect.value);
+        }
+    });
+}
 // Background data refresh functionality
 let backgroundRefreshInProgress = false;
 
@@ -5919,6 +7882,13 @@ function openEditShiftModal(employeeId, dateStr) {
     const dateEntry = employee.dates.find(d => d.date === dateStr);
 
     if (dateEntry) {
+        populateAttendanceBranchSelect(editShiftBranch, { selectedValue: dateEntry.branch || 'Podium' });
+        if (dateEntry.branch && ![...editShiftBranch.options].some((o) => o.value === dateEntry.branch)) {
+            const opt = document.createElement('option');
+            opt.value = dateEntry.branch;
+            opt.textContent = dateEntry.branch;
+            editShiftBranch.appendChild(opt);
+        }
         editShiftBranch.value = dateEntry.branch || 'Podium';
         editShiftSchedule.value = dateEntry.shift || 'Opening';
         editShiftTimeIn.value = convertTo24HourFormat(dateEntry.timeIn) || '';
@@ -5933,6 +7903,13 @@ function openEditShiftModal(employeeId, dateStr) {
 
         // Set meal allowance (default to true if not specified)
         editMealAllowance.checked = dateEntry.hasMealAllowance !== false;
+        applyMealAllowanceControlState(editMealAllowance, employee);
+
+        const editPaidLeaveEl = document.getElementById('editShiftPaidLeave');
+        if (editPaidLeaveEl) {
+            editPaidLeaveEl.checked = dateEntry.isPaidLeave === true;
+            togglePaidLeaveMode('edit', editPaidLeaveEl.checked);
+        }
 
         // Load scheduled times for Custom shifts
         const editShiftScheduledIn = document.getElementById('editShiftScheduledIn');
@@ -5957,10 +7934,21 @@ function openEditShiftModal(employeeId, dateStr) {
 
         // Show/hide scheduled times fields based on shift type
         toggleScheduledTimesFields('edit', dateEntry.shift || 'Opening');
+        syncRemovePunchButtons(dateEntry);
     }
 
     editShiftEmployeeId.value = employeeId;
     editShiftDate.value = dateStr;
+
+    // If no date entry yet, default paid leave off
+    if (!dateEntry) {
+        const editPaidLeaveEl = document.getElementById('editShiftPaidLeave');
+        if (editPaidLeaveEl) {
+            editPaidLeaveEl.checked = false;
+            togglePaidLeaveMode('edit', false);
+        }
+        syncRemovePunchButtons(null);
+    }
 
     document.getElementById('shiftEditModal').style.display = 'flex';
 }
@@ -6073,6 +8061,9 @@ function closeShiftEditModal() {
 function openAddEmployeeModal() {
     // Clear form
     addEmployeeForm.reset();
+    const addPayScheme = document.getElementById('addPayScheme');
+    if (addPayScheme) addPayScheme.value = 'inclusive';
+    if (addBaseRate) addBaseRate.placeholder = 'e.g., 750';
 
     // Show modal
     addEmployeeModal.style.display = 'flex';
@@ -6090,6 +8081,7 @@ async function saveNewEmployee(e) {
     const employeeId = addEmployeeId.value.trim();
     const employeeName = addEmployeeName.value.trim();
     const baseRate = parseFloat(addBaseRate.value) || 0;
+    const payScheme = document.getElementById('addPayScheme')?.value === 'inclusive' ? 'inclusive' : 'standard';
     const nickname = addNickname.value.trim() || generateDefaultNickname(employeeName);
     const salesBonusEligible = addSalesBonus.checked;
 
@@ -6105,6 +8097,8 @@ async function saveNewEmployee(e) {
         await setDoc(employeeDocRef, {
             name: employeeName,
             baseRate: baseRate,
+            payScheme: payScheme,
+            payType: 'hourly',
             nickname: nickname,
             salesBonusEligible: salesBonusEligible
         });
@@ -6122,6 +8116,8 @@ async function saveNewEmployee(e) {
             daysWorked: 0,
             lateHours: 0,
             baseRate: baseRate,
+            payScheme: payScheme,
+            payType: 'hourly',
             nickname: nickname,
             salesBonusEligible: salesBonusEligible
         };
@@ -6152,6 +8148,57 @@ async function saveShiftChanges(e) {
 
     const employeeId = document.getElementById('editShiftEmployeeId').value;
     const dateStr = document.getElementById('editShiftDate').value;
+    const isPaidLeave = document.getElementById('editShiftPaidLeave')?.checked === true;
+    const docRef = doc(db, "attendance_v2", employeeId, "dates", dateStr);
+
+    if (isPaidLeave) {
+        try {
+            await setDoc(docRef, {
+                isPaidLeave: true,
+                hasMealAllowance: false,
+                notes: 'Paid leave'
+            });
+
+            const applyLeaveLocal = (employee) => {
+                if (!employee?.dates) return;
+                const dateEntry = employee.dates.find(d => d.date === dateStr);
+                if (!dateEntry) return;
+                dateEntry.isPaidLeave = true;
+                dateEntry.timeIn = null;
+                dateEntry.timeOut = null;
+                dateEntry.branch = 'N/A';
+                dateEntry.shift = 'Custom';
+                dateEntry.hasMealAllowance = false;
+                dateEntry.hasOTPay = false;
+                dateEntry.hasFixedPay = false;
+                dateEntry.hasDoublePay = false;
+                dateEntry.fixedPayAmount = 0;
+                dateEntry.transpoAllowance = 0;
+                dateEntry.timeInPhoto = null;
+                dateEntry.timeOutPhoto = null;
+            };
+            applyLeaveLocal(attendanceData[employeeId]);
+            applyLeaveLocal(filteredData[employeeId]);
+
+            const periodId = periodSelect.value;
+            const branchId = branchSelect.value;
+            saveToCache(getCacheKey(periodId, branchId), attendanceData);
+            filterData();
+
+            if (currentEmployeeView === employeeId) {
+                const container = document.getElementById('employee-details-table');
+                if (container) loadEmployeeDetailsAsMainTable(employeeId, container);
+            }
+
+            document.getElementById('shiftEditModal').style.display = 'none';
+            showToast('Paid leave saved successfully!');
+        } catch (error) {
+            console.error('Error saving paid leave:', error);
+            showToast('Failed to save paid leave. Please try again.', 'error');
+        }
+        return;
+    }
+
     const newBranch = document.getElementById('editShiftBranch').value;
     const newShift = document.getElementById('editShiftSchedule').value;
     const newTimeIn = document.getElementById('editShiftTimeIn').value ? convertTo12HourFormat(document.getElementById('editShiftTimeIn').value) : null;
@@ -6161,7 +8208,9 @@ async function saveShiftChanges(e) {
     const newHasFixedPay = document.getElementById('editShiftFixedPay').checked;
     const newHasDoublePay = document.getElementById('editShiftDoublePay').checked;
     const newFixedPayAmount = newHasFixedPay ? (parseFloat(document.getElementById('editShiftFixedAmount').value) || 0) : 0;
-    const newHasMealAllowance = document.getElementById('editMealAllowance').checked;
+    const newHasMealAllowance = employeeIncludesMealAllowance(filteredData[employeeId] || attendanceData[employeeId])
+        ? document.getElementById('editMealAllowance').checked
+        : false;
 
     // Get scheduled times for Custom shifts
     const editShiftScheduledIn = document.getElementById('editShiftScheduledIn');
@@ -6170,48 +8219,72 @@ async function saveShiftChanges(e) {
     const newScheduledOut = (newShift === 'Custom' && editShiftScheduledOut?.value) ? convertTo12HourFormat(editShiftScheduledOut.value) : null;
 
     try {
-        // Build update object
-        const updateData = {
-            'clockIn.branch': newBranch,
-            'clockIn.shift': newShift,
-            'transpoAllowance': newTranspoAllowance,
-            'hasOTPay': newHasOTPay,
-            'hasFixedPay': newHasFixedPay,
-            'fixedPayAmount': newFixedPayAmount,
-            'hasDoublePay': newHasDoublePay,
-            'hasMealAllowance': newHasMealAllowance
-        };
+        const existingSnap = await getDoc(docRef);
+        const wasPaidLeave = existingSnap.exists() && existingSnap.data().isPaidLeave === true;
 
-        // Only update times if they were provided
-        if (newTimeIn) {
-            updateData['clockIn.time'] = newTimeIn;
-        }
-        if (newTimeOut) {
-            updateData['clockOut.time'] = newTimeOut;
-        }
-
-        // Update scheduled times for Custom shifts
-        if (newShift === 'Custom') {
-            if (newScheduledIn) {
-                updateData['scheduledIn'] = newScheduledIn;
-            } else {
-                // Clear scheduled times if Custom shift but no scheduled times provided
-                updateData['scheduledIn'] = null;
+        // If converting from leave to a normal shift, rewrite the full doc
+        if (wasPaidLeave) {
+            if (!newTimeIn || !newTimeOut) {
+                showToast('Please set Time In and Time Out when converting leave to a shift.', 'error');
+                return;
             }
-            if (newScheduledOut) {
-                updateData['scheduledOut'] = newScheduledOut;
+            const shiftData = {
+                clockIn: { time: newTimeIn, branch: newBranch, shift: newShift },
+                clockOut: { time: newTimeOut },
+                transpoAllowance: newTranspoAllowance,
+                hasOTPay: newHasOTPay,
+                hasFixedPay: newHasFixedPay,
+                fixedPayAmount: newFixedPayAmount,
+                hasDoublePay: newHasDoublePay,
+                hasMealAllowance: newHasMealAllowance,
+                isPaidLeave: false
+            };
+            if (newShift === 'Custom') {
+                if (newScheduledIn) shiftData.scheduledIn = newScheduledIn;
+                if (newScheduledOut) shiftData.scheduledOut = newScheduledOut;
+            }
+            await setDoc(docRef, shiftData);
+        } else {
+            // Build update object
+            const updateData = {
+                'clockIn.branch': newBranch,
+                'clockIn.shift': newShift,
+                'transpoAllowance': newTranspoAllowance,
+                'hasOTPay': newHasOTPay,
+                'hasFixedPay': newHasFixedPay,
+                'fixedPayAmount': newFixedPayAmount,
+                'hasDoublePay': newHasDoublePay,
+                'hasMealAllowance': newHasMealAllowance,
+                'isPaidLeave': false
+            };
+
+            // Only update times if they were provided
+            if (newTimeIn) {
+                updateData['clockIn.time'] = newTimeIn;
+            }
+            if (newTimeOut) {
+                updateData['clockOut.time'] = newTimeOut;
+            }
+
+            // Update scheduled times for Custom shifts
+            if (newShift === 'Custom') {
+                if (newScheduledIn) {
+                    updateData['scheduledIn'] = newScheduledIn;
+                } else {
+                    updateData['scheduledIn'] = null;
+                }
+                if (newScheduledOut) {
+                    updateData['scheduledOut'] = newScheduledOut;
+                } else {
+                    updateData['scheduledOut'] = null;
+                }
             } else {
+                updateData['scheduledIn'] = null;
                 updateData['scheduledOut'] = null;
             }
-        } else {
-            // Clear scheduled times for non-Custom shifts
-            updateData['scheduledIn'] = null;
-            updateData['scheduledOut'] = null;
-        }
 
-        // Update in Firebase
-        const docRef = doc(db, "attendance_v2", employeeId, "dates", dateStr);
-        await updateDoc(docRef, updateData);
+            await updateDoc(docRef, updateData);
+        }
 
         // Update local data
         const employee = attendanceData[employeeId];
@@ -6225,6 +8298,7 @@ async function saveShiftChanges(e) {
             dateEntry.fixedPayAmount = newFixedPayAmount;
             dateEntry.hasDoublePay = newHasDoublePay;
             dateEntry.hasMealAllowance = newHasMealAllowance;
+            dateEntry.isPaidLeave = false;
 
             if (newTimeIn) dateEntry.timeIn = newTimeIn;
             if (newTimeOut) dateEntry.timeOut = newTimeOut;
@@ -6253,6 +8327,7 @@ async function saveShiftChanges(e) {
                 filteredDateEntry.fixedPayAmount = newFixedPayAmount;
                 filteredDateEntry.hasDoublePay = newHasDoublePay;
                 filteredDateEntry.hasMealAllowance = newHasMealAllowance;
+                filteredDateEntry.isPaidLeave = false;
 
                 if (newTimeIn) filteredDateEntry.timeIn = newTimeIn;
                 if (newTimeOut) filteredDateEntry.timeOut = newTimeOut;
@@ -6383,10 +8458,25 @@ document.addEventListener('DOMContentLoaded', async function () {
     // document.getElementById('cleanupPhotosBtn').addEventListener('click', cleanupOrphanedPhotos);
     console.time('app-init');
 
+    await loadBranchesFromFirebase(db, { getDocs, collection });
+    populateAttendanceBranchSelects(['addShiftBranch', 'editShiftBranch', 'batchEditBranch']);
+
     // Setup event listeners
+    setupEmployeeTableSorting();
+
     closeModal.addEventListener('click', closePhotoModal);
     photoModal.addEventListener('click', closePhotoModal);
     document.querySelector('.photo-modal-content').addEventListener('click', function (e) { e.stopPropagation(); });
+
+    const punchMapModal = document.getElementById('punchMapModal');
+    const closePunchMapBtn = document.getElementById('closePunchMapModal');
+    if (closePunchMapBtn) closePunchMapBtn.addEventListener('click', closePunchMapModal);
+    if (punchMapModal) punchMapModal.addEventListener('click', closePunchMapModal);
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && punchMapModal && punchMapModal.style.display === 'flex') {
+            closePunchMapModal();
+        }
+    });
 
     const todayBootstrap = new Date();
     const cachedEarliest = readMigrationEarliestDateFromCache();
@@ -6951,8 +9041,13 @@ function openAddShiftModal(employeeId) {
     addShiftFixedAmount.value = '';
     addShiftFixedAmountGroup.style.display = 'none';
     addShiftMealAllowance.checked = true;
+    applyMealAllowanceControlState(addShiftMealAllowance, attendanceData[employeeId]);
     addShiftTranspoAllowance.value = '0';
     addShiftOTPay.checked = false;
+    if (addShiftPaidLeave) {
+        addShiftPaidLeave.checked = false;
+        togglePaidLeaveMode('add', false);
+    }
 
     // Update time placeholders based on selected schedule
     updateTimePlaceholders();
@@ -6971,6 +9066,83 @@ async function saveNewShift(e) {
 
     const employeeId = addShiftEmployeeId.value;
     const dateStr = addShiftDate.value;
+    const isPaidLeave = document.getElementById('addShiftPaidLeave')?.checked === true;
+
+    if (!dateStr) {
+        showToast('Please fill in all required fields.', 'error');
+        return;
+    }
+
+    if (isPaidLeave) {
+        try {
+            const docRef = doc(db, "attendance_v2", employeeId, "dates", dateStr);
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                if (!confirm('A record already exists for this date. Do you want to overwrite it with paid leave?')) {
+                    return;
+                }
+            }
+
+            await setDoc(docRef, {
+                isPaidLeave: true,
+                hasMealAllowance: false,
+                notes: 'Paid leave'
+            });
+
+            if (!attendanceData[employeeId]) {
+                attendanceData[employeeId] = {
+                    id: employeeId,
+                    name: employees[employeeId],
+                    dates: [],
+                    lastClockIn: null,
+                    lastClockInPhoto: null,
+                    daysWorked: 0,
+                    lateHours: 0,
+                    baseRate: 0
+                };
+            }
+
+            const leaveEntry = {
+                date: dateStr,
+                branch: 'N/A',
+                shift: 'Custom',
+                scheduledIn: null,
+                scheduledOut: null,
+                timeIn: null,
+                timeOut: null,
+                timeInPhoto: null,
+                timeOutPhoto: null,
+                hasDoublePay: false,
+                hasFixedPay: false,
+                fixedPayAmount: 0,
+                hasMealAllowance: false,
+                transpoAllowance: 0,
+                hasOTPay: false,
+                isPaidLeave: true
+            };
+
+            attendanceData[employeeId].dates = attendanceData[employeeId].dates.filter(d => d.date !== dateStr);
+            attendanceData[employeeId].dates.push(leaveEntry);
+
+            const periodId = periodSelect.value;
+            const branchId = branchSelect.value;
+            saveToCache(getCacheKey(periodId, branchId), attendanceData);
+            filterData();
+
+            if (currentEmployeeView === employeeId) {
+                const container = document.getElementById('employee-details-table');
+                if (container) loadEmployeeDetailsAsMainTable(employeeId, container);
+            }
+
+            closeAddShiftModalFunc();
+            showToast('Paid leave added successfully!');
+        } catch (error) {
+            console.error('Error adding paid leave:', error);
+            showToast('Failed to add paid leave. Please try again.', 'error');
+        }
+        return;
+    }
+
     const branch = addShiftBranch.value;
     const shift = addShiftSchedule.value;
     const timeIn = convertTo12HourFormat(addShiftTimeIn.value);
@@ -6978,7 +9150,9 @@ async function saveNewShift(e) {
     const hasDoublePay = addShiftDoublePay.checked;
     const hasFixedPay = addShiftFixedPay.checked;
     const fixedPayAmount = hasFixedPay ? parseFloat(addShiftFixedAmount.value) || 0 : 0;
-    const hasMealAllowance = addShiftMealAllowance.checked;
+    const hasMealAllowance = employeeIncludesMealAllowance(attendanceData[employeeId])
+        ? addShiftMealAllowance.checked
+        : false;
     const transpoAllowance = parseFloat(addShiftTranspoAllowance.value) || 0;
     const hasOTPay = addShiftOTPay.checked;
 
@@ -7024,7 +9198,8 @@ async function saveNewShift(e) {
             fixedPayAmount: fixedPayAmount,
             hasMealAllowance: hasMealAllowance,
             transpoAllowance: transpoAllowance,
-            hasOTPay: hasOTPay
+            hasOTPay: hasOTPay,
+            isPaidLeave: false
         };
 
         // Add scheduled times for Custom shifts
@@ -7076,7 +9251,8 @@ async function saveNewShift(e) {
             fixedPayAmount: fixedPayAmount,
             hasMealAllowance: hasMealAllowance,
             transpoAllowance: transpoAllowance,
-            hasOTPay: hasOTPay
+            hasOTPay: hasOTPay,
+            isPaidLeave: false
         };
 
         // Remove existing entry if it exists
@@ -7111,6 +9287,505 @@ async function saveNewShift(e) {
     }
 }
 
+function emptyPayrollBankAccount() {
+    return { accountName: '', accountNumber: '', qrUrl: '' };
+}
+
+function readPayrollBankAccounts(details) {
+    const result = { gotyme: emptyPayrollBankAccount(), bdo: emptyPayrollBankAccount() };
+    const stored = details?.bankAccounts || {};
+    for (const key of ['gotyme', 'bdo']) {
+        const slot = stored[key];
+        if (slot && typeof slot === 'object') {
+            result[key] = {
+                accountName: String(slot.accountName || '').trim(),
+                accountNumber: String(slot.accountNumber || '').replace(/\D/g, ''),
+                qrUrl: String(slot.qrUrl || '').trim()
+            };
+        }
+    }
+    const legacyKey = String(details?.bankName || '').trim().toLowerCase();
+    if ((legacyKey === 'gotyme' || legacyKey === 'bdo') && !result[legacyKey].accountNumber) {
+        result[legacyKey].accountName = String(details?.bankAccountName || '').trim();
+        result[legacyKey].accountNumber = String(details?.bankAccountNumber || '').replace(/\D/g, '');
+    }
+    if (!result.gotyme.qrUrl && details?.gotymeQrUrl) result.gotyme.qrUrl = String(details.gotymeQrUrl).trim();
+    if (!result.bdo.qrUrl && details?.bdoQrUrl) result.bdo.qrUrl = String(details.bdoQrUrl).trim();
+    return result;
+}
+
+async function getEmployeeBankDetails(employeeId) {
+    const cached = attendanceData[employeeId] || filteredData[employeeId];
+    if (cached && (cached.bankAccounts || cached.gotymeQrUrl || cached.bdoQrUrl || cached.bankAccountNumber)) {
+        return cached;
+    }
+    try {
+        const snap = await getDoc(doc(db, 'employees_v2', employeeId));
+        if (snap.exists()) return snap.data() || {};
+    } catch (error) {
+        console.warn('Could not load staff bank details:', error);
+    }
+    return cached || {};
+}
+
+async function getEmployeeContactInfo(employeeId) {
+    const cached = attendanceData[employeeId] || filteredData[employeeId] || {};
+    let email = String(cached.email || '').trim();
+    let phone = String(cached.phone || '').trim();
+    if (email && phone) return { email, phone };
+    try {
+        const snap = await getDoc(doc(db, 'employees_v2', employeeId));
+        if (snap.exists()) {
+            const data = snap.data() || {};
+            if (!email) email = String(data.email || '').trim();
+            if (!phone) phone = String(data.phone || '').trim();
+        }
+    } catch (error) {
+        console.warn('Could not load staff contact info:', error);
+    }
+    return { email, phone };
+}
+
+function formatPayrollPhp(amount) {
+    const n = Number(amount) || 0;
+    return `₱${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function formatPayrollPayDateLabel(periodId) {
+    try {
+        const iso = payDayIsoFromPeriodId(periodId);
+        if (!iso) return '';
+        const dt = new Date(`${iso}T00:00:00`);
+        if (Number.isNaN(dt.getTime())) return '';
+        return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch (_) {
+        return '';
+    }
+}
+
+function transferMethodLabel(method) {
+    const key = String(method || '').toLowerCase();
+    if (key === 'gotyme') return 'GoTyme';
+    if (key === 'bdo') return 'BDO';
+    return method ? String(method) : '—';
+}
+
+async function uploadPayrollStatementPdf({ periodId, employeeId, blob, filename }) {
+    const safeName = String(filename || 'payslip.pdf').replace(/[^\w.\-]+/g, '_');
+    const path = `payroll_periods_v2_statements/${periodId}/${employeeId}_${Date.now()}_${safeName}`;
+    const fileRef = storageRef(storage, path);
+    await uploadBytes(fileRef, blob, { contentType: 'application/pdf' });
+    return getDownloadURL(fileRef);
+}
+
+function buildPayrollPaymentEmailHtml({
+    employeeName,
+    periodLabel,
+    paymentAmount,
+    paymentType,
+    paidTotal,
+    remainingAmount,
+    transferMethod,
+    accountName,
+    accountNumber,
+    statementUrl,
+    note
+}) {
+    const methodLabel = transferMethodLabel(transferMethod);
+    const amountStr = formatPayrollPhp(paymentAmount);
+    const remaining = Math.max(0, Number(remainingAmount) || 0);
+    const isPartial = String(paymentType || '').toLowerCase() === 'partial' || remaining > 0.009;
+    const noteText = String(note || '').trim();
+    const acctName = String(accountName || '').trim() || '—';
+    const acctNumber = String(accountNumber || '').trim() || '—';
+    const name = String(employeeName || 'there').trim() || 'there';
+
+    let partialBlock = '';
+    if (isPartial) {
+        partialBlock = `
+            <tr>
+              <td style="padding:0 0 16px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fff8e8;border-radius:10px;">
+                  <tr>
+                    <td style="padding:14px 16px;font-size:14px;line-height:1.5;color:#7a5b12;">
+                      <strong>Partial payment</strong><br>
+                      Already paid this period: <strong>${escapeHtml(formatPayrollPhp(paidTotal))}</strong><br>
+                      Remaining: <strong>${escapeHtml(formatPayrollPhp(remaining))}</strong>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>`;
+    }
+
+    const noteBlock = noteText
+        ? `<tr><td style="padding:0 0 16px;font-size:14px;color:#555;line-height:1.5;"><strong>Note:</strong> ${escapeHtml(noteText)}</td></tr>`
+        : '';
+
+    const ctaBlock = statementUrl
+        ? `<tr>
+              <td style="padding:8px 0 24px;" align="center">
+                <a href="${escapeHtml(statementUrl)}" style="display:inline-block;background:#2b9348;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:14px 28px;border-radius:10px;">Download payroll statement</a>
+              </td>
+            </tr>`
+        : '';
+
+    return `
+<div style="margin:0;padding:0;background:#f4f7f5;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f7f5;padding:24px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e3eee6;">
+          <tr>
+            <td style="background:#eef9f0;padding:22px 24px;">
+              <img src="https://matchanese.com/cdn/shop/files/matchanese-2025-logo_e4944ef8-b626-4206-80c5-cc4fd9ed79ab.png?v=1738086945&width=60" alt="Matchanese" style="max-height:40px;display:block;margin-bottom:12px;" />
+              <div style="font-size:13px;letter-spacing:0.06em;text-transform:uppercase;color:#2b9348;font-weight:700;">Payroll paid</div>
+              <div style="font-size:26px;line-height:1.2;font-weight:700;color:#1f2933;margin-top:6px;">${escapeHtml(amountStr)}</div>
+              <div style="font-size:14px;color:#5b6b63;margin-top:6px;">${escapeHtml(periodLabel || '')}</div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="padding:0 0 16px;font-size:15px;line-height:1.55;color:#333;">
+                    Hi ${escapeHtml(name)},<br><br>
+                    Your payroll payment has been sent.
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:0 0 16px;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7fbf8;border-radius:10px;">
+                      <tr>
+                        <td style="padding:14px 16px;font-size:14px;line-height:1.6;color:#333;">
+                          <div style="font-size:11px;letter-spacing:0.05em;text-transform:uppercase;color:#6b7c74;font-weight:700;margin-bottom:6px;">Sent to</div>
+                          <div><strong>${escapeHtml(methodLabel)}</strong></div>
+                          <div>${escapeHtml(acctName)}</div>
+                          <div style="font-family:Consolas,Monaco,monospace;letter-spacing:0.02em;">${escapeHtml(acctNumber)}</div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                ${partialBlock}
+                ${noteBlock}
+                ${ctaBlock}
+                <tr>
+                  <td style="padding-top:8px;border-top:1px solid #e8efe9;font-size:12px;color:#88948e;line-height:1.5;">
+                    Matchanese Payroll
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</div>`;
+}
+
+async function sendPayrollPaymentEmail({
+    to,
+    employeeName,
+    periodId,
+    periodLabel,
+    paymentAmount,
+    paymentType,
+    paidTotal,
+    remainingAmount,
+    transferMethod,
+    accountName,
+    accountNumber,
+    statementUrl,
+    note
+}) {
+    const EMAILJS_SERVICE_ID = 'service_1085n74';
+    const EMAILJS_TEMPLATE_ID = 'template_6zh5mq8';
+    const EMAILJS_PUBLIC_KEY = 'Jxzqofh9mPAsb9V0M';
+
+    const recipient = String(to || '').trim();
+    if (!recipient) return { skipped: true, reason: 'no_email' };
+
+    if (typeof emailjs === 'undefined') {
+        console.warn('EmailJS not loaded — skipping payroll payment email');
+        return { skipped: true, reason: 'emailjs_missing' };
+    }
+
+    emailjs.init(EMAILJS_PUBLIC_KEY);
+
+    const payDateLabel = formatPayrollPayDateLabel(periodId);
+    const subject = payDateLabel
+        ? `Your payroll for ${payDateLabel} has been sent`
+        : 'Your payroll has been sent';
+    const message = buildPayrollPaymentEmailHtml({
+        employeeName,
+        periodLabel,
+        paymentAmount,
+        paymentType,
+        paidTotal,
+        remainingAmount,
+        transferMethod,
+        accountName,
+        accountNumber,
+        statementUrl,
+        note
+    });
+
+    await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+        to_email: recipient,
+        from_name: 'Matchanese Payroll',
+        subject,
+        message,
+        payslip_pdf: statementUrl || ''
+    });
+
+    return { ok: true, to: recipient, subject };
+}
+
+async function notifyPayrollPaymentAfterSave({
+    employeeId,
+    periodId,
+    transferMethod,
+    paymentAmount,
+    paymentData,
+    note = '',
+    overrideToEmail = null
+}) {
+    try {
+        const contact = await getEmployeeContactInfo(employeeId);
+        const to = String(overrideToEmail || contact.email || '').trim();
+        if (!to) {
+            console.log('[Payroll email] No employee email — skipping notify');
+            return { skipped: true, reason: 'no_email' };
+        }
+
+        const bankDetails = await getEmployeeBankDetails(employeeId);
+        const accounts = readPayrollBankAccounts(bankDetails);
+        const methodKey = String(transferMethod || '').toLowerCase();
+        const acc = accounts[methodKey] || emptyPayrollBankAccount();
+
+        const employee = filteredData[employeeId] || attendanceData[employeeId] || {};
+        const employeeName = employee.name || employees[employeeId] || employeeId;
+
+        let statementUrl = '';
+        try {
+            const built = await buildAdminEmployeePayslipPdf(employeeId);
+            statementUrl = await uploadPayrollStatementPdf({
+                periodId: periodId || built.periodId,
+                employeeId,
+                blob: built.blob,
+                filename: built.filename
+            });
+        } catch (pdfErr) {
+            console.warn('[Payroll email] Statement PDF/upload failed:', pdfErr);
+            if (!payModeState.open) {
+                showToast('Payment saved, but payslip upload failed', 'warning');
+            }
+        }
+
+        const periodOpt = periodSelect?.options?.[periodSelect.selectedIndex];
+        const periodLabel = periodOpt ? periodOpt.textContent : (periodId || '');
+
+        await sendPayrollPaymentEmail({
+            to,
+            employeeName,
+            periodId,
+            periodLabel,
+            paymentAmount,
+            paymentType: paymentData?.paymentType,
+            paidTotal: paymentData?.paymentAmount,
+            remainingAmount: paymentData?.remainingAmount,
+            transferMethod,
+            accountName: acc.accountName,
+            accountNumber: acc.accountNumber,
+            statementUrl,
+            note
+        });
+
+        console.log('[Payroll email] Payment confirmation sent to', to);
+        return { ok: true, to, statementUrl };
+    } catch (err) {
+        console.warn('[Payroll email] Notify failed:', err);
+        if (!payModeState.open) {
+            showToast('Payment saved, but email notify failed', 'warning');
+        }
+        return { ok: false, error: err };
+    }
+}
+
+window.getEmployeeContactInfo = getEmployeeContactInfo;
+window.sendPayrollPaymentEmail = sendPayrollPaymentEmail;
+window.notifyPayrollPaymentAfterSave = notifyPayrollPaymentAfterSave;
+
+async function sendSamplePayrollPaymentEmail(toEmail = 'david.toph@gmail.com') {
+    const periodId = periodSelect?.value;
+    let employeeId = document.getElementById('paymentEmployeeId')?.value
+        || payModeState?.queue?.[payModeState.index]?.employeeId
+        || null;
+
+    if (!employeeId) {
+        const pool = filteredData && Object.keys(filteredData).length ? filteredData : attendanceData;
+        let bestId = null;
+        let bestPay = -1;
+        Object.keys(pool || {}).forEach((id) => {
+            const emp = pool[id];
+            const pay = Number(calcTotalPaySimple?.(emp?.dates, emp, periodId))
+                || Number(emp?.totalPayWithBonus)
+                || 0;
+            if (pay > bestPay) {
+                bestPay = pay;
+                bestId = id;
+            }
+        });
+        employeeId = bestId;
+    }
+
+    if (!employeeId || !periodId) {
+        throw new Error('Load a payroll period with employees before sending a sample');
+    }
+
+    const bankDetails = await getEmployeeBankDetails(employeeId);
+    const accounts = readPayrollBankAccounts(bankDetails);
+    const methods = Object.keys(accounts).filter((k) => accounts[k]?.accountNumber || accounts[k]?.qrUrl);
+    const transferMethod = methods[0] || 'gotyme';
+    const acc = accounts[transferMethod] || emptyPayrollBankAccount();
+    const employee = filteredData[employeeId] || attendanceData[employeeId] || {};
+    const employeeName = employee.name || employees[employeeId] || employeeId;
+
+    const built = await buildAdminEmployeePayslipPdf(employeeId);
+    if (!(Number(built.grandTotal) > 0)) {
+        throw new Error('Selected employee has ₱0 for this period — pick someone with attendance first');
+    }
+
+    const statementUrl = await uploadPayrollStatementPdf({
+        periodId,
+        employeeId,
+        blob: built.blob,
+        filename: built.filename
+    });
+
+    const periodOpt = periodSelect.options[periodSelect.selectedIndex];
+    const periodLabel = periodOpt ? periodOpt.textContent : periodId;
+    const sampleAmount = Number(built.grandTotal) || 0;
+
+    const result = await sendPayrollPaymentEmail({
+        to: toEmail,
+        employeeName,
+        periodId,
+        periodLabel,
+        paymentAmount: sampleAmount,
+        paymentType: 'full',
+        paidTotal: sampleAmount,
+        remainingAmount: 0,
+        transferMethod,
+        accountName: acc.accountName || 'Sample Account',
+        accountNumber: acc.accountNumber || '0000000000',
+        statementUrl,
+        note: ''
+    });
+
+    showToast(`Sample payroll email sent to ${toEmail}`, 'success');
+    return { ...result, employeeId, periodId, statementUrl, employeeName, grandTotal: built.grandTotal };
+}
+
+window.sendSamplePayrollPaymentEmail = sendSamplePayrollPaymentEmail;
+
+function isDisbursementPeriod() {
+    const periodId = periodSelect?.value;
+    if (!periodId) return false;
+    const { endDate } = getPeriodDates(periodId);
+    return new Date() > endDate;
+}
+
+function highlightPaymentRecipientCards() {
+    const method = (document.getElementById('paymentMethod')?.value || '').toLowerCase();
+    document.querySelectorAll('#paymentRecipientList .payment-recipient-card').forEach((card) => {
+        card.classList.toggle('is-active', Boolean(method) && card.dataset.bank === method);
+    });
+}
+
+async function populatePaymentRecipientDetails(employeeId) {
+    const group = document.getElementById('paymentRecipientGroup');
+    const list = document.getElementById('paymentRecipientList');
+    if (!group || !list) return;
+
+    const details = await getEmployeeBankDetails(employeeId);
+
+    const accounts = readPayrollBankAccounts(details);
+    const labels = { gotyme: 'GoTyme', bdo: 'BDO' };
+    list.innerHTML = '';
+    let shown = 0;
+
+    for (const key of ['gotyme', 'bdo']) {
+        const acc = accounts[key];
+        if (!acc.accountNumber && !acc.qrUrl) continue;
+        shown += 1;
+        const card = document.createElement('div');
+        card.className = 'payment-recipient-card';
+        card.dataset.bank = key;
+
+        const meta = document.createElement('div');
+        meta.className = 'payment-recipient-meta';
+
+        const bankEl = document.createElement('div');
+        bankEl.className = 'payment-recipient-bank';
+        bankEl.textContent = labels[key];
+        meta.appendChild(bankEl);
+
+        const nameEl = document.createElement('div');
+        nameEl.className = 'payment-recipient-name';
+        nameEl.textContent = acc.accountName || 'Account name not set';
+        meta.appendChild(nameEl);
+
+        const numberEl = document.createElement('button');
+        numberEl.type = 'button';
+        numberEl.className = 'payment-recipient-number';
+        numberEl.title = 'Copy account number';
+        numberEl.textContent = acc.accountNumber || 'Account number not set';
+        numberEl.disabled = !acc.accountNumber;
+        numberEl.onclick = async () => {
+            if (!acc.accountNumber) return;
+            try {
+                await navigator.clipboard.writeText(acc.accountNumber);
+                showToast('Account number copied', 'success');
+            } catch {
+                showToast('Could not copy account number', 'error');
+            }
+        };
+        meta.appendChild(numberEl);
+
+        if (!acc.qrUrl) {
+            const missing = document.createElement('p');
+            missing.className = 'form-hint';
+            missing.style.marginTop = '0.35rem';
+            missing.textContent = `No ${labels[key]} QR uploaded yet.`;
+            meta.appendChild(missing);
+        }
+
+        card.appendChild(meta);
+
+        if (acc.qrUrl) {
+            const qrImg = document.createElement('img');
+            qrImg.className = 'payment-recipient-qr';
+            qrImg.alt = `${labels[key]} QR`;
+            qrImg.src = acc.qrUrl;
+            qrImg.onclick = () => openPhotoModal(acc.qrUrl);
+            card.appendChild(qrImg);
+        }
+
+        list.appendChild(card);
+    }
+
+    group.style.display = shown ? 'block' : 'none';
+    const methodSelect = document.getElementById('paymentMethod');
+    if (methodSelect && !methodSelect.dataset.qrHighlightBound) {
+        methodSelect.dataset.qrHighlightBound = '1';
+        methodSelect.addEventListener('change', highlightPaymentRecipientCards);
+    }
+    highlightPaymentRecipientCards();
+}
+
 // Add these functions
 async function openPaymentModal(employeeId) {
     console.log('[Payment] openPaymentModal called, employeeId:', employeeId);
@@ -7135,21 +9810,29 @@ async function openPaymentModal(employeeId) {
     console.log('[Payment] openPaymentModal: reset overlay/form/closeBtn');
 
     const employee = employees[employeeId];
+    const employeeData = filteredData[employeeId];
     const currentPeriod = periodSelect.options[periodSelect.selectedIndex].text;
     const periodId = periodSelect.value;
 
-    document.getElementById('paymentEmployeeName').value = employee || 'Unknown Employee';
-    document.getElementById('paymentPeriod').value = currentPeriod;
+    const nameDisplay = document.getElementById('paymentEmployeeNameDisplay');
+    const periodDisplay = document.getElementById('paymentPeriodDisplay');
+    if (nameDisplay) nameDisplay.textContent = getEmployeeDisplayName(employeeId, employeeData);
+    if (periodDisplay) periodDisplay.textContent = currentPeriod;
     document.getElementById('paymentEmployeeId').value = employeeId;
     document.getElementById('paymentScreenshot').value = '';
+    const screenshotNameEl = document.getElementById('paymentScreenshotName');
+    if (screenshotNameEl) screenshotNameEl.textContent = 'No file chosen';
     document.getElementById('paymentNote').value = '';
     document.getElementById('paymentMethod').value = 'gotyme'; // Set default to gotyme
+    await populatePaymentRecipientDetails(employeeId);
     
     // Calculate total pay for this employee
-    const employeeData = filteredData[employeeId];
     const totalPay = employeeData ? calcTotalPaySimple(employeeData.dates, employeeData, periodId) : 0;
-    document.getElementById('paymentAmount').value = totalPay.toFixed(2);
-    document.getElementById('paymentAmountHint').textContent = 'Enter amount to pay (full or partial)';
+    const initialBal = getPaymentBalance(totalPay, null);
+    document.getElementById('paymentAmount').value = initialBal.remaining.toFixed(2);
+    document.getElementById('paymentAmountHint').textContent = totalPay <= 0
+        ? 'Nothing to pay this period (net is zero or negative)'
+        : 'Enter amount to pay (full or partial)';
 
     // Check if payment already exists
     try {
@@ -7160,10 +9843,17 @@ async function openPaymentModal(employeeId) {
             const paymentData = paymentSnap.data();
             document.getElementById('paymentNote').value = paymentData.note || '';
             document.getElementById('paymentMethod').value = paymentData.transferMethod || '';
+            highlightPaymentRecipientCards();
             
-            // Handle existing payment fields - show remaining amount instead of paid amount
-            if (paymentData.remainingAmount !== undefined) {
-                document.getElementById('paymentAmount').value = paymentData.remainingAmount.toFixed(2);
+            // Prefill with live remaining (total − already paid), not frozen remainingAmount
+            const bal = getPaymentBalance(totalPay, paymentData);
+            document.getElementById('paymentAmount').value = bal.remaining.toFixed(2);
+            if (bal.surplus > 0) {
+                document.getElementById('paymentAmountHint').textContent =
+                    `Already ₱${bal.surplus.toFixed(2)} surplus (paid ₱${bal.paid.toFixed(2)} vs total ₱${bal.total.toFixed(2)})`;
+            } else if (bal.remaining > 0 && bal.paid > 0) {
+                document.getElementById('paymentAmountHint').textContent =
+                    `₱${bal.remaining.toFixed(2)} remaining (₱${bal.paid.toFixed(2)} already paid)`;
             }
 
             // Only show existing photo view if we actually have a screenshot
@@ -7264,6 +9954,353 @@ function closePaymentModal() {
     }
 }
 
+async function openAdjustSurplusModal(employeeId) {
+    const modal = document.getElementById('adjustSurplusModal');
+    if (!modal) return;
+
+    const periodId = periodSelect.value;
+    const employee = filteredData[employeeId] || attendanceData[employeeId];
+    const totalPay = employee ? getEmployeeTotalPayForTable(employee, periodId) : 0;
+    const paymentData = (window.paymentStatus || {})[employeeId];
+    const bal = getPaymentBalance(totalPay, paymentData);
+
+    document.getElementById('adjustSurplusEmployeeId').value = employeeId;
+    document.getElementById('adjustSurplusEmployeeName').textContent =
+        getEmployeeDisplayName(employeeId, employee);
+    document.getElementById('adjustSurplusPeriod').textContent =
+        periodSelect.options[periodSelect.selectedIndex]?.text || periodId;
+    const peso = (n) => `₱${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    document.getElementById('adjustSurplusTotalPay').textContent = peso(totalPay);
+    document.getElementById('adjustSurplusRecordedPaid').textContent = peso(bal.paid);
+    document.getElementById('adjustSurplusAmount').textContent = peso(bal.surplus);
+
+    const paidInput = document.getElementById('adjustSurplusPaidInput');
+    const defaultPaid = Math.max(0, Math.round(Number(totalPay) * 100) / 100);
+    paidInput.value = defaultPaid.toFixed(2);
+    document.getElementById('adjustSurplusNote').value = '';
+    document.getElementById('adjustSurplusHint').textContent =
+        defaultPaid > 0
+            ? 'Prefilled to period total pay — change if they were only partially paid.'
+            : 'Set to 0 or use Clear payment if nothing was actually sent.';
+
+    document.body.appendChild(modal);
+    modal.style.display = 'flex';
+}
+
+function closeAdjustSurplusModal() {
+    const modal = document.getElementById('adjustSurplusModal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function correctPayrollPaymentAmount({ employeeId, periodId, newPaidAmount, note = '' }) {
+    if (!employeeId || !periodId) {
+        throw new Error('Missing employee or period');
+    }
+    if (!navigator.onLine) {
+        throw new Error('You are offline. Changes were not saved.');
+    }
+
+    const employeeData = filteredData[employeeId] || attendanceData[employeeId];
+    const totalPay = employeeData ? getEmployeeTotalPayForTable(employeeData, periodId) : 0;
+    const payable = Math.max(0, Math.round((Number(totalPay) || 0) * 100) / 100);
+    const paid = Math.max(0, Math.round((Number(newPaidAmount) || 0) * 100) / 100);
+    const bal = getPaymentBalance(payable, { paymentAmount: paid });
+
+    const paymentDocRef = v2PaymentDocRef(periodId, employeeId);
+    const existingSnap = await getDocFromServer(paymentDocRef);
+    const existing = existingSnap.exists() ? (existingSnap.data() || {}) : {};
+
+    const paymentType = bal.surplus > 0
+        ? 'surplus'
+        : (paid <= 0 ? 'none' : (paid >= payable - 0.009 ? 'full' : 'partial'));
+
+    const paymentData = {
+        ...existing,
+        employeeId: String(employeeId),
+        periodId: String(periodId),
+        paymentAmount: paid,
+        totalPay: payable,
+        remainingAmount: Math.round((payable - paid) * 100) / 100,
+        surplusAmount: bal.surplus,
+        paymentType,
+        correctionNote: String(note || ''),
+        correctedAt: new Date().toISOString(),
+        correctedBy: 'admin'
+    };
+
+    await setDoc(paymentDocRef, paymentData);
+    await waitForPendingWrites(db);
+
+    const verifySnap = await getDocFromServer(paymentDocRef);
+    if (!verifySnap.exists()) {
+        throw new Error('Correction did not save to Firestore');
+    }
+
+    applyVerifiedPaymentToLocalState(periodId, employeeId, paymentData);
+    return paymentData;
+}
+
+async function clearPayrollPaymentRecord(employeeId, periodId) {
+    if (!navigator.onLine) {
+        throw new Error('You are offline. Changes were not saved.');
+    }
+    const paymentDocRef = v2PaymentDocRef(periodId, employeeId);
+    await deleteDoc(paymentDocRef);
+    await waitForPendingWrites(db);
+
+    if (window.paymentStatus && window.paymentStatus[employeeId]) {
+        delete window.paymentStatus[employeeId];
+    }
+    const cachedMap = readPeriodPaymentsCacheMap(periodId) || {};
+    if (cachedMap[employeeId]) {
+        delete cachedMap[employeeId];
+        writePeriodPaymentsCacheMap(periodId, cachedMap);
+    }
+    const branchId = getSelectedBranchFilter();
+    if (attendanceData && Object.keys(attendanceData).length) {
+        saveSummaryToCache(periodId, branchId, attendanceData, window.paymentStatus || {});
+    }
+}
+
+async function saveAdjustSurplusForm(e) {
+    e.preventDefault();
+    const employeeId = document.getElementById('adjustSurplusEmployeeId').value;
+    const periodId = periodSelect.value;
+    const newPaid = parseFloat(document.getElementById('adjustSurplusPaidInput').value);
+    const note = document.getElementById('adjustSurplusNote').value.trim();
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+
+    if (!Number.isFinite(newPaid) || newPaid < 0) {
+        showToast('Enter a valid paid amount', 'error');
+        return;
+    }
+
+    if (submitBtn) submitBtn.disabled = true;
+    try {
+        await correctPayrollPaymentAmount({
+            employeeId,
+            periodId,
+            newPaidAmount: newPaid,
+            note
+        });
+        closeAdjustSurplusModal();
+        renderEmployeeTable();
+        updateSummaryCards();
+        await updateEmployeePaymentStatus(true);
+        updatePayModeButtonState();
+        showToast('Payment record updated', 'success');
+    } catch (err) {
+        console.error('Adjust surplus failed:', err);
+        showToast(err?.message || 'Could not save correction', 'error');
+    } finally {
+        if (submitBtn) submitBtn.disabled = false;
+    }
+}
+
+async function handleAdjustSurplusClear() {
+    const employeeId = document.getElementById('adjustSurplusEmployeeId').value;
+    const periodId = periodSelect.value;
+    const name = document.getElementById('adjustSurplusEmployeeName')?.textContent || 'this employee';
+    if (!confirm(`Remove the payment record for ${name} this period? They will show as unpaid.`)) {
+        return;
+    }
+    try {
+        await clearPayrollPaymentRecord(employeeId, periodId);
+        closeAdjustSurplusModal();
+        renderEmployeeTable();
+        updateSummaryCards();
+        await updateEmployeePaymentStatus(true);
+        updatePayModeButtonState();
+        showToast('Payment record cleared', 'success');
+    } catch (err) {
+        console.error('Clear payment failed:', err);
+        showToast(err?.message || 'Could not clear payment', 'error');
+    }
+}
+
+async function persistPayrollPayment({ employeeId, periodId, transferMethod, paymentAmount, note = '', screenshotFile = null }) {
+    if (!employeeId || !periodId) {
+        throw new Error('Missing employee or period for payment');
+    }
+    if (!navigator.onLine) {
+        throw new Error('You are offline. Payment was not saved.');
+    }
+
+    let downloadURL = null;
+
+    if (screenshotFile) {
+        const filename = `payment_${employeeId}_${periodId}_${Date.now()}.jpg`;
+        const fileRef = storageRef(storage, `payroll_periods_v2_screenshots/${filename}`);
+        const snapshot = await uploadBytes(fileRef, screenshotFile);
+        downloadURL = await getDownloadURL(snapshot.ref);
+    }
+
+    const employeeData = filteredData[employeeId] || attendanceData[employeeId];
+    // Same total as Pay Mode / table so a full pay clears remaining
+    const totalPay = employeeData
+        ? getEmployeeTotalPayForTable(employeeData, periodId)
+        : 0;
+
+    const paymentDocRef = v2PaymentDocRef(periodId, employeeId);
+
+    // ALWAYS read existing payment from the server — local cache caused
+    // fake "already paid" amounts that compounded into huge surplus, then
+    // vanished on refresh when the write never actually landed remotely.
+    let existingData = {};
+    let existingPaymentAmount = 0;
+    try {
+        const existingPaymentDoc = await getDocFromServer(paymentDocRef);
+        if (existingPaymentDoc.exists()) {
+            existingData = existingPaymentDoc.data() || {};
+            existingPaymentAmount = Number(existingData.paymentAmount) || 0;
+        }
+    } catch (error) {
+        console.error('[Payment] Could not read existing payment from server:', error);
+        throw new Error('Could not reach Firestore to save payment. Try again.');
+    }
+
+    const payable = Math.max(0, Number(totalPay) || 0);
+    const remainingBefore = Math.max(0, Math.round((payable - existingPaymentAmount) * 100) / 100);
+
+    // Already settled on server — do not accumulate or re-email
+    if (payable > 0 && remainingBefore <= 0.009) {
+        const paymentData = normalizePaymentStatusRecord({
+            ...existingData,
+            employeeId,
+            periodId,
+            paymentAmount: existingPaymentAmount,
+            totalPay: payable,
+            remainingAmount: 0,
+            paymentType: existingData.paymentType || 'full'
+        });
+        applyVerifiedPaymentToLocalState(periodId, employeeId, paymentData);
+        return {
+            surplusAmount: getPaymentBalance(payable, paymentData).surplus,
+            paymentData,
+            totalPay: payable,
+            alreadyPaid: true,
+            newlyPaid: false
+        };
+    }
+
+    const payNow = Number(paymentAmount) || 0;
+    if (payNow <= 0) {
+        throw new Error('Payment amount must be greater than zero');
+    }
+
+    // Paying the displayed remaining (or more) settles to at least full payable.
+    // Cap accidental double-submit overpay: if they click full remaining twice
+    // before UI updates, second click is blocked by alreadyPaid above once
+    // the first write is on the server.
+    let accumulatedPaymentAmount = existingPaymentAmount + payNow;
+    // If this click is meant to clear the remaining balance, snap to exact payable
+    // when within 1 peso of remaining (avoids tiny float surplus).
+    if (Math.abs(payNow - remainingBefore) < 1.01 || payNow >= remainingBefore - 0.009) {
+        accumulatedPaymentAmount = Math.max(accumulatedPaymentAmount, payable);
+        // If they only intended to pay remaining, don't compound beyond payable
+        // unless they explicitly typed a larger custom amount.
+        if (payNow <= remainingBefore + 0.05) {
+            accumulatedPaymentAmount = payable;
+        }
+    }
+
+    const balAfter = getPaymentBalance(payable, { paymentAmount: accumulatedPaymentAmount });
+    const remainingAmount = payable - accumulatedPaymentAmount;
+    const surplusAmount = balAfter.surplus;
+    const paymentType = accumulatedPaymentAmount >= payable
+        ? (surplusAmount > 0 ? 'surplus' : 'full')
+        : 'partial';
+
+    const paymentData = {
+        employeeId: String(employeeId),
+        periodId: String(periodId),
+        screenshotUrl: downloadURL != null ? downloadURL : (existingData.screenshotUrl || null),
+        transferMethod: String(transferMethod || ''),
+        note: String(note || ''),
+        paymentType,
+        paymentAmount: Number(accumulatedPaymentAmount) || 0,
+        totalPay: Number(payable) || 0,
+        remainingAmount: Number(remainingAmount) || 0,
+        surplusAmount: Number(surplusAmount) || 0,
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: 'admin'
+    };
+
+    console.log('[Payment] Writing payment doc', {
+        path: `payroll_periods_v2/${periodId}/payments/${employeeId}`,
+        paymentAmount: paymentData.paymentAmount,
+        totalPay: paymentData.totalPay,
+        paymentType: paymentData.paymentType,
+        existingPaymentAmount,
+        payNow
+    });
+
+    await setDoc(paymentDocRef, paymentData);
+    await waitForPendingWrites(db);
+
+    // Confirm on the SERVER (not local latency cache)
+    let verifySnap;
+    try {
+        verifySnap = await getDocFromServer(paymentDocRef);
+    } catch (err) {
+        console.error('[Payment] Server verify failed:', err);
+        throw new Error('Payment may not have saved. Check connection and try again — no email was sent.');
+    }
+    if (!verifySnap.exists()) {
+        throw new Error('Payment did not save to Firestore');
+    }
+    const verifiedAmount = Number(verifySnap.data()?.paymentAmount) || 0;
+    if (Math.abs(verifiedAmount - paymentData.paymentAmount) > 0.05) {
+        throw new Error('Payment save verification failed');
+    }
+    console.log('[Payment] Server-verified payment doc', verifySnap.data());
+
+    if (accumulatedPaymentAmount >= payable - 0.009) {
+        try {
+            const markApplied = async (pid, { moveToPeriodId = null } = {}) => {
+                const eq = query(
+                    collection(db, PERIOD_EARNINGS_COLLECTION),
+                    where('periodId', '==', pid),
+                    where('employeeId', '==', employeeId)
+                );
+                const eSnap = await getDocs(eq);
+                const updates = [];
+                eSnap.forEach((d) => {
+                    const r = d.data();
+                    if (r.status === 'waived' || r.status === 'applied') return;
+                    const patch = { status: 'applied', appliedAt: new Date().toISOString() };
+                    if (moveToPeriodId && moveToPeriodId !== pid) {
+                        patch.originPeriodId = r.originPeriodId || pid;
+                        patch.periodId = moveToPeriodId;
+                        patch.payDay = payDayIsoFromPeriodId(moveToPeriodId);
+                    }
+                    updates.push(updateDoc(d.ref, patch));
+                });
+                await Promise.all(updates);
+            };
+            await markApplied(periodId);
+            if (isPriorEarningsToggleOn()) {
+                const priorIds = getPreviousPeriodIds(periodId, 2, periodsForHelpers());
+                for (const pid of priorIds) {
+                    await markApplied(pid, { moveToPeriodId: periodId });
+                }
+            }
+        } catch (markErr) {
+            console.warn('Could not mark earnings applied:', markErr);
+        }
+    }
+
+    applyVerifiedPaymentToLocalState(periodId, employeeId, paymentData);
+
+    return {
+        surplusAmount,
+        paymentData,
+        totalPay: payable,
+        alreadyPaid: false,
+        newlyPaid: true
+    };
+}
+
 async function savePaymentConfirmation(e) {
     e.preventDefault();
     console.log('[Payment] savePaymentConfirmation called (form submit)');
@@ -7288,116 +10325,71 @@ async function savePaymentConfirmation(e) {
     }
     console.log('[Payment] savePaymentConfirmation: validation ok, disabling form and showing overlay');
 
-    // Note: Screenshot and note are now optional - you can mark as paid without them
-
-    // Show loading overlay inside modal
     const paymentModalLoadingOverlay = document.getElementById('paymentModalLoadingOverlay');
     if (paymentModalLoadingOverlay) {
         paymentModalLoadingOverlay.style.display = 'flex';
         paymentModalLoadingOverlay.style.visibility = 'visible';
         paymentModalLoadingOverlay.style.pointerEvents = 'auto';
     }
-    
-    // Disable form inputs and buttons during loading
+
     const paymentForm = document.getElementById('paymentForm');
     const submitBtn = paymentForm.querySelector('button[type="submit"]');
-    const cancelBtn = document.getElementById('cancelPaymentBtn');
     const closeBtn = document.getElementById('closePaymentModal');
     const originalButtonHTML = submitBtn ? submitBtn.innerHTML : '';
-    
-    // Disable all form inputs
+
     const formInputs = paymentForm.querySelectorAll('input, select, textarea, button');
     formInputs.forEach(input => input.disabled = true);
     if (closeBtn) closeBtn.style.pointerEvents = 'none';
     console.log('[Payment] savePaymentConfirmation: form disabled, starting save...');
 
     try {
-        let downloadURL = null;
+        const { surplusAmount, paymentData, newlyPaid } = await persistPayrollPayment({
+            employeeId,
+            periodId,
+            transferMethod,
+            paymentAmount,
+            note,
+            screenshotFile: file || null
+        });
 
-        // Only upload file if one was selected
-        if (file) {
-            // Upload to Firebase Storage
-            const filename = `payment_${employeeId}_${periodId}_${Date.now()}.jpg`;
-            const fileRef = storageRef(storage, `payroll_periods_v2_screenshots/${filename}`);
+        console.log('[Payment] savePaymentConfirmation: Firestore save ok, updating table...');
+        applyVerifiedPaymentToLocalState(periodId, employeeId, paymentData);
+        renderEmployeeTable();
+        await updateEmployeePaymentStatus(true);
 
-            // Upload the file directly
-            const snapshot = await uploadBytes(fileRef, file);
-
-            // Get the download URL
-            downloadURL = await getDownloadURL(snapshot.ref);
-        }
-
-        // Calculate total pay for comparison
-        const employeeData = filteredData[employeeId];
-        const totalPay = employeeData ? calcTotalPaySimple(employeeData.dates, employeeData, periodId) : 0;
-        
-        let existingData = {};
-        let existingPaymentAmount = 0;
-        try {
-            const existingPaymentRef = v2PaymentDocRef(periodId, employeeId);
-            const existingPaymentDoc = await getDoc(existingPaymentRef);
-            if (existingPaymentDoc.exists()) {
-                existingData = existingPaymentDoc.data();
-                existingPaymentAmount = existingData.paymentAmount || 0;
-            }
-        } catch (error) {
-            console.log('No existing payment found, starting fresh');
-        }
-        
-        // Calculate accumulated payment and remaining amount
-        const accumulatedPaymentAmount = existingPaymentAmount + paymentAmount;
-        const remainingAmount = totalPay - accumulatedPaymentAmount;
-        const paymentType = accumulatedPaymentAmount >= totalPay ? 'full' : 'partial';
-
-        const screenshotUrl =
-            downloadURL != null ? downloadURL : (existingData.screenshotUrl || null);
-
-        const paymentData = {
-            employeeId: employeeId,
-            periodId: periodId,
-            screenshotUrl,
-            transferMethod: transferMethod,
-            note: note,
-            paymentType: paymentType,
-            paymentAmount: accumulatedPaymentAmount,
-            totalPay: totalPay,
-            remainingAmount: remainingAmount,
-            uploadedAt: new Date().toISOString(),
-            uploadedBy: 'admin'
-        };
-
-        const paymentDocRef = v2PaymentDocRef(periodId, employeeId);
-        await setDoc(paymentDocRef, paymentData);
-
-        localStorage.removeItem(periodPaymentsCacheKey(periodId));
-
-        console.log('[Payment] savePaymentConfirmation: Firestore save ok, reloading table...');
-        
-        // Refresh payment status indicators and reload table
-        await loadPaymentDataAndRender();
-        console.log('[Payment] savePaymentConfirmation: loadPaymentDataAndRender done');
-        
-        // Re-enable form and close button so modal works again for next employee
         formInputs.forEach(input => input.disabled = false);
         if (closeBtn) closeBtn.style.pointerEvents = 'auto';
         console.log('[Payment] savePaymentConfirmation: form re-enabled, closing modal');
-        
-        // Hide loading overlay and close modal after successful save
+
         if (paymentModalLoadingOverlay) {
             paymentModalLoadingOverlay.style.display = 'none';
         }
+        if (surplusAmount > 0) {
+            showToast(`Payment saved with ₱${surplusAmount.toFixed(2)} surplus`);
+        } else {
+            showToast('Payment saved', 'success');
+        }
         closePaymentModal();
+
+        if (newlyPaid) {
+            void notifyPayrollPaymentAfterSave({
+                employeeId,
+                periodId,
+                transferMethod,
+                paymentAmount,
+                paymentData,
+                note
+            });
+        }
 
     } catch (error) {
         console.error('Error uploading payment confirmation:', error);
         showToast('Failed to upload payment confirmation. Please try again.', 'error');
-        
-        // Hide loading overlay on error
+
         if (paymentModalLoadingOverlay) {
             paymentModalLoadingOverlay.style.display = 'none';
         }
-        
-        // Re-enable form inputs on error
+
         formInputs.forEach(input => input.disabled = false);
         if (closeBtn) closeBtn.style.pointerEvents = 'auto';
         if (submitBtn && originalButtonHTML) submitBtn.innerHTML = originalButtonHTML;
@@ -7405,6 +10397,1165 @@ async function savePaymentConfirmation(e) {
             submitBtn.style.opacity = '1';
             submitBtn.style.cursor = 'pointer';
         }
+    }
+}
+
+// ── Pay Mode (sequential QR pay) ──
+const payModeState = {
+    queue: [],
+    index: 0,
+    accounts: null,
+    selectedMethod: 'gotyme',
+    open: false,
+    customAmountOpen: false,
+    pickerOpen: false,
+    saving: false,
+    qrGeneration: 0,
+    remainingAmount: 0,
+    qrShowFull: false,
+    qrSourceUrl: '',
+    qrBounds: null,
+    qrBoundsCache: Object.create(null)
+};
+
+const PAY_MODE_QR_TARGET_RATIO = 0.78; // QR side vs min(frame w,h)
+
+let payModeJsQRPromise = null;
+
+function loadPayModeJsQR() {
+    if (typeof window.jsQR === 'function') return Promise.resolve(window.jsQR);
+    if (payModeJsQRPromise) return payModeJsQRPromise;
+    payModeJsQRPromise = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js';
+        script.async = true;
+        script.onload = () => {
+            if (typeof window.jsQR === 'function') resolve(window.jsQR);
+            else reject(new Error('jsQR failed to load'));
+        };
+        script.onerror = () => reject(new Error('jsQR script error'));
+        document.head.appendChild(script);
+    });
+    return payModeJsQRPromise;
+}
+
+function loadPayModeImage(url) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('QR image failed to load'));
+        img.src = url;
+    });
+}
+
+async function detectPayModeQrBounds(img) {
+    const maxSide = 1200;
+    const scale = Math.min(1, maxSide / Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height));
+    const w = Math.max(1, Math.round((img.naturalWidth || img.width) * scale));
+    const h = Math.max(1, Math.round((img.naturalHeight || img.height) * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0, w, h);
+
+    if (typeof BarcodeDetector !== 'undefined') {
+        try {
+            const detector = new BarcodeDetector({ formats: ['qr_code'] });
+            const codes = await detector.detect(canvas);
+            const code = codes && codes[0];
+            const box = code?.boundingBox;
+            if (box && box.width > 8 && box.height > 8) {
+                return {
+                    x: box.x / scale,
+                    y: box.y / scale,
+                    width: box.width / scale,
+                    height: box.height / scale
+                };
+            }
+        } catch {
+            /* fall through to jsQR */
+        }
+    }
+
+    try {
+        const jsQR = await loadPayModeJsQR();
+        const imageData = ctx.getImageData(0, 0, w, h);
+        const code = jsQR(imageData.data, w, h, { inversionAttempts: 'attemptBoth' });
+        const loc = code?.location;
+        if (!loc) return null;
+        const xs = [loc.topLeftCorner.x, loc.topRightCorner.x, loc.bottomLeftCorner.x, loc.bottomRightCorner.x];
+        const ys = [loc.topLeftCorner.y, loc.topRightCorner.y, loc.bottomLeftCorner.y, loc.bottomRightCorner.y];
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const minY = Math.min(...ys);
+        const maxY = Math.max(...ys);
+        return {
+            x: minX / scale,
+            y: minY / scale,
+            width: (maxX - minX) / scale,
+            height: (maxY - minY) / scale
+        };
+    } catch {
+        return null;
+    }
+}
+
+async function getPayModeQrBoundsCached(sourceUrl) {
+    if (!sourceUrl) return null;
+    if (Object.prototype.hasOwnProperty.call(payModeState.qrBoundsCache, sourceUrl)) {
+        return payModeState.qrBoundsCache[sourceUrl];
+    }
+    try {
+        const img = await loadPayModeImage(sourceUrl);
+        const bounds = await detectPayModeQrBounds(img);
+        const ok = bounds && bounds.width >= 16 && bounds.height >= 16 ? bounds : null;
+        payModeState.qrBoundsCache[sourceUrl] = ok;
+        return ok;
+    } catch {
+        payModeState.qrBoundsCache[sourceUrl] = null;
+        return null;
+    }
+}
+
+function clearPayModeQrZoomStyles(qrImg) {
+    if (!qrImg) return;
+    qrImg.classList.remove('is-zoomed', 'is-fit', 'is-cropped');
+    qrImg.style.width = '';
+    qrImg.style.height = '';
+    qrImg.style.transform = '';
+    qrImg.style.left = '';
+    qrImg.style.top = '';
+}
+
+function applyPayModeQrFit(qrImg) {
+    clearPayModeQrZoomStyles(qrImg);
+    qrImg.classList.add('is-fit');
+}
+
+function applyPayModeQrZoom(qrImg, bounds) {
+    const frame = document.querySelector('.pay-mode__qr-frame');
+    if (!qrImg || !frame || !bounds) {
+        applyPayModeQrFit(qrImg);
+        return false;
+    }
+
+    const fw = frame.clientWidth || frame.getBoundingClientRect().width;
+    const fh = frame.clientHeight || frame.getBoundingClientRect().height;
+    if (!(fw > 0 && fh > 0)) {
+        applyPayModeQrFit(qrImg);
+        return false;
+    }
+
+    const nw = qrImg.naturalWidth || 0;
+    const nh = qrImg.naturalHeight || 0;
+    if (!(nw > 0 && nh > 0)) {
+        applyPayModeQrFit(qrImg);
+        return false;
+    }
+
+    const qrSide = Math.max(bounds.width, bounds.height);
+    const target = Math.min(fw, fh) * PAY_MODE_QR_TARGET_RATIO;
+    const scale = target / qrSide;
+    const cx = bounds.x + bounds.width / 2;
+    const cy = bounds.y + bounds.height / 2;
+    const tx = fw / 2 - cx * scale;
+    const ty = fh / 2 - cy * scale;
+
+    clearPayModeQrZoomStyles(qrImg);
+    qrImg.classList.add('is-zoomed');
+    qrImg.style.width = `${nw}px`;
+    qrImg.style.height = `${nh}px`;
+    qrImg.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
+    return true;
+}
+
+function updatePayModeQrViewToggle() {
+    const toggle = document.getElementById('payModeQrViewToggle');
+    if (!toggle) return;
+    const canToggle = Boolean(payModeState.qrBounds);
+    toggle.hidden = !canToggle;
+    toggle.textContent = payModeState.qrShowFull ? 'Zoom to QR' : 'Full photo';
+}
+
+function showPayModeQrImage(url) {
+    const qrImg = document.getElementById('payModeQrImg');
+    if (!qrImg) return Promise.resolve(false);
+    return new Promise((resolve) => {
+        const finish = () => resolve(true);
+        qrImg.onload = () => {
+            if (typeof qrImg.decode === 'function') {
+                qrImg.decode().then(finish).catch(finish);
+            } else finish();
+        };
+        qrImg.onerror = () => resolve(false);
+        qrImg.src = url;
+        if (qrImg.complete && qrImg.naturalWidth > 0 && qrImg.getAttribute('src') === url) finish();
+    });
+}
+
+function formatPayModePeso(amount) {
+    const n = Number(amount) || 0;
+    return `₱${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function employeeHasPayQr(employee) {
+    const accounts = readPayrollBankAccounts(employee);
+    return Boolean(accounts.gotyme.qrUrl || accounts.bdo.qrUrl);
+}
+
+function setPayModeLoading(visible) {
+    const loadingEl = document.getElementById('payModeLoading');
+    if (!loadingEl) return;
+    loadingEl.classList.toggle('is-visible', visible);
+    if (visible) {
+        loadingEl.removeAttribute('hidden');
+    } else {
+        loadingEl.setAttribute('hidden', '');
+    }
+    loadingEl.setAttribute('aria-hidden', visible ? 'false' : 'true');
+}
+
+function buildPayModeQueue() {
+    const periodId = periodSelect.value;
+    const paymentStatus = window.paymentStatus || {};
+    const queue = [];
+
+    Object.entries(filteredData).forEach(([employeeId, employee]) => {
+        const totalPay = getEmployeeTotalPayForTable(employee, periodId);
+        const employeePayment = paymentStatus[employeeId];
+        const bal = getPaymentBalance(totalPay, employeePayment);
+        const statusKind = getPaymentStatusKind(bal);
+
+        if (statusKind === 'unpaid' || statusKind === 'partial') {
+            queue.push({
+                employeeId,
+                employee,
+                totalPay,
+                bal,
+                statusKind,
+                hasQr: employeeHasPayQr(employee)
+            });
+        }
+    });
+
+    // Employees with a saved QR first, then by account id within each group
+    queue.sort((a, b) => {
+        if (a.hasQr !== b.hasQr) return a.hasQr ? -1 : 1;
+        return String(a.employeeId || '').localeCompare(String(b.employeeId || ''), undefined, {
+            numeric: true,
+            sensitivity: 'base'
+        });
+    });
+
+    return queue;
+}
+
+function getPayModeQueueRemainingTotal(queue) {
+    return queue.reduce((sum, item) => sum + Math.max(0, item.bal.remaining), 0);
+}
+
+function updatePayModeButtonState() {
+    const btn = document.getElementById('payModeBtn');
+    if (!btn) return;
+
+    if (!isDisbursementPeriod()) {
+        btn.disabled = true;
+        btn.title = 'Pay Mode is available after the payroll period ends';
+        return;
+    }
+
+    const queue = buildPayModeQueue();
+    btn.disabled = queue.length === 0;
+    const withQr = queue.filter((q) => q.hasQr).length;
+    btn.title = queue.length === 0
+        ? 'No unpaid employees in this view'
+        : `Pay ${queue.length} employee${queue.length === 1 ? '' : 's'} sequentially (${withQr} with QR first)`;
+}
+
+function getAvailablePayModeMethods(accounts) {
+    const methods = [];
+    for (const key of ['gotyme', 'bdo']) {
+        const acc = accounts[key];
+        if (acc && (acc.qrUrl || acc.accountNumber)) {
+            methods.push(key);
+        }
+    }
+    return methods;
+}
+
+function getPayModePayingAmount() {
+    const hidden = document.getElementById('payModeAmount');
+    return parseFloat(hidden?.value) || 0;
+}
+
+function updatePayModeConfirmLabel() {
+    const confirmBtn = document.getElementById('payModeConfirmBtn');
+    if (!confirmBtn) return;
+    const amount = getPayModePayingAmount();
+    if (amount > 0) {
+        confirmBtn.textContent = `Pay ${formatPayModePeso(amount)}`;
+    } else {
+        confirmBtn.textContent = 'Pay';
+    }
+}
+
+function syncPayModeHeroResetVisibility() {
+    const resetBtn = document.getElementById('payModeHeroResetBtn');
+    if (!resetBtn) return;
+    const amount = getPayModePayingAmount();
+    const remaining = Math.round((payModeState.remainingAmount || 0) * 100) / 100;
+    const current = Math.round(amount * 100) / 100;
+    resetBtn.hidden = !(current > 0 && current !== remaining);
+}
+
+function setPayModeAmountValue(amount) {
+    const amountEl = document.getElementById('payModeAmount');
+    const n = Number(amount) || 0;
+    if (amountEl) amountEl.value = n > 0 ? n.toFixed(2) : '';
+    updatePayModeHeroDisplay(n > 0 ? n : 0);
+    syncPayModeHeroResetVisibility();
+    updatePayModeConfirmLabel();
+    renderPayModeMathForCurrent();
+}
+
+function setPayModeHeroEditMode(editing) {
+    payModeState.customAmountOpen = editing;
+    const valueBtn = document.getElementById('payModeHeroAmount');
+    const inputWrap = document.getElementById('payModeHeroInputWrap');
+    const input = document.getElementById('payModeHeroInput');
+    const editBtn = document.getElementById('payModeHeroEditBtn');
+
+    if (editing) {
+        if (valueBtn) valueBtn.hidden = true;
+        if (inputWrap) inputWrap.hidden = false;
+        if (editBtn) editBtn.hidden = true;
+        const seed = getPayModePayingAmount() || payModeState.remainingAmount || 0;
+        if (input) {
+            input.value = seed > 0 ? seed.toFixed(2) : '';
+            input.focus();
+            input.select();
+        }
+    } else {
+        if (valueBtn) valueBtn.hidden = false;
+        if (inputWrap) inputWrap.hidden = true;
+        if (editBtn) editBtn.hidden = false;
+        if (input) input.value = '';
+        updatePayModeHeroDisplay(getPayModePayingAmount());
+    }
+
+    syncPayModeHeroResetVisibility();
+}
+
+function resetPayModeCustomAmount(remaining) {
+    payModeState.remainingAmount = Math.max(0, Number(remaining) || 0);
+    setPayModeAmountValue(payModeState.remainingAmount);
+    setPayModeHeroEditMode(false);
+}
+
+function updatePayModeHeroDisplay(amount) {
+    const heroEl = document.getElementById('payModeHeroAmount');
+    if (heroEl) heroEl.textContent = formatPayModePeso(amount);
+}
+
+function openPayModeCustomAmount() {
+    setPayModeHeroEditMode(true);
+}
+
+function closePayModeCustomAmount() {
+    resetPayModeCustomAmount(payModeState.remainingAmount);
+}
+
+function onPayModeHeroInputChange() {
+    if (!payModeState.customAmountOpen) return;
+    const input = document.getElementById('payModeHeroInput');
+    setPayModeAmountValue(parseFloat(input?.value) || 0);
+}
+
+function commitPayModeHeroEdit() {
+    if (!payModeState.customAmountOpen) return;
+    const amount = parseFloat(document.getElementById('payModeHeroInput')?.value) || 0;
+    if (!(amount > 0)) {
+        closePayModeCustomAmount();
+        return;
+    }
+    setPayModeAmountValue(amount);
+    setPayModeHeroEditMode(false);
+}
+
+function renderPayModeSnapshot(employee) {
+    const snapEl = document.getElementById('payModeSnapshot');
+    if (!snapEl) return;
+
+    const periodId = periodSelect?.value;
+    const dates = Array.isArray(employee?.dates)
+        ? employee.dates.slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')))
+        : [];
+    const workedDays = dates.filter((d) => d && (d.isPaidLeave || (d.timeIn && d.timeOut)));
+
+    let html = '';
+    if (workedDays.length) {
+        const rows = workedDays.map((day) => {
+            let pay = 0;
+            try {
+                if (payCalculator) {
+                    const rated = typeof mergeEmpRates === 'function' && periodId
+                        ? mergeEmpRates(employee, periodId)
+                        : employee;
+                    pay = Number(payCalculator.calculateDailyPay(day, rated, 'simple')) || 0;
+                }
+            } catch { /* ignore */ }
+            const label = day.isPaidLeave
+                ? `${formatReadableDate(day.date)} · Leave`
+                : formatReadableDate(day.date);
+            const shortLabel = (() => {
+                try {
+                    const dt = new Date(day.date + (String(day.date).includes('T') ? '' : 'T00:00:00'));
+                    return dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+                        + (day.isPaidLeave ? ' · Leave' : '');
+                } catch {
+                    return label;
+                }
+            })();
+            return `<tr>
+                <td>${escapeHtml(shortLabel)}</td>
+                <td class="pay-mode__days-pay">${formatPayModePeso(pay)}</td>
+            </tr>`;
+        }).join('');
+        html += `<table class="pay-mode__days-table">
+            <thead><tr><th>Days worked</th><th>Pay</th></tr></thead>
+            <tbody>${rows}</tbody>
+        </table>`;
+    } else {
+        const days = Number(employee?.daysWorked) || 0;
+        html += days > 0
+            ? `<p class="pay-mode__days-empty">${days} day${days === 1 ? '' : 's'} this period</p>`
+            : `<p class="pay-mode__days-empty">No attendance days this period</p>`;
+    }
+
+    const lines = Array.isArray(employee?.periodEarningsLines) ? employee.periodEarningsLines : [];
+    const extras = lines.filter((line) => line && line.status !== 'waived' && Number(line.amount));
+    if (extras.length) {
+        html += `<div class="pay-mode__adjustments">
+            <p class="pay-mode__adjustments-note">Already in the amount above</p>`;
+        extras.forEach((line) => {
+            const amt = Number(line.amount) || 0;
+            const label = earningsKindLabel(line.kind, amt) + (line.fromPriorCutoff ? ' (prior)' : '');
+            const kindClass = amt < 0 ? 'pay-mode__snapshot-line--deduct' : 'pay-mode__snapshot-line--credit';
+            const value = amt < 0
+                ? `–${formatPayModePeso(Math.abs(amt))}`
+                : `+${formatPayModePeso(amt)}`;
+            html += `<div class="pay-mode__snapshot-line ${kindClass}">
+                <span class="pay-mode__snapshot-line-label">${escapeHtml(label)}</span>
+                <span class="pay-mode__snapshot-line-value">${value}</span>
+            </div>`;
+        });
+        html += `</div>`;
+    }
+
+    // silence unused periodId lint if any
+    void periodId;
+    snapEl.innerHTML = html;
+}
+
+function renderPayModeMath(item, payingAmount) {
+    const mathEl = document.getElementById('payModeMath');
+    if (!mathEl) return;
+
+    const bal = item?.bal;
+    const showMath = bal && bal.paid > 0;
+    if (!showMath) {
+        mathEl.hidden = true;
+        mathEl.innerHTML = '';
+        return;
+    }
+
+    const paying = Number(payingAmount) || 0;
+    mathEl.hidden = false;
+    mathEl.innerHTML = `
+        <div class="pay-mode__math-row"><span>Period total</span><strong>${formatPayModePeso(item.totalPay)}</strong></div>
+        <div class="pay-mode__math-row"><span>Already paid</span><strong>${formatPayModePeso(bal.paid)}</strong></div>
+        <div class="pay-mode__math-row pay-mode__math-row--emphasis"><span>Paying now</span><strong>${formatPayModePeso(paying)}</strong></div>
+    `;
+}
+
+function renderPayModeMathForCurrent() {
+    const item = payModeState.queue[payModeState.index];
+    if (!item) return;
+    renderPayModeMath(item, getPayModePayingAmount());
+}
+
+function renderPayModeSendRow(accounts, selectedMethod, hasQr) {
+    const tabsEl = document.getElementById('payModeMethodTabs');
+    const sendEl = document.getElementById('payModeSend');
+    const numberEl = document.getElementById('payModeAccountNumber');
+    const copyBtn = document.getElementById('payModeCopyBtn');
+    if (!tabsEl) return selectedMethod;
+
+    const methods = getAvailablePayModeMethods(accounts);
+    const labels = { gotyme: 'GoTyme', bdo: 'BDO' };
+    tabsEl.innerHTML = '';
+
+    if (sendEl) sendEl.classList.toggle('pay-mode__send--no-qr', !hasQr);
+
+    if (!methods.length) {
+        tabsEl.innerHTML = '<span class="form-hint">No bank account on file</span>';
+        if (numberEl) numberEl.textContent = '';
+        if (copyBtn) {
+            copyBtn.hidden = true;
+            copyBtn.onclick = null;
+        }
+        return selectedMethod;
+    }
+
+    const activeMethod = methods.includes(selectedMethod) ? selectedMethod : methods[0];
+
+    methods.forEach((key, index) => {
+        if (index > 0) {
+            const sep = document.createElement('span');
+            sep.className = 'pay-mode__send-sep';
+            sep.textContent = '|';
+            sep.setAttribute('aria-hidden', 'true');
+            tabsEl.appendChild(sep);
+        }
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `pay-mode__send-method${key === activeMethod ? ' is-active' : ''}`;
+        btn.textContent = labels[key];
+        btn.dataset.method = key;
+        btn.setAttribute('role', 'tab');
+        btn.setAttribute('aria-selected', key === activeMethod ? 'true' : 'false');
+
+        if (methods.length === 1) {
+            btn.disabled = true;
+        } else {
+            btn.onclick = () => {
+                payModeState.selectedMethod = key;
+                renderPayModeCurrent().catch((err) => console.warn('Pay Mode render failed:', err));
+            };
+        }
+        tabsEl.appendChild(btn);
+    });
+
+    const acc = accounts[activeMethod] || emptyPayrollBankAccount();
+    if (numberEl) {
+        numberEl.textContent = acc.accountNumber || 'No account number';
+    }
+    if (copyBtn) {
+        const canCopy = Boolean(acc.accountNumber);
+        copyBtn.hidden = !canCopy;
+        copyBtn.disabled = !canCopy;
+        copyBtn.onclick = canCopy
+            ? async () => {
+                try {
+                    await navigator.clipboard.writeText(acc.accountNumber);
+                    showToast('Account number copied', 'success');
+                } catch {
+                    showToast('Could not copy account number', 'error');
+                }
+            }
+            : null;
+    }
+
+    return activeMethod;
+}
+
+function clearPayModeQrDisplay({ showSkeleton = true } = {}) {
+    const qrImg = document.getElementById('payModeQrImg');
+    const qrMissing = document.getElementById('payModeQrMissing');
+    const skeleton = document.getElementById('payModeQrSkeleton');
+    const toggle = document.getElementById('payModeQrViewToggle');
+
+    if (qrImg) {
+        qrImg.hidden = true;
+        qrImg.classList.remove('is-ready');
+        clearPayModeQrZoomStyles(qrImg);
+        qrImg.removeAttribute('src');
+        qrImg.onload = null;
+        qrImg.onerror = null;
+    }
+    if (qrMissing) qrMissing.hidden = true;
+    if (toggle) toggle.hidden = true;
+    if (skeleton) {
+        skeleton.hidden = false;
+        skeleton.classList.toggle('is-idle', !showSkeleton);
+        skeleton.setAttribute('aria-hidden', 'true');
+    }
+}
+
+function bindCopyAccountNumber(buttonEl, accountNumber) {
+    if (!buttonEl) return;
+    buttonEl.textContent = accountNumber ? 'Copy account number' : 'No account number';
+    buttonEl.disabled = !accountNumber;
+    buttonEl.onclick = async () => {
+        if (!accountNumber) return;
+        try {
+            await navigator.clipboard.writeText(accountNumber);
+            showToast('Account number copied', 'success');
+        } catch {
+            showToast('Could not copy account number', 'error');
+        }
+    };
+}
+
+async function revealPayModeQr(url, generation) {
+    const qrImg = document.getElementById('payModeQrImg');
+    const skeleton = document.getElementById('payModeQrSkeleton');
+    if (!qrImg || !url) return;
+    if (generation !== payModeState.qrGeneration) return;
+
+    payModeState.qrSourceUrl = url;
+    payModeState.qrShowFull = false;
+    payModeState.qrBounds = null;
+
+    const ok = await showPayModeQrImage(url);
+    if (generation !== payModeState.qrGeneration) return;
+
+    if (!ok) {
+        if (skeleton) {
+            skeleton.hidden = false;
+            skeleton.classList.remove('is-idle');
+        }
+        qrImg.hidden = true;
+        qrImg.removeAttribute('src');
+        updatePayModeQrViewToggle();
+        return;
+    }
+
+    const bounds = await getPayModeQrBoundsCached(url);
+    if (generation !== payModeState.qrGeneration) return;
+    payModeState.qrBounds = bounds;
+
+    if (bounds) {
+        // Wait a frame so the fixed frame has layout size
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        if (generation !== payModeState.qrGeneration) return;
+        applyPayModeQrZoom(qrImg, bounds);
+    } else {
+        applyPayModeQrFit(qrImg);
+    }
+
+    if (skeleton) {
+        skeleton.classList.add('is-idle');
+        skeleton.hidden = false;
+    }
+    qrImg.hidden = false;
+    qrImg.classList.add('is-ready');
+    updatePayModeQrViewToggle();
+}
+
+async function togglePayModeQrFullView() {
+    if (!payModeState.qrSourceUrl || !payModeState.qrBounds) return;
+    const qrImg = document.getElementById('payModeQrImg');
+    if (!qrImg) return;
+
+    payModeState.qrShowFull = !payModeState.qrShowFull;
+    if (payModeState.qrShowFull) {
+        applyPayModeQrFit(qrImg);
+    } else {
+        applyPayModeQrZoom(qrImg, payModeState.qrBounds);
+    }
+    updatePayModeQrViewToggle();
+}
+
+function renderPayModeQrMissing(acc) {
+    const qrMissing = document.getElementById('payModeQrMissing');
+    const skeleton = document.getElementById('payModeQrSkeleton');
+    const qrImg = document.getElementById('payModeQrImg');
+    const fallbackName = document.getElementById('payModeQrFallbackName');
+    const fallbackNumber = document.getElementById('payModeQrFallbackNumber');
+
+    if (qrImg) {
+        qrImg.hidden = true;
+        qrImg.classList.remove('is-ready');
+        qrImg.removeAttribute('src');
+    }
+    if (skeleton) {
+        skeleton.hidden = false;
+        skeleton.classList.add('is-idle');
+    }
+    if (fallbackName) fallbackName.textContent = acc?.accountName || '';
+    bindCopyAccountNumber(fallbackNumber, acc?.accountNumber || '');
+    if (qrMissing) qrMissing.hidden = false;
+}
+
+async function renderPayModeQrPanel(acc, method) {
+    const qrLabel = document.getElementById('payModeQrLabel');
+    const labels = { gotyme: 'GoTyme', bdo: 'BDO' };
+    const generation = ++payModeState.qrGeneration;
+
+    clearPayModeQrDisplay({ showSkeleton: Boolean(acc?.qrUrl) });
+
+    if (qrLabel) {
+        qrLabel.textContent = acc?.qrUrl
+            ? `Scan QR with ${labels[method] || method}`
+            : `No ${labels[method] || method} QR on file`;
+    }
+
+    if (acc?.qrUrl) {
+        await revealPayModeQr(acc.qrUrl, generation);
+        if (generation === payModeState.qrGeneration) {
+            const qrImg = document.getElementById('payModeQrImg');
+            const shown = qrImg && !qrImg.hidden && qrImg.getAttribute('src');
+            if (shown) {
+                const qrMissing = document.getElementById('payModeQrMissing');
+                if (qrMissing) qrMissing.hidden = true;
+            } else {
+                renderPayModeQrMissing(acc);
+            }
+        }
+    } else {
+        renderPayModeQrMissing(acc);
+    }
+}
+
+function preloadPayModeNeighborAssets() {
+    const queue = payModeState.queue;
+    const index = payModeState.index;
+    const neighborIndexes = [index - 1, index + 1].filter((i) => i >= 0 && i < queue.length);
+
+    neighborIndexes.forEach((i) => {
+        const item = queue[i];
+        if (!item) return;
+        getEmployeeBankDetails(item.employeeId).then((details) => {
+            if (!payModeState.open) return;
+            const accounts = readPayrollBankAccounts(details);
+            for (const key of ['gotyme', 'bdo']) {
+                const url = accounts[key]?.qrUrl;
+                if (!url) continue;
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.decoding = 'async';
+                img.src = url;
+                // Warm QR bounds cache in background
+                getPayModeQrBoundsCached(url).catch(() => { /* ignore */ });
+            }
+            item.hasQr = employeeHasPayQr(details);
+            if (attendanceData[item.employeeId] && details) {
+                Object.assign(attendanceData[item.employeeId], {
+                    bankAccounts: details.bankAccounts || attendanceData[item.employeeId].bankAccounts,
+                    gotymeQrUrl: details.gotymeQrUrl || attendanceData[item.employeeId].gotymeQrUrl,
+                    bdoQrUrl: details.bdoQrUrl || attendanceData[item.employeeId].bdoQrUrl
+                });
+            }
+        }).catch(() => { /* ignore preload errors */ });
+    });
+}
+
+function setPayModePickerOpen(open) {
+    payModeState.pickerOpen = Boolean(open);
+    const panel = document.getElementById('payModeSummaryPanel');
+    const picker = document.getElementById('payModePicker');
+    const nameBtn = document.getElementById('payModeEmployeeName');
+    if (panel) panel.classList.toggle('is-picking', payModeState.pickerOpen);
+    if (picker) {
+        if (payModeState.pickerOpen) picker.removeAttribute('hidden');
+        else picker.setAttribute('hidden', '');
+    }
+    if (nameBtn) nameBtn.setAttribute('aria-expanded', payModeState.pickerOpen ? 'true' : 'false');
+}
+
+function closePayModePicker() {
+    setPayModePickerOpen(false);
+}
+
+function renderPayModePickerList() {
+    const list = document.getElementById('payModePickerList');
+    if (!list) return;
+
+    list.innerHTML = '';
+    payModeState.queue.forEach((item, index) => {
+        const name = getEmployeeDisplayName(item.employeeId, item.employee);
+        const amount = Math.max(0, item.bal?.remaining || 0);
+        const isCurrent = index === payModeState.index;
+        const isPartial = item.statusKind === 'partial';
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'pay-mode__picker-item'
+            + (isCurrent ? ' is-current' : '')
+            + (isPartial ? ' is-partial' : '');
+        btn.setAttribute('role', 'option');
+        btn.setAttribute('aria-selected', isCurrent ? 'true' : 'false');
+        btn.dataset.index = String(index);
+
+        const main = document.createElement('div');
+        main.className = 'pay-mode__picker-item-main';
+
+        const nameEl = document.createElement('div');
+        nameEl.className = 'pay-mode__picker-item-name';
+        nameEl.textContent = name;
+
+        const meta = document.createElement('div');
+        meta.className = 'pay-mode__picker-item-meta';
+        meta.textContent = isCurrent
+            ? `Current · #${index + 1}`
+            : `#${index + 1}${isPartial ? ' · Partial' : ''}${item.hasQr ? '' : ' · No QR'}`;
+
+        main.appendChild(nameEl);
+        main.appendChild(meta);
+
+        const amountEl = document.createElement('div');
+        amountEl.className = 'pay-mode__picker-item-amount';
+        amountEl.textContent = formatPayModePeso(amount);
+
+        btn.appendChild(main);
+        btn.appendChild(amountEl);
+        btn.addEventListener('click', () => {
+            selectPayModePickerIndex(index);
+        });
+        list.appendChild(btn);
+    });
+
+    const current = list.querySelector('.pay-mode__picker-item.is-current');
+    if (current) {
+        requestAnimationFrame(() => {
+            current.scrollIntoView({ block: 'nearest' });
+        });
+    }
+}
+
+function openPayModePicker() {
+    if (!payModeState.open || !payModeState.queue.length) return;
+    if (payModeState.customAmountOpen) closePayModeCustomAmount();
+    renderPayModePickerList();
+    setPayModePickerOpen(true);
+    setTimeout(() => {
+        const current = document.querySelector('#payModePickerList .pay-mode__picker-item.is-current');
+        (current || document.getElementById('payModePickerCloseBtn'))?.focus();
+    }, 30);
+}
+
+async function selectPayModePickerIndex(index) {
+    closePayModePicker();
+    if (index === payModeState.index) return;
+    await payModeGoTo(index);
+}
+
+function paintPayModeLeftFromQueueItem(item) {
+    const { employeeId, employee, bal, statusKind } = item;
+    const nameEl = document.getElementById('payModeEmployeeName');
+    const statusEl = document.getElementById('payModeStatusBadge');
+    const countEl = document.getElementById('payModeProgressCount');
+    const leftEl = document.getElementById('payModeProgressLeft');
+    const backBtn = document.getElementById('payModeBackBtn');
+    const noteEl = document.getElementById('payModeNote');
+
+    if (nameEl) nameEl.textContent = getEmployeeDisplayName(employeeId, employee);
+
+    if (statusEl) {
+        if (statusKind === 'partial') {
+            statusEl.hidden = false;
+            statusEl.textContent = paymentStatusLabel(statusKind);
+            statusEl.className = `pay-mode__status pay-mode__status--${statusKind}`;
+        } else {
+            statusEl.hidden = true;
+            statusEl.textContent = '';
+            statusEl.className = 'pay-mode__status';
+        }
+    }
+
+    payModeState.remainingAmount = Math.max(0, bal.remaining || 0);
+    if (!payModeState.customAmountOpen) {
+        setPayModeAmountValue(bal.remaining > 0 ? bal.remaining : 0);
+        const editBtn = document.getElementById('payModeHeroEditBtn');
+        const valueBtn = document.getElementById('payModeHeroAmount');
+        const inputWrap = document.getElementById('payModeHeroInputWrap');
+        if (editBtn) editBtn.hidden = false;
+        if (valueBtn) valueBtn.hidden = false;
+        if (inputWrap) inputWrap.hidden = true;
+    }
+
+    renderPayModeSnapshot(employee);
+    const hintEl = document.getElementById('payModeHeroHint');
+    if (hintEl) {
+        const lines = Array.isArray(employee?.periodEarningsLines) ? employee.periodEarningsLines : [];
+        const hasAdjustments = lines.some((line) => line && line.status !== 'waived' && Number(line.amount));
+        hintEl.hidden = !hasAdjustments;
+        hintEl.textContent = hasAdjustments
+            ? 'Net amount — advances & adjustments already included'
+            : '';
+    }
+    renderPayModeMath(item, getPayModePayingAmount());
+    updatePayModeConfirmLabel();
+    syncPayModeHeroResetVisibility();
+
+    if (noteEl && !payModeState._preserveNote) {
+        noteEl.value = '';
+        const details = noteEl.closest('details');
+        if (details) details.open = false;
+    }
+    payModeState._preserveNote = false;
+
+    const queueTotal = getPayModeQueueRemainingTotal(payModeState.queue);
+    if (countEl) {
+        countEl.textContent = `${payModeState.index + 1} / ${payModeState.queue.length}`;
+    }
+    if (leftEl) {
+        leftEl.textContent = formatPayModePeso(queueTotal);
+    }
+
+    if (backBtn) backBtn.disabled = payModeState.index <= 0;
+}
+
+async function renderPayModeCurrent() {
+    const item = payModeState.queue[payModeState.index];
+    if (!item) return;
+
+    // Clear previous QR immediately so skip never shows the last person
+    clearPayModeQrDisplay({ showSkeleton: true });
+    paintPayModeLeftFromQueueItem(item);
+
+    const { employeeId } = item;
+    const details = await getEmployeeBankDetails(employeeId);
+    if (payModeState.queue[payModeState.index]?.employeeId !== employeeId) return;
+
+    const accounts = readPayrollBankAccounts(details);
+    payModeState.accounts = accounts;
+    item.hasQr = employeeHasPayQr(details);
+
+    const methods = getAvailablePayModeMethods(accounts);
+    const selectedMethod = methods.includes(payModeState.selectedMethod)
+        ? payModeState.selectedMethod
+        : (methods[0] || payModeState.selectedMethod);
+    payModeState.selectedMethod = selectedMethod;
+    const acc = accounts[selectedMethod] || emptyPayrollBankAccount();
+    renderPayModeSendRow(accounts, selectedMethod, Boolean(acc.qrUrl));
+
+    await renderPayModeQrPanel(acc, selectedMethod);
+    preloadPayModeNeighborAssets();
+}
+
+async function openPayMode(startEmployeeId = null) {
+    if (!isDisbursementPeriod()) {
+        showToast('Pay Mode is available after the payroll period ends', 'error');
+        return;
+    }
+
+    payModeState.queue = buildPayModeQueue();
+    if (!payModeState.queue.length) {
+        showToast('No unpaid employees in this view', 'error');
+        return;
+    }
+
+    let startIndex = 0;
+    if (startEmployeeId) {
+        const found = payModeState.queue.findIndex((q) => q.employeeId === startEmployeeId);
+        if (found < 0) {
+            showToast('No remaining balance for this employee', 'error');
+            return;
+        }
+        startIndex = found;
+    }
+
+    payModeState.index = startIndex;
+    payModeState.selectedMethod = 'gotyme';
+    payModeState.accounts = null;
+    payModeState.customAmountOpen = false;
+    payModeState.pickerOpen = false;
+    payModeState.qrShowFull = false;
+    payModeState.qrSourceUrl = '';
+    payModeState.qrBounds = null;
+    payModeState.qrBoundsCache = Object.create(null);
+    payModeState.open = true;
+
+    const overlay = document.getElementById('payModeOverlay');
+    const periodLabel = document.getElementById('payModePeriodLabel');
+    if (periodLabel) {
+        periodLabel.textContent = periodSelect.options[periodSelect.selectedIndex]?.text || '';
+    }
+
+    resetPayModeCustomAmount(0);
+    setPayModeLoading(false);
+
+    if (overlay) {
+        overlay.style.display = 'flex';
+        overlay.setAttribute('aria-hidden', 'false');
+    }
+
+    document.body.style.overflow = 'hidden';
+    closePayModePicker();
+    await renderPayModeCurrent();
+    setTimeout(() => document.getElementById('payModeConfirmBtn')?.focus(), 100);
+}
+
+function closePayMode() {
+    payModeState.open = false;
+    payModeState.queue = [];
+    payModeState.index = 0;
+    payModeState.accounts = null;
+    payModeState.customAmountOpen = false;
+    payModeState.pickerOpen = false;
+    payModeState.saving = false;
+    payModeState.qrGeneration += 1;
+    clearPayModeQrDisplay({ showSkeleton: false });
+    setPayModeLoading(false);
+    closePayModePicker();
+
+    const overlay = document.getElementById('payModeOverlay');
+    if (overlay) {
+        overlay.style.display = 'none';
+        overlay.setAttribute('aria-hidden', 'true');
+    }
+
+    document.body.style.overflow = '';
+    updatePayModeButtonState();
+}
+
+async function payModeGoTo(index) {
+    if (!payModeState.queue.length) return;
+    closePayModePicker();
+    payModeState.index = Math.max(0, Math.min(index, payModeState.queue.length - 1));
+    payModeState.accounts = null;
+    payModeState.customAmountOpen = false;
+    resetPayModeCustomAmount(payModeState.queue[payModeState.index]?.bal?.remaining || 0);
+    clearPayModeQrDisplay({ showSkeleton: true });
+    await renderPayModeCurrent();
+}
+
+async function payModeSkip() {
+    if (payModeState.index < payModeState.queue.length - 1) {
+        await payModeGoTo(payModeState.index + 1);
+    } else {
+        closePayMode();
+        showToast('Reached end of queue', 'success');
+    }
+}
+
+async function payModeBack() {
+    if (payModeState.index > 0) await payModeGoTo(payModeState.index - 1);
+}
+
+async function payModeConfirmAndNext() {
+    if (payModeState.saving) return;
+
+    const item = payModeState.queue[payModeState.index];
+    if (!item) return;
+
+    const amount = getPayModePayingAmount();
+    const note = document.getElementById('payModeNote')?.value.trim() || '';
+    const transferMethod = payModeState.selectedMethod;
+    const periodId = periodSelect.value;
+    const confirmBtn = document.getElementById('payModeConfirmBtn');
+
+    if (!transferMethod || !getAvailablePayModeMethods(payModeState.accounts || {}).includes(transferMethod)) {
+        showToast('No valid transfer method for this employee', 'error');
+        return;
+    }
+
+    if (amount <= 0) {
+        showToast('Please enter a valid payment amount', 'error');
+        return;
+    }
+
+    payModeState.saving = true;
+    setPayModeLoading(true);
+    if (confirmBtn) confirmBtn.disabled = true;
+
+    try {
+        const paidEmployeeId = item.employeeId;
+        const { paymentData, newlyPaid, alreadyPaid } = await persistPayrollPayment({
+            employeeId: paidEmployeeId,
+            periodId,
+            transferMethod,
+            paymentAmount: amount,
+            note
+        });
+
+        // Email ONLY after a new server-verified save — never on double-clicks
+        if (newlyPaid) {
+            void notifyPayrollPaymentAfterSave({
+                employeeId: paidEmployeeId,
+                periodId,
+                transferMethod,
+                paymentAmount: amount,
+                paymentData,
+                note
+            });
+        } else if (alreadyPaid) {
+            console.log('[Payment] Already paid on server — skipped email', paidEmployeeId);
+        }
+
+        applyVerifiedPaymentToLocalState(periodId, paidEmployeeId, paymentData);
+        renderEmployeeTable();
+        updateSummaryCards();
+        await updateEmployeePaymentStatus(true);
+
+        payModeState.queue = buildPayModeQueue();
+        if (!payModeState.queue.length) {
+            closePayMode();
+            return;
+        }
+
+        if (payModeState.index >= payModeState.queue.length) {
+            payModeState.index = payModeState.queue.length - 1;
+        }
+
+        payModeState.accounts = null;
+        payModeState._preserveNote = false;
+        payModeState.customAmountOpen = false;
+        resetPayModeCustomAmount(payModeState.queue[payModeState.index]?.bal?.remaining || 0);
+        clearPayModeQrDisplay({ showSkeleton: true });
+        await renderPayModeCurrent();
+        setTimeout(() => document.getElementById('payModeConfirmBtn')?.focus(), 50);
+
+    } catch (error) {
+        console.error('Pay Mode save failed:', error);
+        showToast(error?.message || 'Failed to save payment. Please try again.', 'error');
+    } finally {
+        payModeState.saving = false;
+        setPayModeLoading(false);
+        if (confirmBtn) confirmBtn.disabled = false;
+    }
+}
+
+function handlePayModeKeydown(e) {
+    if (!payModeState.open) return;
+
+    const tag = (e.target?.tagName || '').toLowerCase();
+    const isTyping = tag === 'input' || tag === 'textarea' || tag === 'select';
+    const editingHero = payModeState.customAmountOpen && e.target?.id === 'payModeHeroInput';
+
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        if (payModeState.customAmountOpen) {
+            closePayModeCustomAmount();
+            return;
+        }
+        if (payModeState.pickerOpen) {
+            closePayModePicker();
+            document.getElementById('payModeEmployeeName')?.focus();
+            return;
+        }
+        closePayMode();
+        return;
+    }
+
+    if (editingHero) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            commitPayModeHeroEdit();
+            payModeConfirmAndNext();
+        }
+        return;
+    }
+
+    if (isTyping) return;
+
+    if (payModeState.pickerOpen) return;
+
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        payModeConfirmAndNext();
+    } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        payModeSkip();
+    } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        payModeBack();
     }
 }
 
@@ -7443,6 +11594,101 @@ document.getElementById('closePaymentModal').addEventListener('click', closePaym
 document.getElementById('cancelPaymentBtn').addEventListener('click', closePaymentModal);
 window.showUpdateForm = showUpdateForm;
 
+const adjustSurplusFormEl = document.getElementById('adjustSurplusForm');
+if (adjustSurplusFormEl) {
+    adjustSurplusFormEl.addEventListener('submit', saveAdjustSurplusForm);
+}
+const closeAdjustSurplusModalBtn = document.getElementById('closeAdjustSurplusModal');
+if (closeAdjustSurplusModalBtn) closeAdjustSurplusModalBtn.addEventListener('click', closeAdjustSurplusModal);
+const cancelAdjustSurplusBtn = document.getElementById('cancelAdjustSurplusBtn');
+if (cancelAdjustSurplusBtn) cancelAdjustSurplusBtn.addEventListener('click', closeAdjustSurplusModal);
+const adjustSurplusClearBtn = document.getElementById('adjustSurplusClearBtn');
+if (adjustSurplusClearBtn) adjustSurplusClearBtn.addEventListener('click', handleAdjustSurplusClear);
+
+const paymentScreenshotInput = document.getElementById('paymentScreenshot');
+const paymentScreenshotNameEl = document.getElementById('paymentScreenshotName');
+if (paymentScreenshotInput && paymentScreenshotNameEl) {
+    paymentScreenshotInput.addEventListener('change', function () {
+        const file = this.files?.[0];
+        paymentScreenshotNameEl.textContent = file ? file.name : 'No file chosen';
+    });
+}
+
+const payModeBtn = document.getElementById('payModeBtn');
+if (payModeBtn) payModeBtn.addEventListener('click', () => openPayMode());
+
+const payModeExitBtn = document.getElementById('payModeExitBtn');
+if (payModeExitBtn) payModeExitBtn.addEventListener('click', closePayMode);
+
+const payModeBackBtn = document.getElementById('payModeBackBtn');
+if (payModeBackBtn) payModeBackBtn.addEventListener('click', payModeBack);
+
+const payModeSkipBtn = document.getElementById('payModeSkipBtn');
+if (payModeSkipBtn) payModeSkipBtn.addEventListener('click', payModeSkip);
+
+const payModeConfirmBtn = document.getElementById('payModeConfirmBtn');
+if (payModeConfirmBtn) payModeConfirmBtn.addEventListener('click', payModeConfirmAndNext);
+
+const payModeEmployeeNameBtn = document.getElementById('payModeEmployeeName');
+if (payModeEmployeeNameBtn) {
+    payModeEmployeeNameBtn.addEventListener('click', () => {
+        if (payModeState.pickerOpen) closePayModePicker();
+        else openPayModePicker();
+    });
+}
+
+const payModePickerCloseBtn = document.getElementById('payModePickerCloseBtn');
+if (payModePickerCloseBtn) {
+    payModePickerCloseBtn.addEventListener('click', () => {
+        closePayModePicker();
+        document.getElementById('payModeEmployeeName')?.focus();
+    });
+}
+
+const payModeQrViewToggle = document.getElementById('payModeQrViewToggle');
+if (payModeQrViewToggle) {
+    payModeQrViewToggle.addEventListener('click', () => {
+        togglePayModeQrFullView().catch((err) => console.warn('QR view toggle failed:', err));
+    });
+}
+
+const payModeHeroAmount = document.getElementById('payModeHeroAmount');
+if (payModeHeroAmount) {
+    payModeHeroAmount.addEventListener('click', openPayModeCustomAmount);
+}
+
+const payModeHeroEditBtn = document.getElementById('payModeHeroEditBtn');
+if (payModeHeroEditBtn) {
+    payModeHeroEditBtn.addEventListener('click', openPayModeCustomAmount);
+}
+
+const payModeHeroResetBtn = document.getElementById('payModeHeroResetBtn');
+if (payModeHeroResetBtn) {
+    payModeHeroResetBtn.addEventListener('click', closePayModeCustomAmount);
+}
+
+const payModeHeroInput = document.getElementById('payModeHeroInput');
+if (payModeHeroInput) {
+    payModeHeroInput.addEventListener('input', onPayModeHeroInputChange);
+    payModeHeroInput.addEventListener('blur', () => {
+        // Defer so Reset/Edit clicks still fire first
+        setTimeout(() => {
+            if (!payModeState.open || !payModeState.customAmountOpen) return;
+            if (document.activeElement === payModeHeroInput) return;
+            commitPayModeHeroEdit();
+        }, 120);
+    });
+}
+
+const payModeOverlay = document.getElementById('payModeOverlay');
+if (payModeOverlay) {
+    payModeOverlay.addEventListener('click', (e) => {
+        if (e.target === payModeOverlay) closePayMode();
+    });
+}
+
+document.addEventListener('keydown', handlePayModeKeydown);
+
 // Payment amount field event listener to update hint
 document.getElementById('paymentAmount').addEventListener('input', async function() {
     const employeeId = document.getElementById('paymentEmployeeId').value;
@@ -7464,8 +11710,13 @@ document.getElementById('paymentAmount').addEventListener('input', async functio
     
     const accumulatedPaymentAmount = existingPaymentAmount + newPaymentAmount;
     const remainingAmount = totalPay - accumulatedPaymentAmount;
+    const surplusAmount = getPaymentBalance(totalPay, { paymentAmount: accumulatedPaymentAmount }).surplus;
     
-    if (accumulatedPaymentAmount >= totalPay) {
+    if (surplusAmount > 0) {
+        document.getElementById('paymentAmountHint').textContent = `Surplus ₱${surplusAmount.toFixed(2)} (paid above period total)`;
+    } else if (totalPay <= 0) {
+        document.getElementById('paymentAmountHint').textContent = 'Nothing to pay this period (net is zero or negative)';
+    } else if (accumulatedPaymentAmount >= totalPay) {
         document.getElementById('paymentAmountHint').textContent = 'Full payment';
     } else {
         document.getElementById('paymentAmountHint').textContent = `Partial payment (₱${remainingAmount.toFixed(2)} remaining)`;
@@ -7669,3 +11920,121 @@ window.forceRefreshPaymentStatus = async function() {
     
     console.log('✅ Payment status indicators force refreshed!');
 };
+
+async function buildAdminEmployeePayslipPdf(employeeId) {
+    const employee = filteredData[employeeId] || attendanceData[employeeId];
+    if (!employee) {
+        throw new Error('Employee data not loaded');
+    }
+    if (typeof html2canvas === 'undefined' || typeof window.jspdf === 'undefined') {
+        throw new Error('PDF libraries not loaded. Refresh the page.');
+    }
+
+    const periodId = periodSelect.value;
+    const periodOpt = periodSelect.options[periodSelect.selectedIndex];
+    const periodLabel = periodOpt ? periodOpt.textContent : periodId;
+    const merged = mergeEmpRates(employee, periodId);
+    const employeeName = employee.name || employees[employeeId] || employeeId;
+    const employeeRole = employee.role || 'Barista';
+    const transferMode = employee.transferMode || employee.modeOfTransfer || 'GoTyme';
+    const payType = merged.payType || employee.payType || 'hourly';
+    const dates = Array.isArray(employee.dates) ? employee.dates : [];
+    const earningsLines = Array.isArray(employee.periodEarningsLines) ? employee.periodEarningsLines : [];
+    const earningsTotal = Number(employee.periodEarningsTotal)
+        || earningsLines.filter((l) => l.status !== 'waived').reduce((sum, l) => sum + (Number(l.amount) || 0), 0);
+
+    const employeeData = {
+        ...merged,
+        baseRate: merged.baseRate || employee.baseRate || 750,
+        salesBonusEligible: employee.salesBonusEligible || false,
+        payType,
+        monthlySalary: merged.monthlySalary || employee.monthlySalary || 0,
+        periodGross: merged.periodGross,
+        periodFixedAmount: merged.periodFixedAmount || employee.periodFixedAmount || 0
+    };
+
+    const { branchData, workedDays } = buildPayslipBranchData({
+        dates,
+        payType,
+        employeeData,
+        payCalculator
+    });
+
+    let periodBreakdown = {};
+    let attendanceOnly = 0;
+    if (payCalculator) {
+        const periodResult = payCalculator.calculateTotalPay(workedDays, employeeData, 'detailed');
+        periodBreakdown = periodResult?.breakdown || {};
+        attendanceOnly = Number(payCalculator.calculateTotalPay(workedDays, employeeData, 'simple')) || 0;
+    } else {
+        attendanceOnly = (Number(employee.totalPayWithBonus) || 0) - earningsTotal;
+    }
+    const grandTotal = attendanceOnly + earningsTotal;
+
+    const breakdownHTML = buildPayslipBreakdownHtml({
+        payType,
+        branchData,
+        periodBreakdown,
+        mergedEmployee: employeeData,
+        attendanceOnly,
+        grandTotal,
+        earningsLines,
+        earningsKindLabelFn: earningsKindLabel
+    });
+
+    const payslipHTML = buildPayslipDocumentHtml({
+        employeeName,
+        employeeRole,
+        transferMode,
+        periodLabel,
+        grandTotal,
+        breakdownHTML
+    });
+
+    const nameClean = String(employeeName).replace(/[^a-zA-Z0-9]/g, '_');
+    const periodClean = String(periodId).replace(/[^a-zA-Z0-9]+/g, '_');
+    const filename = 'matchanese_payslip_' + nameClean + '_' + periodClean + '.pdf';
+
+    const rendered = await renderPayslipHtmlToPdf({
+        payslipHTML,
+        filename,
+        html2canvasFn: html2canvas,
+        jsPDFCtor: window.jspdf.jsPDF
+    });
+
+    return {
+        blob: rendered.blob,
+        dataUrl: rendered.dataUrl,
+        filename: rendered.filename,
+        grandTotal,
+        periodLabel,
+        employeeName,
+        periodId,
+        pdf: rendered.pdf
+    };
+}
+
+async function generateAdminEmployeePayslipPDF(employeeId, btnEl) {
+    const originalHtml = btnEl ? btnEl.innerHTML : '';
+    if (btnEl) {
+        btnEl.disabled = true;
+        btnEl.textContent = 'Generating…';
+    }
+
+    try {
+        const { pdf, filename } = await buildAdminEmployeePayslipPdf(employeeId);
+        pdf.save(filename);
+        showToast('Payslip downloaded');
+    } catch (err) {
+        console.error('Admin payslip failed:', err);
+        showToast(err?.message || 'Failed to generate payslip', 'error');
+    } finally {
+        if (btnEl) {
+            btnEl.disabled = false;
+            btnEl.innerHTML = originalHtml;
+        }
+    }
+}
+
+window.buildAdminEmployeePayslipPdf = buildAdminEmployeePayslipPdf;
+window.generateAdminEmployeePayslipPDF = generateAdminEmployeePayslipPDF;

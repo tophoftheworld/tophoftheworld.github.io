@@ -1,0 +1,158 @@
+{
+  "oatUpgradePrice": 0,
+  "defaultMilk": "oat",
+  "strengthLevelPrices": {
+    "1": 0,
+    "2": 40,
+    "3": 80
+  },
+  "categories": [
+    {
+      "id": "matcha-lattes",
+      "name": "Matcha Lattes",
+      "countsAsCup": true
+    },
+    {
+      "id": "hojicha-lattes",
+      "name": "Hōjicha Lattes",
+      "countsAsCup": true
+    },
+    {
+      "id": "exclusive",
+      "name": "Exclusive",
+      "countsAsCup": true
+    }
+  ],
+  "items": [
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Signature Matchanese Latte",
+      "description": "Matcha Cold Whisked with Oat Milk",
+      "price": 240,
+      "type": "Iced",
+      "shorthand": "SML",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Matchanese Seasalt Latte",
+      "description": "Our Signature Matcha Latte topped with Seasalt Cream",
+      "price": 270,
+      "tags": [
+        "Best Seller"
+      ],
+      "type": "Iced",
+      "shorthand": "MSL",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Spanish Matchanese Latte",
+      "description": "Our Signature Matcha Latte with Sweetened Milk",
+      "price": 250,
+      "type": "Iced",
+      "shorthand": "SPML",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Earl Grey Matchanese Latte",
+      "description": "Our Signature Matcha Latte with Homemade Earl Grey Syrup",
+      "price": 260,
+      "type": "Iced",
+      "shorthand": "EGML",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Strawberry Matchanese Latte",
+      "description": "Our Signature Matcha Latte with Strawberry Puree",
+      "price": 260,
+      "type": "Iced",
+      "shorthand": "STML",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "matcha-lattes",
+      "name": "Matchanese Coco Oat Latte",
+      "description": "Matcha with Oat Milk and Coconut Water",
+      "price": 250,
+      "type": "Iced",
+      "shorthand": "COML",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "hojicha-lattes",
+      "name": "Hōjicha Latte",
+      "description": "Hojicha Cold Whisked with Oat Milk",
+      "price": 200,
+      "type": "Iced",
+      "shorthand": "HL",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "hojicha-lattes",
+      "name": "Hōjicha Seasalt Latte",
+      "description": "Hōjicha Latte with Seasalt Cream",
+      "price": 230,
+      "type": "Iced",
+      "shorthand": "HSL",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "discount": true
+      }
+    },
+    {
+      "categoryId": "exclusive",
+      "name": "Matchamporado Latte",
+      "description": "Our Signature Matcha Latte with White Chocolate Cream, Rice Krispies and covered by a White Chocolate Dome",
+      "price": 290,
+      "tags": [
+        "Exclusive"
+      ],
+      "type": "Iced",
+      "shorthand": "MPRL",
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
+    }
+  ]
+}

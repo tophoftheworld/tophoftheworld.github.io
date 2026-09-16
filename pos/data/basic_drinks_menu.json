@@ -2,11 +2,13 @@
   "categories": [
     {
       "id": "matcha",
-      "name": "MATCHA"
+      "name": "MATCHA",
+      "countsAsCup": true
     },
     {
       "id": "hojicha",
-      "name": "HOJICHA"
+      "name": "HOJICHA",
+      "countsAsCup": true
     }
   ],
   "items": [
@@ -44,4 +46,3 @@
     }
   ]
 }
-

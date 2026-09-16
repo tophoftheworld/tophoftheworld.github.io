@@ -2,7 +2,8 @@
   "categories": [
     {
       "id": "matcha-drinks",
-      "name": "Matcha Drinks"
+      "name": "Matcha Drinks",
+      "countsAsCup": true
     }
   ],
   "items": [

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Matchanese Queue Strip</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/queue-strip.css?v=8">
+</head>
+<body class="queue-stage">
+  <!--
+    Full 1080x1920 portrait LED simulation.
+    Top 20% (1080x384) = queue strip. Bottom 80% = video placeholder.
+  -->
+  <div class="led-frame" id="ledFrame">
+    <div class="queue-strip" id="queueStrip">
+      <section class="panel panel-preparing">
+        <div class="panel-label-row">
+          <div class="panel-label">Now preparing</div>
+          <div class="panel-label-right">
+            <span class="prep-pending-count" id="stripPendingCount">0 orders pending</span>
+            <button class="strip-settings-btn" id="stripSettingsBtn" aria-label="Display settings">☰</button>
+          </div>
+        </div>
+        <div class="prep-list" id="prepList"></div>
+      </section>
+
+      <div class="panel-divider" aria-hidden="true"></div>
+
+      <section class="panel panel-ready">
+        <div class="panel-label">
+          Ready for pickup
+          <span class="live-dot" id="stripLiveDot" aria-hidden="true"></span>
+        </div>
+        <div class="ready-list" id="readyList"></div>
+      </section>
+    </div>
+
+    <div class="video-placeholder" aria-hidden="true">
+      <div class="video-placeholder-label">VIDEO AREA</div>
+      <div class="video-placeholder-meta">1080 × 1536 · bottom 80%</div>
+    </div>
+  </div>
+
+  <div class="strip-settings-overlay" id="stripSettingsOverlay" hidden>
+    <div class="strip-settings-panel">
+      <div class="strip-settings-header">
+        <h3>Queue Settings</h3>
+        <button id="stripSettingsCloseBtn" aria-label="Close settings">✕</button>
+      </div>
+      <label for="stripEventSelector">Event</label>
+      <select id="stripEventSelector" class="strip-event-selector"></select>
+      <p class="strip-settings-note">Shows today's pending orders for the selected event. Ready = all items ticked.</p>
+    </div>
+  </div>
+
+  <script type="module" src="js/firebase-setup.js?v=4"></script>
+  <script type="module" src="js/firebase-sync.js?v=4"></script>
+  <script type="module" src="js/queue-strip.js?v=7"></script>
+</body>
+</html>

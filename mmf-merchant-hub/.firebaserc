@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "manila-matcha-fest"
+  },
+  "targets": {
+    "manila-matcha-fest": {
+      "hosting": {
+        "hub": [
+          "mmf-merchant"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

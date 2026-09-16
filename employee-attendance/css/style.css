@@ -801,6 +801,61 @@ button.submit-btn:hover {
     color: white;
 }
 
+.location-required-modal .location-required-card {
+    position: relative;
+    width: min(22rem, calc(100vw - 2rem));
+    padding: 1.75rem 1.5rem 1.5rem;
+    text-align: center;
+}
+
+.location-required-close {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    width: 32px;
+    height: 32px;
+    padding: 0 !important;
+    background: transparent !important;
+    color: #9a9a9a !important;
+    border: 0 !important;
+    border-radius: 0;
+    font-size: 1.5rem;
+    font-weight: 400;
+    line-height: 1;
+    box-shadow: none;
+}
+
+.location-required-close:hover,
+.location-required-close:focus,
+.location-required-close:active {
+    background: transparent !important;
+    color: #222 !important;
+}
+
+.location-required-title {
+    margin: 0 1.5rem 0.75rem;
+    font-size: 1.2rem;
+    font-weight: 600;
+}
+
+.location-required-copy {
+    margin: 0 0 0.65rem;
+    font-size: 1rem;
+    color: #444;
+}
+
+.location-required-hint {
+    margin: 0 0 1.35rem;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    color: #666;
+}
+
+.location-required-ok {
+    min-width: 9.5rem;
+    padding: 0.75rem 2.5rem;
+}
+
 #summaryCardUI {
     background: #fff;
     border-radius: 15px;

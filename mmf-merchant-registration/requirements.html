@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manila Matcha Fest 2026 — Merchant Requirements</title>
+    <meta name="description" content="Merchant requirements form for Manila Matcha Fest 2026 — booth, permits, menu, and logistics.">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Manila Matcha Fest 2026 — Merchant Requirements">
+    <meta property="og:description" content="Submit booth, sales, and promotion requirements for Manila Matcha Fest 2026. August 7–16 at SM Mall of Asia.">
+    <meta property="og:url" content="https://mmf-requirements.web.app/">
+    <meta property="og:image" content="https://mmf-requirements.web.app/images/og-cover.png">
+    <meta property="og:image:alt" content="Manila Matcha Fest — August 7–16 at SM Mall of Asia">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Manila Matcha Fest 2026 — Merchant Requirements">
+    <meta name="twitter:description" content="Submit booth, sales, and promotion requirements for Manila Matcha Fest 2026. August 7–16 at SM Mall of Asia.">
+    <meta name="twitter:image" content="https://mmf-requirements.web.app/images/og-cover.png">
+    <link rel="icon" href="images/mmf-logo.png" type="image/png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- Welcome -->
+    <section class="screen active" id="screen-welcome" aria-label="Welcome">
+        <div class="welcome">
+            <div class="welcome-inner">
+                <img class="welcome-logo" src="images/mmf-logo.png" alt="Manila Matcha Fest — August 7–16 at SM Mall of Asia">
+                <h1 class="welcome-title">Merchant Requirements</h1>
+                <p class="welcome-copy">Thank you for confirming your participation at the Manila Matcha Fest 2026.</p>
+                <p class="welcome-copy">We'll just need additional requirements to help process logistics and promote your brand across our event materials.</p>
+
+                <div class="field welcome-brand-field" data-field="merchantSelect">
+                    <select class="input" id="merchantSelect" name="merchantSelect" required aria-label="Brand name">
+                        <option value="">Loading brands…</option>
+                    </select>
+                    <span class="field-hint welcome-brand-hint">Not listed? <a href="https://mmf-info.web.app/">Complete Merchant Information first</a>.</span>
+                    <div class="field-error" id="welcomeBrandError">Select your brand to continue</div>
+                </div>
+
+                <button type="button" class="btn" id="btnStart">Start</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- Form -->
+    <section class="screen" id="screen-form" aria-label="Requirements form">
+        <div class="form-shell">
+            <nav class="stepper" id="stepper" aria-label="Form progress">
+                <div class="step active" data-step="0">
+                    <div class="step-dot" aria-hidden="true"></div>
+                    <span class="step-label">Brand Assets</span>
+                </div>
+                <div class="step" data-step="1">
+                    <div class="step-dot" aria-hidden="true"></div>
+                    <span class="step-label">Sales</span>
+                </div>
+                <div class="step" data-step="2">
+                    <div class="step-dot" aria-hidden="true"></div>
+                    <span class="step-label">Promotions</span>
+                </div>
+                <div class="step" data-step="3">
+                    <div class="step-dot" aria-hidden="true"></div>
+                    <span class="step-label">Logistics</span>
+                </div>
+            </nav>
+            <div class="step-skip-warning hidden" id="stepSkipWarning" role="status"></div>
+
+            <form id="requirementsForm" novalidate>
+                <!-- Page 1: Brand Assets -->
+                <div class="form-page" data-page="0">
+                    <h2 class="page-title">Brand Assets</h2>
+
+                    <div class="selected-brand-bar" id="selectedBrandBar">
+                        <div>
+                            <span class="selected-brand-label">Brand</span>
+                            <strong id="selectedBrandName">—</strong>
+                        </div>
+                        <button type="button" class="btn-add-link" id="btnChangeBrand">Change brand</button>
+                    </div>
+
+                    <div class="field" data-field="logoFiles">
+                        <h3 class="section-heading required">Logo Files</h3>
+                        <p class="field-hint section-intro">Please upload at least one logo version so your brand looks right across signage, LED screens, print, and social. PNG with transparent background preferred, minimum 1000px on the shortest side.</p>
+                        <div class="field-error">Upload at least one logo file</div>
+
+                    <div class="field" data-field="logoSquareDark">
+                        <label>Square / Stacked Logo — for dark backgrounds</label>
+                        <span class="field-hint">Your light or white logo version.</span>
+                        <div class="upload-zone" id="logoSquareDarkZone" tabindex="0" role="button" aria-label="Upload square logo for dark backgrounds">
+                            <div class="icon" aria-hidden="true">↑</div>
+                            <div>Drag &amp; drop a file or <span class="browse">browse</span></div>
+                        </div>
+                        <input type="file" id="logoSquareDark" accept="image/*,.png,.svg" hidden>
+                        <div class="upload-preview" id="logoSquareDarkPreview"><img id="logoSquareDarkThumb" alt=""><span id="logoSquareDarkName"></span><button type="button" class="remove" data-remove="logoSquareDark">Remove</button></div>
+                    </div>
+
+                    <div class="field" data-field="logoSquareLight">
+                        <label>Square / Stacked Logo — for light backgrounds</label>
+                        <span class="field-hint">Your dark or full-color logo version.</span>
+                        <div class="upload-zone" id="logoSquareLightZone" tabindex="0" role="button" aria-label="Upload square logo for light backgrounds">
+                            <div class="icon" aria-hidden="true">↑</div>
+                            <div>Drag &amp; drop a file or <span class="browse">browse</span></div>
+                        </div>
+                        <input type="file" id="logoSquareLight" accept="image/*,.png,.svg" hidden>
+                        <div class="upload-preview" id="logoSquareLightPreview"><img id="logoSquareLightThumb" alt=""><span id="logoSquareLightName"></span><button type="button" class="remove" data-remove="logoSquareLight">Remove</button></div>
+                    </div>
+
+                    <div class="field" data-field="logoWideDark">
+                        <label>Horizontal / Wide Logo — for dark backgrounds</label>
+                        <div class="upload-zone" id="logoWideDarkZone" tabindex="0" role="button" aria-label="Upload wide logo for dark backgrounds">
+                            <div class="icon" aria-hidden="true">↑</div>
+                            <div>Drag &amp; drop a file or <span class="browse">browse</span></div>
+                        </div>
+                        <input type="file" id="logoWideDark" accept="image/*,.png,.svg" hidden>
+                        <div class="upload-preview" id="logoWideDarkPreview"><img id="logoWideDarkThumb" alt=""><span id="logoWideDarkName"></span><button type="button" class="remove" data-remove="logoWideDark">Remove</button></div>
+                    </div>
+
+                    <div class="field" data-field="logoWideLight">
+                        <label>Horizontal / Wide Logo — for light backgrounds</label>
+                        <div class="upload-zone" id="logoWideLightZone" tabindex="0" role="button" aria-label="Upload wide logo for light backgrounds">
+                            <div class="icon" aria-hidden="true">↑</div>
+                            <div>Drag &amp; drop a file or <span class="browse">browse</span></div>
+                        </div>
+                        <input type="file" id="logoWideLight" accept="image/*,.png,.svg" hidden>
+                        <div class="upload-preview" id="logoWideLightPreview"><img id="logoWideLightThumb" alt=""><span id="logoWideLightName"></span><button type="button" class="remove" data-remove="logoWideLight">Remove</button></div>
+                    </div>
+                    </div>
+
+                    <div class="nav-row">
+                        <button type="button" class="btn btn-ghost" data-back>← Back</button>
+                        <button type="button" class="btn" data-next>Next →</button>
+                    </div>
+                </div>
+
+                <!-- Page 2: Sales -->
+                <div class="form-page hidden" data-page="1">
+                    <h2 class="page-title">Sales</h2>
+
+                    <div class="field" data-field="sellingCategories">
+                        <label class="required">What will you be selling?</label>
+                        <div class="check-grid" style="margin-top:0.75rem;">
+                            <div class="check-group">
+                                <div class="check-group-title">Drinks</div>
+                                <label class="check-item">
+                                    <input type="checkbox" name="sellingCategory" id="sellMatchaDrinks" value="matcha_drinks">
+                                    <span>Matcha drinks</span>
+                                </label>
+                                <label class="check-item">
+                                    <input type="checkbox" name="sellingCategory" id="sellCoffee" value="coffee">
+                                    <span>Coffee drinks</span>
+                                </label>
+                                <label class="check-item">
+                                    <input type="checkbox" name="sellingCategory" id="sellOtherDrinks" value="other_drinks">
+                                    <span>Other drinks</span>
+                                </label>
+                            </div>
+                            <div class="check-group">
+                                <div class="check-group-title">Food</div>
+                                <label class="check-item">
+                                    <input type="checkbox" name="sellingCategory" id="sellDesserts" value="desserts">
+                                    <span>Desserts</span>
+                                </label>
+                                <label class="check-item">
+                                    <input type="checkbox" name="sellingCategory" id="sellPastries" value="pastries">
+                                    <span>Pastries</span>
+                                </label>
+                                <label class="check-item">
+                                    <input type="checkbox" name="sellingCategory" id="sellSnacks" value="snacks">
+                                    <span>Snacks</span>
+                                </label>
+                                <label class="check-item">
+                                    <input type="checkbox" name="sellingCategory" id="sellOtherFood" value="other_food">
+                                    <span>Other food</span>
+                                </label>
+                            </div>
+                            <div class="check-group">
+                                <div class="check-group-title">Products</div>
+                                <label class="check-item">
+                                    <input type="checkbox" name="sellingCategory" id="sellMatchaPowder" value="matcha_powder">
+                                    <span>Matcha powder</span>
+                                </label>
+                                <label class="check-item">
+                                    <input type="checkbox" name="sellingCategory" id="sellTools" value="tools">
+                                    <span>Tools</span>
+                                </label>
+                                <label class="check-item">
+                                    <input type="checkbox" name="sellingCategory" id="sellMerch" value="merch">
+                                    <span>Merch</span>
+                                </label>
+                            </div>
+                            <div class="check-group">
+                                <div class="check-group-title">Other</div>
+                                <label class="check-item">
+                                    <input type="checkbox" name="sellingCategory" id="sellOther" value="other">
+                                    <span>Others</span>
+                                </label>
+                                <input class="input" type="text" id="sellingOtherText" name="sellingOtherText" placeholder="Specify…" hidden>
+                            </div>
+                        </div>
+                        <div class="field-error">Select at least one</div>
+                    </div>
+
+                    <div class="field" data-field="menuPhotos">
+                        <label class="required">Menu Photos</label>
+                        <span class="field-hint">Include all items that will be for sale. Menus must be approved by mall management.</span>
+                        <div class="upload-zone" id="menuPhotosZone" tabindex="0" role="button" aria-label="Upload menu photos">
+                            <div class="icon" aria-hidden="true">↑</div>
+                            <div>Drag &amp; drop files or <span class="browse">browse</span></div>
+                        </div>
+                        <input type="file" id="menuPhotos" accept="image/*,.pdf" multiple hidden>
+                        <ul class="upload-file-list" id="menuPhotosList"></ul>
+                        <div class="field-error">Upload at least one menu photo</div>
+                    </div>
+
+                    <div class="field" data-field="productPhotos">
+                        <label class="required">Product Photos</label>
+                        <span class="field-hint">Photos of the products you will be selling.</span>
+                        <div class="upload-zone" id="productPhotosZone" tabindex="0" role="button" aria-label="Upload product photos">
+                            <div class="icon" aria-hidden="true">↑</div>
+                            <div>Drag &amp; drop files or <span class="browse">browse</span></div>
+                        </div>
+                        <input type="file" id="productPhotos" accept="image/*" multiple hidden>
+                        <ul class="upload-file-list" id="productPhotosList"></ul>
+                        <div class="field-error">Upload at least one product photo</div>
+                    </div>
+
+                    <div class="nav-row">
+                        <button type="button" class="btn btn-ghost" data-back>← Back</button>
+                        <button type="button" class="btn" data-next>Next →</button>
+                    </div>
+                </div>
+
+                <!-- Page 3: Promotions -->
+                <div class="form-page hidden" data-page="2">
+                    <h2 class="page-title">Promotions</h2>
+
+                    <div class="field" data-field="brandVideos">
+                        <label>Brand Videos</label>
+                        <span class="field-hint">Please provide videos we can use for promotional purposes. Ideally include drink preparation, booth setup or activity, and other clips that show what makes your brand special.</span>
+                        <div class="input-mode-toggle" id="brandVideoModeToggle" role="group" aria-label="Brand video input mode">
+                            <button type="button" class="input-mode-btn active" data-mode="links">Paste links</button>
+                            <button type="button" class="input-mode-btn" data-mode="upload">Upload files</button>
+                        </div>
+                        <div class="input-mode-panel" id="brandVideoLinksPanel" data-mode-panel="links">
+                            <textarea class="textarea" id="brandVideoLinks" name="brandVideoLinks" rows="3" placeholder="Paste one link per line"></textarea>
+                        </div>
+                        <div class="input-mode-panel hidden" id="brandVideoUploadPanel" data-mode-panel="upload">
+                            <div class="upload-zone" id="brandVideosZone" tabindex="0" role="button" aria-label="Upload brand videos">
+                                <div class="icon" aria-hidden="true">↑</div>
+                                <div>Drag &amp; drop videos or <span class="browse">browse</span></div>
+                            </div>
+                            <input type="file" id="brandVideos" accept="video/*,.mp4,.mov,.webm,.m4v" multiple hidden>
+                            <ul class="upload-file-list" id="brandVideosList"></ul>
+                        </div>
+                    </div>
+
+                    <div class="field" data-field="heroDrink">
+                        <label for="heroDrink">Exclusive Hero Drink/s</label>
+                        <span class="field-hint">Optional. We strongly recommend an exclusive item for Manila Matcha Fest that will stand out among the 24 matcha brands.</span>
+                        <textarea class="textarea" id="heroDrink" name="heroDrink" rows="3"></textarea>
+                    </div>
+
+                    <div class="field" data-field="exclusivePromo">
+                        <label for="exclusivePromo">Exclusive Promotion</label>
+                        <span class="field-hint">Optional. If you have something else planned for Manila Matcha Fest — a collaboration, giveaway, promo, or similar — feel free to let us know.</span>
+                        <textarea class="textarea" id="exclusivePromo" name="exclusivePromo" rows="3"></textarea>
+                    </div>
+
+                    <div class="field" data-field="exDealItems">
+                        <label class="required" for="exDealItems">Ex-Deal Items</label>
+                        <span class="field-hint">Please indicate what items you can provide for media and KOLs as part of the ex-deal arrangement with SM Mall of Asia Marketing.</span>
+                        <textarea class="textarea" id="exDealItems" name="exDealItems" rows="4" required></textarea>
+                        <div class="field-error">Field is required</div>
+                    </div>
+
+                    <div class="field" data-field="preEventShootLocations">
+                        <label for="preEventShootLocations">Upcoming Pop-up</label>
+                        <span class="field-hint">Optional. If you have any other pop-ups or physical locations between now and August 6 that we can visit to shoot some pre-event videos, feel free to share the details here.</span>
+                        <textarea class="textarea" id="preEventShootLocations" name="preEventShootLocations" rows="3"></textarea>
+                    </div>
+
+                    <div class="nav-row">
+                        <button type="button" class="btn btn-ghost" data-back>← Back</button>
+                        <button type="button" class="btn" data-next>Next →</button>
+                    </div>
+                </div>
+
+                <!-- Page 4: Logistics -->
+                <div class="form-page hidden" data-page="3">
+                    <h2 class="page-title">Logistics</h2>
+
+                    <div class="field" data-field="boothLayout">
+                        <label class="required">Booth Photos / Setup Plan</label>
+                        <span class="field-hint">Your space is 3m × 3m. Upload one or more photos — layout sketch, mockup, reference shots of a previous booth, or anything that helps organizers plot booth positioning on the floor.</span>
+                        <div class="upload-zone" id="boothLayoutZone" tabindex="0" role="button" aria-label="Upload booth photos">
+                            <div class="icon" aria-hidden="true">↑</div>
+                            <div>Drag &amp; drop files or <span class="browse">browse</span></div>
+                        </div>
+                        <input type="file" id="boothLayout" accept="image/*,.pdf" multiple hidden>
+                        <ul class="upload-file-list" id="boothLayoutList"></ul>
+                        <div class="field-error">Upload at least one booth photo</div>
+                    </div>
+
+                    <div class="field" data-field="equipmentList">
+                        <label class="required">Electrical Load Requirements</label>
+                        <span class="field-hint">List all equipment with electrical requirements, including wattage.</span>
+                        <div class="equipment-list" id="equipmentList"></div>
+                        <button type="button" class="btn-add-link" id="addEquipment">+ Add equipment</button>
+                        <div class="field-error">Add at least one item with wattage</div>
+                    </div>
+
+                    <div class="field" data-field="ingressEquipmentMaterials">
+                        <label class="required" for="ingressEquipmentMaterials">List of Equipment and Materials</label>
+                        <span class="field-hint">List all equipment and materials that will be brought in for ingress.</span>
+                        <textarea class="textarea" id="ingressEquipmentMaterials" name="ingressEquipmentMaterials" rows="5" required></textarea>
+                        <div class="field-error">Field is required</div>
+                    </div>
+
+                    <div class="field" data-field="crewNames">
+                        <label class="required" for="crewNames">List of Personnel</label>
+                        <textarea class="textarea" id="crewNames" name="crewNames" rows="5" required></textarea>
+                        <div class="field-error">Field is required</div>
+                    </div>
+
+                    <div class="field" data-field="boothNotes">
+                        <label for="boothNotes">Notes</label>
+                        <span class="field-hint">Anything else you'd like to add — special booth setup, requests, questions, or concerns.</span>
+                        <textarea class="textarea" id="boothNotes" name="boothNotes" rows="4"></textarea>
+                    </div>
+
+                    <div class="field" data-field="confirmRequirements">
+                        <label class="check-item">
+                            <input type="checkbox" id="confirmRequirements" name="confirmRequirements">
+                            <span>All details above are accurate, and I understand that late submissions may affect permit processing and site access.</span>
+                        </label>
+                        <div class="field-error" id="confirmRequirementsError">Please confirm to submit</div>
+                    </div>
+
+                    <div class="form-error-banner" id="submitError" role="alert"></div>
+
+                    <div class="nav-row">
+                        <button type="button" class="btn btn-ghost" data-back>← Back</button>
+                        <button type="submit" class="btn" id="btnSubmit">Submit</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </section>
+
+    <!-- Thank you -->
+    <section class="screen" id="screen-thanks" aria-label="Thank you">
+        <div class="thanks">
+            <div class="thanks-inner">
+                <img class="thanks-logo" src="images/mmf-logo.png" alt="Manila Matcha Fest — August 7–16 at SM Mall of Asia">
+                <h1>All set!</h1>
+                <p>We'll send the full merchant briefing closer to the event.</p>
+                <p>You can come back anytime to update your requirements — photos, menu, crew, and equipment included.</p>
+                <p>See you at the atrium.</p>
+                <p class="thanks-signature"><strong>Manila Matcha Fest Team</strong></p>
+                <button type="button" class="btn btn-ghost" id="btnEditSubmission" style="margin-top:1.25rem;">Edit submission</button>
+            </div>
+        </div>
+    </section>
+
+    <script type="module" src="js/requirements-form.js"></script>
+</body>
+</html>

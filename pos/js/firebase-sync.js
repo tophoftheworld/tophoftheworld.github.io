@@ -1,5 +1,11 @@
 import { db, collection, addDoc, updateDoc, doc, getDocs, query, orderBy, limit, setDoc, getDoc, onSnapshot, deleteDoc, serverTimestamp } from './firebase-setup.js';
 import { menuData } from './menu-data.js';
+import { isCupItem } from './cup-count.js';
+
+function getActivePosMenu() {
+    if (typeof window !== 'undefined' && window.__posMenu) return window.__posMenu;
+    return menuData;
+}
 
 let syncQueue = [];
 let isSyncing = false;
@@ -35,7 +41,7 @@ export async function initializeMenuItems() {
 
 export async function saveOrderToFirebase(order) {
     try {
-        const orderDate = new Date(order.timestamp).toISOString().split('T')[0]; // YYYY-MM-DD
+        const orderDate = getLocalDateString(new Date(order.timestamp));
 
         // Optimize order data
         const optimizedOrder = {
@@ -46,13 +52,18 @@ export async function saveOrderToFirebase(order) {
                 customizations: item.customizations,
                 price: item.price,
                 basePrice: item.basePrice,
-                name: item.name ? item.name.replace(/<[^>]*>/g, '') : null
+                name: item.name ? item.name.replace(/<[^>]*>/g, '') : null,
+                categoryId: item.categoryId || null,
+                type: item.type || null,
+                countsAsCup: isCupItem(item, getActivePosMenu()),
+                prepared: Boolean(item.prepared)
             })),
             total: order.total,
             paymentMethod: order.paymentMethod,
             timestamp: order.timestamp,
             status: order.status,
-            customerName: order.customerName || ''
+            customerName: order.customerName || '',
+            readyAt: order.readyAt || null
         };
 
         // Use the new structure: pos-orders > pop-up > date > order-id
@@ -152,7 +163,10 @@ function getMenuItemId(item) {
 
     // Extract clean name from the item
     const cleanName = item.name.replace(/<[^>]*>/g, '');
-    const categoryId = menuData.items.find(m => m.name.includes(cleanName))?.categoryId || 'unknown';
+    const categoryId = item.categoryId
+        || menuData.items.find(m => m.name.replace(/<[^>]*>/g, '') === cleanName)?.categoryId
+        || menuData.items.find(m => m.name.includes(cleanName))?.categoryId
+        || 'unknown';
     return categoryId + '-' + cleanName.toLowerCase().replace(/\s+/g, '-');
 }
 
@@ -175,7 +189,11 @@ export async function syncOrderToFirebase(order) {
                 customizations: item.customizations,
                 price: item.price,
                 basePrice: item.basePrice,
-                name: item.name ? item.name.replace(/<[^>]*>/g, '') : null
+                name: item.name ? item.name.replace(/<[^>]*>/g, '') : null,
+                categoryId: item.categoryId || null,
+                type: item.type || null,
+                countsAsCup: isCupItem(item, getActivePosMenu()),
+                prepared: Boolean(item.prepared)
             })),
             total: order.total,
             paymentMethod: order.paymentMethod,
@@ -183,7 +201,8 @@ export async function syncOrderToFirebase(order) {
             status: order.status,
             customerName: order.customerName || '',
             lastModified: order.lastModified || order.timestamp,
-            event: order.event || 'pop-up'
+            event: order.event || 'pop-up',
+            readyAt: order.readyAt || null
         };
 
         // Save to Firebase
@@ -269,7 +288,19 @@ export async function loadEventsFromFirebase() {
 export async function saveEventToFirebase(eventData) {
     try {
         const docRef = await addDoc(collection(db, 'branches'), eventData);
-        return { id: docRef.id, ...eventData };
+        const saved = { id: docRef.id, ...eventData };
+        try {
+            const mod = await import('../../shared/js/ops-events.js');
+            await mod.createOpsEventFromBranch(
+                db,
+                { getDocs, collection, doc, addDoc, updateDoc, setDoc, deleteDoc },
+                saved,
+                { createdBy: 'pos-sync' }
+            );
+        } catch (err) {
+            console.warn('opsEvents dual-write skipped:', err);
+        }
+        return saved;
     } catch (error) {
         console.error('Error saving event:', error);
         throw error;
@@ -300,6 +331,13 @@ export function subscribeToOrders(event, date, onUpdate) {
     }, (error) => {
         console.error('Order listener error:', error);
     });
+
+    return () => {
+        if (unsubscribeOrderListener) {
+            unsubscribeOrderListener();
+            unsubscribeOrderListener = null;
+        }
+    };
 }
 
 function getLiveSessionDocRef(event) {
@@ -309,6 +347,12 @@ function getLiveSessionDocRef(event) {
 
 export async function publishLiveSession(event, payload) {
     try {
+        console.log('[GREETING_DEBUG][firebase-sync] publishLiveSession', {
+            event: event || 'pop-up',
+            customerName: payload?.customerName ?? null,
+            nameGreetingId: payload?.nameGreetingId ?? null,
+            status: payload?.status ?? null
+        });
         const liveDocRef = getLiveSessionDocRef(event);
         await setDoc(liveDocRef, {
             event: event || 'pop-up',
@@ -317,6 +361,7 @@ export async function publishLiveSession(event, payload) {
         }, { merge: true });
         return true;
     } catch (error) {
+        console.error('[GREETING_DEBUG][firebase-sync] publish FAILED', error);
         console.error('Failed to publish live session:', error);
         return false;
     }

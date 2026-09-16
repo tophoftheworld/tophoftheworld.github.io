@@ -2,15 +2,18 @@
   "categories": [
     {
       "id": "matcha_lattes",
-      "name": "MATCHA LATTES"
+      "name": "MATCHA LATTES",
+      "countsAsCup": true
     },
     {
       "id": "matcha_lite",
-      "name": "MATCHA LITE"
+      "name": "MATCHA LITE",
+      "countsAsCup": true
     },
     {
       "id": "hojicha",
-      "name": "HOJICHA"
+      "name": "HOJICHA",
+      "countsAsCup": true
     }
   ],
   "items": [

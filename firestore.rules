@@ -3,6 +3,29 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // MMF 2026 merchant registration form (public create; admin reads/updates client-side)
+    match /mmf_merchant_registrations/{registrationId} {
+      allow create: if true;
+      allow read: if true;
+      allow update: if true;
+      allow delete: if false;
+    }
+
+    // Unique page views (one doc per browser visitor id)
+    match /mmf_merchant_visitors/{visitorId} {
+      allow create: if true;
+      allow update: if true;
+      allow read: if true;
+      allow delete: if false;
+    }
+
+    match /mmf_merchant_requirements/{requirementId} {
+      allow create: if true;
+      allow read: if true;
+      allow update: if true;
+      allow delete: if false;
+    }
+
     // Open rules for development. Covers legacy collections and v2 payroll paths
     // (employees_v2, attendance_v2, payroll_period_earnings_v2, payroll_periods_v2/.../payments,
     // migration_v2_status for migration-tool UI).

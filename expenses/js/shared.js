@@ -7,6 +7,7 @@ export let suppliers = [];
 /** Canonical expense categories (single source for mobile + admin). */
 export const EXPENSE_CATEGORY_OPTIONS = [
     'Supplies',
+    'Logistics',
     'Staff',
     'Rent & Utilities',
     'Marketing',
@@ -15,6 +16,247 @@ export const EXPENSE_CATEGORY_OPTIONS = [
 ];
 
 export const DEFAULT_EXPENSE_CATEGORY = 'Supplies';
+
+/** Allocations that use an event name instead of a store branch. */
+export const EVENT_ALLOCATIONS = ['Workshop', 'Popup', 'Bar Service'];
+
+export function isEventAllocation(allocation) {
+    return EVENT_ALLOCATIONS.includes(allocation);
+}
+
+/** Allocations that track cash vs company payer. */
+export function allocationUsesPaidBy(allocation) {
+    return allocation === 'Store' || allocation === 'Popup';
+}
+
+/** Cash payer value stored on expenses (Store vs Pop-up wording). */
+export function cashPaidByValue(allocation) {
+    return allocation === 'Popup' ? 'Pop-up Cash' : 'Store Cash';
+}
+
+export function cashPaidByLabel(allocation) {
+    return allocation === 'Popup' ? 'Pop-up Cash' : 'Store Cash';
+}
+
+export function isCashPaidBy(paidBy) {
+    const v = String(paidBy || '').trim();
+    return v === 'Store Cash' || v === 'Pop-up Cash';
+}
+
+/** Branch name (Store) or event name (Workshop / Popup / Bar Service) for the Branch / Event column. */
+export function formatExpenseBranchOrEvent(expense) {
+    if (!expense) return '';
+    if (expense.allocation === 'Store') return (expense.branch || '').trim();
+    if (isEventAllocation(expense.allocation)) return (expense.eventName || '').trim();
+    return '';
+}
+
+/** Cached active POS popup events (from Firestore `branches` type=popup). */
+let cachedPopupEvents = [];
+/** Cached mobile bar / service events (branches type=service). */
+let cachedServiceEvents = [];
+try {
+    const raw = localStorage.getItem('expense-popup-events');
+    if (raw) cachedPopupEvents = JSON.parse(raw) || [];
+} catch {
+    /* ignore */
+}
+try {
+    const rawSvc = localStorage.getItem('expense-service-events');
+    if (rawSvc) cachedServiceEvents = JSON.parse(rawSvc) || [];
+} catch {
+    /* ignore */
+}
+
+export function getCachedPopupEvents() {
+    return cachedPopupEvents.slice();
+}
+
+export function getCachedServiceEvents() {
+    return cachedServiceEvents.slice();
+}
+
+/**
+ * Load active (non-archived) popup events from the same POS `branches` collection.
+ * @returns {Promise<Array<{ key: string, name: string, serviceType: string }>>}
+ */
+export async function loadActivePopupEvents() {
+    const ok = await initializeFirebase();
+    if (!ok || !db || !getDocs || !collection) {
+        return cachedPopupEvents.slice();
+    }
+    try {
+        const snapshot = await getDocs(collection(db, 'branches'));
+        const events = [];
+        const serviceEvents = [];
+        snapshot.forEach((d) => {
+            const data = d.data() || {};
+            if (data.archived) return;
+            const name = String(data.name || '').trim();
+            const key = String(data.key || d.id || '').trim();
+            if (!name && !key) return;
+            if (data.type === 'popup') {
+                events.push({
+                    id: d.id,
+                    key: key || name,
+                    name: name || key,
+                    serviceType: data.serviceType || 'popup'
+                });
+            } else if (data.type === 'service') {
+                serviceEvents.push({
+                    id: d.id,
+                    key: key || name,
+                    name: name || key,
+                    serviceType: 'service'
+                });
+            }
+        });
+        events.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+        serviceEvents.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+        cachedPopupEvents = events;
+        cachedServiceEvents = serviceEvents;
+        try {
+            localStorage.setItem('expense-popup-events', JSON.stringify(events));
+            localStorage.setItem('expense-service-events', JSON.stringify(serviceEvents));
+        } catch {
+            /* ignore */
+        }
+        return events.slice();
+    } catch (error) {
+        console.warn('Failed to load popup events:', error);
+        try {
+            const raw = localStorage.getItem('expense-popup-events');
+            if (raw) cachedPopupEvents = JSON.parse(raw) || [];
+        } catch {
+            /* ignore */
+        }
+        return cachedPopupEvents.slice();
+    }
+}
+
+export async function loadActiveServiceEvents() {
+    await loadActivePopupEvents();
+    return cachedServiceEvents.slice();
+}
+
+/** Nickname or first-name short label (admin "Recorded by", compact tables). */
+export function getEmployeeShortDisplayName(fullName, nickname) {
+    const nick = String(nickname || '').trim();
+    if (nick) return nick;
+    const name = String(fullName || '').trim();
+    if (!name) return '';
+    const first = name.split(/\s+/).filter(Boolean)[0];
+    return first || name;
+}
+
+let employeeRecorderLabels = null;
+let employeeRecorderLabelsPromise = null;
+
+/** Load employee code → nickname/short name for admin recorded-by display. */
+export async function ensureEmployeeRecorderLabels() {
+    if (employeeRecorderLabels) return employeeRecorderLabels;
+    if (employeeRecorderLabelsPromise) return employeeRecorderLabelsPromise;
+
+    employeeRecorderLabelsPromise = (async () => {
+        const map = {};
+        const ready = await initializeFirebase();
+        if (!ready || !db) {
+            employeeRecorderLabels = map;
+            return map;
+        }
+        try {
+            const snap = await getDocs(collection(db, 'employees_v2'));
+            snap.forEach((docSnap) => {
+                const data = docSnap.data() || {};
+                const code = String(docSnap.id || data.employeeCode || '').trim();
+                const label = getEmployeeShortDisplayName(data.name, data.nickname);
+                if (code && label) map[code] = label;
+            });
+        } catch (error) {
+            console.warn('Could not load employee recorder labels:', error);
+        }
+        employeeRecorderLabels = map;
+        return map;
+    })();
+
+    return employeeRecorderLabelsPromise;
+}
+
+/** Short label for admin "Recorded by" (nickname lookup, else first name). */
+export function getRecordedByShortLabel(expense) {
+    if (!expense) return '';
+    const code = String(expense.recordedByEmployeeCode || '').trim();
+    if (code && employeeRecorderLabels?.[code]) {
+        return employeeRecorderLabels[code];
+    }
+    const stored = String(expense.recordedBy || '').trim();
+    if (!stored) return '';
+    return getEmployeeShortDisplayName(stored, '');
+}
+
+/** Read recorder identity from parent portal login or URL params (iframe embed). */
+function readRecorderUrlParams() {
+    try {
+        const params = new URLSearchParams(window.location.search);
+        return {
+            employeeCode: params.get('employeeId') || params.get('employeeCode') || null,
+            name: params.get('recorderName') || null,
+            nickname: params.get('recorderNickname') || null
+        };
+    } catch {
+        return { employeeCode: null, name: null, nickname: null };
+    }
+}
+
+function getParentPortalUserData() {
+    try {
+        if (window.parent && window.parent !== window && typeof window.parent.getCurrentUserData === 'function') {
+            return window.parent.getCurrentUserData();
+        }
+    } catch {
+        // Parent access blocked (e.g. cross-origin) — fall back to URL params only.
+    }
+    return null;
+}
+
+/** Resolve who is recording an expense from staff/admin hub login. */
+export function resolveExpenseRecorder(context) {
+    const urlParams = readRecorderUrlParams();
+    const parentUser = getParentPortalUserData();
+    const fullName = String(parentUser?.name || urlParams.name || '').trim();
+    const nickname = String(parentUser?.nickname || urlParams.nickname || '').trim();
+    const employeeCode = String(
+        parentUser?.employeeCode || parentUser?.username || urlParams.employeeCode || ''
+    ).trim();
+    const shortName = getEmployeeShortDisplayName(fullName, nickname);
+    const codeLabel = employeeCode && employeeRecorderLabels?.[employeeCode]
+        ? employeeRecorderLabels[employeeCode]
+        : '';
+
+    if (!fullName && !employeeCode) {
+        return {
+            recordedBy: null,
+            recordedByEmployeeCode: null,
+            recordedVia: context || null
+        };
+    }
+
+    return {
+        recordedBy: codeLabel || shortName || fullName || employeeCode,
+        recordedByEmployeeCode: employeeCode || null,
+        recordedVia: context || null
+    };
+}
+
+function preserveRecorderFields(target, source) {
+    if (!target || !source) return target;
+    if (!target.recordedBy && source.recordedBy) target.recordedBy = source.recordedBy;
+    if (!target.recordedByEmployeeCode && source.recordedByEmployeeCode) {
+        target.recordedByEmployeeCode = source.recordedByEmployeeCode;
+    }
+    if (!target.recordedVia && source.recordedVia) target.recordedVia = source.recordedVia;
+    return target;
+}
 
 /** Option values for an expense form select: canonical list plus legacy value if not in list. */
 export function getExpenseCategorySelectOptionValues(currentValue) {
@@ -270,6 +512,14 @@ export async function initializeFirebase() {
         uploadBytesFn = storageModule.uploadBytes;
         getDownloadURLFn = storageModule.getDownloadURL;
 
+        // Auth (for callable functions like receipt AI extraction)
+        try {
+            const authModule = await import('https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js');
+            authModule.getAuth(app);
+        } catch (authError) {
+            console.warn('Firebase Auth init skipped:', authError);
+        }
+
         console.log('Firebase initialized successfully');
         console.log('Database object:', db);
         setupBeforeUnloadSync();
@@ -313,6 +563,152 @@ function dataUrlByteSize(dataUrl) {
 
 // Compress image before upload. Targets ~400-800KB at a readable resolution
 // (up to ~1600px) so receipt text stays legible while uploads stay fast.
+export function isHeicLikeFile(file) {
+    if (!file) return false;
+    const type = String(file.type || '').toLowerCase();
+    if (type === 'image/heic' || type === 'image/heif' || type === 'image/heic-sequence' || type === 'image/heif-sequence') {
+        return true;
+    }
+    const name = String(file.name || '').toLowerCase();
+    return /\.hei[cf]$/i.test(name);
+}
+
+export function isPdfFile(file) {
+    if (!file) return false;
+    const type = String(file.type || '').toLowerCase();
+    if (type === 'application/pdf') return true;
+    return /\.pdf$/i.test(String(file.name || ''));
+}
+
+/** True for browser images, HEIC/HEIF, and PDF (converted before compress). */
+export function isSupportedReceiptImageFile(file) {
+    if (!file) return false;
+    if (isHeicLikeFile(file) || isPdfFile(file)) return true;
+    const type = String(file.type || '').toLowerCase();
+    if (type.startsWith('image/')) return true;
+    // Some Android/iOS picks omit MIME; allow common photo extensions.
+    return /\.(jpe?g|png|gif|webp|bmp|tiff?)$/i.test(String(file.name || ''));
+}
+
+/** Accept attribute for receipt file pickers (images + HEIC + PDF). */
+export const RECEIPT_FILE_ACCEPT = 'image/*,.heic,.heif,image/heic,image/heif,application/pdf,.pdf';
+
+let heic2anyLoader = null;
+let pdfJsLoader = null;
+
+async function loadHeic2Any() {
+    if (typeof window !== 'undefined' && typeof window.heic2any === 'function') {
+        return window.heic2any;
+    }
+    if (heic2anyLoader) return heic2anyLoader;
+    heic2anyLoader = new Promise((resolve, reject) => {
+        const existing = document.querySelector('script[data-heic2any]');
+        if (existing) {
+            existing.addEventListener('load', () => {
+                if (typeof window.heic2any === 'function') resolve(window.heic2any);
+                else reject(new Error('HEIC converter failed to load'));
+            });
+            existing.addEventListener('error', () => reject(new Error('HEIC converter failed to load')));
+            return;
+        }
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js';
+        script.async = true;
+        script.dataset.heic2any = '1';
+        script.onload = () => {
+            if (typeof window.heic2any === 'function') resolve(window.heic2any);
+            else reject(new Error('HEIC converter failed to load'));
+        };
+        script.onerror = () => reject(new Error('HEIC converter failed to load'));
+        document.head.appendChild(script);
+    });
+    return heic2anyLoader;
+}
+
+async function loadPdfJs() {
+    if (pdfJsLoader) return pdfJsLoader;
+    pdfJsLoader = (async () => {
+        const pdfjs = await import(
+            'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs'
+        );
+        pdfjs.GlobalWorkerOptions.workerSrc =
+            'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
+        return pdfjs;
+    })();
+    return pdfJsLoader;
+}
+
+/**
+ * Rasterize PDF page 1 to a JPEG data URL for thumbs + OCR.
+ * @param {File|Blob} file
+ * @param {{ maxWidth?: number, quality?: number }} [opts]
+ */
+export async function pdfFileToJpegDataUrl(file, opts = {}) {
+    const maxWidth = opts.maxWidth ?? 1600;
+    const quality = opts.quality ?? 0.85;
+    const pdfjs = await loadPdfJs();
+    const data = await file.arrayBuffer();
+    const pdf = await pdfjs.getDocument({ data }).promise;
+    const page = await pdf.getPage(1);
+    const base = page.getViewport({ scale: 1 });
+    const scale = Math.min(maxWidth / base.width, maxWidth / base.height, 2.5);
+    const viewport = page.getViewport({ scale: scale > 0 ? scale : 1 });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(viewport.width));
+    canvas.height = Math.max(1, Math.round(viewport.height));
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Could not create canvas for PDF');
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    return canvas.toDataURL('image/jpeg', quality);
+}
+
+async function dataUrlToJpegFile(dataUrl, baseName) {
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    return new File([blob], `${baseName}.jpg`, {
+        type: 'image/jpeg',
+        lastModified: Date.now()
+    });
+}
+
+/**
+ * Convert HEIC/HEIF or PDF to a JPEG File browsers can decode. Pass-through for other images.
+ */
+export async function ensureBrowserDecodableImageFile(file) {
+    if (!file) return file;
+
+    if (isPdfFile(file)) {
+        try {
+            const dataUrl = await pdfFileToJpegDataUrl(file);
+            const baseName = String(file.name || 'receipt').replace(/\.pdf$/i, '') || 'receipt';
+            return await dataUrlToJpegFile(dataUrl, baseName);
+        } catch (error) {
+            console.error('PDF conversion failed:', error);
+            throw new Error('Could not read PDF receipt. Try exporting page 1 as JPG.');
+        }
+    }
+
+    if (!isHeicLikeFile(file)) return file;
+    try {
+        const heic2any = await loadHeic2Any();
+        const converted = await heic2any({
+            blob: file,
+            toType: 'image/jpeg',
+            quality: 0.92
+        });
+        const blob = Array.isArray(converted) ? converted[0] : converted;
+        if (!blob) throw new Error('HEIC conversion returned empty result');
+        const baseName = String(file.name || 'receipt').replace(/\.hei[cf]$/i, '') || 'receipt';
+        return new File([blob], `${baseName}.jpg`, {
+            type: 'image/jpeg',
+            lastModified: file.lastModified || Date.now()
+        });
+    } catch (error) {
+        console.error('HEIC conversion failed:', error);
+        throw new Error('Could not read HEIC photo. Try converting to JPG or take a new photo.');
+    }
+}
+
 export async function compressImage(
     file,
     maxWidth = 1600,
@@ -320,6 +716,7 @@ export async function compressImage(
     quality = 0.85,
     targetBytes = 800 * 1024
 ) {
+    const decodable = await ensureBrowserDecodableImageFile(file);
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = function (e) {
@@ -370,11 +767,11 @@ export async function compressImage(
 
                 resolve(dataUrl);
             };
-            img.onerror = reject;
+            img.onerror = () => reject(new Error('Failed to decode image'));
             img.src = e.target.result;
         };
         reader.onerror = reject;
-        reader.readAsDataURL(file);
+        reader.readAsDataURL(decodable);
     });
 }
 
@@ -512,6 +909,116 @@ export async function uploadReceiptImageToStorage(expenseId, receiptDataUrl) {
     } catch (error) {
         console.warn('[ReceiptUpload] Failed to upload receipt image:', error);
         return null;
+    }
+}
+
+/**
+ * Call Cloud Function extractExpenseReceipt (Gemini) with a receipt data URL.
+ * Requires the user to be signed in to the same Firebase project (staff portal).
+ * @param {string} imageDataUrl
+ * @returns {Promise<object>} normalized parsed fields
+ */
+export async function extractExpenseReceiptFromImage(imageDataUrl) {
+    if (!imageDataUrl || typeof imageDataUrl !== 'string') {
+        throw new Error('Receipt image is required');
+    }
+    if (!imageDataUrl.startsWith('data:image/')) {
+        throw new Error('Compressed receipt image is required for AI extraction');
+    }
+
+    const ok = await initializeFirebase();
+    if (!ok || !app) {
+        throw new Error('Firebase is not available');
+    }
+
+    const friendlyExtractError = (message) => {
+        const m = String(message || '').toLowerCase();
+        if (
+            m.includes('high demand') ||
+            m.includes('try again later') ||
+            m.includes('resource-exhausted') ||
+            m.includes('resource exhausted') ||
+            m.includes('overloaded') ||
+            m.includes('unavailable') ||
+            m.includes('couldn’t read') ||
+            m.includes("couldn't read")
+        ) {
+            return 'Couldn’t read the receipt right now. Tap Extract to try again.';
+        }
+        if (m.includes('sign in') || m.includes('unauthenticated')) {
+            return 'Sign in required to extract receipt details';
+        }
+        if (m.includes('couldn’t extract') || m.includes("couldn't extract")) {
+            return String(message);
+        }
+        return 'Couldn’t extract details from this receipt. You can fill the form manually.';
+    };
+
+    try {
+        const [{ getAuth }, { getFunctions, httpsCallable }] = await Promise.all([
+            import('https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js'),
+            import('https://www.gstatic.com/firebasejs/11.6.0/firebase-functions.js')
+        ]);
+
+        const auth = getAuth(app);
+        const mimeMatch = imageDataUrl.match(/^data:([^;]+);base64,/);
+        const payload = {
+            imageBase64: imageDataUrl,
+            mimeType: mimeMatch?.[1] || 'image/jpeg'
+        };
+
+        if (auth.currentUser) {
+            const functions = getFunctions(app, 'us-central1');
+            const extract = httpsCallable(functions, 'extractExpenseReceipt', { timeout: 60000 });
+            const response = await extract(payload);
+            const result = response?.data;
+            if (!result?.parsed) {
+                throw new Error('Extraction returned no data');
+            }
+            return result.parsed;
+        }
+
+        // Same-origin staff hub iframe: parent may hold the Firebase session
+        let parentUser = null;
+        try {
+            if (window.parent && window.parent !== window && typeof window.parent.getCurrentUser === 'function') {
+                parentUser = window.parent.getCurrentUser();
+            }
+        } catch {
+            parentUser = null;
+        }
+
+        if (!parentUser?.getIdToken) {
+            throw new Error('Sign in required to extract receipt details');
+        }
+
+        const idToken = await parentUser.getIdToken();
+        const projectId = app.options?.projectId || 'matchanese-attendance';
+        const url = `https://us-central1-${projectId}.cloudfunctions.net/extractExpenseReceipt`;
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${idToken}`
+            },
+            body: JSON.stringify({ data: payload })
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || body?.error) {
+            throw new Error(body?.error?.message || `Extraction failed (${res.status})`);
+        }
+        const result = body?.result || body?.data || body;
+        if (!result?.parsed) {
+            throw new Error('Extraction returned no data');
+        }
+        return result.parsed;
+    } catch (error) {
+        const raw =
+            error?.message ||
+            error?.details?.message ||
+            error?.customData?.message ||
+            'Extraction failed';
+        throw new Error(friendlyExtractError(raw));
     }
 }
 
@@ -2344,7 +2851,7 @@ function mergeData(localData, firebaseData) {
             const localHasUrl = hasReceiptUrlValue(localItem?.receiptImage);
 
             if (firebaseUpdated > localUpdated) {
-                const mergedFirebaseWinner = { ...firebaseItem };
+                const mergedFirebaseWinner = preserveRecorderFields({ ...firebaseItem }, localItem);
                 if (!firebaseHasUrl && localHasUrl) {
                     mergedFirebaseWinner.receiptImage = localItem.receiptImage;
                     mergedFirebaseWinner.hasReceiptImage = true;
@@ -2354,19 +2861,25 @@ function mergeData(localData, firebaseData) {
                 mergedExpenses[localIndex] = normalizeExpenseReceiptState(mergedFirebaseWinner);
                 hasChanges = true;
             } else if (!localHasUrl && firebaseHasUrl) {
-                const mergedLocalWinner = normalizeExpenseReceiptState({
-                    ...localItem,
-                    receiptImage: firebaseItem.receiptImage,
-                    hasReceiptImage: true
-                });
+                const mergedLocalWinner = normalizeExpenseReceiptState(
+                    preserveRecorderFields(
+                        {
+                            ...localItem,
+                            receiptImage: firebaseItem.receiptImage,
+                            hasReceiptImage: true
+                        },
+                        firebaseItem
+                    )
+                );
                 mergedExpenses[localIndex] = mergedLocalWinner;
                 hasChanges = true;
             } else if (localHasUrl && !firebaseHasUrl && firebaseUpdated.getTime() === localUpdated.getTime()) {
                 // Same revision — keep local receipt URL if Firebase row lost the field.
-                mergedExpenses[localIndex] = normalizeExpenseReceiptState({
-                    ...localItem,
-                    hasReceiptImage: true
-                });
+                mergedExpenses[localIndex] = normalizeExpenseReceiptState(
+                    preserveRecorderFields({ ...localItem, hasReceiptImage: true }, firebaseItem)
+                );
+            } else if (localUpdated >= firebaseUpdated) {
+                mergedExpenses[localIndex] = preserveRecorderFields({ ...localItem }, firebaseItem);
             }
         }
     });
@@ -2965,6 +3478,57 @@ export function findSimilarExpense(newExpense, tolerancePercent = 0.05) {
     });
 }
 
+/**
+ * Find possible duplicate expenses for batch upload flagging (no auto-merge).
+ * Matches if same date + amount within 5%, OR same date + invoice #, OR same date + supplier + amount within 5%.
+ * @param {object} candidate
+ * @param {{ excludeIds?: string[], extraCandidates?: object[] }} [options]
+ * @returns {object[]} matching expenses (may include peers from extraCandidates)
+ */
+export function findPossibleDuplicateExpenses(candidate, options = {}) {
+    const excludeIds = new Set((options.excludeIds || []).filter(Boolean));
+    if (candidate?.id) excludeIds.add(candidate.id);
+
+    const pool = [];
+    const seen = new Set();
+    for (const e of expenses) {
+        if (!e?.id || excludeIds.has(e.id) || seen.has(e.id)) continue;
+        seen.add(e.id);
+        pool.push(e);
+    }
+    for (const e of options.extraCandidates || []) {
+        if (!e?.id || excludeIds.has(e.id) || seen.has(e.id)) continue;
+        seen.add(e.id);
+        pool.push(e);
+    }
+
+    const date = candidate?.date || '';
+    const amount = Number(candidate?.totalAmount) || 0;
+    const tolerance = Math.max(amount * 0.05, 0.01);
+    const invoice = String(candidate?.invoiceNumber || '')
+        .trim()
+        .toLowerCase();
+    const supplierKey = normalizeSupplierNameKey(candidate?.supplierName);
+
+    return pool.filter((existing) => {
+        if ((existing.date || '') !== date) return false;
+
+        const existingInvoice = String(existing.invoiceNumber || '')
+            .trim()
+            .toLowerCase();
+        if (invoice && existingInvoice && invoice === existingInvoice) return true;
+
+        const amountDiff = Math.abs((Number(existing.totalAmount) || 0) - amount);
+        if (amount > 0 && amountDiff <= tolerance) return true;
+
+        const existingSupplier = normalizeSupplierNameKey(existing.supplierName);
+        if (supplierKey && existingSupplier && supplierKey === existingSupplier && amountDiff <= tolerance) {
+            return true;
+        }
+        return false;
+    });
+}
+
 export function mergeExpenseData(existingExpense, newExpense) {
     // Determine which expense has more detailed supplier information
     const existingHasFullSupplier = existingExpense.tin && existingExpense.address;
@@ -3274,7 +3838,8 @@ export function createExpenseObject(data, options = {}) {
         isEditing = false,
         calculateTotalFromItems = true,
         autoCalculateVAT = true,
-        validate = true
+        validate = true,
+        recorderContext = null
     } = options;
 
     // Extract data (supports both FormData and plain objects)
@@ -3399,6 +3964,13 @@ export function createExpenseObject(data, options = {}) {
                   const b = getValue('branch', existingExpense?.branch ?? '');
                   return b === '' || b == null ? null : b;
               })();
+    const eventNameVal = isEventAllocation(allocationVal)
+        ? (() => {
+              const n = getValue('eventName', existingExpense?.eventName ?? '');
+              const trimmed = n == null ? '' : String(n).trim();
+              return trimmed || null;
+          })()
+        : null;
 
     // Build expense object
     const expense = {
@@ -3406,6 +3978,7 @@ export function createExpenseObject(data, options = {}) {
         date: getValue('date', existingExpense?.date || getTodayLocal()),
         branch: branchVal,
         allocation: allocationVal,
+        eventName: eventNameVal,
         isPettyCash,
         supplierName: supplierName,
         ...(isPettyCash || !supplierId ? {} : { supplierId }),
@@ -3422,7 +3995,8 @@ export function createExpenseObject(data, options = {}) {
         isVatRegistered: vatBreakdown.isVatRegistered,
         paidBy: (() => {
             const paidBy = getValue('paidBy', existingExpense?.paidBy || 'Company');
-            return allocationVal === 'Store' ? paidBy : 'Company';
+            if (allocationUsesPaidBy(allocationVal)) return paidBy;
+            return 'Company';
         })(),
         notes: getValue('notes', existingExpense?.notes || ''),
         receiptImage: getValue('receiptImage', existingExpense?.receiptImage || null),
@@ -3438,6 +4012,17 @@ export function createExpenseObject(data, options = {}) {
                    new Date().toISOString(),
         updatedAt: new Date().toISOString() // Always set updatedAt, even for new expenses
     };
+
+    if (isEditing && existingExpense) {
+        expense.recordedBy = existingExpense.recordedBy ?? null;
+        expense.recordedByEmployeeCode = existingExpense.recordedByEmployeeCode ?? null;
+        expense.recordedVia = existingExpense.recordedVia ?? null;
+    } else if (recorderContext) {
+        const recorder = resolveExpenseRecorder(recorderContext);
+        expense.recordedBy = recorder.recordedBy;
+        expense.recordedByEmployeeCode = recorder.recordedByEmployeeCode;
+        expense.recordedVia = recorder.recordedVia;
+    }
 
     const normalizedExpense = normalizeExpenseReceiptState(expense);
 
@@ -3485,6 +4070,10 @@ export function validateExpense(expense) {
 
     if (!expense.date || expense.date === '') {
         errors.push('Date is required');
+    }
+
+    if (isEventAllocation(expense.allocation) && !(expense.eventName || '').trim()) {
+        errors.push('Event name is required for Workshop, Popup, and Bar Service');
     }
 
     if (expense.vatExemptAmount && expense.vatExemptAmount > expense.totalAmount) {
@@ -3747,6 +4336,7 @@ export function runLegacyExpenseVatBackfillOnce() {
                 date: exp.date,
                 branch: exp.branch,
                 allocation: exp.allocation,
+                eventName: exp.eventName,
                 isPettyCash: false,
                 supplierName: exp.supplierName,
                 supplierId: exp.supplierId,
@@ -4083,6 +4673,12 @@ export function showExpenseDetailModal(expense) {
                         <div>
                             <div style="font-size: 1.1rem; font-weight: 600; color: #333; margin-bottom: 0.25rem;">${expense.branch}</div>
                             <div style="font-size: 0.875rem; color: #666;">Branch</div>
+                        </div>
+                        ` : ''}
+                        ${isEventAllocation(expense.allocation) && expense.eventName ? `
+                        <div>
+                            <div style="font-size: 1.1rem; font-weight: 600; color: #333; margin-bottom: 0.25rem;">${expense.eventName}</div>
+                            <div style="font-size: 0.875rem; color: #666;">Event name</div>
                         </div>
                         ` : ''}
                         ${expense.paidBy ? `

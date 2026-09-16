@@ -4,6 +4,7 @@ import * as pdfViewer from './pdf-viewer.js';
 import { getActiveTool } from './tools.js';
 import {
   getForPage,
+  getAnnotations,
   updateAnnotation,
   removeAnnotation,
 } from './annotations.js';
@@ -38,25 +39,27 @@ export function initTransform({ onSelect, onRefresh: refresh }) {
 }
 
 export function renderOverlays() {
-  const overlay = document.getElementById('overlayLayer');
-  const pageIndex = pdfViewer.getCurrentPage();
-  const pageSize = pdfViewer.getPageSize(pageIndex);
   const scale = pdfViewer.getRenderScale();
-  const items = getForPage(pageIndex);
 
-  overlay.querySelectorAll('.placed-item, .pen-stroke').forEach((el) => el.remove());
+  pdfViewer.eachPage((els, pageIndex) => {
+    const overlay = els.overlay;
+    const pageSize = pdfViewer.getPageSize(pageIndex);
+    const items = getForPage(pageIndex);
 
-  const hasInteractive =
-    items.length > 0 ||
-    overlay.classList.contains('placement-mode') ||
-    overlay.classList.contains('tool-active') ||
-    getActiveTool() === 'pen';
-  overlay.classList.toggle('interactive', hasInteractive);
+    overlay.querySelectorAll('.placed-item, .pen-stroke').forEach((el) => el.remove());
 
-  for (const ann of items) {
-    if (ann.type === 'pen') renderPenStroke(overlay, ann, pageSize, scale);
-    else renderBoxItem(overlay, ann, pageSize, scale);
-  }
+    const hasInteractive =
+      items.length > 0 ||
+      overlay.classList.contains('placement-mode') ||
+      overlay.classList.contains('tool-active') ||
+      getActiveTool() === 'pen';
+    overlay.classList.toggle('interactive', hasInteractive);
+
+    for (const ann of items) {
+      if (ann.type === 'pen') renderPenStroke(overlay, ann, pageSize, scale);
+      else renderBoxItem(overlay, ann, pageSize, scale);
+    }
+  });
 
   positionToolbar();
 }
@@ -276,7 +279,9 @@ function wireBoxInteraction(el, ann, pageSize, scale) {
 }
 
 function editText(ann, pageSize, scale) {
-  const overlay = document.getElementById('overlayLayer');
+  const els = pdfViewer.getPageEls(ann.pageIndex);
+  if (!els) return;
+  const overlay = els.overlay;
   const rect = getAnnRect(ann, pageSize, scale);
   const screen = pdfRectToScreen(rect, pageSize.height, scale);
   overlay.querySelectorAll('.text-editor-inline').forEach((el) => el.remove());
@@ -429,7 +434,7 @@ export function clearSelection() {
 
 function positionToolbar() {
   if (!selectedId) return;
-  const ann = getForPage(pdfViewer.getCurrentPage()).find((a) => a.id === selectedId);
+  const ann = getAnnotations().find((a) => a.id === selectedId);
   const toolbar = document.getElementById('transformToolbar');
   if (!ann || !toolbar) return;
 
@@ -438,11 +443,13 @@ function positionToolbar() {
   if (el && ann.type !== 'pen') {
     rect = el.getBoundingClientRect();
   } else if (ann.type === 'pen' && ann.points.length) {
+    const els = pdfViewer.getPageEls(ann.pageIndex);
+    if (!els) return;
     const pageSize = pdfViewer.getPageSize(ann.pageIndex);
     const scale = pdfViewer.getRenderScale();
     const xs = ann.points.map((p) => p.x * scale);
     const ys = ann.points.map((p) => (pageSize.height - p.y) * scale);
-    const overlay = document.getElementById('overlayLayer').getBoundingClientRect();
+    const overlay = els.overlay.getBoundingClientRect();
     const minX = Math.min(...xs);
     const maxX = Math.max(...xs);
     const minY = Math.min(...ys);

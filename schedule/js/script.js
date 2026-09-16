@@ -195,7 +195,7 @@ let BRANCHES = {
     smnorth: "SM North",
     popup: "Pop-up",
     workshop: "Workshop",
-    other: "Other Events"
+    other: "Other"
 };
 
 let allBranches = []; // Will be loaded from Firebase
@@ -242,6 +242,11 @@ const shiftForm = document.getElementById('shiftForm');
 const modalTitle = document.getElementById('modalTitle');// Add this with the other DOM elements around line 75
 const shiftDate = document.getElementById('shiftDate');
 const shiftBranch = document.getElementById('shiftBranch');
+const shiftEvent = document.getElementById('shiftEvent');
+const eventFields = document.getElementById('eventFields');
+const LOCATION_EVENT_SENTINEL = '__event__';
+const EVENT_ADD_SENTINEL = '__add_event__';
+const STATIC_LOCATION_KEYS = new Set(['podium', 'smnorth', 'other']);
 const shiftType = document.getElementById('shiftType');
 const customTimeGroup = document.getElementById('customTimeGroup');
 const customStartTime = document.getElementById('customStartTime');
@@ -324,6 +329,12 @@ function setupEventListeners() {
     });
 
     branchForm.addEventListener('submit', handleBranchSubmit);
+    const branchTypeSelect = document.getElementById('branchType');
+    if (branchTypeSelect) {
+        branchTypeSelect.addEventListener('change', () => {
+            if (branchTypeSelect.value) renderBranchList(branchTypeSelect.value);
+        });
+    }
 
     if (closeShiftDetailsModalBtn) closeShiftDetailsModalBtn.addEventListener('click', closeShiftDetailsModal);
     if (shiftDetailsModal) shiftDetailsModal.addEventListener('click', (e) => { if (e.target === shiftDetailsModal) closeShiftDetailsModal(); });
@@ -336,8 +347,11 @@ function setupEventListeners() {
         submitRequestBtn.addEventListener('click', submitSubstitutionRequest);
     }
 
-    // Branch dropdown change handler
+    // Location / Event dropdown handlers
     shiftBranch.addEventListener('change', handleBranchDropdownChange);
+    if (shiftEvent) {
+        shiftEvent.addEventListener('change', handleEventDropdownChange);
+    }
 
     function closeBranchModal() {
         addBranchModal.style.display = 'none';
@@ -346,19 +360,20 @@ function setupEventListeners() {
         const branchKeyEl = document.getElementById('branchKey');
         if (branchTypeEl) branchTypeEl.disabled = false;
         if (branchKeyEl) branchKeyEl.value = '';
-        document.getElementById('branchModalTitle').textContent = 'Add New Location';
+        document.getElementById('branchModalTitle').textContent = 'Add New Event';
         const submitBtn = document.getElementById('branchSubmitBtn');
-        if (submitBtn) submitBtn.textContent = 'Add Location';
+        if (submitBtn) submitBtn.textContent = 'Add Event';
     }
 
-    function handleBranchDropdownChange(e) {
+    function handleBranchDropdownChange() {
+        syncEventFieldsVisibility();
+    }
+
+    function handleEventDropdownChange(e) {
         const value = e.target.value;
-        if (value === 'add-popup') {
-            e.target.value = ''; // Reset selection
+        if (value === EVENT_ADD_SENTINEL) {
+            e.target.value = '';
             openBranchModal('popup');
-        } else if (value === 'add-workshop') {
-            e.target.value = ''; // Reset selection  
-            openBranchModal('workshop');
         }
     }
 
@@ -433,13 +448,13 @@ function setupEventListeners() {
     }
 
     function openBranchModal(type) {
-        document.getElementById('branchModalTitle').textContent = `Add New ${type.charAt(0).toUpperCase() + type.slice(1)}`;
+        document.getElementById('branchModalTitle').textContent = `Add New ${type === 'workshop' ? 'Workshop' : 'Pop-up'}`;
         const branchTypeEl = document.getElementById('branchType');
         branchTypeEl.value = type;
-        branchTypeEl.disabled = true;
+        branchTypeEl.disabled = false;
         document.getElementById('branchKey').value = '';
         const submitBtn = document.getElementById('branchSubmitBtn');
-        if (submitBtn) submitBtn.textContent = 'Add Location';
+        if (submitBtn) submitBtn.textContent = 'Add Event';
         renderBranchList(type);
         const section = document.getElementById('branchListSection');
         if (section) section.style.display = 'block';
@@ -460,7 +475,7 @@ function setupEventListeners() {
 
         // Check if already exists
         if (BRANCHES[branchKey]) {
-            alert('Branch already exists');
+            alert('Event already exists');
             return;
         }
 
@@ -483,8 +498,10 @@ function setupEventListeners() {
             localStorage.setItem('branches-cache', JSON.stringify(allBranches));
             updateBranchDropdowns();
 
-            // Select the new branch in the dropdown
-            document.getElementById('shiftBranch').value = branchKey;
+            // Select Event location + new event
+            if (shiftBranch) shiftBranch.value = LOCATION_EVENT_SENTINEL;
+            syncEventFieldsVisibility();
+            if (shiftEvent) shiftEvent.value = branchKey;
 
             closeBranchModal();
             updateSyncStatus('synced');
@@ -492,7 +509,7 @@ function setupEventListeners() {
         } catch (error) {
 
             updateSyncStatus('local');
-            alert('Failed to create branch');
+            alert('Failed to create event');
         }
     }
 
@@ -699,7 +716,7 @@ function getDataForDate(dateStr, branchKey, shiftType) {
             // Show all employees who worked on this day and branch, regardless of shift type
             const actualShifts = Object.entries(actualData)
                 .filter(([employeeId, attendance]) => {
-                    const matchesBranch = getDisplayNameCategory(attendance.branch) === branchKey;
+                    const matchesBranch = attendanceBelongsToSection(attendance.branch, branchKey);
                     const shiftCategory = categorizeShiftByTime(attendance.shift, attendance.timeIn);
                     const matchesShiftType = shiftCategory === shiftType;
                     return matchesBranch && matchesShiftType;
@@ -781,18 +798,18 @@ function getDataForDate(dateStr, branchKey, shiftType) {
 
         // Role-based rows: show only shifts with that role (scheduled only; no role on actual)
         if (shiftType === 'deliveries') {
-            const byRole = allShiftsForDay.filter(shift => getBranchCategory(shift.branch) === branchKey && shift.role === 'deliveries');
+            const byRole = allShiftsForDay.filter(shift => shiftBelongsToSection(shift.branch, branchKey) && shift.role === 'deliveries');
             return { type: 'scheduled', data: byRole, loading: false };
         }
         if (shiftType === 'custom') {
-            const byRole = allShiftsForDay.filter(shift => getBranchCategory(shift.branch) === branchKey && shift.role === 'custom');
+            const byRole = allShiftsForDay.filter(shift => shiftBelongsToSection(shift.branch, branchKey) && shift.role === 'custom');
             return { type: 'scheduled', data: byRole, loading: false };
         }
 
         const scheduledShifts = allShiftsForDay.filter(shift => {
             const shiftStartTime = getShiftStartTime(shift);
             const categorizedType = categorizeShiftByTime(shift.type, shiftStartTime);
-            const matchesBranch = getBranchCategory(shift.branch) === branchKey;
+            const matchesBranch = shiftBelongsToSection(shift.branch, branchKey);
             const matchesType = categorizedType === shiftType;
             const isBarista = !shift.role || shift.role === 'barista';
             return matchesBranch && matchesType && isBarista;
@@ -806,7 +823,7 @@ function getDataForDate(dateStr, branchKey, shiftType) {
             // Get actual attendance for this branch/shift combination
             const actualShifts = Object.entries(actualData)
                 .filter(([employeeId, attendance]) => {
-                    const matchesBranch = getDisplayNameCategory(attendance.branch) === branchKey;
+                    const matchesBranch = attendanceBelongsToSection(attendance.branch, branchKey);
                     const shiftCategory = categorizeShiftByTime(attendance.shift, attendance.timeIn);
                     const matchesShiftType = shiftCategory === shiftType;
                     return matchesBranch && matchesShiftType;
@@ -889,18 +906,18 @@ function getDataForDate(dateStr, branchKey, shiftType) {
         const allShiftsForDay = getAllShiftsForDay(dateStr);
 
         if (shiftType === 'deliveries') {
-            const byRole = allShiftsForDay.filter(shift => getBranchCategory(shift.branch) === branchKey && shift.role === 'deliveries');
+            const byRole = allShiftsForDay.filter(shift => shiftBelongsToSection(shift.branch, branchKey) && shift.role === 'deliveries');
             return { type: 'scheduled', data: byRole, loading: false };
         }
         if (shiftType === 'custom') {
-            const byRole = allShiftsForDay.filter(shift => getBranchCategory(shift.branch) === branchKey && shift.role === 'custom');
+            const byRole = allShiftsForDay.filter(shift => shiftBelongsToSection(shift.branch, branchKey) && shift.role === 'custom');
             return { type: 'scheduled', data: byRole, loading: false };
         }
 
         const scheduledShifts = allShiftsForDay.filter(shift => {
             const shiftStartTime = getShiftStartTime(shift);
             const categorizedType = categorizeShiftByTime(shift.type, shiftStartTime);
-            const matchesBranch = getBranchCategory(shift.branch) === branchKey;
+            const matchesBranch = shiftBelongsToSection(shift.branch, branchKey);
             const matchesType = categorizedType === shiftType;
             const isBarista = !shift.role || shift.role === 'barista';
             return matchesBranch && matchesType && isBarista;
@@ -1596,57 +1613,142 @@ function populateEmployeeDropdownForDate(dateStr) {
     }
 }
 
+function syncEventFieldsVisibility() {
+    const isEvent = shiftBranch && shiftBranch.value === LOCATION_EVENT_SENTINEL;
+    if (eventFields) {
+        eventFields.style.display = isEvent ? 'block' : 'none';
+    }
+    if (shiftEvent) {
+        shiftEvent.required = !!isEvent;
+        if (!isEvent) {
+            shiftEvent.value = '';
+        }
+    }
+}
+
+/** Resolve the branch key to store on the shift from Location + Event UI. */
+function resolveShiftBranchKey() {
+    const loc = shiftBranch?.value || '';
+    if (!loc) return '';
+    if (STATIC_LOCATION_KEYS.has(loc)) return loc;
+    if (loc === LOCATION_EVENT_SENTINEL) {
+        const ev = shiftEvent?.value || '';
+        if (!ev || ev === EVENT_ADD_SENTINEL) return '';
+        return ev;
+    }
+    // Legacy: location dropdown somehow holds a named event key
+    return loc;
+}
+
+/** Map a stored branch key onto Location + Event UI controls. */
+function applyLocationFromBranchKey(branchKey) {
+    if (!shiftBranch) return;
+    updateBranchDropdowns();
+
+    let key = branchKey || '';
+
+    // Attendance sometimes stores display names ("SM North", "Pop-up")
+    if (key && !STATIC_LOCATION_KEYS.has(key) && key !== 'popup' && key !== 'workshop' && !allBranches.some((b) => b.key === key)) {
+        const fromDisplay = Object.keys(BRANCHES).find((k) => BRANCHES[k] === key);
+        if (fromDisplay) key = fromDisplay;
+    }
+
+    if (!key) {
+        shiftBranch.value = '';
+        syncEventFieldsVisibility();
+        return;
+    }
+
+    if (STATIC_LOCATION_KEYS.has(key)) {
+        shiftBranch.value = key;
+        syncEventFieldsVisibility();
+        return;
+    }
+
+    // Named event, or legacy generic popup/workshop
+    shiftBranch.value = LOCATION_EVENT_SENTINEL;
+    syncEventFieldsVisibility();
+
+    if (shiftEvent) {
+        const optionExists = [...shiftEvent.options].some((o) => o.value === key);
+        if (optionExists) {
+            shiftEvent.value = key;
+        } else if (key === 'popup' || key === 'workshop') {
+            // Legacy category-only: leave event empty so user must pick a named event
+            shiftEvent.value = '';
+        } else {
+            // Archived / unknown: inject temporary option so edit still shows it
+            const opt = document.createElement('option');
+            opt.value = key;
+            opt.textContent = BRANCHES[key] || key;
+            shiftEvent.insertBefore(opt, shiftEvent.lastElementChild);
+            shiftEvent.value = key;
+        }
+    }
+}
+
 function updateBranchDropdowns() {
-    // Update shift modal branch dropdown
-    const shiftBranch = document.getElementById('shiftBranch');
+    // Update shift modal Location dropdown (static sites + Event sentinel)
     if (shiftBranch) {
         const currentValue = shiftBranch.value;
         shiftBranch.innerHTML = '<option value="">Select location</option>';
 
-        // Add default branches
-        const defaultOptions = [
+        const locationOptions = [
             { value: 'podium', text: 'Podium' },
-            { value: 'smnorth', text: 'SM North' }
+            { value: 'smnorth', text: 'SM North' },
+            { value: LOCATION_EVENT_SENTINEL, text: 'Event' },
+            { value: 'other', text: 'Other' }
         ];
 
-        defaultOptions.forEach(option => {
+        locationOptions.forEach((option) => {
             const optionElement = document.createElement('option');
             optionElement.value = option.value;
             optionElement.textContent = option.text;
             shiftBranch.appendChild(optionElement);
         });
 
-        // Add Firebase branches grouped by type
-        const popupBranches = allBranches.filter(b => b.type === 'popup').sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-        const workshopBranches = allBranches.filter(b => b.type === 'workshop').sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+        if ([...shiftBranch.options].some((o) => o.value === currentValue)) {
+            shiftBranch.value = currentValue;
+        }
+    }
 
-        popupBranches.forEach(branch => {
+    // Update Event dropdown from Firestore pop-ups / workshops
+    if (shiftEvent) {
+        const currentEvent = shiftEvent.value;
+        shiftEvent.innerHTML = '<option value="">Select event</option>';
+
+        const popupBranches = allBranches
+            .filter((b) => b.type === 'popup')
+            .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        const workshopBranches = allBranches
+            .filter((b) => b.type === 'workshop')
+            .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+        popupBranches.forEach((branch) => {
             const option = document.createElement('option');
             option.value = branch.key;
             option.textContent = `[Popup] ${branch.name}`;
-            shiftBranch.appendChild(option);
+            shiftEvent.appendChild(option);
         });
 
-        workshopBranches.forEach(branch => {
+        workshopBranches.forEach((branch) => {
             const option = document.createElement('option');
             option.value = branch.key;
             option.textContent = `[Workshop] ${branch.name}`;
-            shiftBranch.appendChild(option);
+            shiftEvent.appendChild(option);
         });
 
-        // Add "Add New" options
-        const addPopupOption = document.createElement('option');
-        addPopupOption.value = 'add-popup';
-        addPopupOption.textContent = '+ Add Pop-up';
-        shiftBranch.appendChild(addPopupOption);
+        const addOption = document.createElement('option');
+        addOption.value = EVENT_ADD_SENTINEL;
+        addOption.textContent = '+ Add new event';
+        shiftEvent.appendChild(addOption);
 
-        const addWorkshopOption = document.createElement('option');
-        addWorkshopOption.value = 'add-workshop';
-        addWorkshopOption.textContent = '+ Add Workshop';
-        shiftBranch.appendChild(addWorkshopOption);
-
-        shiftBranch.value = currentValue;
+        if (currentEvent && [...shiftEvent.options].some((o) => o.value === currentEvent)) {
+            shiftEvent.value = currentEvent;
+        }
     }
+
+    syncEventFieldsVisibility();
 
     // Update branch filter dropdown
     updateBranchFilterOptions();
@@ -1658,7 +1760,7 @@ const LOGIN_CATEGORIES = [
     { value: 'smnorth',  text: 'SM North' },
     { value: 'popup',    text: 'Pop-up' },
     { value: 'workshop', text: 'Workshop' },
-    { value: 'other',    text: 'Other Events' },
+    { value: 'other',    text: 'Other' },
 ];
 
 function updateBranchFilterOptions() {
@@ -1766,7 +1868,27 @@ async function loadBranchesFromFirebase() {
 async function saveBranchToFirebase(branchData) {
     try {
         const docRef = await addDoc(collection(db, "branches"), branchData);
-        return { id: docRef.id, ...branchData };
+        const saved = { id: docRef.id, ...branchData };
+        try {
+            const mod = await import("../../shared/js/ops-events.js");
+            await mod.createOpsEventFromBranch(
+                db,
+                {
+                    getDocs,
+                    collection,
+                    doc,
+                    addDoc,
+                    updateDoc,
+                    setDoc,
+                    deleteDoc
+                },
+                saved,
+                { createdBy: "scheduling-app" }
+            );
+        } catch (err) {
+            console.warn("opsEvents dual-write skipped:", err);
+        }
+        return saved;
     } catch (error) {
 
         throw error;
@@ -1865,7 +1987,7 @@ async function renderShiftView() {
 
     // Generate rows for each branch + shift combination
     for (const branchKey of shiftViewBranches) {
-        const branchName = BRANCHES[branchKey];
+        const branchName = BRANCHES[branchKey] || branchKey;
         const isDefaultBranch = branchKey === 'podium' || branchKey === 'smnorth';
 
         // Check if this branch has ANY visible activity this week:
@@ -1880,12 +2002,12 @@ async function renderShiftView() {
                 // Only actual logins make a past date count
                 const actualAttendance = getActualAttendanceForDate(dateStr);
                 const hasLogin = Object.values(actualAttendance).some(a =>
-                    getDisplayNameCategory(a.branch) === getBranchCategory(branchKey)
+                    attendanceBelongsToSection(a.branch, branchKey)
                 );
                 if (hasLogin) { hasAnyShifts = true; break; }
             } else {
                 // Today and future: scheduled shifts count
-                const scheduled = getAllShiftsForDay(dateStr).filter(s => getBranchCategory(s.branch) === branchKey);
+                const scheduled = getAllShiftsForDay(dateStr).filter(s => shiftBelongsToSection(s.branch, branchKey));
                 if (scheduled.length > 0) { hasAnyShifts = true; break; }
             }
         }
@@ -1921,7 +2043,7 @@ async function renderShiftView() {
                     // Check for actual attendance data
                     const actualData = getActualAttendanceForDate(dateStr);
                     Object.values(actualData).forEach(attendance => {
-                        if (getDisplayNameCategory(attendance.branch) === branchKey) {
+                        if (attendanceBelongsToSection(attendance.branch, branchKey)) {
                             const category = categorizeShiftByTime(attendance.shift, attendance.timeIn);
                             categoriesWithActualData.add(category);
                         }
@@ -1930,7 +2052,7 @@ async function renderShiftView() {
                     // Check for scheduled shifts for today and future dates
                     const allShiftsForDay = getAllShiftsForDay(dateStr);
                     allShiftsForDay.forEach(shift => {
-                        if (getBranchCategory(shift.branch) === branchKey) {
+                        if (shiftBelongsToSection(shift.branch, branchKey)) {
                             const shiftStartTime = getShiftStartTime(shift);
                             const category = categorizeShiftByTime(shift.type, shiftStartTime);
                             categoriesWithScheduledData.add(category);
@@ -1964,7 +2086,7 @@ async function renderShiftView() {
                     const dateStr = formatDate(date);
                     const allShiftsForDay = getAllShiftsForDay(dateStr);
                     const shiftsForCategory = allShiftsForDay.filter(shift =>
-                        getBranchCategory(shift.branch) === branchKey &&
+                        shiftBelongsToSection(shift.branch, branchKey) &&
                         categorizeShiftByTime(shift.type, getShiftStartTime(shift)) === category
                     );
 
@@ -1984,7 +2106,7 @@ async function renderShiftView() {
                 for (const date of weekDates) {
                     const dateStr = formatDate(date);
                     const allShiftsForDay = getAllShiftsForDay(dateStr);
-                    if (allShiftsForDay.some(shift => getBranchCategory(shift.branch) === branchKey && shift.role === roleCategory)) {
+                    if (allShiftsForDay.some(shift => shiftBelongsToSection(shift.branch, branchKey) && shift.role === roleCategory)) {
                         hasRoleThisWeek = true;
                         break;
                     }
@@ -2279,8 +2401,8 @@ function getShiftsForBranchAndType(dateStr, branchKey, shiftType) {
     // Apply branch filter
     const filteredShifts = allShifts.filter(shift => {
         const filter = branchFilter.value;
-        const matchesBranch = filter === 'all' || getBranchCategory(shift.branch) === filter;
-        const matchesShiftParams = getBranchCategory(shift.branch) === branchKey && shift.type === shiftType;
+        const matchesBranch = filter === 'all' || getBranchCategory(shift.branch) === filter || shift.branch === filter;
+        const matchesShiftParams = shiftBelongsToSection(shift.branch, branchKey) && shift.type === shiftType;
         return matchesBranch && matchesShiftParams;
     });
 
@@ -2811,9 +2933,45 @@ function getWeekDates() {
 
 function getFilteredBranches() {
     const filter = branchFilter.value;
-    // Always work in terms of the 5 attendance-app categories — never expose named Firebase branches
-    const categoryKeys = LOGIN_CATEGORIES.map(c => c.value);
-    if (filter === 'all') return categoryKeys;
+    const defaults = ['podium', 'smnorth'];
+
+    // Named pop-ups / workshops from Firestore (official event names)
+    const eventKeys = allBranches
+        .filter((b) => (b.type === 'popup' || b.type === 'workshop') && b.key)
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+        .map((b) => b.key);
+
+    // Named keys used this week that may not be in allBranches (archived/legacy)
+    const weekExtra = [];
+    for (const date of getWeekDates()) {
+        const dateStr = formatDate(date);
+        getAllShiftsForDay(dateStr).forEach((s) => {
+            const k = s.branch;
+            if (
+                k &&
+                !defaults.includes(k) &&
+                k !== 'other' &&
+                !eventKeys.includes(k) &&
+                !weekExtra.includes(k)
+            ) {
+                // Include named events and legacy generic popup/workshop keys still on the schedule
+                weekExtra.push(k);
+            }
+        });
+    }
+
+    let keys = [...defaults, ...eventKeys, ...weekExtra, 'other'];
+    // Prefer named events over a standalone generic "popup"/"workshop" header when both exist
+    keys = keys.filter((k, i) => keys.indexOf(k) === i);
+
+    if (filter === 'all') return keys;
+    if (filter === 'podium' || filter === 'smnorth' || filter === 'other') return [filter];
+    if (filter === 'popup') {
+        return keys.filter((k) => k === 'popup' || getBranchCategory(k) === 'popup');
+    }
+    if (filter === 'workshop') {
+        return keys.filter((k) => k === 'workshop' || getBranchCategory(k) === 'workshop');
+    }
     return [filter];
 }
 
@@ -2826,6 +2984,38 @@ function getBranchCategory(branchKey) {
     return 'other';
 }
 
+/** Whether a scheduled shift belongs in a shift-view section (named event = exact key). */
+function shiftBelongsToSection(shiftBranch, sectionKey) {
+    if (!sectionKey) return false;
+    if (sectionKey === 'podium' || sectionKey === 'smnorth') {
+        return shiftBranch === sectionKey;
+    }
+    if (sectionKey === 'other') {
+        return shiftBranch === 'other' || getBranchCategory(shiftBranch) === 'other';
+    }
+    if (sectionKey === 'popup' || sectionKey === 'workshop') {
+        return shiftBranch === sectionKey;
+    }
+    // Official named event section
+    return shiftBranch === sectionKey;
+}
+
+/** Whether an attendance record belongs in a shift-view section. */
+function attendanceBelongsToSection(attendanceBranch, sectionKey) {
+    if (!attendanceBranch || !sectionKey) return false;
+    if (sectionKey === 'podium' || sectionKey === 'smnorth' || sectionKey === 'other') {
+        return getDisplayNameCategory(attendanceBranch) === sectionKey;
+    }
+    if (sectionKey === 'popup' || sectionKey === 'workshop') {
+        return attendanceBranch === sectionKey;
+    }
+    const displayName = BRANCHES[sectionKey] || '';
+    return (
+        attendanceBranch === sectionKey ||
+        (displayName && attendanceBranch === displayName)
+    );
+}
+
 // Maps an attendance display-name (e.g. 'Pop-up') to its category key
 function getDisplayNameCategory(displayName) {
     const key = Object.keys(BRANCHES).find(k => BRANCHES[k] === displayName);
@@ -2833,6 +3023,7 @@ function getDisplayNameCategory(displayName) {
     const lower = (displayName || '').toLowerCase();
     if (lower === 'podium') return 'podium';
     if (lower === 'sm north' || lower === 'smnorth') return 'smnorth';
+    if (lower === 'other' || lower === 'other events') return 'other';
     if (lower.includes('pop-up') || lower.includes('popup')) return 'popup';
     if (lower.includes('workshop')) return 'workshop';
     return 'other';
@@ -3348,9 +3539,14 @@ async function handleShiftSubmit(e) {
         alert('Please select a date for the shift.');
         return;
     }
-    
-    if (!shiftBranch.value) {
-        alert('Please select a branch for the shift.');
+
+    const resolvedBranch = resolveShiftBranchKey();
+    if (!resolvedBranch) {
+        if (shiftBranch?.value === LOCATION_EVENT_SENTINEL) {
+            alert('Please select an event (or add a new one).');
+        } else {
+            alert('Please select a location for the shift.');
+        }
         return;
     }
     
@@ -3362,7 +3558,7 @@ async function handleShiftSubmit(e) {
     const shiftData = {
         id: shiftId.value || generateShiftId(),
         date: shiftDate.value,
-        branch: shiftBranch.value,
+        branch: resolvedBranch,
         type: shiftType.value,
         employeeId: shiftEmployee.value || 'unassigned',
         role: (shiftRole && shiftRole.value) ? shiftRole.value : 'barista'
@@ -3428,6 +3624,7 @@ async function openShiftModal(mode, data) {
         // Disable all form fields for read-only mode
         shiftDate.disabled = true;
         shiftBranch.disabled = true;
+        if (shiftEvent) shiftEvent.disabled = true;
         shiftType.disabled = true;
         shiftEmployee.disabled = true;
         customStartTime.disabled = true;
@@ -3442,6 +3639,11 @@ async function openShiftModal(mode, data) {
         shiftBranch.style.backgroundColor = '#f8f9fa';
         shiftBranch.style.color = '#333';
         shiftBranch.style.borderColor = '#dee2e6';
+        if (shiftEvent) {
+            shiftEvent.style.backgroundColor = '#f8f9fa';
+            shiftEvent.style.color = '#333';
+            shiftEvent.style.borderColor = '#dee2e6';
+        }
         shiftType.style.backgroundColor = '#f8f9fa';
         shiftType.style.color = '#333';
         shiftType.style.borderColor = '#dee2e6';
@@ -3464,6 +3666,7 @@ async function openShiftModal(mode, data) {
         // Disable all form fields for read-only mode
         shiftDate.disabled = true;
         shiftBranch.disabled = true;
+        if (shiftEvent) shiftEvent.disabled = true;
         shiftType.disabled = true;
         shiftEmployee.disabled = true;
         customStartTime.disabled = true;
@@ -3478,6 +3681,11 @@ async function openShiftModal(mode, data) {
         shiftBranch.style.backgroundColor = '#f8f9fa';
         shiftBranch.style.color = '#333';
         shiftBranch.style.borderColor = '#dee2e6';
+        if (shiftEvent) {
+            shiftEvent.style.backgroundColor = '#f8f9fa';
+            shiftEvent.style.color = '#333';
+            shiftEvent.style.borderColor = '#dee2e6';
+        }
         shiftType.style.backgroundColor = '#f8f9fa';
         shiftType.style.color = '#333';
         shiftType.style.borderColor = '#dee2e6';
@@ -3499,6 +3707,12 @@ async function openShiftModal(mode, data) {
         // Enable all form fields for add/edit mode
         shiftDate.disabled = false;
         shiftBranch.disabled = false;
+        if (shiftEvent) {
+            shiftEvent.disabled = false;
+            shiftEvent.style.backgroundColor = '';
+            shiftEvent.style.color = '';
+            shiftEvent.style.borderColor = '';
+        }
         shiftType.disabled = false;
         shiftEmployee.disabled = false;
         customStartTime.disabled = false;
@@ -3517,9 +3731,7 @@ async function openShiftModal(mode, data) {
         shiftDate.value = data.date;
 
         // Pre-Select location and shift type if provided
-        if (data.branch) {
-            shiftBranch.value = data.branch;
-        }
+        applyLocationFromBranchKey(data.branch || '');
         if (data.shiftType === 'deliveries' || data.shiftType === 'custom') {
             if (shiftRole) shiftRole.value = data.shiftType;
             handleShiftRoleChange();
@@ -3530,8 +3742,8 @@ async function openShiftModal(mode, data) {
         if (data.employeeId) {
             shiftEmployee.value = data.employeeId;
         }
-    } else {
-        // Edit mode
+    } else if (mode === 'edit' || mode === 'view') {
+        // Edit / view mode — load scheduled shift
         let shift = findShiftById(data.shiftId);
 
         if (shift) {
@@ -3540,7 +3752,7 @@ async function openShiftModal(mode, data) {
             originalDate.value = shift.date;
             originalBranch.value = shift.branch;
             shiftDate.value = shift.date;
-            shiftBranch.value = shift.branch;
+            applyLocationFromBranchKey(shift.branch);
             shiftType.value = shift.type;
             shiftEmployee.value = shift.employeeId;
             if (shiftRole) shiftRole.value = shift.role || 'barista';
@@ -3579,18 +3791,18 @@ async function loadShiftDataForView(data) {
         
         // Populate form fields with shift data
         shiftDate.value = shift.date;
-        shiftBranch.value = shift.branch;
-        shiftType.value = shift.shiftType;
+        applyLocationFromBranchKey(shift.branch);
+        shiftType.value = shift.shiftType || shift.type;
         shiftEmployee.value = shift.employeeId;
         if (shiftRole) shiftRole.value = shift.role || 'barista';
         if (shiftRoleCustom) shiftRoleCustom.value = shift.customRole || '';
         handleShiftRoleChange();
         
         // Handle custom time
-        if (shift.shiftType === 'custom') {
+        if ((shift.shiftType || shift.type) === 'custom') {
             customTimeGroup.style.display = 'block';
-            customStartTime.value = shift.startTime || '';
-            customEndTime.value = shift.endTime || '';
+            customStartTime.value = shift.startTime || shift.customStart || '';
+            customEndTime.value = shift.endTime || shift.customEnd || '';
         }
         
         // Set hidden fields
@@ -3635,7 +3847,7 @@ async function showAttendanceInfo(data) {
         // Populate form with the shift data we already have
         shiftId.value = data.shiftId;
         shiftDate.value = shiftDateStr || data.shiftData.date;
-        shiftBranch.value = data.shiftData.branch || '';
+        applyLocationFromBranchKey(data.shiftData.branch || '');
         shiftType.value = data.shiftData.type || data.shiftData.shift || '';
         shiftEmployee.value = employeeId || data.shiftData.employeeId || '';
         
@@ -3650,7 +3862,7 @@ async function showAttendanceInfo(data) {
                 // Populate form with Firebase data
                 shiftId.value = data.shiftId;
                 shiftDate.value = shiftDateStr;
-                shiftBranch.value = attendanceRecord.branch || '';
+                applyLocationFromBranchKey(attendanceRecord.branch || '');
                 shiftType.value = attendanceRecord.shift || '';
                 shiftEmployee.value = employeeId;
                 
@@ -3660,7 +3872,7 @@ async function showAttendanceInfo(data) {
                 // Fallback if no Firebase data
                 shiftId.value = data.shiftId;
                 shiftDate.value = shiftDateStr;
-                shiftBranch.value = '';
+                applyLocationFromBranchKey('');
                 shiftType.value = '';
                 shiftEmployee.value = employeeId || '';
                 
@@ -3671,7 +3883,7 @@ async function showAttendanceInfo(data) {
             // Fallback
             shiftId.value = data.shiftId;
             shiftDate.value = shiftDateStr;
-            shiftBranch.value = '';
+            applyLocationFromBranchKey('');
             shiftType.value = '';
             shiftEmployee.value = employeeId || '';
             

@@ -2,23 +2,28 @@
   "categories": [
     {
       "id": "matcha-lattes",
-      "name": "Matcha Lattes"
+      "name": "Matcha Lattes",
+      "countsAsCup": true
     },
     {
       "id": "matcha-lite",
-      "name": "Matcha Lite"
+      "name": "Matcha Lite",
+      "countsAsCup": true
     },
     {
       "id": "specials",
-      "name": "Specials"
+      "name": "Specials",
+      "countsAsCup": true
     },
     {
       "id": "coffee",
-      "name": "Coffee"
+      "name": "Coffee",
+      "countsAsCup": true
     },
     {
       "id": "add-ons",
-      "name": "Add-Ons"
+      "name": "Add-Ons",
+      "countsAsCup": false
     }
   ],
   "items": [
@@ -28,7 +33,9 @@
       "name": "matchanese latte",
       "description": "Premium hand-whisked Matcha over Dairy Milk",
       "price": 190,
-      "tags": ["signature"],
+      "tags": [
+        "signature"
+      ],
       "type": "Iced"
     },
     {
@@ -53,7 +60,9 @@
       "name": "matchanese sea salt latte",
       "description": "Our signature matchanese latte topped with salted foam",
       "price": 240,
-      "tags": ["must-try"],
+      "tags": [
+        "must-try"
+      ],
       "type": "Iced"
     },
     {
@@ -94,7 +103,9 @@
       "name": "matchanese tea",
       "description": "Premium hand-whisked Clear Matcha Tea",
       "price": 180,
-      "tags": ["classic"],
+      "tags": [
+        "classic"
+      ],
       "type": "Iced"
     },
     {
@@ -119,7 +130,9 @@
       "name": "matchanese einspanner",
       "description": "Premium hand-whisked Matcha with Sweet Cream",
       "price": 290,
-      "tags": ["best-seller"],
+      "tags": [
+        "best-seller"
+      ],
       "type": "Iced"
     },
     {
@@ -152,7 +165,9 @@
       "name": "matchanese espresso",
       "description": "Premium hand-whisked Matcha with Espresso and Milk",
       "price": 240,
-      "tags": ["must-try"],
+      "tags": [
+        "must-try"
+      ],
       "type": "Iced"
     },
     {

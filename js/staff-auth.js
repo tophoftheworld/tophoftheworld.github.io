@@ -3,8 +3,22 @@ import {
     auth, 
     onAuthStateChanged, 
     signOutUser, 
-    getCurrentUserData
+    getCurrentUserData,
+    db,
+    app
 } from './firebase-auth-setup.js';
+
+import { doc, getDoc, setDoc, updateDoc } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
+import { getStorage, ref, getDownloadURL } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-storage.js';
+import {
+    readProfileCache,
+    writeProfileCache,
+    clearProfileCache,
+    resolveEmployeeCode,
+    getInitials
+} from './staff-profile-cache.js';
+
+const storage = getStorage(app);
 
 // DOM elements
 const mobileUserInitials = document.getElementById('mobileUserInitials');
@@ -19,85 +33,37 @@ const dashboardContent = document.getElementById('dashboardContent');
 let currentUser = null;
 let currentUserData = null;
 
-// Initialize authentication
-function initAuth() {
-    // Ensure DOM elements exist before setting up auth listener
-    const checkElements = () => {
-        return mobileUserInitials !== null || 
-               mobileUserName !== null || 
-               mobileProfileLink !== null;
-    };
-    
-    onAuthStateChanged(auth, async (user) => {
-        if (user) {
-            // User is signed in
-            currentUser = user;
-            currentUserData = await getCurrentUserData(user);
-            
-            if (currentUserData) {
-                // Wait for DOM to be ready if needed
-                if (document.readyState === 'loading') {
-                    document.addEventListener('DOMContentLoaded', () => {
-                        showUserInfo(currentUserData);
-                        showDashboard();
-                    });
-                } else {
-                    // DOM is already ready, but wait a tick to ensure elements exist
-                    setTimeout(() => {
-                        showUserInfo(currentUserData);
-                        showDashboard();
-                    }, 0);
-                }
-            } else {
-                console.error('Could not load user data');
-                redirectToLogin();
-            }
+function applyNavPhoto(photoUrl) {
+    const photos = [
+        document.getElementById('mobileUserPhoto'),
+        ...document.querySelectorAll('[data-mobile-user-photo]')
+    ].filter(Boolean);
+
+    photos.forEach((img) => {
+        if (photoUrl) {
+            img.src = photoUrl;
+            img.alt = 'Profile photo';
+            img.style.display = 'block';
         } else {
-            // User is signed out
-            currentUser = null;
-            currentUserData = null;
-            redirectToLogin();
+            img.removeAttribute('src');
+            img.alt = '';
+            img.style.display = 'none';
         }
     });
 }
 
-// Show user information
-function showUserInfo(userData) {
-    if (!userData) return;
-    
-    const name = userData.name || 'Staff';
-    
-    // Set user initials
-    const initials = name.split(' ')
-        .map(word => word.charAt(0))
-        .join('')
-        .toUpperCase()
-        .substring(0, 2);
-    
-    // Get fresh references to DOM elements (in case they weren't available before)
+function applyNavText(name, initials) {
     const initialsEl = document.getElementById('mobileUserInitials');
     const initialsExtras = document.querySelectorAll('[data-mobile-user-initials]');
     const nameEl = document.getElementById('mobileUserName');
-    const profileLinkEl = document.getElementById('mobileProfileLink');
-    
-    if (initialsEl) {
-        initialsEl.textContent = initials;
+
+    if (initialsEl) initialsEl.textContent = initials;
+    if (mobileUserInitials) mobileUserInitials.textContent = initials;
+    initialsExtras.forEach((el) => { el.textContent = initials; });
+    if (mobileUserInitialsExtras) {
+        mobileUserInitialsExtras.forEach((el) => { el.textContent = initials; });
     }
-    if (mobileUserInitials) {
-        mobileUserInitials.textContent = initials;
-    }
-    
-    if (initialsExtras && initialsExtras.length > 0) {
-        initialsExtras.forEach(element => {
-            element.textContent = initials;
-        });
-    }
-    if (mobileUserInitialsExtras && mobileUserInitialsExtras.length > 0) {
-        mobileUserInitialsExtras.forEach(element => {
-            element.textContent = initials;
-        });
-    }
-    
+
     if (nameEl) {
         nameEl.textContent = name;
         nameEl.title = `View profile for ${name}`;
@@ -106,61 +72,182 @@ function showUserInfo(userData) {
         mobileUserName.textContent = name;
         mobileUserName.title = `View profile for ${name}`;
     }
+}
+
+function applyCachedNav(cache) {
+    if (!cache) return;
+    const name = cache.name || 'Staff';
+    applyNavText(name, getInitials(name));
+    if (cache.photoUrl) applyNavPhoto(cache.photoUrl);
+}
+
+async function loadStaffPhoto(user, userData) {
+    const employeeCode = resolveEmployeeCode(user, userData);
+    if (!employeeCode) {
+        applyNavPhoto(null);
+        return null;
+    }
+
+    // Backfill missing employeeCode on adminUsers
+    if (user?.uid && !userData?.employeeCode) {
+        try {
+            await updateDoc(doc(db, 'adminUsers', user.uid), {
+                employeeCode,
+                updatedAt: new Date()
+            });
+        } catch (err) {
+            console.warn('Could not backfill employeeCode:', err);
+        }
+    }
+
+    try {
+        const snap = await getDoc(doc(db, 'employees_v2', employeeCode));
+        let photoUrl = snap.exists() ? (snap.data().photoUrl || null) : null;
+
+        if (!photoUrl) {
+            try {
+                photoUrl = await getDownloadURL(ref(storage, `staff-photos/${employeeCode}`));
+                await setDoc(doc(db, 'employees_v2', employeeCode), {
+                    photoUrl,
+                    photoUpdatedAt: new Date()
+                }, { merge: true });
+            } catch {
+                photoUrl = null;
+            }
+        }
+
+        applyNavPhoto(photoUrl);
+        return photoUrl;
+    } catch (error) {
+        console.warn('Could not load staff photo for nav:', error);
+        applyNavPhoto(null);
+        return null;
+    }
+}
+
+// Initialize authentication
+function initAuth() {
+    // Instant paint from cache before auth resolves
+    try {
+        let newest = null;
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (!key || !key.startsWith('staffProfileCache:')) continue;
+            const cache = JSON.parse(localStorage.getItem(key));
+            if (!cache) continue;
+            if (!newest || (cache.updatedAt || 0) > (newest.updatedAt || 0)) newest = cache;
+        }
+        if (newest) applyCachedNav(newest);
+    } catch {
+        // ignore
+    }
+
+    onAuthStateChanged(auth, async (user) => {
+        if (user) {
+            currentUser = user;
+            applyCachedNav(readProfileCache(user.uid));
+
+            currentUserData = await getCurrentUserData(user);
+            
+            if (currentUserData) {
+                const code = resolveEmployeeCode(user, currentUserData);
+                if (code && !currentUserData.employeeCode) {
+                    currentUserData = { ...currentUserData, employeeCode: code };
+                }
+
+                const paint = async () => {
+                    await showUserInfo(currentUserData);
+                    showDashboard();
+                };
+
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', paint);
+                } else {
+                    setTimeout(paint, 0);
+                }
+            } else {
+                console.error('Could not load user data');
+                redirectToLogin();
+            }
+        } else {
+            currentUser = null;
+            currentUserData = null;
+            redirectToLogin();
+        }
+    });
+}
+
+// Show user information
+async function showUserInfo(userData) {
+    if (!userData) return;
     
+    const name = userData.name || 'Staff';
+    const initials = getInitials(name);
+    applyNavText(name, initials);
+
+    const defaultProfilePage = 'profile/index.html';
+    const employeeCode = resolveEmployeeCode(currentUser, userData);
+    const profileHref = userData.profileUrl 
+        ? userData.profileUrl 
+        : employeeCode 
+            ? `${defaultProfilePage}?code=${encodeURIComponent(employeeCode)}`
+            : defaultProfilePage;
+
+    const profileLinkEl = document.getElementById('mobileProfileLink');
     if (profileLinkEl) {
-        const defaultProfilePage = 'profile/index.html';
-        const profileHref = userData.profileUrl 
-            ? userData.profileUrl 
-            : userData.employeeCode 
-                ? `${defaultProfilePage}?code=${encodeURIComponent(userData.employeeCode)}`
-                : defaultProfilePage;
         profileLinkEl.setAttribute('href', profileHref);
         profileLinkEl.setAttribute('title', `View profile for ${name}`);
         profileLinkEl.setAttribute('aria-label', `View profile for ${name}`);
     }
     if (mobileProfileLink) {
-        const defaultProfilePage = 'profile/index.html';
-        const profileHref = userData.profileUrl 
-            ? userData.profileUrl 
-            : userData.employeeCode 
-                ? `${defaultProfilePage}?code=${encodeURIComponent(userData.employeeCode)}`
-                : defaultProfilePage;
         mobileProfileLink.setAttribute('href', profileHref);
         mobileProfileLink.setAttribute('title', `View profile for ${name}`);
         mobileProfileLink.setAttribute('aria-label', `View profile for ${name}`);
     }
+
+    const headerAvatar = document.getElementById('mobileProfileAvatar');
+    if (headerAvatar) {
+        headerAvatar.onclick = () => {
+            window.location.href = profileHref;
+        };
+    }
+
+    const photoUrl = await loadStaffPhoto(currentUser, userData);
+
+    if (currentUser?.uid) {
+        writeProfileCache(currentUser.uid, {
+            name,
+            username: userData.username || employeeCode || null,
+            role: userData.role || null,
+            employeeCode,
+            photoUrl: photoUrl || null
+        });
+    }
     
-    // Update page title
     document.title = `Matchanese Staff - ${name}`;
 }
 
-// Show the main dashboard
 function showDashboard() {
-    // Hide loading state and show dashboard content
     if (loadingState) loadingState.style.display = 'none';
     if (dashboardContent) dashboardContent.style.display = 'block';
     
-    // Initialize the dashboard functionality
     if (typeof initializeDashboard === 'function') {
         initializeDashboard();
     }
 }
 
-// Redirect to login page
 function redirectToLogin() {
     window.location.href = 'login.html';
 }
 
-// Handle logout
 async function handleLogout() {
     try {
+        const uid = currentUser?.uid;
         const result = await signOutUser();
         if (result.success) {
-            // Clear any cached data
+            clearProfileCache(uid);
             localStorage.removeItem('activeStaffApp');
             sessionStorage.clear();
-            
-            // Redirect to login
             redirectToLogin();
         } else {
             console.error('Logout failed:', result.error);
@@ -172,31 +259,23 @@ async function handleLogout() {
     }
 }
 
-// Event listeners
 if (mobileLogoutButton) {
     mobileLogoutButton.addEventListener('click', handleLogout);
 }
 
-// Make functions globally available
 window.handleLogout = handleLogout;
 window.getCurrentUser = () => currentUser;
 window.getCurrentUserData = () => currentUserData;
 
-// Initialize authentication - call immediately and also on DOM ready
-// This ensures auth state is checked even if DOM isn't ready yet
 initAuth();
 
-// Also initialize when DOM is ready to ensure elements exist
 document.addEventListener('DOMContentLoaded', () => {
-    // Re-check auth state and update UI if user is already authenticated
     if (currentUser && currentUserData) {
         showUserInfo(currentUserData);
     }
 });
 
-// Export for use in other scripts
 export { 
     currentUser, 
     currentUserData
 };
-

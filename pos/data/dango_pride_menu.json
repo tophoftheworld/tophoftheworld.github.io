@@ -1,7 +1,15 @@
 {
   "categories": [
-    { "id": "matcha-lattes", "name": "Matcha Lattes" },
-    { "id": "hojicha-lattes", "name": "Hojicha Lattes" }
+    {
+      "id": "matcha-lattes",
+      "name": "Matcha Lattes",
+      "countsAsCup": true
+    },
+    {
+      "id": "hojicha-lattes",
+      "name": "Hojicha Lattes",
+      "countsAsCup": true
+    }
   ],
   "items": [
     {
@@ -11,17 +19,29 @@
       "price": 230,
       "type": "Iced",
       "shorthand": "SML",
-      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
     },
     {
       "categoryId": "matcha-lattes",
       "name": "Matchanese Seasalt Latte",
       "description": "Our Signature Matcha Latte topped with Seasalt Cream",
       "price": 260,
-      "tags": ["Best Seller"],
+      "tags": [
+        "Best Seller"
+      ],
       "type": "Iced",
       "shorthand": "MSL",
-      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
     },
     {
       "categoryId": "matcha-lattes",
@@ -30,7 +50,12 @@
       "price": 260,
       "type": "Iced",
       "shorthand": "STML",
-      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
     },
     {
       "categoryId": "matcha-lattes",
@@ -39,7 +64,12 @@
       "price": 250,
       "type": "Iced",
       "shorthand": "EGL",
-      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
     },
     {
       "categoryId": "matcha-lattes",
@@ -48,17 +78,29 @@
       "price": 240,
       "type": "Iced",
       "shorthand": "COL",
-      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
     },
     {
       "categoryId": "matcha-lattes",
       "name": "Dango Pride Latte",
       "description": "Our Signature Matcha Latte topped with Sweet Cream and your choice of dango colors",
       "price": 270,
-      "tags": ["Exclusive"],
+      "tags": [
+        "Exclusive"
+      ],
       "type": "Iced",
       "shorthand": "DPL",
-      "customizations": { "sweetness": true, "milk": true, "strengthLevel": true, "discount": true }
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "strengthLevel": true,
+        "discount": true
+      }
     },
     {
       "categoryId": "hojicha-lattes",
@@ -67,7 +109,11 @@
       "price": 210,
       "type": "Iced",
       "shorthand": "HL",
-      "customizations": { "sweetness": true, "milk": true, "discount": true }
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "discount": true
+      }
     },
     {
       "categoryId": "hojicha-lattes",
@@ -76,7 +122,11 @@
       "price": 240,
       "type": "Iced",
       "shorthand": "HSL",
-      "customizations": { "sweetness": true, "milk": true, "discount": true }
+      "customizations": {
+        "sweetness": true,
+        "milk": true,
+        "discount": true
+      }
     }
   ]
 }

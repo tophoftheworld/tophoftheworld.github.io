@@ -1,9 +1,11 @@
 // Import Firebase setup
-import { db } from '../../employee-attendance/js/firebase-setup.js';
+import { db, storage, ref as storageRef, uploadBytes, getDownloadURL } from '../../employee-attendance/js/firebase-setup.js';
 import { doc, getDoc, getDocs, collection, collectionGroup, query, where, addDoc, setDoc, Timestamp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+import { loadBranchesFromFirebase, populateAttendanceBranchSelects, populateAttendanceBranchSelect } from '../../shared/js/branches.js';
+import { generatePayrollPeriods as generateSharedPayrollPeriods, getPeriodForClosestPayDay } from '../../shared/js/payrollPeriods.js?v=20260719-1';
 
 // Version log for cache busting verification
-console.log('✅ Payroll (v2) script loaded — employees_v2 / attendance_v2 — bundle v2.0.1');
+console.log('✅ Payroll (v2) script loaded — employees_v2 / attendance_v2 — bundle v2.0.16');
 
 // Current user (will be set from parent portal or localStorage)
 let currentUser = "";
@@ -125,6 +127,49 @@ function formatDate(date) {
     return `${year}-${month}-${day}`;
 }
 
+const LEAVE_NOTICE_BUSINESS_DAYS = 5;
+
+function getTodayLocal() {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+function isHolidayDate(dateStr) {
+    const holiday = HOLIDAYS_2025?.[dateStr];
+    return !!(holiday && typeof holiday === 'object');
+}
+
+function isBusinessDay(date) {
+    const day = date.getDay();
+    if (day === 0 || day === 6) return false;
+    return !isHolidayDate(formatDate(date));
+}
+
+function addBusinessDays(startDate, count) {
+    const date = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+    let added = 0;
+    let guard = 0;
+    while (added < count && guard < 90) {
+        date.setDate(date.getDate() + 1);
+        guard += 1;
+        if (isBusinessDay(date)) added += 1;
+    }
+    return date;
+}
+
+function getEarliestLeaveDate() {
+    return addBusinessDays(getTodayLocal(), LEAVE_NOTICE_BUSINESS_DAYS);
+}
+
+function formatLeaveDateLabel(date) {
+    return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+function getLeaveNoticeMessage(earliestDate) {
+    const earliestLabel = formatLeaveDateLabel(earliestDate);
+    return `Leave must be filed ${LEAVE_NOTICE_BUSINESS_DAYS} business days in advance (weekends and holidays don't count). Earliest date is ${earliestLabel}.`;
+}
+
 // Get dates in range
 function getDatesInRange(startDate, endDate) {
     const dates = [];
@@ -191,6 +236,65 @@ function createPeriodDates(startMonth, startDay, endMonth, endDay, year) {
     }
     
     return { startDate, endDate };
+}
+
+/** Build admin-compatible period id: YYYY-MM-DD_YYYY-MM-DD */
+function getPeriodIdFromLabel(periodText) {
+    const [startMonth, startDay, endMonth, endDay, year] = parsePeriod(periodText);
+    if (!startMonth || !endMonth || !year) return null;
+    const { startDate, endDate } = createPeriodDates(startMonth, startDay, endMonth, endDay, year);
+    return `${formatDate(startDate)}_${formatDate(endDate)}`;
+}
+
+function buildEmployeePaySnapshot(employeeData, fallbackId) {
+    const data = employeeData || {};
+    return {
+        id: fallbackId || currentUser,
+        name: data.nick || data.nickname || data.name || employees[fallbackId || currentUser] || fallbackId || currentUser,
+        baseRate: Number(data.baseRate) || 750,
+        salesBonusEligible: data.salesBonusEligible || false,
+        role: data.role || 'Barista',
+        transferMode: data.transferMode || data.modeOfTransfer || 'GoTyme',
+        payType: data.payType || 'hourly',
+        monthlySalary: Number(data.monthlySalary) || 0,
+        periodGross: data.periodGross != null && data.periodGross !== '' ? Number(data.periodGross) : null,
+        periodFixedAmount: Number(data.periodFixedAmount) || 0,
+        payScheme: data.payScheme === 'inclusive' ? 'inclusive' : 'standard',
+        leaveEligible: data.leaveEligible === true,
+        cashAdvanceEligible: data.cashAdvanceEligible === true,
+        rateHistory: Array.isArray(data.rateHistory) ? data.rateHistory : []
+    };
+}
+
+function getMergedEmployeeForPeriod(periodLabel) {
+    const periodId = getPeriodIdFromLabel(periodLabel);
+    const ctx = payrollEmployeeContext || { baseRate: 750, payType: 'hourly', payScheme: 'standard' };
+    if (typeof window.PayCalculator?.mergeEmployeeRatesForPeriod === 'function') {
+        return window.PayCalculator.mergeEmployeeRatesForPeriod(ctx, periodId);
+    }
+    return ctx;
+}
+
+function employeeIncludesMealAllowance(employee) {
+    if (typeof window.PayCalculator?.includesMealAllowance === 'function') {
+        return window.PayCalculator.includesMealAllowance(employee);
+    }
+    return (employee?.payScheme || 'standard') !== 'inclusive';
+}
+
+function calculatePeriodTotalPay(payrollData, periodLabel) {
+    const calculator = getPayCalculatorPayroll();
+    const employee = getMergedEmployeeForPeriod(periodLabel);
+    if (calculator && typeof calculator.calculateTotalPay === 'function') {
+        return calculator.calculateTotalPay(payrollData || [], employee, 'simple');
+    }
+    // Fallback: sum daily pay (daily employees only)
+    return (payrollData || []).reduce((sum, day) => {
+        if (day.isPaidLeave || (day.timeIn && day.timeOut)) {
+            return sum + calculateDailyPay(day, day.baseRate);
+        }
+        return sum;
+    }, 0);
 }
 
 // RESTORED FROM OLD - Compare times
@@ -419,6 +523,377 @@ function formatRelativeTimeForHistory(timestamp) {
     return time.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+// Submit leave request
+async function submitLeaveRequest(requestData) {
+    if (!currentUser) {
+        showToast("Please log in to submit a request.", 'error');
+        return false;
+    }
+
+    if (!payrollEmployeeContext?.leaveEligible) {
+        showToast("You are not eligible for paid leave.", 'warning');
+        return false;
+    }
+
+    const earliestLeaveDate = getEarliestLeaveDate();
+    if (!requestData?.date || requestData.date < formatDate(earliestLeaveDate)) {
+        showToast(getLeaveNoticeMessage(earliestLeaveDate), 'warning', 5000);
+        return false;
+    }
+
+    try {
+        const requestsRef = collection(db, "leave_requests");
+        const requestDoc = {
+            type: "leave",
+            employeeId: currentUser,
+            employeeName: currentUserName || "Unknown",
+            date: requestData.date,
+            reason: requestData.reason || "",
+            status: "pending",
+            requestedAt: Timestamp.now(),
+            requestedBy: currentUser
+        };
+
+        await addDoc(requestsRef, requestDoc);
+        console.log("Leave request submitted successfully");
+        notifyRequestEmail({
+            kind: 'leave',
+            employeeName: currentUserName || currentUser || 'Unknown',
+            employeeId: currentUser,
+            date: requestData.date,
+            reason: requestData.reason || ''
+        }).catch((err) => console.error('Leave request email failed:', err));
+        return true;
+    } catch (error) {
+        console.error("Error submitting leave request:", error);
+        showToast("Failed to submit leave request. Please try again.", 'error');
+        return false;
+    }
+}
+
+async function getLeaveRequestStatus(date) {
+    if (!currentUser || !date) return null;
+
+    try {
+        const requestsRef = collection(db, "leave_requests");
+        const q = query(
+            requestsRef,
+            where("employeeId", "==", currentUser),
+            where("date", "==", date)
+        );
+        const snapshot = await getDocs(q);
+        if (snapshot.empty) return null;
+
+        const requests = [];
+        snapshot.forEach((docSnap) => {
+            requests.push({ id: docSnap.id, ...docSnap.data() });
+        });
+        requests.sort((a, b) => (b.requestedAt?.toMillis() || 0) - (a.requestedAt?.toMillis() || 0));
+        return requests[0];
+    } catch (error) {
+        console.error("Error fetching leave request status:", error);
+        return null;
+    }
+}
+
+async function fetchPendingLeaveRequests(dates) {
+    if (!currentUser) return [];
+
+    try {
+        const requestsRef = collection(db, "leave_requests");
+        const q = query(
+            requestsRef,
+            where("employeeId", "==", currentUser),
+            where("status", "==", "pending")
+        );
+        const snapshot = await getDocs(q);
+        const dateSet = new Set(dates);
+        const pendingLeaveRequests = [];
+
+        snapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            const requestDate = data.date;
+            if (requestDate && dateSet.has(requestDate)) {
+                pendingLeaveRequests.push({ id: docSnap.id, ...data, normalizedDate: requestDate });
+            }
+        });
+
+        return pendingLeaveRequests;
+    } catch (error) {
+        console.error("Error fetching pending leave requests:", error);
+        return [];
+    }
+}
+
+function updateLeaveRequestButtonVisibility() {
+    const leaveBtn = document.getElementById('requestLeaveBtn');
+    if (!leaveBtn) return;
+    leaveBtn.style.display = payrollEmployeeContext?.leaveEligible ? 'flex' : 'none';
+}
+
+function updateCashAdvanceButtonVisibility() {
+    const btn = document.getElementById('requestCashAdvanceBtn');
+    if (!btn) return;
+    btn.style.display = payrollEmployeeContext?.cashAdvanceEligible ? 'flex' : 'none';
+}
+
+function updateReimbursementButtonVisibility() {
+    const btn = document.getElementById('requestReimbursementBtn');
+    if (!btn) return;
+    // Available to all signed-in staff (out-of-pocket claims)
+    btn.style.display = currentUser ? 'flex' : 'none';
+}
+
+async function submitCashAdvanceRequest(requestData) {
+    if (!currentUser) {
+        showToast("Please log in to submit a request.", 'error');
+        return false;
+    }
+
+    if (!payrollEmployeeContext?.cashAdvanceEligible) {
+        showToast("You are not eligible for cash advances.", 'warning');
+        return false;
+    }
+
+    const amount = Number(requestData.amount);
+    const reason = (requestData.reason || '').trim();
+    if (!Number.isFinite(amount) || amount <= 0) {
+        showToast("Enter a valid amount greater than 0.", 'warning');
+        return false;
+    }
+    if (!reason) {
+        showToast("Reason is required.", 'warning');
+        return false;
+    }
+
+    try {
+        const requestsRef = collection(db, "cash_advance_requests");
+        await addDoc(requestsRef, {
+            type: "cash_advance",
+            employeeId: currentUser,
+            employeeName: currentUserName || "Unknown",
+            amount,
+            reason,
+            status: "pending",
+            requestedAt: Timestamp.now(),
+            requestedBy: currentUser
+        });
+        console.log("Cash advance request submitted successfully");
+        notifyRequestEmail({
+            kind: 'cash_advance',
+            employeeName: currentUserName || currentUser || 'Unknown',
+            employeeId: currentUser,
+            amount,
+            reason
+        }).catch((err) => console.error('Cash advance request email failed:', err));
+        return true;
+    } catch (error) {
+        console.error("Error submitting cash advance request:", error);
+        showToast("Failed to submit cash advance request. Please try again.", 'error');
+        return false;
+    }
+}
+
+async function fetchRecentCashAdvanceRequests(maxItems = 5) {
+    if (!currentUser) return [];
+    try {
+        const requestsRef = collection(db, "cash_advance_requests");
+        // Single-field where only — sort client-side to avoid a composite index
+        const q = query(requestsRef, where("employeeId", "==", currentUser));
+        const snapshot = await getDocs(q);
+        const rows = [];
+        snapshot.forEach((docSnap) => {
+            rows.push({ id: docSnap.id, ...docSnap.data() });
+        });
+        rows.sort((a, b) => (b.requestedAt?.toMillis?.() || 0) - (a.requestedAt?.toMillis?.() || 0));
+        return rows.slice(0, maxItems);
+    } catch (error) {
+        console.error("Error fetching cash advance requests:", error);
+        return [];
+    }
+}
+
+function formatPayDayLabel(date) {
+    if (!date) return '—';
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+async function renderCashAdvanceRecentList() {
+    const listEl = document.getElementById('cashAdvanceRecentList');
+    if (!listEl) return;
+    const rows = await fetchRecentCashAdvanceRequests(5);
+    if (!rows.length) {
+        listEl.innerHTML = '';
+        return;
+    }
+    listEl.innerHTML = `
+        <div style="font-weight: 600; margin-bottom: 0.5rem; color: #333;">Recent</div>
+        ${rows.map((r) => {
+            const amt = Number(r.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+            const statusRaw = (r.status || 'pending');
+            const status = statusRaw.charAt(0).toUpperCase() + statusRaw.slice(1).toLowerCase();
+            let dateLabel = '—';
+            try {
+                const raw = r.requestedAt;
+                const d = raw?.toDate?.() || (raw?.toMillis ? new Date(raw.toMillis()) : null);
+                if (d && !Number.isNaN(d.getTime())) {
+                    dateLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                }
+            } catch (_) { /* ignore */ }
+            return `<div style="font-size: 0.85rem; color: #555; margin-bottom: 0.35rem;">₱${amt} · ${status} · ${dateLabel}</div>`;
+        }).join('')}
+    `;
+}
+
+async function uploadReimbursementReceipt(file) {
+    if (!file || !currentUser) return null;
+    const safeName = String(file.name || 'receipt').replace(/[^\w.\-]+/g, '_').slice(0, 80);
+    const path = `reimbursement-receipts/${currentUser}/${Date.now()}_${safeName}`;
+    const fileRef = storageRef(storage, path);
+    await uploadBytes(fileRef, file, { contentType: file.type || 'application/octet-stream' });
+    return await getDownloadURL(fileRef);
+}
+
+async function submitReimbursementRequest(requestData) {
+    if (!currentUser) {
+        showToast("Please log in to submit a request.", 'error');
+        return false;
+    }
+
+    const amount = Number(requestData.amount);
+    const reason = (requestData.reason || '').trim();
+    const spendDate = (requestData.spendDate || '').trim();
+    if (!Number.isFinite(amount) || amount <= 0) {
+        showToast("Enter a valid amount greater than 0.", 'warning');
+        return false;
+    }
+    if (!spendDate) {
+        showToast("Date of spend is required.", 'warning');
+        return false;
+    }
+    if (!reason) {
+        showToast("Reason is required.", 'warning');
+        return false;
+    }
+
+    try {
+        let receiptUrl = null;
+        let receiptName = null;
+        if (requestData.receiptFile) {
+            try {
+                receiptUrl = await uploadReimbursementReceipt(requestData.receiptFile);
+                receiptName = requestData.receiptFile.name || null;
+            } catch (uploadErr) {
+                console.error('Receipt upload failed:', uploadErr);
+                showToast("Could not upload receipt. Try again or submit without it.", 'error');
+                return false;
+            }
+        }
+
+        const requestsRef = collection(db, "reimbursement_requests");
+        await addDoc(requestsRef, {
+            type: "reimbursement",
+            employeeId: currentUser,
+            employeeName: currentUserName || "Unknown",
+            amount,
+            spendDate,
+            reason,
+            receiptUrl: receiptUrl || null,
+            receiptName: receiptName || null,
+            status: "pending",
+            requestedAt: Timestamp.now(),
+            requestedBy: currentUser
+        });
+        console.log("Reimbursement request submitted successfully");
+        notifyRequestEmail({
+            kind: 'reimbursement',
+            employeeName: currentUserName || currentUser || 'Unknown',
+            employeeId: currentUser,
+            amount,
+            spendDate,
+            reason,
+            hasReceipt: !!receiptUrl
+        }).catch((err) => console.error('Reimbursement request email failed:', err));
+        return true;
+    } catch (error) {
+        console.error("Error submitting reimbursement request:", error);
+        showToast("Failed to submit reimbursement request. Please try again.", 'error');
+        return false;
+    }
+}
+
+function escapeHtmlPayroll(s) {
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+/** Fire-and-forget EmailJS notify (same service/template as daily sales). */
+async function notifyRequestEmail(payload) {
+    const EMAILJS_SERVICE_ID = 'service_1085n74';
+    const EMAILJS_TEMPLATE_ID = 'template_6zh5mq8';
+    const EMAILJS_PUBLIC_KEY = 'Jxzqofh9mPAsb9V0M';
+    const RECIPIENT_EMAIL = 'hi@matchanese.com';
+
+    if (typeof emailjs === 'undefined') {
+        console.warn('EmailJS not loaded — skipping request notification');
+        return;
+    }
+
+    emailjs.init(EMAILJS_PUBLIC_KEY);
+
+    const name = payload.employeeName || payload.employeeId || 'Staff';
+    const reason = (payload.reason || '').trim() || '—';
+    let subject;
+    let bodyHtml;
+
+    if (payload.kind === 'cash_advance') {
+        const amt = Number(payload.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        subject = `[Cash advance] ${name} — ₱${amt}`;
+        bodyHtml = `
+            <div style="font-family: Segoe UI, sans-serif; color: #333;">
+                <p><strong>New cash advance request</strong> (pending)</p>
+                <p>Employee: ${escapeHtmlPayroll(name)} (${escapeHtmlPayroll(payload.employeeId || '')})</p>
+                <p>Amount: ₱${amt}</p>
+                <p>Reason: ${escapeHtmlPayroll(reason)}</p>
+                <p>Review in Admin → Requests (Cash Advance filter).</p>
+            </div>`;
+    } else if (payload.kind === 'reimbursement') {
+        const amt = Number(payload.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        subject = `[Reimbursement] ${name} — ₱${amt}`;
+        bodyHtml = `
+            <div style="font-family: Segoe UI, sans-serif; color: #333;">
+                <p><strong>New reimbursement request</strong> (pending)</p>
+                <p>Employee: ${escapeHtmlPayroll(name)} (${escapeHtmlPayroll(payload.employeeId || '')})</p>
+                <p>Amount: ₱${amt}</p>
+                <p>Date of spend: ${escapeHtmlPayroll(payload.spendDate || '—')}</p>
+                <p>Reason: ${escapeHtmlPayroll(reason)}</p>
+                <p>Receipt: ${payload.hasReceipt ? 'Attached' : 'None'}</p>
+                <p>Review in Admin → Requests (Reimbursement filter).</p>
+            </div>`;
+    } else {
+        subject = `[Leave request] ${name} — ${payload.date || ''}`;
+        bodyHtml = `
+            <div style="font-family: Segoe UI, sans-serif; color: #333;">
+                <p><strong>New paid leave request</strong> (pending)</p>
+                <p>Employee: ${escapeHtmlPayroll(name)} (${escapeHtmlPayroll(payload.employeeId || '')})</p>
+                <p>Date: ${escapeHtmlPayroll(payload.date || '')}</p>
+                <p>Reason: ${escapeHtmlPayroll(reason)}</p>
+                <p>Review in Admin → Requests (Leave filter).</p>
+            </div>`;
+    }
+
+    await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+        to_email: RECIPIENT_EMAIL,
+        from_name: 'Matchanese Payroll',
+        subject,
+        message: bodyHtml
+    });
+    console.log('✅ Request notification email sent');
+}
+
 // Submit payroll request
 async function submitPayrollRequest(requestData, isNewDate = false) {
     if (!currentUser) {
@@ -519,7 +994,7 @@ function getHolidayPayMultiplier(dateStr) {
 // RESTORED FROM OLD - Calculate deductions
 function calculateDeductions(timeIn, timeOut, scheduledIn, scheduledOut) {
     const LATE_THRESHOLD_MINUTES = 30;
-    const UNDERTIME_THRESHOLD_MINUTES = 30;
+    const UNDERTIME_THRESHOLD_MINUTES = 0;
     let deductions = 0;
 
     if (timeIn && scheduledIn) {
@@ -562,7 +1037,7 @@ function calculateUndertimeDeduction(dayData) {
     if (!dayData.timeOut || !dayData.scheduledOut) return 0;
 
     const undertimeMinutes = compareTimes(dayData.scheduledOut, dayData.timeOut);
-    if (undertimeMinutes <= 30) return 0; // Grace period
+    if (undertimeMinutes <= 0) return 0;
 
     const baseRate = dayData.baseRate || 750;
     const isHalfDay = dayData.shift === "Closing Half-Day";
@@ -637,7 +1112,8 @@ function calculateDailyPay(dateObj, baseRate, employee = null) {
     // Prepare employee data (matching admin payroll format)
     const employeeData = employee || {
         baseRate: baseRate,
-        salesBonusEligible: payrollEmployeeContext?.salesBonusEligible || false
+        salesBonusEligible: payrollEmployeeContext?.salesBonusEligible || false,
+        payScheme: payrollEmployeeContext?.payScheme || 'standard'
     };
 
     // Use PayCalculator to calculate pay with detailed breakdown
@@ -665,7 +1141,9 @@ function calculateDailyPayFallback(dateObj, baseRate) {
 
         const hourlyRate = baseRate / 8;
         const workHours = actualHours > 4 ? actualHours - 1 : actualHours;
-        const mealAllowance = actualHours <= 4 ? dailyMealAllowance / 2 : dailyMealAllowance;
+        const mealAllowance = employeeIncludesMealAllowance(payrollEmployeeContext)
+            ? (actualHours <= 4 ? dailyMealAllowance / 2 : dailyMealAllowance)
+            : 0;
 
         // Calculate base pay (up to 8 hours)
         const regularHours = Math.min(workHours, 8);
@@ -681,7 +1159,9 @@ function calculateDailyPayFallback(dateObj, baseRate) {
     } else {
         const isHalfDay = dateObj.shift === "Closing Half-Day" || dateObj.shift === "Opening Half-Day";
         const dailyRate = isHalfDay ? baseRate / 2 : baseRate;
-        const mealAllowance = isHalfDay ? dailyMealAllowance / 2 : dailyMealAllowance;
+        const mealAllowance = employeeIncludesMealAllowance(payrollEmployeeContext)
+            ? (isHalfDay ? dailyMealAllowance / 2 : dailyMealAllowance)
+            : 0;
 
         const deductionHours = calculateDeductions(dateObj.timeIn, dateObj.timeOut, dateObj.scheduledIn, dateObj.scheduledOut);
         const standardHours = isHalfDay ? 4 : 8;
@@ -727,12 +1207,14 @@ async function fetchPayrollData(dates) {
             attendanceMap[doc.id] = doc.data();
         });
 
-        // Get employee base rate
+        // Get employee pay config
         let baseRate = 750;
         try {
             const employeeDoc = await getDoc(doc(db, "employees_v2", currentUser));
             if (employeeDoc.exists()) {
-                baseRate = employeeDoc.data().baseRate || 750;
+                const employeeData = employeeDoc.data();
+                payrollEmployeeContext = buildEmployeePaySnapshot(employeeData, currentUser);
+                baseRate = payrollEmployeeContext.baseRate;
             }
         } catch (error) {
             console.error("Failed to get employee base rate:", error);
@@ -770,6 +1252,7 @@ async function fetchPayrollData(dates) {
                 hasOTPay: data?.hasOTPay || false,
                 salesBonus: data?.salesBonus || 0,
                 transpoAllowance: data?.transpoAllowance || 0,
+                isPaidLeave: data?.isPaidLeave === true,
                 photoIn: data?.clockIn?.photoURL || null,
                 photoOut: data?.clockOut?.photoURL || null
             });
@@ -863,19 +1346,89 @@ async function fetchPendingRequests(dates) {
 
 // RESTORED FROM OLD - Update payroll UI
 async function updatePayrollUI(payrollData) {
-    const daysWorked = payrollData.filter(day => day.timeIn && day.timeOut).length;
+    const daysWorked = payrollData.filter(day => day.isPaidLeave || (day.timeIn && day.timeOut)).length;
+    const periodSelect = document.getElementById('payrollPeriod');
+    const selectedPeriod = periodSelect?.value;
+    const employee = getMergedEmployeeForPeriod(selectedPeriod);
+    let totalPay = calculatePeriodTotalPay(payrollData, selectedPeriod);
 
-    // RESTORED - Calculate total pay using the restored calculateDailyPay
-    const totalPay = payrollData.reduce((sum, day) => {
-        if (day.timeIn && day.timeOut) {
-            return sum + calculateDailyPay(day, day.baseRate);
+    const periodId = getPeriodIdFromLabel(selectedPeriod);
+    let periodEarningsTotal = 0;
+    let periodEarningsLines = [];
+    if (periodId && currentUser) {
+        try {
+            const q = query(
+                collection(db, 'payroll_period_earnings_v2'),
+                where('periodId', '==', periodId),
+                where('employeeId', '==', currentUser)
+            );
+            const snap = await getDocs(q);
+            snap.forEach((d) => {
+                const r = d.data();
+                const amt = Number(r.amount) || 0;
+                periodEarningsTotal += amt;
+                periodEarningsLines.push({
+                    amount: amt,
+                    note: r.note || '',
+                    kind: r.kind || null
+                });
+            });
+        } catch (err) {
+            console.error('Error loading period earnings:', err);
         }
-        return sum;
-    }, 0);
+    }
+    totalPay += periodEarningsTotal;
 
     // Update summary
     document.getElementById('daysWorked').textContent = daysWorked;
     document.getElementById('totalPay').textContent = `₱${totalPay.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    // Pay type note for monthly / hybrid / advances
+    const payTypeNote = document.getElementById('payTypeNote');
+    if (payTypeNote) {
+        const payType = employee.payType || 'hourly';
+        const noteParts = [];
+        if (payType === 'monthly') {
+            const monthlySalary = Number(employee.monthlySalary) || 0;
+            let periodGross = Number(employee.periodGross);
+            if (!Number.isFinite(periodGross) || periodGross <= 0) {
+                periodGross = monthlySalary > 0 ? monthlySalary / 2 : 0;
+            }
+            noteParts.push(`Fixed salary for this cutoff: ₱${periodGross.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+        } else if (payType === 'hybrid') {
+            const fixedAmt = Number(employee.periodFixedAmount) || 0;
+            noteParts.push(`Includes fixed cutoff amount: ₱${fixedAmt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (on top of daily shift pay)`);
+        }
+        if ((payType === 'hourly' || payType === 'hybrid') && employee.payScheme === 'inclusive') {
+            noteParts.push('Meal included in daily rate');
+        }
+        const advanceLines = periodEarningsLines.filter((l) =>
+            l.kind === 'cash_advance' || (l.amount < 0 && l.kind !== 'reimbursement')
+        );
+        const reimbursementLines = periodEarningsLines.filter((l) => l.kind === 'reimbursement');
+        const extraLines = periodEarningsLines.filter((l) =>
+            !(l.kind === 'cash_advance' || l.amount < 0) && l.kind !== 'reimbursement'
+        );
+        if (advanceLines.length) {
+            const advSum = advanceLines.reduce((s, l) => s + l.amount, 0);
+            noteParts.push(`Cash advance deduction: ₱${Math.abs(advSum).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+        }
+        if (reimbursementLines.length) {
+            const reimbSum = reimbursementLines.reduce((s, l) => s + l.amount, 0);
+            noteParts.push(`Reimbursement: ₱${reimbSum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+        }
+        if (extraLines.length) {
+            const extraSum = extraLines.reduce((s, l) => s + l.amount, 0);
+            noteParts.push(`Period extras: ₱${extraSum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+        }
+        if (noteParts.length) {
+            payTypeNote.style.display = 'block';
+            payTypeNote.textContent = noteParts.join(' · ');
+        } else {
+            payTypeNote.style.display = 'none';
+            payTypeNote.textContent = '';
+        }
+    }
 
     // Populate cards
     const cardsContainer = document.getElementById('payrollCardsContainer');
@@ -885,8 +1438,6 @@ async function updatePayrollUI(payrollData) {
 
     // Get the date range from payroll data to fetch pending requests
     // Also need to get the actual period dates for new date requests
-    const periodSelect = document.getElementById('payrollPeriod');
-    const selectedPeriod = periodSelect?.value;
     let periodDates = payrollData.map(day => day.date);
     
     // If we have a period selected, get all dates in that period
@@ -903,6 +1454,7 @@ async function updatePayrollUI(payrollData) {
     }
     
     const pendingRequests = await fetchPendingRequests(periodDates);
+    const pendingLeaveRequests = await fetchPendingLeaveRequests(periodDates);
     
     // Create a map of dates to pending requests
     const pendingRequestsMap = new Map();
@@ -923,12 +1475,20 @@ async function updatePayrollUI(payrollData) {
         }
     });
 
+    const pendingLeaveRequestsMap = new Map();
+    pendingLeaveRequests.forEach(req => {
+        const requestDate = req.normalizedDate || req.date;
+        if (requestDate && !pendingLeaveRequestsMap.has(requestDate)) {
+            pendingLeaveRequestsMap.set(requestDate, req);
+        }
+    });
+
     const sortedPayrollData = payrollData.sort((a, b) => new Date(b.date) - new Date(a.date));
     const today = new Date();
     const isToday = (date) => formatDate(today) === date;
 
     sortedPayrollData.forEach(day => {
-        if (!day.timeIn && !day.timeOut) return;
+        if (!day.isPaidLeave && !day.timeIn && !day.timeOut) return;
 
         const card = document.createElement('div');
         card.className = 'payroll-card';
@@ -942,6 +1502,29 @@ async function updatePayrollUI(payrollData) {
         const month = dateObj.toLocaleDateString('en-US', { month: 'short' });
         const dayNum = dateObj.getDate();
         const dayOfWeek = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
+
+        if (day.isPaidLeave) {
+            card.innerHTML = `
+                <div class="payroll-card-main">
+                    <div class="payroll-date-section">
+                        <div class="payroll-date">${month} ${dayNum}</div>
+                        <div class="payroll-day">${dayOfWeek}</div>
+                    </div>
+                    <div class="payroll-holiday-section">
+                        <div class="payroll-holiday">Paid Leave</div>
+                    </div>
+                </div>
+                <div class="payroll-bottom-section">
+                    <div class="payroll-pay-info" style="margin-left: auto;">
+                        <div class="payroll-pay-label">Total Pay</div>
+                        <div class="payroll-pay">₱${calculateDailyPay(day, day.baseRate).toFixed(2)}</div>
+                    </div>
+                </div>
+            `;
+            card.addEventListener('click', () => openPayrollDetailModal(day, card));
+            cardsContainer.appendChild(card);
+            return;
+        }
 
         // RESTORED - Calculate late minutes
         const formatLateTime = (timeIn, scheduledIn) => {
@@ -1063,6 +1646,17 @@ async function updatePayrollUI(payrollData) {
         }
     });
     
+    pendingLeaveRequests.forEach(req => {
+        const requestDate = req.normalizedDate || req.date;
+        const existingData = payrollData.find(day => day.date === requestDate);
+        if (existingData) return;
+
+        const card = createPendingLeaveRequestCard(req);
+        if (card) {
+            cardsContainer.appendChild(card);
+        }
+    });
+    
     // Sort all cards by date (newest first)
     const allCards = Array.from(cardsContainer.children);
     allCards.sort((a, b) => {
@@ -1146,6 +1740,50 @@ function createPendingRequestCard(request) {
     return card;
 }
 
+function createPendingLeaveRequestCard(request) {
+    const requestDate = request.normalizedDate || request.date;
+    const dateStr = requestDate.includes('T') ? requestDate.split('T')[0] : requestDate;
+    const [year, monthNum, day] = dateStr.split('-').map(Number);
+    const dateObj = new Date(year, monthNum - 1, day);
+
+    if (isNaN(dateObj.getTime())) {
+        console.error("Invalid date for pending leave request:", requestDate, dateStr);
+        return null;
+    }
+
+    const month = dateObj.toLocaleDateString('en-US', { month: 'short' });
+    const dayNum = dateObj.getDate();
+    const dayOfWeek = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
+
+    const card = document.createElement('div');
+    card.className = 'payroll-card pending-request';
+    card.dataset.date = dateStr;
+    card.style.opacity = '0.6';
+    card.style.cursor = 'default';
+
+    card.innerHTML = `
+        <div class="pending-indicator" style="text-align: center; color: #333; font-size: 0.9rem; font-weight: 600; margin-bottom: 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid #e5e7eb;">Pending Leave</div>
+        <div class="payroll-card-main">
+            <div class="payroll-date-section">
+                <div class="payroll-date">${month} ${dayNum}</div>
+                <div class="payroll-day">${dayOfWeek}</div>
+            </div>
+            <div class="payroll-branch-shift">
+                <div class="payroll-branch">Leave Request</div>
+                <div class="payroll-shift">${request.reason ? request.reason.substring(0, 40) : 'Awaiting approval'}</div>
+            </div>
+        </div>
+        <div class="payroll-bottom-section">
+            <div class="payroll-pay-info" style="margin-left: auto;">
+                <div class="payroll-pay-label">Total Pay</div>
+                <div class="payroll-pay">-</div>
+            </div>
+        </div>
+    `;
+
+    return card;
+}
+
 // RESTORED FROM OLD - Open detail modal
 function openPayrollDetailModal(dayData, clickedCard) {
     const modal = document.getElementById('payrollDetailModal');
@@ -1157,12 +1795,12 @@ function openPayrollDetailModal(dayData, clickedCard) {
     // Set the card data immediately
     document.getElementById('modalPayrollDate').textContent = `${month} ${dayNum}`;
     document.getElementById('modalPayrollDay').textContent = dayOfWeek;
-    document.getElementById('modalPayrollBranch').textContent = dayData.branch || '--';
-    document.getElementById('modalPayrollShift').textContent = dayData.shift || '--';
+    document.getElementById('modalPayrollBranch').textContent = dayData.isPaidLeave ? '—' : (dayData.branch || '--');
+    document.getElementById('modalPayrollShift').textContent = dayData.isPaidLeave ? '—' : (dayData.shift || '--');
 
     // Set times immediately
-    document.getElementById('modalTimeIn').textContent = formatTime(dayData.timeIn);
-    document.getElementById('modalTimeOut').textContent = formatTime(dayData.timeOut);
+    document.getElementById('modalTimeIn').textContent = dayData.isPaidLeave ? '--' : formatTime(dayData.timeIn);
+    document.getElementById('modalTimeOut').textContent = dayData.isPaidLeave ? '--' : formatTime(dayData.timeOut);
 
     // Show modal with animation
     modal.style.display = 'flex';
@@ -1297,7 +1935,7 @@ function openPayrollDetailModal(dayData, clickedCard) {
         // Fallback to manual calculation if PayCalculator not available
         const isHalfDay = dayData.shift === "Closing Half-Day" || dayData.shift === "Opening Half-Day";
         const dailyRate = isHalfDay ? baseRate / 2 : baseRate;
-        mealAllowance = isHalfDay ? 75 : 150;
+        mealAllowance = employeeIncludesMealAllowance(payrollEmployeeContext) ? (isHalfDay ? 75 : 150) : 0;
         baseRateDisplay = dailyRate;
         lateDeduction = calculateLateDeduction(dayData);
         undertimeDeduction = calculateUndertimeDeduction(dayData);
@@ -1312,6 +1950,11 @@ function openPayrollDetailModal(dayData, clickedCard) {
     // Display base rate and meal allowance
     document.getElementById('modalBaseRate').textContent = `₱${baseRateDisplay.toFixed(2)}`;
     document.getElementById('modalMealAllow').textContent = `₱${mealAllowance.toFixed(2)}`;
+
+    const mealAllowanceRow = document.getElementById('modalMealAllow')?.parentElement?.parentElement;
+    if (mealAllowanceRow) {
+        mealAllowanceRow.style.display = (dayData.isPaidLeave || mealAllowance <= 0) ? 'none' : 'grid';
+    }
 
     // Show/hide rows
     const lateDeductionRow = document.getElementById('modalLateDeductionRow');
@@ -1334,7 +1977,7 @@ function openPayrollDetailModal(dayData, clickedCard) {
     const undertimeMinutes = dayData.timeOut && dayData.scheduledOut ?
         compareTimes(dayData.scheduledOut, dayData.timeOut) : 0;
 
-    if (undertimeDeduction > 0 && undertimeMinutes > 30) {
+    if (undertimeDeduction > 0 && undertimeMinutes > 0) {
         const undertimeHours = Math.floor(undertimeMinutes / 60);
         const undertimeRemainingMins = undertimeMinutes % 60;
         const undertimeText = undertimeHours > 0 ?
@@ -1386,6 +2029,11 @@ function openPayrollDetailModal(dayData, clickedCard) {
     const historyList = document.getElementById('requestHistoryList');
     
     if (requestBtn) {
+        if (dayData.isPaidLeave) {
+            requestBtn.style.display = 'none';
+        } else {
+            requestBtn.style.display = '';
+        }
         // Store dayData for button click
         requestBtn.dataset.date = dayData.date;
         requestBtn.dataset.timeIn = dayData.timeIn || '';
@@ -1711,10 +2359,15 @@ async function generatePayslipPDF() {
         console.log('📊 Current payroll data:', currentPayrollDataForPayslip?.length || 0, 'days');
         
         if (!currentPayrollDataForPayslip || currentPayrollDataForPayslip.length === 0) {
-            alert('No payroll data available. Please select a period with attendance records.');
-            btn.disabled = false;
-            btn.innerHTML = originalText;
-            return;
+            const merged = getMergedEmployeeForPeriod(currentPeriodForPayslip);
+            const canPayslipWithoutDays = merged.payType === 'monthly' || merged.payType === 'hybrid';
+            if (!canPayslipWithoutDays) {
+                alert('No payroll data available. Please select a period with attendance records.');
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+                return;
+            }
+            currentPayrollDataForPayslip = [];
         }
         
         // Check if libraries are loaded
@@ -1739,6 +2392,8 @@ async function generatePayslipPDF() {
         const baseRate = payrollEmployeeContext?.baseRate || 750;
         const employeeRole = payrollEmployeeContext?.role || 'Barista';
         const transferMode = payrollEmployeeContext?.transferMode || 'GoTyme';
+        const mergedEmployee = getMergedEmployeeForPeriod(currentPeriodForPayslip);
+        const payType = mergedEmployee.payType || 'hourly';
         
         // Group data by branch
         const branchData = {};
@@ -1747,10 +2402,16 @@ async function generatePayslipPDF() {
         // Get PayCalculator for accurate calculations
         const calculator = getPayCalculatorPayroll();
         const employeeData = {
-            baseRate: baseRate,
-            salesBonusEligible: payrollEmployeeContext?.salesBonusEligible || false
+            baseRate: mergedEmployee.baseRate || baseRate,
+            salesBonusEligible: payrollEmployeeContext?.salesBonusEligible || false,
+            payType: payType,
+            monthlySalary: mergedEmployee.monthlySalary || 0,
+            periodGross: mergedEmployee.periodGross,
+            periodFixedAmount: mergedEmployee.periodFixedAmount || 0
         };
         
+        // For monthly: skip daily branch rollup; hybrid/daily keep daily breakdown
+        if (payType !== 'monthly') {
         workedDays.forEach(day => {
             const branch = day.branch || 'Unknown';
             if (!branchData[branch]) {
@@ -1814,7 +2475,7 @@ async function generatePayslipPDF() {
                 // Fallback to manual calculation
                 const isHalfDay = day.shift === "Closing Half-Day" || day.shift === "Opening Half-Day";
                 const dailyRate = isHalfDay ? baseRate / 2 : baseRate;
-                mealAllowance = isHalfDay ? 75 : 150;
+                mealAllowance = employeeIncludesMealAllowance(mergedEmployee) ? (isHalfDay ? 75 : 150) : 0;
                 lateDed = calculateLateDeduction(day);
                 undertimeDed = calculateUndertimeDeduction(day);
                 holidayBonus = calculateHolidayBonus(day, dailyRate);
@@ -1837,9 +2498,44 @@ async function generatePayslipPDF() {
             branchData[branch].salesBonus += salesBonus;
             branchData[branch].subtotal += dailyTotal;
         });
+        }
         
-        // Calculate grand total
-        let grandTotal = 0;
+        // Period total via calculateTotalPay (handles monthly / hybrid / daily)
+        let grandTotal = calculatePeriodTotalPay(currentPayrollDataForPayslip, currentPeriodForPayslip);
+        const periodResult = calculator
+            ? calculator.calculateTotalPay(currentPayrollDataForPayslip, employeeData, 'detailed')
+            : null;
+        const periodBreakdown = periodResult?.breakdown || {};
+
+        // Period extras / cash advances (same net as Total Pay card)
+        let periodEarningsLines = [];
+        let periodEarningsTotal = 0;
+        const periodIdForEarnings = getPeriodIdFromLabel(currentPeriodForPayslip);
+        if (periodIdForEarnings && currentUser) {
+            try {
+                const eq = query(
+                    collection(db, 'payroll_period_earnings_v2'),
+                    where('periodId', '==', periodIdForEarnings),
+                    where('employeeId', '==', currentUser)
+                );
+                const esnap = await getDocs(eq);
+                esnap.forEach((d) => {
+                    const r = d.data();
+                    const amt = Number(r.amount) || 0;
+                    periodEarningsTotal += amt;
+                    periodEarningsLines.push({
+                        amount: amt,
+                        note: r.note || '',
+                        kind: r.kind || null,
+                        requestedAt: r.requestedAt || r.createdAt || null
+                    });
+                });
+            } catch (earnErr) {
+                console.error('Payslip period earnings load failed:', earnErr);
+            }
+        }
+        grandTotal += periodEarningsTotal;
+
         Object.keys(branchData).forEach(branch => {
             const data = branchData[branch];
             const subtotal = data.subtotal || (
@@ -1847,7 +2543,6 @@ async function generatePayslipPDF() {
                 data.overtimePay + data.holidayBonus + data.salesBonus - data.lateDeduction - data.undertimeDeduction
             );
             branchData[branch].subtotal = subtotal;
-            grandTotal += subtotal;
         });
         
         // Format period for display
@@ -1877,8 +2572,24 @@ async function generatePayslipPDF() {
             return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
         };
         
-        // Generate breakdown HTML by branch
+        // Generate breakdown HTML by branch / pay type
         let breakdownHTML = '';
+
+        if (payType === 'monthly') {
+            const periodGross = Number(periodBreakdown.periodGross) ||
+                ((Number(mergedEmployee.monthlySalary) || 0) / 2);
+            const addOns = Number(periodBreakdown.totalBonuses) || 0;
+            const attendanceOnly = grandTotal - periodEarningsTotal;
+            breakdownHTML = `
+<div style="background: #f1f9f2; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+<h4 style="margin: 0 0 0.5rem 0; color: #2b9348; font-size: 1.1rem; font-weight: 600;">Monthly Salary</h4>
+<p style="margin: 0.5rem 0; color: #333;">Fixed Salary (this cutoff) <span style="float:right">₱${periodGross.toFixed(2)}</span></p>
+${addOns > 0 ? `<p style="margin: 0.5rem 0; color: #333;">Allowances / Bonuses <span style="float:right">₱${addOns.toFixed(2)}</span></p>` : ''}
+<hr style="border: none; border-top: 1px solid #ddd; margin: 1rem 0;">
+<strong style="display: block; margin-top: 0.5rem; color: #333;">Subtotal <span style="float:right">₱${attendanceOnly.toFixed(2)}</span></strong>
+</div>
+`;
+        } else {
         Object.keys(branchData).forEach(branch => {
             const data = branchData[branch];
             const daysCount = data.days.length;
@@ -1886,7 +2597,6 @@ async function generatePayslipPDF() {
             // Sort dates and format them
             const sortedDates = [...new Set(data.days)].sort((a, b) => new Date(a) - new Date(b));
             const datesList = sortedDates.map(dateStr => {
-                const date = new Date(dateStr);
                 const formatted = formatDateForPayslip(dateStr);
                 return `<li>${formatted}</li>`;
             }).join('');
@@ -1902,7 +2612,7 @@ async function generatePayslipPDF() {
 </strong>
 <ul style="margin: 0.5rem 0 1rem 0; padding-left: 1.2rem; list-style-type: disc;">${datesList}</ul>
 <p style="margin: 0.5rem 0; color: #333;">Basic Pay <span style="float:right">₱${data.basicPay.toFixed(2)}</span></p>
-<p style="margin: 0.5rem 0; color: #333;">Meal Allowance <span style="float:right">₱${data.mealAllowance.toFixed(2)}</span></p>
+${data.mealAllowance > 0 ? `<p style="margin: 0.5rem 0; color: #333;">Meal Allowance <span style="float:right">₱${data.mealAllowance.toFixed(2)}</span></p>` : ''}
 ${data.transportAllowance > 0 ? `<p style="margin: 0.5rem 0; color: #333;">Transport Allowance <span style="float:right">₱${data.transportAllowance.toFixed(2)}</span></p>` : ''}
 ${data.overtimePay > 0 ? `<p style="margin: 0.5rem 0; color: #333;">Overtime Hours <span style="float:right">₱${data.overtimePay.toFixed(2)}</span></p>` : ''}
 ${data.lateDeduction > 0 ? `<p style="margin: 0.5rem 0; color: #333;">Late Deduction <span style="float:right">–₱${data.lateDeduction.toFixed(2)}</span></p>` : ''}
@@ -1914,6 +2624,42 @@ ${data.holidayBonus > 0 ? `<p style="margin: 0.5rem 0; color: #2b9348;"><strong>
 </div>
 `;
         });
+
+        if (payType === 'hybrid') {
+            const fixedAmt = Number(periodBreakdown.periodFixedAmount) || Number(mergedEmployee.periodFixedAmount) || 0;
+            const dailyTotal = Number(periodBreakdown.dailyAttendanceTotal);
+            breakdownHTML += `
+<div style="background: #f5f0ff; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+<h4 style="margin: 0 0 0.5rem 0; color: #7e22ce; font-size: 1.1rem; font-weight: 600;">Hybrid Pay</h4>
+${Number.isFinite(dailyTotal) ? `<p style="margin: 0.5rem 0; color: #333;">Daily Attendance Total <span style="float:right">₱${dailyTotal.toFixed(2)}</span></p>` : ''}
+<p style="margin: 0.5rem 0; color: #333;">Fixed Amount (this cutoff) <span style="float:right">₱${fixedAmt.toFixed(2)}</span></p>
+<hr style="border: none; border-top: 1px solid #ddd; margin: 1rem 0;">
+<strong style="display: block; margin-top: 0.5rem; color: #333;">Period Total <span style="float:right">₱${(grandTotal - periodEarningsTotal).toFixed(2)}</span></strong>
+</div>
+`;
+        }
+        }
+
+        if (periodEarningsLines.length) {
+            const linesHtml = periodEarningsLines.map((line) => {
+                const isAdvance = line.kind === 'cash_advance' || line.amount < 0;
+                const isReimb = line.kind === 'reimbursement';
+                const label = isAdvance ? 'Cash Advance' : (isReimb ? 'Reimbursement' : 'Period Extra');
+                const signAmt = line.amount < 0
+                    ? `–₱${Math.abs(line.amount).toFixed(2)}`
+                    : `₱${Number(line.amount).toFixed(2)}`;
+                const color = isAdvance ? '#b91c1c' : (isReimb ? '#2b9348' : '#333');
+                return `<p style="margin: 0.5rem 0; color: ${color};">${label} <span style="float:right">${signAmt}</span></p>`;
+            }).join('');
+            breakdownHTML += `
+<div style="background: #fef2f2; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+<h4 style="margin: 0 0 0.5rem 0; color: #b91c1c; font-size: 1.1rem; font-weight: 600;">Deductions / Adjustments</h4>
+${linesHtml}
+<hr style="border: none; border-top: 1px solid #ddd; margin: 1rem 0;">
+<strong style="display: block; margin-top: 0.5rem; color: #333;">Net Total <span style="float:right">₱${grandTotal.toFixed(2)}</span></strong>
+</div>
+`;
+        }
         
         // Create payslip HTML matching old format
         const payslipHTML = `
@@ -2060,6 +2806,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('🎬 Payroll module initializing for user:', currentUser);
     
     // No header in payroll view - it's embedded in iframe
+
+    await loadBranchesFromFirebase(db, { getDocs, collection });
+    populateAttendanceBranchSelects(['requestBranch', 'newDateBranch']);
     
     // Load employees
     await loadEmployees();
@@ -2071,37 +2820,25 @@ document.addEventListener('DOMContentLoaded', async () => {
             const employeeDoc = await getDoc(doc(db, "employees_v2", currentUser));
             if (employeeDoc.exists()) {
                 const employeeData = employeeDoc.data();
-                payrollEmployeeContext = {
-                    id: currentUser,
-                    name: employeeData.nick || employeeData.name || employees[currentUser] || currentUser,
-                    baseRate: employeeData.baseRate || 750,  // Use actual base rate from Firebase
-                    salesBonusEligible: employeeData.salesBonusEligible || false,
-                    role: employeeData.role || 'Barista',
-                    transferMode: employeeData.transferMode || employeeData.modeOfTransfer || 'GoTyme'
-                };
+                payrollEmployeeContext = buildEmployeePaySnapshot(employeeData, currentUser);
                 console.log('✅ Employee context set:', payrollEmployeeContext);
+                updateLeaveRequestButtonVisibility();
+                updateCashAdvanceButtonVisibility();
+                updateReimbursementButtonVisibility();
             } else {
                 console.warn('⚠️ Employee doc not found, using defaults');
-                payrollEmployeeContext = {
-                    id: currentUser,
-                    name: employees[currentUser] || currentUser,
-                    baseRate: 750,
-                    salesBonusEligible: false,
-                    role: 'Barista',
-                    transferMode: 'GoTyme'
-                };
+                payrollEmployeeContext = buildEmployeePaySnapshot({}, currentUser);
+                updateLeaveRequestButtonVisibility();
+                updateCashAdvanceButtonVisibility();
+                updateReimbursementButtonVisibility();
             }
         } catch (err) {
             console.error('❌ Error loading employee data:', err);
             // Fallback to basic context
-            payrollEmployeeContext = {
-                id: currentUser,
-                name: employees[currentUser] || currentUser,
-                baseRate: 750,
-                salesBonusEligible: false,
-                role: 'Barista',
-                transferMode: 'GoTyme'
-            };
+            payrollEmployeeContext = buildEmployeePaySnapshot({}, currentUser);
+            updateLeaveRequestButtonVisibility();
+            updateCashAdvanceButtonVisibility();
+            updateReimbursementButtonVisibility();
         }
     } else {
         console.error('❌ No current user found!');
@@ -2170,7 +2907,126 @@ document.addEventListener('DOMContentLoaded', async () => {
                 openRequestNewDateModal();
             });
         }
+
+        const requestLeaveBtn = document.getElementById('requestLeaveBtn');
+        if (requestLeaveBtn) {
+            requestLeaveBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                openRequestLeaveModal();
+            });
+        }
+
+        const requestCashAdvanceBtn = document.getElementById('requestCashAdvanceBtn');
+        if (requestCashAdvanceBtn) {
+            requestCashAdvanceBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                openRequestCashAdvanceModal();
+            });
+        }
+
+        const requestReimbursementBtn = document.getElementById('requestReimbursementBtn');
+        if (requestReimbursementBtn) {
+            requestReimbursementBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                openRequestReimbursementModal();
+            });
+        }
     }, 100);
+    
+    const leaveForm = document.getElementById('requestLeaveForm');
+    if (leaveForm) {
+        leaveForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const date = document.getElementById('leaveRequestDate').value;
+            const reason = (document.getElementById('leaveRequestReason').value || '').trim();
+
+            const earliestLeaveDate = getEarliestLeaveDate();
+            if (!date || date < formatDate(earliestLeaveDate)) {
+                showToast(getLeaveNoticeMessage(earliestLeaveDate), 'warning', 5000);
+                return;
+            }
+
+            const payrollStatus = await getRequestStatus(date);
+            if (payrollStatus && payrollStatus.status === 'pending') {
+                showToast("You already have a pending payroll request for this date.", 'warning');
+                return;
+            }
+
+            const leaveStatus = await getLeaveRequestStatus(date);
+            if (leaveStatus && (leaveStatus.status === 'pending' || leaveStatus.status === 'approved')) {
+                showToast("You already have a leave request for this date.", 'warning');
+                return;
+            }
+
+            try {
+                const attendanceRef = doc(db, "attendance_v2", currentUser, "dates", date);
+                const attendanceSnap = await getDoc(attendanceRef);
+                if (attendanceSnap.exists()) {
+                    const attendanceData = attendanceSnap.data();
+                    if (attendanceData.isPaidLeave || attendanceData.clockIn) {
+                        showToast("This date already has attendance or approved leave.", 'warning');
+                        return;
+                    }
+                }
+            } catch (error) {
+                console.error("Error checking attendance:", error);
+            }
+
+            const success = await submitLeaveRequest({ date, reason });
+            if (success) {
+                showToast("Leave request submitted successfully!", 'success');
+                closeRequestLeaveModal();
+                await loadPayrollData();
+            }
+        });
+    }
+
+    const cashAdvanceForm = document.getElementById('requestCashAdvanceForm');
+    if (cashAdvanceForm) {
+        cashAdvanceForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const amount = parseFloat(document.getElementById('cashAdvanceAmount').value, 10);
+            const reason = (document.getElementById('cashAdvanceReason').value || '').trim();
+            const submitBtn = cashAdvanceForm.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.disabled = true;
+            try {
+                const success = await submitCashAdvanceRequest({ amount, reason });
+                if (success) {
+                    showToast("Cash advance request submitted!", 'success');
+                    closeRequestCashAdvanceModal();
+                }
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
+            }
+        });
+    }
+
+    const reimbursementForm = document.getElementById('requestReimbursementForm');
+    if (reimbursementForm) {
+        reimbursementForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const amount = parseFloat(document.getElementById('reimbursementAmount').value, 10);
+            const spendDate = document.getElementById('reimbursementSpendDate').value;
+            const reason = (document.getElementById('reimbursementReason').value || '').trim();
+            const receiptInput = document.getElementById('reimbursementReceipt');
+            const receiptFile = receiptInput?.files?.[0] || null;
+            const submitBtn = reimbursementForm.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.disabled = true;
+            try {
+                const success = await submitReimbursementRequest({ amount, spendDate, reason, receiptFile });
+                if (success) {
+                    showToast("Reimbursement request submitted!", 'success');
+                    closeRequestReimbursementModal();
+                }
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
+            }
+        });
+    }
     
     // Handle new date form submission
     const newDateForm = document.getElementById('requestNewDateForm');
@@ -2250,8 +3106,15 @@ async function openRequestEditModal(date, timeIn, timeOut, branch = '', shift = 
     // Set branch and shift
     const branchSelect = document.getElementById('requestBranch');
     const shiftSelect = document.getElementById('requestShift');
-    if (branchSelect && branch) {
-        branchSelect.value = branch;
+    if (branchSelect) {
+        populateAttendanceBranchSelect(branchSelect, { selectedValue: branch || 'Podium' });
+        if (branch && ![...branchSelect.options].some((o) => o.value === branch)) {
+            const opt = document.createElement('option');
+            opt.value = branch;
+            opt.textContent = branch;
+            branchSelect.appendChild(opt);
+        }
+        if (branch) branchSelect.value = branch;
     }
     if (shiftSelect && shift) {
         shiftSelect.value = shift;
@@ -2648,6 +3511,112 @@ function closeRequestNewDateModal() {
     }, 300);
 }
 
+function openRequestLeaveModal() {
+    const modal = document.getElementById('requestLeaveModal');
+    if (!modal) return;
+
+    const dateEl = document.getElementById('leaveRequestDate');
+    const reasonEl = document.getElementById('leaveRequestReason');
+    const hintEl = document.getElementById('leaveRequestHint');
+    const earliestLeaveDate = getEarliestLeaveDate();
+    const earliestStr = formatDate(earliestLeaveDate);
+
+    if (dateEl) {
+        dateEl.min = earliestStr;
+        dateEl.value = '';
+    }
+    if (reasonEl) reasonEl.value = '';
+    if (hintEl) hintEl.textContent = getLeaveNoticeMessage(earliestLeaveDate);
+
+    modal.style.display = 'flex';
+    requestAnimationFrame(() => {
+        modal.classList.add('show');
+    });
+}
+
+function closeRequestLeaveModal() {
+    const modal = document.getElementById('requestLeaveModal');
+    if (!modal) return;
+    modal.classList.remove('show');
+    setTimeout(() => {
+        modal.style.display = 'none';
+    }, 300);
+}
+
+function openRequestCashAdvanceModal() {
+    const modal = document.getElementById('requestCashAdvanceModal');
+    if (!modal) return;
+
+    const amountEl = document.getElementById('cashAdvanceAmount');
+    const reasonEl = document.getElementById('cashAdvanceReason');
+    if (amountEl) amountEl.value = '';
+    if (reasonEl) reasonEl.value = '';
+
+    const hintEl = document.getElementById('cashAdvanceHint');
+    if (hintEl) {
+        hintEl.textContent = '…';
+        try {
+            const target = getPeriodForClosestPayDay(new Date(), generateSharedPayrollPeriods());
+            if (target?.payDay) {
+                const periodShort = (target.label || target.id || '').replace(/\s*-\s*/g, '–');
+                hintEl.textContent = `Deducts on ${formatPayDayLabel(target.payDay).replace(/, \d{4}$/, '')} · ${periodShort}`;
+            } else {
+                hintEl.textContent = 'Deducts on next payday';
+            }
+        } catch (err) {
+            console.error(err);
+            hintEl.textContent = 'Deducts on next payday';
+        }
+    }
+
+    const listEl = document.getElementById('cashAdvanceRecentList');
+    if (listEl) listEl.innerHTML = '';
+
+    // Show modal immediately; load recent list in background
+    modal.style.display = 'flex';
+    requestAnimationFrame(() => {
+        modal.classList.add('show');
+    });
+    renderCashAdvanceRecentList().catch((err) => console.error(err));
+}
+
+function closeRequestCashAdvanceModal() {
+    const modal = document.getElementById('requestCashAdvanceModal');
+    if (!modal) return;
+    modal.classList.remove('show');
+    setTimeout(() => {
+        modal.style.display = 'none';
+    }, 300);
+}
+
+function openRequestReimbursementModal() {
+    const modal = document.getElementById('requestReimbursementModal');
+    if (!modal) return;
+
+    const amountEl = document.getElementById('reimbursementAmount');
+    const spendEl = document.getElementById('reimbursementSpendDate');
+    const reasonEl = document.getElementById('reimbursementReason');
+    const receiptEl = document.getElementById('reimbursementReceipt');
+    if (amountEl) amountEl.value = '';
+    if (spendEl) spendEl.value = '';
+    if (reasonEl) reasonEl.value = '';
+    if (receiptEl) receiptEl.value = '';
+
+    modal.style.display = 'flex';
+    requestAnimationFrame(() => {
+        modal.classList.add('show');
+    });
+}
+
+function closeRequestReimbursementModal() {
+    const modal = document.getElementById('requestReimbursementModal');
+    if (!modal) return;
+    modal.classList.remove('show');
+    setTimeout(() => {
+        modal.style.display = 'none';
+    }, 300);
+}
+
 // Make functions global for modal
 window.closePayrollDetailModal = closePayrollDetailModal;
 window.openImageModal = openImageModal;
@@ -2656,4 +3625,10 @@ window.openRequestEditModal = openRequestEditModal;
 window.closeRequestEditModal = closeRequestEditModal;
 window.openRequestNewDateModal = openRequestNewDateModal;
 window.closeRequestNewDateModal = closeRequestNewDateModal;
+window.openRequestLeaveModal = openRequestLeaveModal;
+window.closeRequestLeaveModal = closeRequestLeaveModal;
+window.openRequestCashAdvanceModal = openRequestCashAdvanceModal;
+window.closeRequestCashAdvanceModal = closeRequestCashAdvanceModal;
+window.openRequestReimbursementModal = openRequestReimbursementModal;
+window.closeRequestReimbursementModal = closeRequestReimbursementModal;
 

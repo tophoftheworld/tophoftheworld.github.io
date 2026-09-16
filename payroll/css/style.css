@@ -68,6 +68,17 @@ body {
     color: #2b9348;
 }
 
+.pay-type-note {
+    background: #eef9f0;
+    border: 1px solid #c8e6c9;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin: 0 0 1rem;
+    color: #1b5e20;
+    font-size: 0.9rem;
+    text-align: center;
+}
+
 /* Period Selector */
 .period-selector {
     margin-bottom: 1rem;
@@ -82,8 +93,11 @@ body {
     display: flex;
     flex-direction: column;
     gap: 1rem;
-    align-items: center;
+    align-items: stretch;
     width: 100%;
+    max-width: 280px;
+    margin-left: auto;
+    margin-right: auto;
 }
 
 /* Request New Date Button */
@@ -101,7 +115,8 @@ body {
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s ease;
-    width: auto;
+    width: 100%;
+    box-sizing: border-box;
     font-family: 'Inter', sans-serif;
 }
 
@@ -142,7 +157,8 @@ body {
     cursor: pointer;
     transition: all 0.2s ease;
     box-shadow: 0 2px 6px rgba(43, 147, 72, 0.25);
-    width: auto;
+    width: 100%;
+    box-sizing: border-box;
     font-family: 'Inter', sans-serif;
 }
 
@@ -448,7 +464,19 @@ body {
     max-height: 90%;
     background: white;
     border-radius: 12px;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+
+#requestReimbursementModal .modal-content input[type="date"],
+#requestReimbursementModal .modal-content input[type="number"],
+#requestReimbursementModal .modal-content input[type="file"],
+#requestReimbursementModal .modal-content textarea {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
 }
 
 .modal-content img {

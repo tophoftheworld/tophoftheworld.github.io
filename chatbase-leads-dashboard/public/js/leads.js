@@ -1,9 +1,8 @@
-import { deleteServiceLeads, createServiceLead, listServiceLeads, updateServiceLead } from "./api.js";
+import { deleteServiceLeads, createServiceLead, listServiceLeads, updateServiceLead, promoteServiceLeadToEvent } from "./api.js";
 import { openConversationInInbox } from "./conversation-view.js";
 import {
   formatLeadActivityDate,
-  formatServiceLabel,
-  quoteReferenceSearchTerms
+  formatServiceLabel
 } from "./format.js";
 import {
   pipelineSelectHtml,
@@ -87,6 +86,7 @@ const detailElements = {
   viewConversationBtn: document.getElementById("lead-detail-view-conversation"),
   deleteBtn: document.getElementById("lead-detail-delete"),
   downloadInvoiceBtn: document.getElementById("lead-detail-download-invoice"),
+  addCalendarBtn: document.getElementById("lead-detail-add-calendar"),
   notesViewEl: document.getElementById("lead-detail-notes-view"),
   notesEditEl: document.getElementById("lead-detail-notes"),
   editBtn: detailEditBtn,
@@ -375,6 +375,37 @@ function isSplitView() {
 
 function findLeadById(id) {
   return allLeads.find((row) => row.id === id) || null;
+}
+
+/** Open admin Events planner (parent shell or known admin origin). */
+function openEventsPlanner({ eventId, leadId } = {}) {
+  const params = new URLSearchParams();
+  params.set("app", "Events");
+  if (eventId) params.set("event", eventId);
+  if (leadId) params.set("lead", leadId);
+  const qs = params.toString();
+
+  try {
+    if (window.parent && window.parent !== window) {
+      const parentUrl = new URL(window.parent.location.href);
+      if (parentUrl.pathname.includes("admin") || parentUrl.searchParams.has("app")) {
+        parentUrl.search = `?${qs}`;
+        window.parent.location.href = parentUrl.toString();
+        return;
+      }
+    }
+  } catch (_err) {
+    /* cross-origin — fall through */
+  }
+
+  const host = window.location.hostname || "";
+  let base = "https://admin.matchanese.com/";
+  if (host === "localhost" || host === "127.0.0.1") {
+    base = `${window.location.protocol}//${host}:5500/admin.html`;
+  } else if (host.includes("github.io")) {
+    base = `${window.location.origin}/admin.html`;
+  }
+  window.open(`${base}?${qs}`, "_blank", "noopener");
 }
 
 function setCountMessage(message, isError = false) {
@@ -812,13 +843,13 @@ export function initTabs() {
     const row = findLeadById(
       detailElements.viewConversationBtn?.dataset.leadId || selectedLeadId
     );
-    const quoteRef = row?.quoteReference;
-    if (!quoteRef) {
-      setCountMessage("Lead has no quote reference to search for", true);
+    const clientName = String(row?.clientName || "").trim();
+    if (!clientName) {
+      setCountMessage("Lead has no client name to search for", true);
       return;
     }
-    openConversationInInbox(quoteRef, quoteReferenceSearchTerms(quoteRef), {
-      clientName: row?.clientName
+    openConversationInInbox(clientName, [clientName], {
+      clientName
     });
   });
 
@@ -847,6 +878,46 @@ export function initTabs() {
       btn.textContent = original;
       const updated = findLeadById(row.id);
       if (updated) refreshDetailPanel();
+    }
+  });
+
+  detailElements.addCalendarBtn?.addEventListener("click", async () => {
+    const row = findLeadById(selectedLeadId);
+    if (!row) return;
+    const btn = detailElements.addCalendarBtn;
+    const mode = btn.dataset.mode || "promote";
+
+    if (mode === "view" || row.opsEventId) {
+      openEventsPlanner({ eventId: row.opsEventId, leadId: row.id });
+      return;
+    }
+
+    if (!String(row.targetDate || "").trim()) {
+      window.alert("Set a target date on the lead before adding it to the calendar.");
+      return;
+    }
+
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Adding…";
+    try {
+      const result = await promoteServiceLeadToEvent(row.id);
+      const eventId = result.id || result.event?.id;
+      const idx = allLeads.findIndex((l) => l.id === row.id);
+      if (idx >= 0) {
+        allLeads[idx] = { ...allLeads[idx], opsEventId: eventId };
+        writeLeadsCache(allLeads);
+      }
+      refreshDetailPanel();
+      renderRows();
+      if (eventId && window.confirm("Draft event created. Open Events calendar?")) {
+        openEventsPlanner({ eventId, leadId: row.id });
+      }
+    } catch (err) {
+      window.alert(err.message || "Could not add lead to calendar.");
+    } finally {
+      btn.textContent = original;
+      refreshDetailPanel();
     }
   });
 

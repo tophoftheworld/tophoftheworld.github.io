@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0e0e0e" />
+  <title>WebM → MP4 — Story Giveaway</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/convert.css?v=1" />
+</head>
+<body>
+  <div class="page">
+    <header class="header">
+      <a class="header__back" href="admin.html">← Back to admin</a>
+      <h1 class="header__title">WebM → MP4</h1>
+      <p class="header__sub">Convert screen recordings locally in your browser. Nothing is uploaded.</p>
+    </header>
+
+    <p id="engineStatus" class="engine-status">Loading converter…</p>
+
+    <div id="dropZone" class="drop-zone is-disabled">
+      <p class="drop-zone__title">Drop WebM files here</p>
+      <p class="drop-zone__hint">or click to browse · multiple files OK</p>
+      <input id="fileInput" type="file" accept="video/webm,.webm" multiple hidden />
+    </div>
+
+    <div class="toolbar">
+      <span id="fileCount" class="toolbar__count">0 files</span>
+      <div class="toolbar__actions">
+        <button id="clearBtn" class="btn" type="button" disabled>Clear</button>
+        <button id="downloadAllBtn" class="btn btn--primary" type="button" disabled>Download all</button>
+      </div>
+    </div>
+
+    <ul id="fileList" class="file-list">
+      <li class="file-list__empty">No files yet</li>
+    </ul>
+  </div>
+
+  <script type="module" src="js/convert.js?v=3"></script>
+</body>
+</html>

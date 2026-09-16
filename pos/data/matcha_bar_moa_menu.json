@@ -3,35 +3,43 @@
   "categories": [
     {
       "id": "matcha-lattes",
-      "name": "Matcha Lattes"
+      "name": "Matcha Lattes",
+      "countsAsCup": true
     },
     {
       "id": "hojicha-lattes",
-      "name": "Hōjicha Lattes"
+      "name": "Hōjicha Lattes",
+      "countsAsCup": true
     },
     {
       "id": "matcha-specials",
-      "name": "Matcha Specials"
+      "name": "Matcha Specials",
+      "countsAsCup": true
     },
     {
       "id": "cookies",
-      "name": "Cookies"
+      "name": "Cookies",
+      "countsAsCup": false
     },
     {
       "id": "desserts",
-      "name": "Desserts"
+      "name": "Desserts",
+      "countsAsCup": false
     },
     {
       "id": "tools",
-      "name": "Tools"
+      "name": "Tools",
+      "countsAsCup": false
     },
     {
       "id": "matcha-powder",
-      "name": "Matcha Powder"
+      "name": "Matcha Powder",
+      "countsAsCup": false
     },
     {
       "id": "merch",
-      "name": "Merch"
+      "name": "Merch",
+      "countsAsCup": false
     }
   ],
   "items": [
@@ -56,7 +64,9 @@
       "name": "Matchanese Seasalt Latte",
       "description": "Our Signature Matcha Latte topped with Seasalt Cream",
       "price": 250,
-      "tags": ["Best Seller"],
+      "tags": [
+        "Best Seller"
+      ],
       "type": "Iced",
       "shorthand": "MSL"
     },
@@ -81,7 +91,9 @@
       "name": "Earl Grey Matchanese Latte",
       "description": "Our Signature Matcha Latte with Homemade Earl Grey Syrup",
       "price": 250,
-      "tags": ["New!"],
+      "tags": [
+        "New!"
+      ],
       "type": "Iced",
       "shorthand": "EGML"
     },
@@ -90,7 +102,9 @@
       "name": "Coco Oat Matchanese Latte",
       "description": "Matcha Cold Whisked with Oat Milk over Coconut Juice",
       "price": 230,
-      "tags": ["Must-Try!"],
+      "tags": [
+        "Must-Try!"
+      ],
       "type": "Iced",
       "shorthand": "COML"
     },
@@ -115,7 +129,9 @@
       "name": "Hōjicha Seasalt Latte",
       "description": "Hōjicha Latte topped with Seasalt Cream",
       "price": 220,
-      "tags": ["Best Seller"],
+      "tags": [
+        "Best Seller"
+      ],
       "type": "Iced",
       "shorthand": "HSL"
     },
@@ -132,7 +148,9 @@
       "name": "Earl Grey Hōjicha Latte",
       "description": "Hōjicha Latte with Homemade Earl Grey Syrup",
       "price": 220,
-      "tags": ["New!"],
+      "tags": [
+        "New!"
+      ],
       "type": "Iced",
       "shorthand": "EGHL"
     },
@@ -141,7 +159,9 @@
       "name": "Polvoron Matchanese Latte",
       "description": "Our Signature Matcha Latte with Toasted Milk and Rice Krispies",
       "price": 270,
-      "tags": ["Limited Drink"],
+      "tags": [
+        "Limited Drink"
+      ],
       "type": "Iced",
       "shorthand": "PML"
     },

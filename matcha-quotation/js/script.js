@@ -2,29 +2,65 @@
 const packages = {
     starter: {
         name: 'Starter Package',
+        choiceSlots: 1,
+        totalSlots: 3,
         rates: {
-            50: 13500,
-            100: 22500,
-            150: 31500
+            100: 29500,
+            150: 43500
         }
     },
     signature: {
         name: 'Signature Package',
+        choiceSlots: 3,
+        totalSlots: 5,
         rates: {
-            50: 14750,
-            100: 25750,
-            150: 36750
+            100: 32500,
+            150: 46750
         }
     },
     special: {
         name: 'Special Package',
+        choiceSlots: 5,
+        totalSlots: 7,
         rates: {
-            50: 16500,
-            100: 28500,
-            150: 41500
+            100: 36000,
+            150: 52000
         }
     }
 };
+
+const MOBILE_BAR_CUP_TIERS = [100, 150];
+
+function computeMobileBarPackagePrice(packageData, cups) {
+    const n = parseInt(cups, 10);
+    if (!packageData?.rates || !n || n <= 0) return 0;
+    if (packageData.rates[n] != null) return packageData.rates[n];
+
+    const rates = packageData.rates;
+    const tiers = MOBILE_BAR_CUP_TIERS;
+    let lower;
+    let upper;
+
+    if (n < tiers[0]) {
+        lower = tiers[0];
+        upper = tiers[1];
+    } else if (n > tiers[tiers.length - 1]) {
+        lower = tiers[tiers.length - 2];
+        upper = tiers[tiers.length - 1];
+    } else {
+        for (let i = 0; i < tiers.length - 1; i++) {
+            if (n > tiers[i] && n < tiers[i + 1]) {
+                lower = tiers[i];
+                upper = tiers[i + 1];
+                break;
+            }
+        }
+    }
+
+    const slope = (rates[upper] - rates[lower]) / (upper - lower);
+    const anchor = n > tiers[tiers.length - 1] ? upper : lower;
+    return Math.round(rates[anchor] + (n - anchor) * slope);
+}
 
 // State
 let selectedPackage = null;
@@ -211,9 +247,7 @@ function updateQuote() {
         if (selectedCups && packageData.rates[selectedCups]) {
             basePrice = packageData.rates[selectedCups];
         } else if (customCups) {
-            // For custom cups, we'll use interpolation or default pricing
-            // This is a placeholder - actual calculation will be implemented later
-            basePrice = packageData.rates[100] || 0;
+            basePrice = computeMobileBarPackagePrice(packageData, customCups);
         }
         
         quoteTotal.textContent = `Php ${basePrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

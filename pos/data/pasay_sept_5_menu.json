@@ -1,0 +1,40 @@
+{
+  "categories": [
+    {
+      "id": "matcha",
+      "name": "MATCHA",
+      "countsAsCup": true
+    },
+    {
+      "id": "hojicha",
+      "name": "HOJICHA",
+      "countsAsCup": true
+    }
+  ],
+  "items": [
+    {
+      "categoryId": "matcha",
+      "name": "Signature Matchanese Latte",
+      "description": "Matcha Cold Whisked with Milk",
+      "price": 0,
+      "type": "",
+      "shorthand": "SML"
+    },
+    {
+      "categoryId": "matcha",
+      "name": "Matchanese Seasalt Latte",
+      "description": "Our Signature Matcha Latte topped with Seasalt Cream",
+      "price": 0,
+      "type": "",
+      "shorthand": "MSL"
+    },
+    {
+      "categoryId": "hojicha",
+      "name": "Hojicha Latte",
+      "description": "Freshly Whisked Roasted Green Tea",
+      "price": 0,
+      "type": "",
+      "shorthand": "HL"
+    }
+  ]
+}

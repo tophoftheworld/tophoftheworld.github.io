@@ -63,7 +63,8 @@ export async function exportSignedPdf(annotations) {
   const blob = new Blob([saved], { type: 'application/pdf' });
   const url = URL.createObjectURL(blob);
 
-  const baseName = pdfViewer.getFileName().replace(/\.pdf$/i, '') || 'document';
+  const baseName =
+    pdfViewer.getFileName().replace(/\.(pdf|png|jpe?g|webp|gif|bmp)$/i, '') || 'document';
   const a = document.createElement('a');
   a.href = url;
   a.download = `${baseName}-signed.pdf`;

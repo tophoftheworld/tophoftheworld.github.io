@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="color-scheme" content="light" />
+  <meta http-equiv="Cache-Control" content="no-cache" />
+  <title>Photobooth</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./css/style.css?v=16" />
+</head>
+<body>
+  <div class="host">
+    <div class="kiosk" id="kiosk">
+      <video id="cam" playsinline autoplay muted></video>
+
+      <div class="count" id="count" hidden></div>
+      <div class="flash" id="flash"></div>
+
+      <footer class="bottom" id="bottomBar">
+        <button type="button" class="shutter" id="shutter" disabled aria-label="Take photo"></button>
+      </footer>
+
+      <div class="result" id="result" hidden>
+        <img id="preview" class="preview" alt="" />
+        <div class="qr-wrap">
+          <div id="qr" class="qr" hidden></div>
+          <p class="qr-hint" id="qrHint"></p>
+        </div>
+        <button type="button" class="btn ghost" id="again">Again</button>
+      </div>
+
+      <p class="err" id="err" hidden></p>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script type="module" src="./js/app.js?v=16"></script>
+</body>
+</html>

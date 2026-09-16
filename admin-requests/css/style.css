@@ -76,6 +76,47 @@ select {
     height: auto;
 }
 
+.payday-range-toggle {
+    display: flex;
+    gap: 0.25rem;
+    background: #f5f5f5;
+    padding: 0.25rem;
+    border-radius: 8px;
+}
+
+.payday-range-btn {
+    padding: 0.45rem 0.9rem;
+    background: transparent;
+    background-color: transparent;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #666;
+    height: auto;
+    box-shadow: none;
+}
+
+.payday-range-btn:hover {
+    background: transparent;
+    background-color: transparent;
+    color: #333;
+}
+
+.payday-range-btn.active {
+    background: white;
+    background-color: white;
+    color: #2b9348;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.payday-range-btn.active:hover {
+    background: white;
+    background-color: white;
+    color: #2b9348;
+}
+
 button {
     padding: 0.6rem 1rem;
     border-radius: 8px;
@@ -111,6 +152,21 @@ button:hover {
     border-radius: 12px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     overflow: hidden;
+}
+
+.requests-load-more {
+    padding: 1rem 1.5rem;
+    text-align: center;
+    color: #6b7280;
+    font-size: 0.85rem;
+    font-weight: 500;
+    border-top: 1px solid #f0f0f0;
+    background: #fafafa;
+}
+
+.requests-load-more-end {
+    color: #9ca3af;
+    font-weight: 400;
 }
 
 .requests-header {
@@ -385,6 +441,21 @@ button:hover {
 .request-type-reliever {
     background: #dbeafe;
     color: #1e40af;
+}
+
+.request-type-leave {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.request-type-cash-advance {
+    background: #e0e7ff;
+    color: #3730a3;
+}
+
+.request-type-reimbursement {
+    background: #dcfce7;
+    color: #166534;
 }
 
 .request-actions {
@@ -721,6 +792,7 @@ button:hover {
     .mobile-controls {
         display: flex;
         align-items: flex-end;
+        flex-wrap: wrap;
         gap: 0.75rem;
         margin-bottom: 1rem;
         padding: 0.75rem;
@@ -728,9 +800,15 @@ button:hover {
         border-radius: 8px;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     }
-    .mobile-controls .control-item {
+    .mobile-controls .control-item.payday-range-control {
+        flex: 1 1 100%;
+    }
+    .mobile-controls .payday-range-toggle {
+        width: 100%;
+    }
+    .mobile-controls .payday-range-btn {
         flex: 1;
-        min-width: 0;
+        justify-content: center;
     }
     .mobile-controls .control-item select {
         width: 100%;
@@ -889,6 +967,11 @@ button:hover {
         padding: 0.75rem 1rem;
         flex-wrap: wrap;
         gap: 0.5rem;
+    }
+
+    .requests-load-more {
+        padding: 0.75rem 1rem;
+        font-size: 0.8rem;
     }
     
     .select-all-checkbox {

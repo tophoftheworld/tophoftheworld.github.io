@@ -4,6 +4,8 @@ const CHATBASE_MAX_CHARS = 8000;
 const PROMPT_INSTRUCTION_RESERVE = 1200;
 const MAX_TRANSCRIPT_CHARS = CHATBASE_MAX_CHARS - PROMPT_INSTRUCTION_RESERVE;
 const PENDING_LOOKBACK_DAYS = 5;
+/** Rolling lookback for scheduled email / ops briefs (Urgent, Topics, Leads, Follow-ups). */
+const RECENT_LOOKBACK_HOURS = 24;
 /** Last N in-window messages per thread (5-day window can be much longer than a single day). */
 const PENDING_MAX_MESSAGES_PER_THREAD = 10;
 const PENDING_MAX_MESSAGE_CHARS = 320;
@@ -17,6 +19,7 @@ const SECTION_ALIASES = {
   topics: "topics",
   leads: "leads",
   payments: "payments",
+  "payments to verify": "payments",
   "follow-ups": "followUps",
   "follow ups": "followUps",
   followups: "followUps"
@@ -97,12 +100,67 @@ function isPlaceholderSummaryBullet(text) {
   return false;
 }
 
+/** Strip a leaked 1–10 importance score that the model sometimes emits as its own dash-delimited segment. */
+function stripLeakedImportanceScore(text) {
+  const t = normalizeLine(text);
+  if (!t) return t;
+  const SCORE = /^(?:10(?:\.0)?|[0-9](?:\.[0-9])?)$/;
+  const parts = t.split(/\s+[—–-]\s+/);
+  if (!parts.some((p) => SCORE.test(p.trim()))) return t;
+  return parts.filter((p) => !SCORE.test(p.trim())).join(" — ");
+}
+
 function messagesOnDate(messages, date, tz = DEFAULT_TZ) {
   return (messages || []).filter((m) => {
     const content = normalizeLine(m.content);
     if (!content) return false;
     return isActivityOnDate(m.createdAt, date, tz);
   });
+}
+
+function createCalendarWindow(date, tz = DEFAULT_TZ) {
+  return {
+    mode: "calendar",
+    date,
+    tz,
+    label: date
+  };
+}
+
+function createRollingWindow(hours = RECENT_LOOKBACK_HOURS, endMs = Date.now(), tz = DEFAULT_TZ) {
+  const end = Number.isFinite(endMs) ? endMs : Date.now();
+  const startMs = end - hours * 60 * 60 * 1000;
+  const endDate = calendarDateInTz(new Date(end).toISOString(), tz) || todayDateInTz(tz);
+  return {
+    mode: "rolling",
+    hours,
+    startMs,
+    endMs: end,
+    tz,
+    date: endDate,
+    label: `last ${hours}h`
+  };
+}
+
+function messagesInRollingWindow(messages, startMs, endMs) {
+  return (messages || []).filter((m) => {
+    const content = normalizeLine(m.content);
+    if (!content) return false;
+    const t = new Date(m.createdAt).getTime();
+    if (!Number.isFinite(t)) return false;
+    return t >= startMs && t <= endMs;
+  });
+}
+
+function messagesInWindow(messages, window) {
+  if (!window || window.mode === "calendar") {
+    return messagesOnDate(messages, window?.date, window?.tz || DEFAULT_TZ);
+  }
+  return messagesInRollingWindow(messages, window.startMs, window.endMs);
+}
+
+function countMessagesInWindow(threads, window) {
+  return threads.reduce((n, conv) => n + messagesInWindow(conv.messages, window).length, 0);
 }
 
 function shortenSource(source) {
@@ -114,8 +172,9 @@ function shortenSource(source) {
   return String(source || "?").slice(0, 8);
 }
 
-function formatThreadForPrompt(conv, { index, date, tz = DEFAULT_TZ, maxBlockChars } = {}) {
-  let todayMessages = messagesOnDate(conv.messages, date, tz);
+function formatThreadForPrompt(conv, { index, date, tz = DEFAULT_TZ, maxBlockChars, window } = {}) {
+  const win = window || createCalendarWindow(date, tz);
+  let todayMessages = messagesInWindow(conv.messages, win);
   if (!todayMessages.length) return null;
 
   const name = conv.displayName || "?";
@@ -139,8 +198,12 @@ function formatThreadForPrompt(conv, { index, date, tz = DEFAULT_TZ, maxBlockCha
   return block;
 }
 
-function blockLengthForThread(conv, date, tz, index = 0, maxBlockChars) {
-  const block = formatThreadForPrompt(conv, { index, date, tz, maxBlockChars });
+function blockLengthForThread(conv, windowOrDate, tz, index = 0, maxBlockChars) {
+  const window =
+    typeof windowOrDate === "object" && windowOrDate?.mode
+      ? windowOrDate
+      : createCalendarWindow(windowOrDate, tz);
+  const block = formatThreadForPrompt(conv, { index, window, maxBlockChars });
   return block ? block.length : 0;
 }
 
@@ -149,19 +212,20 @@ function dayTranscriptCharBudget(dateLabel, { batchIndex = 0, totalBatches = 2, 
   return Math.max(1500, CHATBASE_MAX_CHARS - headerLen - PROMPT_BUDGET_BUFFER);
 }
 
-function packThreadsIntoDayBatches(threads, date, tz, totalBatches, budgetSkim = 0) {
+function packThreadsIntoDayBatches(threads, window, totalBatches, budgetSkim = 0) {
   const batches = [];
   let current = [];
   let used = 0;
   let globalIndex = 0;
+  const dateLabel = window.label || window.date;
 
   const budgetFor = (batchIndex, threadCount) =>
-    dayTranscriptCharBudget(date, { batchIndex, totalBatches, threadCount }) - budgetSkim;
+    dayTranscriptCharBudget(dateLabel, { batchIndex, totalBatches, threadCount }) - budgetSkim;
 
   const measureBlock = (conv, index, maxChars) => {
-    let len = blockLengthForThread(conv, date, tz, index);
+    let len = blockLengthForThread(conv, window, window.tz, index);
     if (!len) return 0;
-    if (len > maxChars) len = blockLengthForThread(conv, date, tz, index, maxChars);
+    if (len > maxChars) len = blockLengthForThread(conv, window, window.tz, index, maxChars);
     return len;
   };
 
@@ -172,7 +236,7 @@ function packThreadsIntoDayBatches(threads, date, tz, totalBatches, budgetSkim =
   };
 
   for (const conv of threads) {
-    const probeLen = blockLengthForThread(conv, date, tz, globalIndex);
+    const probeLen = blockLengthForThread(conv, window, window.tz, globalIndex);
     if (!probeLen) continue;
 
     const batchIndex = batches.length;
@@ -199,10 +263,10 @@ function packThreadsIntoDayBatches(threads, date, tz, totalBatches, budgetSkim =
   return batches;
 }
 
-function verifyDayBatchesFit(batches, date, tz) {
+function verifyDayBatchesFit(batches, window) {
   let offset = 0;
   for (let i = 0; i < batches.length; i += 1) {
-    buildBatchPrompt(batches[i], date, tz, {
+    buildBatchPrompt(batches[i], window, {
       batchIndex: i,
       totalBatches: batches.length,
       threadOffset: offset
@@ -212,24 +276,29 @@ function verifyDayBatchesFit(batches, date, tz) {
 }
 
 /** Pack threads into batches that each fit the transcript char budget. */
-function splitThreadsIntoBatches(threads, date, tz, maxCharsOverride) {
+function splitThreadsIntoBatches(threads, dateOrWindow, tz, maxCharsOverride) {
+  const window =
+    typeof dateOrWindow === "object" && dateOrWindow?.mode
+      ? dateOrWindow
+      : createCalendarWindow(dateOrWindow, tz);
+
   if (maxCharsOverride != null) {
-    const skim = dayTranscriptCharBudget(date) - maxCharsOverride;
-    return packThreadsIntoDayBatches(threads, date, tz, 2, Math.max(0, skim));
+    const skim = dayTranscriptCharBudget(window.label || window.date) - maxCharsOverride;
+    return packThreadsIntoDayBatches(threads, window, 2, Math.max(0, skim));
   }
 
   let totalBatches = 2;
   let budgetSkim = 0;
 
   for (let attempt = 0; attempt < 16; attempt += 1) {
-    const batches = packThreadsIntoDayBatches(threads, date, tz, totalBatches, budgetSkim);
+    const batches = packThreadsIntoDayBatches(threads, window, totalBatches, budgetSkim);
     if (batches.length > totalBatches) {
       totalBatches = batches.length;
       continue;
     }
 
     try {
-      verifyDayBatchesFit(batches, date, tz);
+      verifyDayBatchesFit(batches, window);
       return batches;
     } catch {
       budgetSkim += 64;
@@ -240,14 +309,14 @@ function splitThreadsIntoBatches(threads, date, tz, maxCharsOverride) {
   throw new Error("Unable to split inbox threads within Chatbase prompt limit");
 }
 
-function buildTranscriptForThreads(threads, date, tz, threadOffset = 0, { maxTotalChars } = {}) {
+function buildTranscriptForThreads(threads, window, threadOffset = 0, { maxTotalChars } = {}) {
   const blocks = [];
   let used = 0;
 
   for (let i = 0; i < threads.length; i += 1) {
     const conv = threads[i];
     const index = threadOffset + i;
-    let blockLen = blockLengthForThread(conv, date, tz, index);
+    let blockLen = blockLengthForThread(conv, window, window.tz, index);
     if (!blockLen) continue;
 
     const separator = blocks.length ? 2 : 0;
@@ -256,12 +325,11 @@ function buildTranscriptForThreads(threads, date, tz, threadOffset = 0, { maxTot
     if (remaining != null && blockLen > remaining) {
       block = formatThreadForPrompt(conv, {
         index,
-        date,
-        tz,
+        window,
         maxBlockChars: Math.max(80, remaining)
       });
     } else {
-      block = formatThreadForPrompt(conv, { index, date, tz });
+      block = formatThreadForPrompt(conv, { index, window });
     }
     if (!block) continue;
 
@@ -272,56 +340,91 @@ function buildTranscriptForThreads(threads, date, tz, threadOffset = 0, { maxTot
   return { text: blocks.join("\n\n"), count: blocks.length };
 }
 
-function instructionHeader(dateLabel, { batchIndex = 0, totalBatches = 1, threadCount = 0 } = {}) {
+function instructionHeader(dateLabel, { batchIndex = 0, totalBatches = 1, threadCount = 0, rolling = false } = {}) {
   const batchLine =
     totalBatches > 1
       ? `Batch ${batchIndex + 1} of ${totalBatches}. Summarize ONLY the threads in this batch. If a section has nothing in this batch, omit the entire section — never write "none", "no items in this batch", or similar.\n\n`
       : "";
 
-  return `Internal ops brief for Matchanese (${dateLabel}). Summarize ONLY today's messages below. Write for operators skimming quickly. No greeting. Never mention thread counts or channel splits.
+  const scopeLine = rolling
+    ? `Summarize ONLY messages from the last 24 hours below.`
+    : `Summarize ONLY today's messages below.`;
+
+  const urgentScope = rolling
+    ? "Last-24h human action only"
+    : "Same-day human action only";
+
+  const followUpScope = rolling
+    ? "ONLY items from this window where a human must act"
+    : "ONLY same-day items where a human must act";
+
+  return `Internal ops brief for Matchanese (${dateLabel}). ${scopeLine} Write for operators skimming quickly. No greeting. Never mention thread counts or channel splits.
 
 ${batchLine}Use these exact section headings only when you have real items. Omit empty sections entirely — no heading, no bullets, no "none"/"N/A"/"nothing in this batch" placeholders.
 
 Urgent
-- Same-day human action only: emergencies, serious complaints, VIP issues, or clear dropped balls. One short line per item.
-
-Topics
-- Recurring themes as "Label: short phrase" (e.g. "MOA: Pop-up location inquiries", "Public workshops: Schedule and signup questions"). One line each. Stay brief; only add detail for something new or unusual. Public/group workshops at matchanese.com/workshop are Topics, NOT Leads.
+- ${urgentScope}: emergencies, serious complaints, VIP issues, or clear dropped balls. Max 5 bullets. One short line per item.
 
 Leads
-- High-value only: private Mobile Matcha Bar events, private matcha workshops (booked for a group/event), brand or partnership collabs. Name + one-line status. Do NOT list public workshop signups or general workshop FAQ here — those belong under Topics. Leads are auto-logged — note quote stage or missing info, not "please log lead".
-
-Payments
-- Workshop or Shopify payment proofs/confirmations. Order ref + name + outcome.
+- High-value only: private Mobile Matcha Bar events, private matcha workshops (booked for a group/event), brand or partnership collabs. Name + one-line status. Max 8. Do NOT list public workshop signups, schedule FAQ, or general store questions. Leads are auto-logged — note quote stage or missing info, not "please log lead".
 
 Follow-ups
-- ONLY same-day items where a human must act (promised callback, quote to send today, escalation). Skip old unreplied threads — those appear under Awaiting reply separately. Skip resolved items and routine FAQ the bot already handled.
+- ${followUpScope} (promised callback, quote to send, escalation). Max 8. Skip old unreplied threads — those appear under Awaiting reply separately. Skip resolved items and routine FAQ the bot already handled.
+
+Do NOT include a Topics or Payments section — those are handled separately (or not used).
 
 Under 350 words. Bullets with "-" only. No sub-bullets.
 
-Today's messages (${threadCount} thread${threadCount === 1 ? "" : "s"}):
+Messages (${threadCount} thread${threadCount === 1 ? "" : "s"}):
 
 `;
 }
 
-function buildBatchPrompt(threads, dateLabel, tz, { batchIndex, totalBatches, threadOffset }) {
+function buildBatchPrompt(threads, dateOrWindow, tzOrOpts, maybeOpts) {
+  const window =
+    typeof dateOrWindow === "object" && dateOrWindow?.mode
+      ? dateOrWindow
+      : createCalendarWindow(dateOrWindow, typeof tzOrOpts === "string" ? tzOrOpts : DEFAULT_TZ);
+  const opts =
+    typeof dateOrWindow === "object" && dateOrWindow?.mode
+      ? tzOrOpts || {}
+      : maybeOpts || {};
+  const { batchIndex, totalBatches, threadOffset } = opts;
+  const dateLabel = window.label || window.date;
+  const rolling = window.mode === "rolling";
+
   let threadCount = threads.length;
-  let headerLen = instructionHeader(dateLabel, { batchIndex, totalBatches, threadCount }).length;
+  let headerLen = instructionHeader(dateLabel, {
+    batchIndex,
+    totalBatches,
+    threadCount,
+    rolling
+  }).length;
   let transcriptBudget = CHATBASE_MAX_CHARS - headerLen - PROMPT_BUDGET_BUFFER;
-  let { text: transcript, count } = buildTranscriptForThreads(threads, dateLabel, tz, threadOffset, {
+  let { text: transcript, count } = buildTranscriptForThreads(threads, window, threadOffset, {
     maxTotalChars: transcriptBudget
   });
 
-  let header = instructionHeader(dateLabel, { batchIndex, totalBatches, threadCount: count });
+  let header = instructionHeader(dateLabel, {
+    batchIndex,
+    totalBatches,
+    threadCount: count,
+    rolling
+  });
   let prompt = `${header}${transcript}`;
 
   if (prompt.length > CHATBASE_MAX_CHARS && transcript.length > 0) {
     const overrun = prompt.length - CHATBASE_MAX_CHARS;
     transcriptBudget = Math.max(80, transcriptBudget - overrun - 8);
-    ({ text: transcript, count } = buildTranscriptForThreads(threads, dateLabel, tz, threadOffset, {
+    ({ text: transcript, count } = buildTranscriptForThreads(threads, window, threadOffset, {
       maxTotalChars: transcriptBudget
     }));
-    header = instructionHeader(dateLabel, { batchIndex, totalBatches, threadCount: count });
+    header = instructionHeader(dateLabel, {
+      batchIndex,
+      totalBatches,
+      threadCount: count,
+      rolling
+    });
     prompt = `${header}${transcript}`;
   }
 
@@ -332,7 +435,7 @@ function buildBatchPrompt(threads, dateLabel, tz, { batchIndex, totalBatches, th
 }
 
 function buildSummaryPrompt(threads, dateLabel, tz = DEFAULT_TZ) {
-  return buildBatchPrompt(threads, dateLabel, tz, {
+  return buildBatchPrompt(threads, createCalendarWindow(dateLabel, tz), {
     batchIndex: 0,
     totalBatches: 1,
     threadOffset: 0
@@ -405,9 +508,8 @@ function mergeSections(a, b) {
 
 const SECTION_LABELS = [
   ["urgent", "Urgent"],
-  ["topics", "Topics"],
   ["leads", "Leads"],
-  ["payments", "Payments"],
+  ["payments", "Payments to verify"],
   ["followUps", "Follow-ups"],
   ["awaitingReply", "Awaiting reply"]
 ];
@@ -433,7 +535,7 @@ function sortByLastActivity(threads) {
 }
 
 function countMessagesOnDate(threads, date, tz) {
-  return threads.reduce((n, conv) => n + messagesOnDate(conv.messages, date, tz).length, 0);
+  return countMessagesInWindow(threads, createCalendarWindow(date, tz));
 }
 
 function pendingRangeForSummary(summaryDate) {
@@ -487,7 +589,7 @@ function pendingTranscriptCharBudget(summaryDate, rangeStart, rangeEnd, { batchI
 
 function formatThreadForPendingPrompt(
   conv,
-  { index, rangeStart, rangeEnd, tz = DEFAULT_TZ, maxBlockChars } = {}
+  { index, rangeStart, rangeEnd, summaryDate, tz = DEFAULT_TZ, maxBlockChars } = {}
 ) {
   let windowMessages = messagesForPendingWindow(conv.messages, rangeStart, rangeEnd, tz);
   if (!windowMessages.length) return null;
@@ -498,16 +600,18 @@ function formatThreadForPendingPrompt(
 
   const name = conv.displayName || "?";
   const src = shortenSource(conv.source);
+  const daysAgo = daysAgoForPendingThread(windowMessages, summaryDate || rangeEnd, tz);
+  const ageLabel = daysAgo != null ? ` · ${daysAgo}d ago` : "";
   const lines = windowMessages.map((m) => {
     const prefix = m.role === "assistant" ? "A" : "U";
     return `${prefix}: ${truncateForPrompt(m.content)}`;
   });
 
-  let block = `[${index + 1}] ${src} / ${name}\n${lines.join("\n")}`;
+  let block = `[${index + 1}] ${src} / ${name}${ageLabel}\n${lines.join("\n")}`;
   if (maxBlockChars && block.length > maxBlockChars) {
     while (lines.length > 2 && block.length > maxBlockChars) {
       lines.shift();
-      block = `[${index + 1}] ${src} / ${name}\n${lines.join("\n")}`;
+      block = `[${index + 1}] ${src} / ${name}${ageLabel}\n${lines.join("\n")}`;
     }
     if (block.length > maxBlockChars) {
       block = `${block.slice(0, Math.max(0, maxBlockChars - 16))}\n…(truncated)`;
@@ -517,11 +621,58 @@ function formatThreadForPendingPrompt(
   return block;
 }
 
-function blockLengthForPendingThread(conv, rangeStart, rangeEnd, tz, maxBlockChars) {
+function calendarDaysBetween(earlierDateStr, laterDateStr) {
+  const a = new Date(`${earlierDateStr}T12:00:00`);
+  const b = new Date(`${laterDateStr}T12:00:00`);
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return null;
+  return Math.round((b.getTime() - a.getTime()) / 86400000);
+}
+
+/** Days from last customer message in the pending window to the summary date. */
+function daysAgoForPendingThread(windowMessages, summaryDate, tz = DEFAULT_TZ) {
+  if (!summaryDate || !windowMessages?.length) return null;
+  let lastUser = null;
+  for (const m of windowMessages) {
+    if (m.role !== "assistant") lastUser = m;
+  }
+  const ref = lastUser || windowMessages[windowMessages.length - 1];
+  const msgDate = calendarDateInTz(ref.createdAt, tz);
+  if (!msgDate) return null;
+  const days = calendarDaysBetween(msgDate, summaryDate);
+  return days == null ? null : Math.max(0, days);
+}
+
+/**
+ * Normalize age segment to "Nd ago". Drop ambiguous ranges like "1-4d open".
+ */
+function normalizeAwaitingReplyAge(text) {
+  const t = normalizeLine(text);
+  if (!t) return t;
+  const parts = t.split(/\s+[—–-]\s+/);
+  if (parts.length < 2) return t;
+
+  const out = [];
+  for (const part of parts) {
+    const p = part.trim();
+    // Ambiguous range — omit entirely
+    if (/^\d+\s*[–—-]\s*\d+\s*d(?:ays?)?(?:\s+open)?$/i.test(p)) continue;
+    // Exact age variants → "Nd ago"
+    const exact = p.match(/^(\d+)\s*d(?:ays?)?(?:\s+open|\s+ago)?$/i);
+    if (exact) {
+      out.push(`${Number(exact[1])}d ago`);
+      continue;
+    }
+    out.push(p);
+  }
+  return out.join(" — ");
+}
+
+function blockLengthForPendingThread(conv, rangeStart, rangeEnd, tz, maxBlockChars, summaryDate) {
   const block = formatThreadForPendingPrompt(conv, {
     index: 0,
     rangeStart,
     rangeEnd,
+    summaryDate,
     tz,
     maxBlockChars
   });
@@ -536,11 +687,11 @@ function splitThreadsIntoPendingBatches(threads, summaryDate, tz, maxCharsOverri
   let used = 0;
 
   for (const conv of threads) {
-    let blockLen = blockLengthForPendingThread(conv, rangeStart, rangeEnd, tz);
+    let blockLen = blockLengthForPendingThread(conv, rangeStart, rangeEnd, tz, undefined, summaryDate);
     if (!blockLen) continue;
 
     if (blockLen > maxChars) {
-      blockLen = blockLengthForPendingThread(conv, rangeStart, rangeEnd, tz, maxChars);
+      blockLen = blockLengthForPendingThread(conv, rangeStart, rangeEnd, tz, maxChars, summaryDate);
     }
 
     const separator = current.length ? 2 : 0;
@@ -588,10 +739,15 @@ ${batchLine}For each thread, score importance 1–10 (business/revenue/risk). In
 
 Do not repeat items that are routine today's follow-ups unless the human action was promised on a prior day and is still undone.
 
+Prefer older still-open items that still need a human decision — do not let them get buried by newer noise. The bot auto-replies to almost everything; flag threads where a human still owes a consequential action (quote, confirmation, complaint fix, partnership reply), not mere bot silence.
+
+The 1–10 score is for your ranking ONLY. NEVER print the score in the output. Each bullet has exactly three parts: name + channel, exact age, and the action owed.
+
 Output ONLY this section if ≥7.5 items exist. Omit entirely if none — no placeholders.
 
 Awaiting reply
-- "Name (channel) — Nd open — one-line action owed"
+- "Name (channel) — Nd ago — one-line action owed"
+- Use the exact "Nd ago" value from each thread header (e.g. "3d ago"). Never invent ranges like "1–4d" or "1-2d". Never write "open".
 
 Threads (${threadCount}):
 
@@ -601,7 +757,13 @@ Threads (${threadCount}):
 function buildPendingBatchPrompt(threads, summaryDate, rangeStart, rangeEnd, tz, { batchIndex, totalBatches, threadOffset }) {
   const blocks = threads
     .map((conv, i) =>
-      formatThreadForPendingPrompt(conv, { index: threadOffset + i, rangeStart, rangeEnd, tz })
+      formatThreadForPendingPrompt(conv, {
+        index: threadOffset + i,
+        rangeStart,
+        rangeEnd,
+        summaryDate,
+        tz
+      })
     )
     .filter(Boolean);
   const header = pendingInstructionHeader(summaryDate, rangeStart, rangeEnd, {
@@ -642,43 +804,80 @@ async function fetchThreadsForPendingSummary({ client, date, filteredSources, tz
   return { summaryDate, rangeStart, rangeEnd, threads };
 }
 
-async function fetchThreadsForSummary({ client, date, filteredSources, tz }) {
+async function fetchThreadsForSummary({ client, date, filteredSources, tz, windowMode = "calendar" }) {
   const summaryDate = date || todayDateInTz(tz);
-  const apiEnd = apiEndDateInclusive(summaryDate);
+  const window =
+    windowMode === "rolling24h"
+      ? createRollingWindow(RECENT_LOOKBACK_HOURS, Date.now(), tz)
+      : createCalendarWindow(summaryDate, tz);
+
+  const apiStart =
+    window.mode === "rolling"
+      ? calendarDateInTz(new Date(window.startMs).toISOString(), tz) || summaryDate
+      : summaryDate;
+  const apiEnd = apiEndDateInclusive(
+    window.mode === "rolling"
+      ? calendarDateInTz(new Date(window.endMs).toISOString(), tz) || summaryDate
+      : summaryDate
+  );
 
   const { data: fetched } = await client.fetchAllConversations({
-    startDate: summaryDate,
+    startDate: apiStart,
     endDate: apiEnd,
     filteredSources,
     maxPages: 20
   });
 
   const threads = sortByLastActivity(
-    (fetched || []).filter((conv) => messagesOnDate(conv.messages, summaryDate, tz).length > 0)
+    (fetched || []).filter((conv) => messagesInWindow(conv.messages, window).length > 0)
   );
 
-  return { summaryDate, threads };
+  return { summaryDate: window.date || summaryDate, threads, window };
 }
 
-async function summarizeBatch(client, threads, summaryDate, tz, batchOpts) {
-  const prompt = buildBatchPrompt(threads, summaryDate, tz, batchOpts);
-  const summaryText = await client.chat({
-    messages: [{ role: "user", content: prompt }],
-    temperature: 0
-  });
+async function summarizeBatch(client, threads, window, batchOpts) {
+  let summaryText;
+  try {
+    const prompt = buildBatchPrompt(threads, window, batchOpts);
+    summaryText = await client.chat({
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0
+    });
+  } catch (err) {
+    // Chatbase occasionally returns an empty body mid-run; skip this batch rather than abort.
+    if (/empty response/i.test(String(err?.message || ""))) {
+      return emptySections();
+    }
+    throw err;
+  }
   const sections = parseSummarySections(summaryText);
   sections.awaitingReply = [];
+  // Payments are built deterministically; Topics removed from the brief.
+  sections.payments = [];
+  sections.topics = [];
   return sections;
 }
 
 async function summarizePendingBatch(client, threads, summaryDate, rangeStart, rangeEnd, tz, batchOpts) {
-  const prompt = buildPendingBatchPrompt(threads, summaryDate, rangeStart, rangeEnd, tz, batchOpts);
-  const summaryText = await client.chat({
-    messages: [{ role: "user", content: prompt }],
-    temperature: 0
-  });
+  let summaryText;
+  try {
+    const prompt = buildPendingBatchPrompt(threads, summaryDate, rangeStart, rangeEnd, tz, batchOpts);
+    summaryText = await client.chat({
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0
+    });
+  } catch (err) {
+    if (/empty response/i.test(String(err?.message || ""))) {
+      return emptySections();
+    }
+    throw err;
+  }
   const parsed = parseSummarySections(summaryText);
-  return { ...emptySections(), awaitingReply: parsed.awaitingReply || [] };
+  const awaitingReply = (parsed.awaitingReply || [])
+    .map(stripLeakedImportanceScore)
+    .map(normalizeAwaitingReplyAge)
+    .filter((item) => item && !isPlaceholderSummaryBullet(item));
+  return { ...emptySections(), awaitingReply };
 }
 
 async function generateDailyInboxSummary({
@@ -686,19 +885,21 @@ async function generateDailyInboxSummary({
   date,
   filteredSources = "",
   batch = 0,
-  tz = DEFAULT_TZ
+  tz = DEFAULT_TZ,
+  windowMode = "calendar"
 } = {}) {
   const batchIndex = Number.isFinite(Number(batch)) ? Math.max(0, Math.floor(Number(batch))) : 0;
-  const { summaryDate, threads } = await fetchThreadsForSummary({
+  const { summaryDate, threads, window } = await fetchThreadsForSummary({
     client,
     date,
     filteredSources,
-    tz
+    tz,
+    windowMode
   });
 
   const threadCount = threads.length;
-  const messageCount = countMessagesOnDate(threads, summaryDate, tz);
-  const batches = splitThreadsIntoBatches(threads, summaryDate, tz);
+  const messageCount = countMessagesInWindow(threads, window);
+  const batches = splitThreadsIntoBatches(threads, window);
   const totalBatches = batches.length;
 
   if (!threadCount) {
@@ -712,6 +913,7 @@ async function generateDailyInboxSummary({
       meta: {
         phase: "day",
         date: summaryDate,
+        windowMode: window.mode === "rolling" ? "rolling24h" : "calendar",
         threadCount: 0,
         threadsInBatch: 0,
         totalBatches: 0,
@@ -732,7 +934,7 @@ async function generateDailyInboxSummary({
   }
 
   const batchThreads = batches[batchIndex];
-  const sections = await summarizeBatch(client, batchThreads, summaryDate, tz, {
+  const sections = await summarizeBatch(client, batchThreads, window, {
     batchIndex,
     totalBatches,
     threadOffset
@@ -744,6 +946,7 @@ async function generateDailyInboxSummary({
     meta: {
       phase: "day",
       date: summaryDate,
+      windowMode: window.mode === "rolling" ? "rolling24h" : "calendar",
       threadCount,
       threadsInBatch: batchThreads.length,
       totalBatches,
@@ -842,7 +1045,8 @@ async function generateInboxSummary({
   filteredSources = "",
   batch = 0,
   pendingBatch,
-  tz = DEFAULT_TZ
+  tz = DEFAULT_TZ,
+  windowMode = "calendar"
 } = {}) {
   if (!client) throw new Error("Missing Chatbase client");
 
@@ -850,18 +1054,23 @@ async function generateInboxSummary({
     return generatePendingInboxSummary({ client, date, filteredSources, pendingBatch, tz });
   }
 
-  return generateDailyInboxSummary({ client, date, filteredSources, batch, tz });
+  return generateDailyInboxSummary({ client, date, filteredSources, batch, tz, windowMode });
 }
 
 module.exports = {
   DEFAULT_TZ,
   CHATBASE_MAX_CHARS,
   MAX_TRANSCRIPT_CHARS,
+  PENDING_LOOKBACK_DAYS,
+  RECENT_LOOKBACK_HOURS,
   todayDateInTz,
   calendarDateInTz,
   isActivityOnDate,
   apiEndDateInclusive,
   messagesOnDate,
+  messagesInWindow,
+  createCalendarWindow,
+  createRollingWindow,
   formatThreadForPrompt,
   dayTranscriptCharBudget,
   splitThreadsIntoBatches,
@@ -870,11 +1079,15 @@ module.exports = {
   buildSummaryPrompt,
   emptySections,
   isPlaceholderSummaryBullet,
+  stripLeakedImportanceScore,
+  normalizeAwaitingReplyAge,
   parseSummarySections,
   mergeSections,
   sectionsToText,
+  SECTION_LABELS,
   sortByLastActivity,
   countMessagesOnDate,
+  countMessagesInWindow,
   addDaysToDateStr,
   pendingRangeForSummary,
   messagesInDateRange,
@@ -884,5 +1097,7 @@ module.exports = {
   splitThreadsIntoPendingBatches,
   buildPendingBatchPrompt,
   buildPendingSummaryPrompt,
-  generateInboxSummary
+  generateInboxSummary,
+  generateDailyInboxSummary,
+  generatePendingInboxSummary
 };

@@ -145,15 +145,14 @@ function normalizeQuoteReference(raw) {
   return null;
 }
 
-function buildMessageForUser({ created, quoteReference, profileStatus }) {
-  const ref = quoteReference || "your quote";
+function buildMessageForUser({ created, profileStatus }) {
   if (created) {
     if (profileStatus === "draft") {
-      return `Thanks! Your quote reference is ${ref}. We've noted what you've shared so far—share more details anytime and we'll update the same quote.`;
+      return `Thanks! We've noted what you've shared so far—share more details anytime and we'll update your quote.`;
     }
-    return `Thanks! Your quote reference is ${ref}. Our team will follow up soon—keep this code if you change any details.`;
+    return `Thanks! Our team will follow up soon.`;
   }
-  return `Thanks! We've updated quote ${ref} with your latest details. Our team will follow up soon.`;
+  return `Thanks! We've updated your quote with the latest details. Our team will follow up soon.`;
 }
 
 function normalizePipelineStatus(raw) {
@@ -787,6 +786,28 @@ async function patchLeadConversationLink(leadId, conversationId, via = "quoteRef
   return { ok: true };
 }
 
+async function patchLeadDiscordMessage(leadId, messageId) {
+  const id = String(leadId || "").trim();
+  const discordMessageId = String(messageId || "").trim();
+  if (!id || !discordMessageId) {
+    return { ok: false, message: "leadId and messageId required" };
+  }
+  const db = getDb();
+  const ref = db.collection(COLLECTION).doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) {
+    return { ok: false, status: 404, message: "Lead not found" };
+  }
+  await ref.set(
+    {
+      discordMessageId,
+      discordMessageAt: new Date().toISOString()
+    },
+    { merge: true }
+  );
+  return { ok: true };
+}
+
 async function listServiceLeads({ startDate, endDate, service, eventType, page = 1, size = 20 }) {
   const db = getDb();
   const startBound = parseDateBound(startDate, false);
@@ -795,6 +816,8 @@ async function listServiceLeads({ startDate, endDate, service, eventType, page =
   const snap = await db.collection(COLLECTION).orderBy("updatedAt", "desc").limit(500).get();
 
   let rows = snap.docs.map((doc) => serializeLeadRow(doc.id, doc.data()));
+
+  rows = rows.filter((row) => !row.archived);
 
   if (service) {
     rows = rows.filter((row) => row.service === service);
@@ -899,6 +922,7 @@ module.exports = {
   deleteServiceLeads,
   listServiceLeads,
   patchLeadConversationLink,
+  patchLeadDiscordMessage,
   resolveLeadConversation,
   getLeadAnchorDate,
   getServiceLabel,

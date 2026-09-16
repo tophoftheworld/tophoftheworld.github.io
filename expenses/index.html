@@ -28,14 +28,22 @@
                     console.error('Error closing merge modal:', e);
                 }
             };
-            // Also make it available globally immediately
-            if (typeof window !== 'undefined') {
-                window.closeMergeSupplierModal = window.closeMergeSupplierModal;
+            // Stub until module loads (module overwrites with real implementation)
+            if (typeof window.showAddExpenseModal !== 'function') {
+                window.showAddExpenseModal = function() {
+                    console.warn('Expense app still loading…');
+                };
+            }
+            if (typeof window.closeExpenseModal !== 'function') {
+                window.closeExpenseModal = function() {
+                    const modal = document.getElementById('expenseModalOverlay');
+                    if (modal) modal.classList.remove('show');
+                };
             }
         })();
     </script>
-    <link rel="stylesheet" href="css/style.css?v=1.5.51">
-    <script type="module" src="js/script.js?v=1.5.62"></script>
+    <link rel="stylesheet" href="css/style.css?v=1.5.89">
+    <script type="module" src="js/script.js?v=1.5.89"></script>
 </head>
 
 <body>
@@ -49,13 +57,19 @@
             </div>
             <div class="branch-picker">
                 <select class="branch-select" id="dashboardBranchSelect">
-                    <option value="SM North">SM North</option>
-                    <option value="Podium">Podium</option>
-                    <option value="Mall of Asia">Mall of Asia</option>
-                    <option value="General">General</option>
-                    <option value="Workshop">Workshop</option>
-                    <option value="Popup">Popup</option>
-                    <option value="Bar Service">Bar Service</option>
+                    <optgroup label="Stores">
+                        <option value="SM North">SM North</option>
+                        <option value="Podium">Podium</option>
+                        <option value="Mall of Asia">Mall of Asia</option>
+                    </optgroup>
+                    <optgroup label="Other">
+                        <option value="General">General</option>
+                        <option value="Workshop">Workshop</option>
+                        <option value="Bar Service">Bar Service</option>
+                    </optgroup>
+                    <optgroup label="Pop-ups" id="dashboardPopupEventsGroup">
+                        <option value="Popup">All pop-ups</option>
+                    </optgroup>
                 </select>
             </div>
         </div>
@@ -108,16 +122,6 @@
             <div class="modal-header">
                 <h1 class="modal-title">Add Expense</h1>
                 <div class="modal-header-actions">
-                    <button class="modal-import-btn" onclick="document.getElementById('csvImportInput').click()"
-                        title="Import multiple expenses from CSV">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2">
-                            <rect x="3" y="3" width="7" height="7"></rect>
-                            <rect x="14" y="3" width="7" height="7"></rect>
-                            <rect x="14" y="14" width="7" height="7"></rect>
-                            <rect x="3" y="14" width="7" height="7"></rect>
-                        </svg>
-                    </button>
                     <button class="modal-close-btn" onclick="closeExpenseModal()">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2">
@@ -126,110 +130,37 @@
                         </svg>
                     </button>
                 </div>
-                <input type="file" id="csvImportInput" accept=".csv" style="display: none;"
-                    onchange="handleCSVImport(this)">
             </div>
 
             <div class="modal-content">
-                <form id="expenseForm">
-                    <!-- Basic Info -->
-                    <div class="form-section minimal mobile-card-section" id="supplierNameSection">
-                        <div class="form-group">
-                            <label for="supplierName">Supplier Name</label>
-                            <input type="text" id="supplierName" required placeholder="Enter supplier name">
-                            <div class="autocomplete-dropdown hidden" id="supplierDropdown"></div>
-                        </div>
-                    </div>
-
-                    <!-- Basic Information Section -->
-                    <div class="form-section minimal mobile-card-section" id="basicInfoSection">
-                        <h3 class="section-title">Basic Information</h3>
-                        <div class="form-group">
-                            <label for="expenseDate">Date</label>
-                            <input type="hidden" id="expenseDateValue" required>
-                            <input type="text" id="expenseDate" class="form-date-picker-input" readonly
-                                placeholder="Select date" autocomplete="off">
-                        </div>
-                        <div class="form-group">
-                            <label for="allocationSelect">Allocation</label>
-                            <select id="allocationSelect" required onchange="handleAllocationChange()">
-                                <option value="Store" selected>Store</option>
-                                <option value="General">General</option>
-                                <option value="Workshop">Workshop</option>
-                                <option value="Popup">Popup</option>
-                                <option value="Bar Service">Bar Service</option>
-                            </select>
-                        </div>
-                        <div class="form-group" id="branchFieldGroup" style="display: block;">
-                            <label for="formBranchSelect">Branch</label>
-                            <select id="formBranchSelect">
-                                <option value="">-</option>
-                                <option value="SM North" selected>SM North</option>
-                                <option value="Podium">Podium</option>
-                                <option value="Mall of Asia">Mall of Asia</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="expenseCategory">Expense Category</label>
-                            <select id="expenseCategory" required></select>
-                        </div>
-                        <!-- Paid By Section (only for Store allocation) -->
-                        <div class="form-group" id="paidBySection" style="display: none;">
-                            <label for="paidBy">Paid By</label>
-                            <select id="paidBy" required>
-                                <option value="Store Cash">Store Cash</option>
-                                <option value="Company">Company</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="invoiceNumber">Invoice Number <span class="optional">(optional)</span></label>
-                            <input type="text" id="invoiceNumber" placeholder="Enter invoice/reference number">
-                        </div>
-                        <div class="form-group petty-cash-row">
-                            <label class="petty-cash-label" for="isPettyCash">
-                                <input type="checkbox" id="isPettyCash" onchange="handlePettyCashChange()">
-                                <span>Petty cash</span>
-                            </label>
-                        </div>
-                    </div>
-
-                    <!-- Items Section -->
-                    <div class="form-section minimal">
-                        <h3 class="section-title">Items Purchased</h3>
-                        <div id="itemsContainer">
-                            <!-- Items will be added here -->
-                        </div>
-                        <div class="add-item-placeholder" onclick="addItemRow()">
-                            <span style="color: #8ba3b5; font-size: 14px;">+ Add another item</span>
-                        </div>
-                        <div class="total-amount">
-                            <div class="label">Total Amount</div>
-                            <input type="text" id="totalAmountInput" inputmode="decimal"
-                                placeholder="₱0.00" onchange="handleTotalChange()" onblur="formatTotal()" onfocus="this.select()"
-                                style="font-size: 24px; font-weight: 600; color: #333; background: none; border: none; text-align: center; width: 100%; padding: 4px;">
-                        </div>
-                    </div>
-
-                    <!-- Receipt Photo Section -->
-                    <div class="form-section minimal">
-                        <div class="form-group">
-                            <h3 class="section-title">Receipt Photo <span style="color: #dc3545;">*</span></h3>
-                            <div class="receipt-upload" onclick="document.getElementById('receiptInput').click()">
-                                <input type="file" id="receiptInput" accept="image/*"
+                <form id="expenseForm" class="expense-form receipt-empty">
+                    <!-- Receipt hero / viewer -->
+                    <div class="form-section minimal receipt-photo-section" id="receiptPhotoSection">
+                        <div class="form-group receipt-photo-group">
+                            <h3 class="section-title receipt-section-title" id="receiptSectionTitle">Receipt Photo <span class="req-star">*</span></h3>
+                            <div class="receipt-upload" id="receiptUploadArea" role="button" tabindex="0" aria-label="Add receipt photo">
+                                <input type="file" id="receiptInput" accept="image/*,.heic,.heif,image/heic,image/heif"
                                     style="display: none;" onchange="handleReceiptUpload(this)">
-                                <div class="receipt-upload-content">
-                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="2">
+                                <div class="receipt-upload-content" id="receiptUploadContent">
+                                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="1.5" aria-hidden="true">
                                         <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
                                         <circle cx="8.5" cy="8.5" r="1.5"></circle>
                                         <polyline points="21,15 16,10 5,21"></polyline>
                                     </svg>
-                                    <div id="receiptUploadText">Tap to add receipt photo</div>
+                                    <div id="receiptUploadText">Tap to add photo</div>
+                                    <p class="receipt-upload-hint">Photo of the receipt</p>
                                 </div>
-                                <img id="receiptPreview" class="receipt-preview" style="display: none;"
-                                    alt="Receipt preview">
+                                <div class="receipt-viewport" id="receiptViewport" hidden>
+                                    <img id="receiptPreview" class="receipt-preview" alt="Receipt preview" draggable="false">
+                                </div>
+                                <div class="receipt-extract-overlay" id="receiptExtractOverlay" hidden>
+                                    <div class="receipt-ai-shimmer" aria-hidden="true"></div>
+                                    <div class="receipt-extract-spinner" aria-hidden="true"></div>
+                                    <p class="receipt-extract-label">Reading receipt…</p>
+                                </div>
                                 <button type="button" class="remove-receipt-btn" id="removeReceiptBtn"
-                                    style="display: none;" onclick="removeReceipt(event)">
+                                    style="display: none;" onclick="removeReceipt(event)" aria-label="Remove receipt">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                         stroke-width="2">
                                         <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -237,68 +168,206 @@
                                     </svg>
                                 </button>
                             </div>
+                            <p id="receiptAiStatus" class="receipt-ai-status" style="display: none;" hidden></p>
                         </div>
-
                     </div>
 
-                    <!-- VAT Information Section (initially hidden) -->
-                    <div class="form-section minimal" id="vatSection" style="display: none;">
-                        <h3 class="section-title">
-                            VAT
-                            <div class="toggle-switch" onclick="toggleVatComputation()">
-                                <input type="checkbox" id="vatComputationEnabled" style="display: none;" checked>
-                                <div class="toggle-track" id="vatToggleTrack">
-                                    <div class="toggle-thumb">
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"
-                                            class="toggle-icon">
-                                            <polyline points="20,6 9,17 4,12"></polyline>
-                                        </svg>
+                    <div id="expenseFormFields" class="expense-form-fields" hidden>
+                        <div class="form-section minimal" id="confirmDetailsSection">
+                            <h3 class="section-title">Basics</h3>
+                            <div class="form-group">
+                                <label for="allocationSelect">Allocation</label>
+                                <select id="allocationSelect" required onchange="handleAllocationChange()">
+                                    <option value="Store" selected>Store</option>
+                                    <option value="General">General</option>
+                                    <option value="Workshop">Workshop</option>
+                                    <option value="Popup">Popup</option>
+                                    <option value="Bar Service">Bar Service</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="branchFieldGroup" style="display: block;">
+                                <label for="formBranchSelect">Branch</label>
+                                <select id="formBranchSelect">
+                                    <option value="">-</option>
+                                    <option value="SM North" selected>SM North</option>
+                                    <option value="Podium">Podium</option>
+                                    <option value="Mall of Asia">Mall of Asia</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="eventNameFieldGroup" style="display: none;">
+                                <label for="eventNameSelect" id="eventNameLabel">Event</label>
+                                <select id="eventNameSelect" style="display: none;">
+                                    <option value="">Select event…</option>
+                                </select>
+                                <input type="text" id="eventName" placeholder="Event name" autocomplete="off" style="display: none;">
+                            </div>
+                            <div class="form-group">
+                                <label for="expenseDate">Date</label>
+                                <input type="hidden" id="expenseDateValue" required>
+                                <input type="text" id="expenseDate" class="form-date-picker-input" readonly
+                                    placeholder="Select date" autocomplete="off">
+                            </div>
+                            <div class="form-group">
+                                <label for="expenseCategory">Expense Category</label>
+                                <select id="expenseCategory" required></select>
+                                <p class="form-field-hint">Logistics: Lalamove, courier, or separate delivery fee — not goods on the receipt.</p>
+                            </div>
+                            <div class="form-group" id="paidBySection" style="display: none;">
+                                <label for="paidBy">Paid By</label>
+                                <select id="paidBy" required>
+                                    <option value="Store Cash">Store Cash</option>
+                                    <option value="Company">Company</option>
+                                </select>
+                            </div>
+                            <div class="form-group petty-cash-row">
+                                <label class="petty-cash-label" for="isPettyCash">
+                                    <input type="checkbox" id="isPettyCash" onchange="handlePettyCashChange()">
+                                    <span>Petty cash</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Supplier -->
+                        <div class="form-section minimal" id="supplierNameSection">
+                            <h3 class="section-title">Supplier</h3>
+                            <div id="mobileSupplierVerifiedWrap" class="mobile-supplier-verified" hidden>
+                                <div class="mobile-supplier-card">
+                                    <div class="mobile-supplier-card-header">
+                                        <div class="mobile-supplier-name-row">
+                                            <strong id="mobileSupplierVerifiedName"></strong>
+                                            <svg class="mobile-supplier-saved-check" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+                                                <circle cx="12" cy="12" r="11" fill="#2b9348"></circle>
+                                                <path d="M7 12l3 3 7-7" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
+                                            </svg>
+                                        </div>
+                                        <button type="button" class="mobile-supplier-clear-btn" id="mobileSupplierClearBtn" aria-label="Change supplier">&times;</button>
+                                    </div>
+                                    <div class="mobile-supplier-business" id="mobileSupplierVerifiedBiz"></div>
+                                    <dl class="mobile-supplier-details">
+                                        <div class="mobile-supplier-detail-row" id="mobileSupplierVerifiedTinRow" hidden>
+                                            <dt>TIN</dt>
+                                            <dd id="mobileSupplierVerifiedTin"></dd>
+                                        </div>
+                                        <div class="mobile-supplier-detail-row" id="mobileSupplierVerifiedAddrRow" hidden>
+                                            <dt>Address</dt>
+                                            <dd id="mobileSupplierVerifiedAddr"></dd>
+                                        </div>
+                                    </dl>
+                                </div>
+                                <input type="hidden" id="supplierNameHidden" value="">
+                            </div>
+                            <div id="mobileSupplierManualWrap">
+                                <div class="form-group">
+                                    <label for="supplierName">Supplier Name</label>
+                                    <input type="text" id="supplierName" required placeholder="Enter supplier name">
+                                    <div class="autocomplete-dropdown hidden" id="supplierDropdown"></div>
+                                </div>
+                                <div id="mobileSupplierExtraFields">
+                                    <div class="form-group">
+                                        <label for="businessName">Business Name <span class="optional">(optional)</span></label>
+                                        <input type="text" id="businessName" placeholder="Business / registered name">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="tin">TIN <span class="optional">(optional)</span></label>
+                                        <input type="text" id="tin" placeholder="xxx-xxx-xxx-xxx">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="address">Address <span class="optional">(optional)</span></label>
+                                        <textarea id="address" rows="2" placeholder="Supplier address"></textarea>
+                                    </div>
+                                    <div class="form-group petty-cash-row">
+                                        <label class="petty-cash-label" for="newSupplierVatRegistered">
+                                            <input type="checkbox" id="newSupplierVatRegistered">
+                                            <span>VAT-registered supplier</span>
+                                        </label>
                                     </div>
                                 </div>
                             </div>
-                        </h3>
-                        <div id="vatDetailsSection">
+                        </div>
+
+                        <div class="form-section minimal" id="invoiceSection">
                             <div class="form-group">
-                                <label for="vatExemptAmount">VAT Exempt Amount <span class="optional">(if any)</span></label>
-                                <input type="number" id="vatExemptAmount" inputmode="decimal" min="0" step="0.01" placeholder="0.00"
-                                    onchange="updateVatCalculation()" oninput="updateVatCalculation()">
+                                <label for="invoiceNumber">Invoice Number <span class="optional">(optional)</span></label>
+                                <input type="text" id="invoiceNumber" placeholder="Enter invoice/reference number">
                             </div>
-                            <div id="vatBreakdown" class="vat-breakdown" style="display: none;">
-                                <div class="vat-row">
-                                    <span>Total Amount:</span>
-                                    <span id="totalAmountVat">₱0.00</span>
+                        </div>
+
+                        <!-- Items Section -->
+                        <div class="form-section minimal" id="itemsSection">
+                            <h3 class="section-title">Items Purchased</h3>
+                            <div id="itemsContainer">
+                                <!-- Items will be added here -->
+                            </div>
+                            <div class="add-item-placeholder" onclick="addItemRow()">
+                                <span style="color: #8ba3b5; font-size: 14px;">+ Add another item</span>
+                            </div>
+                            <div class="total-amount">
+                                <div class="label">Total Amount</div>
+                                <input type="text" id="totalAmountInput" inputmode="decimal"
+                                    placeholder="₱0.00" onchange="handleTotalChange()" onblur="formatTotal()" onfocus="this.select()"
+                                    style="font-size: 24px; font-weight: 600; color: #333; background: none; border: none; text-align: center; width: 100%; padding: 4px;">
+                            </div>
+                        </div>
+
+                        <!-- VAT Information Section (initially hidden) -->
+                        <div class="form-section minimal" id="vatSection" style="display: none;">
+                            <h3 class="section-title">
+                                VAT
+                                <div class="toggle-switch" onclick="toggleVatComputation()">
+                                    <input type="checkbox" id="vatComputationEnabled" style="display: none;" checked>
+                                    <div class="toggle-track" id="vatToggleTrack">
+                                        <div class="toggle-thumb">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"
+                                                class="toggle-icon">
+                                                <polyline points="20,6 9,17 4,12"></polyline>
+                                            </svg>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div class="vat-row">
-                                    <span>Less: VAT Exempt:</span>
-                                    <span id="vatExemptAmountDisplay">₱0.00</span>
+                            </h3>
+                            <div id="vatDetailsSection">
+                                <div class="form-group">
+                                    <label for="vatExemptAmount">Not subject to VAT <span class="optional">(if any)</span></label>
+                                    <p class="form-field-hint">Service charge, local tax, and other amounts added after VAT — even if the receipt’s “VAT Exempt Sales” is 0.</p>
+                                    <input type="number" id="vatExemptAmount" inputmode="decimal" min="0" step="0.01" placeholder="0.00"
+                                        onchange="updateVatCalculation()" oninput="updateVatCalculation()">
                                 </div>
-                                <div class="vat-row">
-                                    <span>Taxable Amount:</span>
-                                    <span id="taxableAmountDisplay">₱0.00</span>
-                                </div>
-                                <div class="vat-row">
-                                    <span>Vatable Sale:</span>
-                                    <span id="vatableSaleAmount">₱0.00</span>
-                                </div>
-                                <div class="vat-row total">
-                                    <span>VAT (12%):</span>
-                                    <span id="vatAmountDisplay">₱0.00</span>
+                                <div id="vatBreakdown" class="vat-breakdown" style="display: none;">
+                                    <div class="vat-row">
+                                        <span>Total Amount:</span>
+                                        <span id="totalAmountVat">₱0.00</span>
+                                    </div>
+                                    <div class="vat-row">
+                                        <span>Less: not subject to VAT:</span>
+                                        <span id="vatExemptAmountDisplay">₱0.00</span>
+                                    </div>
+                                    <div class="vat-row">
+                                        <span>Taxable Amount:</span>
+                                        <span id="taxableAmountDisplay">₱0.00</span>
+                                    </div>
+                                    <div class="vat-row">
+                                        <span>Vatable Sale:</span>
+                                        <span id="vatableSaleAmount">₱0.00</span>
+                                    </div>
+                                    <div class="vat-row total">
+                                        <span>VAT (12%):</span>
+                                        <span id="vatAmountDisplay">₱0.00</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
 
-                    <!-- Notes Section -->
-                    <div class="form-section minimal">
-                        <div class="form-group">
-                            <label for="notes">Notes <span class="optional">(optional)</span></label>
-                            <textarea id="notes" rows="2" placeholder="Additional notes..."></textarea>
+                        <!-- Notes Section -->
+                        <div class="form-section minimal" id="notesSection">
+                            <div class="form-group">
+                                <label for="notes">Notes <span class="optional">(optional)</span></label>
+                                <textarea id="notes" rows="2" placeholder="Additional notes..."></textarea>
+                            </div>
                         </div>
-                    </div>
 
-
-                    <div style="padding: 20px;">
-                        <button type="submit" class="save-btn">Save Expense</button>
+                        <div class="expense-form-actions">
+                            <button type="submit" class="save-btn">Save Expense</button>
+                        </div>
                     </div>
                 </form>
             </div>

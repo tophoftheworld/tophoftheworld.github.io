@@ -14,7 +14,7 @@ const REPO_ROOT = path.resolve(__dirname, "..");
 const HUB_ROOT = __dirname;
 const SHOPIFY_ROOT = path.join(REPO_ROOT, "shopify-orders");
 const LEADS_ROOT = path.join(REPO_ROOT, "chatbase-leads-dashboard", "public");
-// Default local port matches start-server.bat (admin portal + inbox on one host).
+// Default local port matches start-server.bat (staff portal at /, admin still at /admin.html).
 const PORT = Number(process.env.PORT) || 8080;
 
 const require = createRequire(import.meta.url);
@@ -221,6 +221,9 @@ const server = http.createServer(async (req, res) => {
   if (pathname === "/workshops" || pathname === "/workshops/") {
     return redirect(res, `/workshops/workshops.html${u.search || ""}`);
   }
+  if (pathname === "/workshops/index.html") {
+    return redirect(res, `/shopify/index.html${u.search || ""}`);
+  }
 
   if (pathname.startsWith("/workshops/")) {
     const filePath = safeJoin(SHOPIFY_ROOT, pathname.slice("/workshops/".length));
@@ -258,10 +261,6 @@ const server = http.createServer(async (req, res) => {
     return sendStatic(res, filePath);
   }
 
-  if (pathname === "/" || pathname === "/index.html") {
-    return redirect(res, "/admin.html");
-  }
-
   const rootRel = pathname.replace(/^\//, "") || "index.html";
   const rootFile = safeJoin(REPO_ROOT, rootRel);
   if (rootFile) {
@@ -284,6 +283,7 @@ server.on("error", (err) => {
 
 server.listen(PORT, () => {
   console.log(`Matchanese local server: http://127.0.0.1:${PORT}/`);
+  console.log(`  Staff portal: http://127.0.0.1:${PORT}/`);
   console.log(`  Admin portal: http://127.0.0.1:${PORT}/admin.html`);
   console.log(`  Leads inbox: http://127.0.0.1:${PORT}/leads/`);
   if (firebaseProjectId) {

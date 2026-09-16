@@ -69,6 +69,41 @@ body.leads-app .split-panel {
   margin-bottom: 0.35rem;
 }
 
+.detail-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.detail-header-row .conversation-heading {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.inbox-summary-email-btn {
+  flex-shrink: 0;
+  border: 1px solid var(--border, #d4d4d8);
+  background: #fff;
+  color: var(--text, #18181b);
+  border-radius: 8px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.inbox-summary-email-btn:hover:not(:disabled) {
+  background: #f4f4f5;
+}
+
+.inbox-summary-email-btn:disabled,
+.inbox-summary-email-btn.is-loading {
+  opacity: 0.65;
+  cursor: wait;
+}
+
 .subtle {
   color: var(--muted);
   font-size: 0.9rem;

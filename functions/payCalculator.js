@@ -26,9 +26,10 @@ class PayCalculator {
         // Configuration constants
         this.DAILY_MEAL_ALLOWANCE = 150;
         this.LATE_THRESHOLD_MINUTES = 30;
-        this.UNDERTIME_THRESHOLD_MINUTES = 30;
+        this.UNDERTIME_THRESHOLD_MINUTES = 0;
         this.STANDARD_WORK_HOURS = 8;
         this.HALF_DAY_HOURS = 4;
+        // standard: daily base + ₱150 meal (₱75 half day). inclusive: all-in daily base, no meal.
 
         // Shift schedules for reference
         this.SHIFT_SCHEDULES = {
@@ -56,13 +57,23 @@ class PayCalculator {
     /**
      * Effective pay fields for one payroll period: rateHistory row or employee defaults.
      */
+    static normalizePayScheme(value) {
+        return value === 'inclusive' ? 'inclusive' : 'standard';
+    }
+
+    static includesMealAllowance(employee) {
+        return PayCalculator.normalizePayScheme(employee && employee.payScheme) !== 'inclusive';
+    }
+
     static getRateForPeriod(employee, periodId) {
         const e = employee || {};
         const fallback = {
             baseRate: Number(e.baseRate) || 0,
             payType: e.payType || 'hourly',
             monthlySalary: Number(e.monthlySalary) || 0,
-            periodGross: e.periodGross != null && e.periodGross !== '' ? Number(e.periodGross) : null
+            periodGross: e.periodGross != null && e.periodGross !== '' ? Number(e.periodGross) : null,
+            periodFixedAmount: Number(e.periodFixedAmount) || 0,
+            payScheme: PayCalculator.normalizePayScheme(e.payScheme)
         };
         if (!periodId || !Array.isArray(e.rateHistory)) {
             return fallback;
@@ -84,7 +95,12 @@ class PayCalculator {
             periodGross:
                 row.periodGross != null && row.periodGross !== ''
                     ? Number(row.periodGross)
-                    : fallback.periodGross
+                    : fallback.periodGross,
+            periodFixedAmount:
+                row.periodFixedAmount != null && row.periodFixedAmount !== ''
+                    ? Number(row.periodFixedAmount)
+                    : fallback.periodFixedAmount,
+            payScheme: PayCalculator.normalizePayScheme(row.payScheme || fallback.payScheme)
         };
     }
 
@@ -95,7 +111,9 @@ class PayCalculator {
             baseRate: r.baseRate,
             payType: r.payType,
             monthlySalary: r.monthlySalary,
-            periodGross: r.periodGross
+            periodGross: r.periodGross,
+            periodFixedAmount: r.periodFixedAmount,
+            payScheme: r.payScheme
         };
     }
 
@@ -148,8 +166,9 @@ class PayCalculator {
 
         let result;
 
-        // Check for fixed pay first (highest priority)
-        if (normalizedEntry.hasFixedPay && normalizedEntry.fixedPayAmount > 0) {
+        if (normalizedEntry.isPaidLeave) {
+            result = this._calculatePaidLeave(normalizedEntry, normalizedEmployee, breakdown);
+        } else if (normalizedEntry.hasFixedPay && normalizedEntry.fixedPayAmount > 0) {
             result = this._calculateFixedPay(normalizedEntry, normalizedEmployee, breakdown);
         } else {
             // Determine pay type and multiplier
@@ -233,6 +252,47 @@ class PayCalculator {
             };
         }
 
+        // Hybrid: daily attendance pay + fixed amount per cutoff
+        if (normalizedEmployee.payType === 'hybrid') {
+            const arr = Array.isArray(dateEntries) ? dateEntries : [];
+            const periodFixedAmount = Number(normalizedEmployee.periodFixedAmount) || 0;
+            const results = arr.map(entry => {
+                const dailyResult = this.calculateDailyPay(entry, employee, 'detailed');
+                return {
+                    date: entry.date,
+                    total: dailyResult.total,
+                    breakdown: dailyResult.breakdown
+                };
+            });
+            const dailyAttendanceTotal = results.reduce((sum, result) => sum + result.total, 0);
+            const total = dailyAttendanceTotal + periodFixedAmount;
+            if (outputMode === 'simple') {
+                return total;
+            }
+            const summaryBreakdown = {
+                totalDays: results.length,
+                workingDays: results.filter(r => r.total > 0).length,
+                totalBasePay: results.reduce((sum, r) => sum + (r.breakdown.adjustedBaseRate || 0), 0),
+                totalMealAllowance: results.reduce((sum, r) => sum + (r.breakdown.mealAllowance || 0), 0),
+                totalDeductions: results.reduce((sum, r) => {
+                    const deductions = r.breakdown.deductions || {};
+                    return sum + (deductions.late?.amount || 0) + (deductions.undertime?.amount || 0);
+                }, 0),
+                totalBonuses: results.reduce((sum, r) => {
+                    const bonuses = r.breakdown.bonuses || {};
+                    return sum + Object.values(bonuses).reduce((bonusSum, bonus) => bonusSum + (bonus || 0), 0);
+                }, 0),
+                payType: 'hybrid_daily_plus_fixed',
+                dailyAttendanceTotal,
+                periodFixedAmount
+            };
+            return {
+                total,
+                entries: results,
+                breakdown: summaryBreakdown
+            };
+        }
+
         if (!Array.isArray(dateEntries) || dateEntries.length === 0) {
             return outputMode === 'simple' ? 0 : { total: 0, entries: [], breakdown: {} };
         }
@@ -294,7 +354,8 @@ class PayCalculator {
             fixedPayAmount: entry.fixedPayAmount || entry.fixed_pay_amount || entry.fixedAmount || 0,
             hasDoublePay: entry.hasDoublePay || entry.has_double_pay || entry.doublePay || false,
             hasMealAllowance: entry.hasMealAllowance !== false, // Default to true unless explicitly false
-            transpoAllowance: entry.transpoAllowance || entry.transpo_allowance || entry.transportation || 0
+            transpoAllowance: entry.transpoAllowance || entry.transpo_allowance || entry.transportation || 0,
+            isPaidLeave: entry.isPaidLeave === true || entry.is_paid_leave === true || entry.paidLeave === true
         };
     }
 
@@ -311,7 +372,11 @@ class PayCalculator {
             salesBonusEligible: employee.salesBonusEligible || employee.sales_bonus_eligible || employee.salesBonus || false,
             payType: employee.payType || employee.pay_type || 'hourly',
             monthlySalary: employee.monthlySalary != null ? employee.monthlySalary : (employee.monthly_salary != null ? employee.monthly_salary : 0),
-            periodGross: employee.periodGross != null ? employee.periodGross : (employee.period_gross != null ? employee.period_gross : null)
+            periodGross: employee.periodGross != null ? employee.periodGross : (employee.period_gross != null ? employee.period_gross : null),
+            periodFixedAmount: employee.periodFixedAmount != null
+                ? employee.periodFixedAmount
+                : (employee.period_fixed_amount != null ? employee.period_fixed_amount : 0),
+            payScheme: PayCalculator.normalizePayScheme(employee.payScheme || employee.pay_scheme)
         };
     }
 
@@ -319,6 +384,16 @@ class PayCalculator {
      * Validate inputs and return validation result
      */
     _validateInputs(entry, employee) {
+        if (entry.isPaidLeave) {
+            if (!employee.baseRate || employee.baseRate <= 0) {
+                return {
+                    isValid: false,
+                    error: "Missing or invalid employee base rate"
+                };
+            }
+            return { isValid: true };
+        }
+
         // Check for missing time data
         if (!entry.timeIn || !entry.timeOut) {
             return {
@@ -358,6 +433,40 @@ class PayCalculator {
     }
 
     /**
+     * Meal allowance for a shift. Inclusive pay scheme never adds a separate meal.
+     * Custom shifts use actual hours (<= 5 → half); regular shifts use isHalfDay.
+     */
+    _mealAllowanceAmount(dateEntry, employee, { isHalfDay = false, actualHours = null } = {}) {
+        if (!PayCalculator.includesMealAllowance(employee)) return 0;
+        if (dateEntry.hasMealAllowance === false) return 0;
+        if (typeof actualHours === 'number') {
+            return actualHours <= 5 ? this.DAILY_MEAL_ALLOWANCE / 2 : this.DAILY_MEAL_ALLOWANCE;
+        }
+        return isHalfDay ? this.DAILY_MEAL_ALLOWANCE / 2 : this.DAILY_MEAL_ALLOWANCE;
+    }
+
+    /**
+     * Calculate pay for approved paid leave days (base rate only)
+     */
+    _calculatePaidLeave(dateEntry, employee, breakdown) {
+        const baseRate = employee.baseRate;
+        breakdown.payType = "Paid Leave";
+        breakdown.adjustedBaseRate = baseRate;
+        breakdown.mealAllowance = 0;
+
+        const total = baseRate;
+        breakdown.components.push({
+            type: 'paid_leave',
+            label: 'Paid Leave (base rate)',
+            amount: baseRate,
+            isPositive: true,
+            metadata: {}
+        });
+
+        return { total, breakdown };
+    }
+
+    /**
      * Calculate pay for fixed amount shifts
      */
     _calculateFixedPay(dateEntry, employee, breakdown) {
@@ -372,15 +481,15 @@ class PayCalculator {
             metadata: {}
         });
 
-        // Add meal allowance if enabled (default: true)
-        if (dateEntry.hasMealAllowance !== false) {
-            const isHalfDay = this._isHalfDayShift(dateEntry.shift);
-            const mealAllowance = isHalfDay ? this.DAILY_MEAL_ALLOWANCE / 2 : this.DAILY_MEAL_ALLOWANCE;
-
+        // Add meal allowance if enabled (default: true). Inclusive scheme never adds meal.
+        const mealAllowance = this._mealAllowanceAmount(dateEntry, employee, {
+            isHalfDay: this._isHalfDayShift(dateEntry.shift)
+        });
+        if (mealAllowance > 0) {
             breakdown.mealAllowance = mealAllowance;
             total += mealAllowance;
             breakdown.components.push({
-                label: `Meal Allowance${isHalfDay ? ' (Half Day)' : ''}`,
+                label: `Meal Allowance${this._isHalfDayShift(dateEntry.shift) ? ' (Half Day)' : ''}`,
                 amount: mealAllowance,
                 isPositive: true
             });
@@ -404,7 +513,7 @@ class PayCalculator {
 
         const hourlyRate = employee.baseRate / this.STANDARD_WORK_HOURS;
         
-        // Check if scheduled times are provided (for grace period and late policy)
+        // Scheduled times: late uses a 30-min grace; undertime has none
         const hasScheduledTimes = dateEntry.scheduledIn && dateEntry.scheduledOut;
         
         let workHours;
@@ -413,7 +522,7 @@ class PayCalculator {
 
         if (hasScheduledTimes) {
             // If scheduled times exist, calculate like regular shifts with deductions
-            // Calculate deductions (late/undertime) with grace period
+            // Calculate deductions (late 30-min grace; undertime none)
             const deductionHours = this.calculateDeductions(
                 dateEntry.timeIn,
                 dateEntry.timeOut,
@@ -486,8 +595,7 @@ class PayCalculator {
         }
 
         // Calculate meal allowance
-        const mealAllowance = (dateEntry.hasMealAllowance !== false) ?
-            (actualHours <= 5 ? this.DAILY_MEAL_ALLOWANCE / 2 : this.DAILY_MEAL_ALLOWANCE) : 0;
+        const mealAllowance = this._mealAllowanceAmount(dateEntry, employee, { actualHours });
 
         breakdown.mealAllowance = mealAllowance;
 
@@ -531,8 +639,7 @@ class PayCalculator {
         const dailyRate = isHalfDay ? employee.baseRate / 2 : employee.baseRate;
 
         // Calculate meal allowance
-        const mealAllowance = (dateEntry.hasMealAllowance !== false) ?
-            (isHalfDay ? this.DAILY_MEAL_ALLOWANCE / 2 : this.DAILY_MEAL_ALLOWANCE) : 0;
+        const mealAllowance = this._mealAllowanceAmount(dateEntry, employee, { isHalfDay });
 
         breakdown.mealAllowance = mealAllowance;
 
@@ -692,9 +799,14 @@ class PayCalculator {
             }
         }
 
-        // Undertime deduction
+        // Undertime deduction (overnight clock-outs wrap relative to clock-in)
         if (dateEntry.timeOut && dateEntry.scheduledOut) {
-            const undertimeMinutes = this.compareTimes(dateEntry.scheduledOut, dateEntry.timeOut);
+            const undertimeMinutes = this.getUndertimeMinutes(
+                dateEntry.timeIn,
+                dateEntry.timeOut,
+                dateEntry.scheduledIn,
+                dateEntry.scheduledOut
+            );
             if (undertimeMinutes > this.UNDERTIME_THRESHOLD_MINUTES) {
                 const undertimeHours = undertimeMinutes / 60;
                 deductions.undertime.hours = undertimeHours;
@@ -765,9 +877,9 @@ class PayCalculator {
             }
         }
 
-        // Undertime deduction
+        // Undertime deduction (overnight clock-outs wrap relative to clock-in)
         if (timeOut && scheduledOut) {
-            const undertimeMinutes = this.compareTimes(scheduledOut, timeOut);
+            const undertimeMinutes = this.getUndertimeMinutes(timeIn, timeOut, scheduledIn, scheduledOut);
             if (undertimeMinutes > this.UNDERTIME_THRESHOLD_MINUTES) {
                 deductions += undertimeMinutes / 60;
             }
@@ -899,6 +1011,64 @@ class PayCalculator {
             console.error("Error calculating hours:", error);
             return null;
         }
+    }
+
+    /**
+     * Minutes since midnight for a 12-hour time string (e.g. "1:13 PM").
+     * @returns {number|null}
+     */
+    _minutesSinceMidnight(timeStr) {
+        if (!timeStr || typeof timeStr !== 'string') return null;
+
+        const [time, meridian] = timeStr.trim().split(/\s+/);
+        if (!time || !meridian) return null;
+
+        const timeParts = time.split(':');
+        let hour = Number(timeParts[0]);
+        const min = Number(timeParts[1]);
+        if (!Number.isFinite(hour) || !Number.isFinite(min)) return null;
+
+        const m = meridian.toUpperCase();
+        if (m === 'PM' && hour !== 12) hour += 12;
+        if (m === 'AM' && hour === 12) hour = 0;
+
+        return hour * 60 + min;
+    }
+
+    /**
+     * Absolute minutes on the shift's starting day.
+     * If `time` is earlier on the clock than `start`, treat it as next calendar morning (+24h).
+     * Same overnight rule as calculateHours.
+     * @returns {number|null}
+     */
+    _minutesOnShiftDay(time, start) {
+        const timeMins = this._minutesSinceMidnight(time);
+        const startMins = this._minutesSinceMidnight(start);
+        if (timeMins == null || startMins == null) return null;
+        return timeMins < startMins ? timeMins + 24 * 60 : timeMins;
+    }
+
+    /**
+     * Undertime in minutes: how early clock-out is vs scheduled out.
+     * Overnight outs (e.g. 12:18 AM after a PM in) wrap to the starting day so they
+     * are not treated as ~22 hours early. Negative (stayed later) returns 0.
+     */
+    getUndertimeMinutes(timeIn, timeOut, scheduledIn, scheduledOut) {
+        if (!timeOut || !scheduledOut) return 0;
+
+        const startForScheduled = scheduledIn || timeIn;
+        const startForActual = timeIn || scheduledIn;
+
+        if (!startForScheduled || !startForActual) {
+            const raw = this.compareTimes(scheduledOut, timeOut);
+            return raw > 0 ? raw : 0;
+        }
+
+        const scheduledOutAbs = this._minutesOnShiftDay(scheduledOut, startForScheduled);
+        const timeOutAbs = this._minutesOnShiftDay(timeOut, startForActual);
+        if (scheduledOutAbs == null || timeOutAbs == null) return 0;
+
+        return Math.max(0, scheduledOutAbs - timeOutAbs);
     }
 
     /**

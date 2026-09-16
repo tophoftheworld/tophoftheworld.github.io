@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+    <title>Matchanese — Employee Registration</title>
+    <link rel="icon" href="../icons/icon-64.png" type="image/png">
+    <meta name="theme-color" content="#2b9348">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="page">
+        <div class="card" id="registerCard">
+            <div class="brand">
+                <img src="../shared/assets/images/matchanese-logo-full.png" alt="Matchanese" class="logo">
+                <h1>Employee Sign Up</h1>
+                <p class="subtitle">Create your staff portal account</p>
+            </div>
+
+            <form id="registerForm" novalidate>
+                <div class="field">
+                    <label for="fullName">Full Name</label>
+                    <input type="text" id="fullName" name="fullName" required autocomplete="name" placeholder="Juan Dela Cruz">
+                </div>
+
+                <div class="field">
+                    <label for="nickname">Nickname</label>
+                    <input type="text" id="nickname" name="nickname" required autocomplete="nickname" placeholder="Juan">
+                </div>
+
+                <div class="field">
+                    <label for="birthday">Birthday</label>
+                    <input type="date" id="birthday" name="birthday" required>
+                </div>
+
+                <div class="field">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" name="email" required autocomplete="email" placeholder="you@example.com">
+                </div>
+
+                <div class="field">
+                    <label for="phone">Mobile Number</label>
+                    <input type="tel" id="phone" name="phone" required autocomplete="tel" placeholder="09XXXXXXXXX" inputmode="tel">
+                </div>
+
+                <hr class="divider">
+
+                <div class="field">
+                    <label for="username">Desired Username</label>
+                    <input type="text" id="username" name="username" required autocomplete="username" placeholder="letters, numbers, _ or -" spellcheck="false">
+                </div>
+
+                <div class="field">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" required autocomplete="new-password" placeholder="At least 6 characters" minlength="6">
+                </div>
+
+                <div class="field">
+                    <label for="confirmPassword">Confirm Password</label>
+                    <input type="password" id="confirmPassword" name="confirmPassword" required autocomplete="new-password" placeholder="Re-enter password" minlength="6">
+                </div>
+
+                <div id="errorMessage" class="message error hidden" role="alert">
+                    <span id="errorText"></span>
+                </div>
+
+                <button type="submit" id="submitButton" class="btn-primary">
+                    <span id="submitButtonText">Create Account</span>
+                    <svg id="submitSpinner" class="spinner hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                    </svg>
+                </button>
+            </form>
+
+            <p class="footer-link">
+                Already have an account? <a href="../login.html">Sign in</a>
+            </p>
+        </div>
+
+        <div class="card success-card hidden" id="successCard">
+            <div class="success-icon" aria-hidden="true">✓</div>
+            <h1>Account Created</h1>
+            <p class="subtitle">You can now sign in to the staff portal.</p>
+            <dl class="success-details">
+                <div>
+                    <dt>Account Code</dt>
+                    <dd id="successCode">—</dd>
+                </div>
+                <div>
+                    <dt>Username</dt>
+                    <dd id="successUsername">—</dd>
+                </div>
+            </dl>
+            <p class="hint">Use your username or account code to sign in.</p>
+            <a href="../login.html" class="btn-primary btn-link">Go to Sign In</a>
+        </div>
+    </div>
+
+    <script type="module" src="js/script.js"></script>
+</body>
+</html>
