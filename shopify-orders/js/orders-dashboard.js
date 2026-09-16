@@ -84,7 +84,7 @@ const els = {
     finStatus: document.getElementById("filterStatus"),
     filterProduct: document.getElementById("filterProduct"),
     filterProductType: document.getElementById("filterProductType"),
-    filterTag: document.getElementById("filterTag"),
+    filterDelivery: document.getElementById("filterDelivery"),
     typeSelector: document.getElementById("typeSelector"),
     filtersBar: document.getElementById("ordersFiltersBar"),
     btnFiltersToggle: document.getElementById("btnFiltersToggle"),
@@ -1363,7 +1363,7 @@ function getFilterCriteria() {
         statusFilter: els.finStatus.value,
         product: els.filterProduct.value,
         ptype: els.filterProductType.value,
-        tag: els.filterTag.value,
+        delivery: els.filterDelivery?.value || "",
         typeF: state.typeFilter,
         productQueueFilter: state.productQueueFilter,
     };
@@ -1375,7 +1375,7 @@ function needsServerOrderScan(criteria = getFilterCriteria()) {
             criteria.statusFilter ||
             criteria.product ||
             criteria.ptype ||
-            criteria.tag ||
+            criteria.delivery ||
             criteria.q
     );
 }
@@ -1387,7 +1387,7 @@ function hasActiveListFilters(criteria = getFilterCriteria()) {
             criteria.statusFilter ||
             criteria.product ||
             criteria.ptype ||
-            criteria.tag ||
+            criteria.delivery ||
             criteria.q
     );
 }
@@ -1406,7 +1406,9 @@ function rowMatchesFilters(r, criteria = getFilterCriteria()) {
         if (!hit) return false;
     }
     if (criteria.ptype && !r.productTypes.includes(criteria.ptype)) return false;
-    if (criteria.tag && !r.tags.includes(criteria.tag)) return false;
+    if (criteria.delivery && deliveryPillVariant(r) !== criteria.delivery) {
+        return false;
+    }
     if (criteria.productQueueFilter && !needsShipOrPackToday(r)) return false;
     if (!criteria.q) return true;
     const blob = [
@@ -2518,13 +2520,11 @@ function populateFilterOptions() {
     const types = [
         ...new Set(state.rows.flatMap((r) => r.productTypes)),
     ].sort();
-    const tags = [...new Set(state.rows.flatMap((r) => r.tags))].sort();
 
     const keep = {
         status: els.finStatus.value,
         product: els.filterProduct.value,
         ptype: els.filterProductType.value,
-        tag: els.filterTag.value,
     };
 
     els.finStatus.innerHTML =
@@ -2541,14 +2541,10 @@ function populateFilterOptions() {
     els.filterProductType.innerHTML =
         '<option value="">All</option>' +
         types.map((x) => `<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join("");
-    els.filterTag.innerHTML =
-        '<option value="">All</option>' +
-        tags.map((x) => `<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join("");
 
     if (statuses.includes(keep.status)) els.finStatus.value = keep.status;
     if (products.includes(keep.product)) els.filterProduct.value = keep.product;
     if (types.includes(keep.ptype)) els.filterProductType.value = keep.ptype;
-    if (tags.includes(keep.tag)) els.filterTag.value = keep.tag;
 }
 
 async function postOrderAction(orderId, action, intent = null) {
@@ -2774,7 +2770,7 @@ function activeFilterCount() {
     if (state.productQueueFilter) count += 1;
     if (els.filterProduct?.value) count += 1;
     if (els.filterProductType?.value) count += 1;
-    if (els.filterTag?.value) count += 1;
+    if (els.filterDelivery?.value) count += 1;
     return count;
 }
 
@@ -2848,7 +2844,7 @@ function initUi() {
     els.finStatus.addEventListener("change", onFilterChange);
     els.filterProduct.addEventListener("change", onFilterChange);
     els.filterProductType.addEventListener("change", onFilterChange);
-    els.filterTag.addEventListener("change", onFilterChange);
+    els.filterDelivery.addEventListener("change", onFilterChange);
 
     els.btnFiltersToggle?.addEventListener("click", () => {
         const open = !els.filtersBar?.classList.contains("filters-expanded");
