@@ -2,7 +2,7 @@
  * Run: node purchasing/js/data/last-route.test.js
  */
 import assert from 'node:assert/strict';
-import { slimLiveWeekForCache } from './last-route.js?v=96';
+import { slimLiveWeekForCache } from './last-route.js?v=106';
 
 let failed = 0;
 function test(name, fn) {

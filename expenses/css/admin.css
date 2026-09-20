@@ -913,7 +913,7 @@ select.month-dropdown:focus {
 }
 
 .data-table th[data-sort]:after {
-    content: 'â';
+    content: '\2195';
     position: absolute;
     right: 0.5rem;
     opacity: 0.5;
@@ -921,13 +921,13 @@ select.month-dropdown:focus {
 }
 
 .data-table th.sorted-asc:after {
-    content: 'â';
+    content: '\2191';
     opacity: 1;
     color: #2b9348;
 }
 
 .data-table th.sorted-desc:after {
-    content: 'â';
+    content: '\2193';
     opacity: 1;
     color: #2b9348;
 }

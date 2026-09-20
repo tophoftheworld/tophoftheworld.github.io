@@ -399,7 +399,6 @@ const MANAGER_PERMISSION_KEYS = [
     'sales',
     'expenses',
     'purchasing',
-    'money',
     'inventory',
     'forecast',
     'popups',

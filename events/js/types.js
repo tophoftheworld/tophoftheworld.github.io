@@ -1,4 +1,4 @@
-import { SEED_EVENT_TYPES } from '../../shared/js/ops-events.js?v=21';
+import { SEED_EVENT_TYPES } from '../../shared/js/ops-events.js?v=38';
 
 /** @type {Map<string, object>} */
 let typeMap = new Map();

@@ -1,15 +1,16 @@
-import { getWeek, setLineStatus, setLinesStatus, canActOnWeek } from '../store.js?v=96';
-import { itemDisplayName, locationLabel, locationSortRank } from '../data/catalog.js?v=96';
+import { getWeek, setLineStatus, setLinesStatus, canActOnWeek } from '../store.js?v=106';
+import { itemDisplayName, locationLabel, locationSortRank } from '../data/catalog.js?v=106';
 import {
   groupOrderSheets,
   plannedLines,
   lineAmount,
   isFee,
   fulfillmentStatus,
-} from '../compute.js?v=96';
-import { formatDateRange, formatPeso, formatQty, formatDateMedium, escapeHtml, statusLabel } from '../format.js?v=96';
-import { renderWeekChrome, bindWeekChrome } from './week-chrome.js?v=96';
-import { toast } from './shell.js?v=96';
+} from '../compute.js?v=106';
+import { formatDateRange, formatPeso, formatQty, formatDateMedium, escapeHtml, statusLabel } from '../format.js?v=106';
+import { renderWeekChrome, bindWeekChrome } from './week-chrome.js?v=106';
+import { toast } from './shell.js?v=106';
+import { renderLoadingShell } from './loading-shell.js?v=106';
 
 const STATUS_OPTIONS = [
   ['planned', 'Not ordered'],
@@ -65,7 +66,7 @@ function saveOrderView(value) {
 export function renderOrders(root, weekId) {
   const week = getWeek(weekId);
   if (!week) {
-    root.innerHTML = '<p class="app-loading-inline">Loading week\u2026</p>';
+    renderLoadingShell(root, { tab: 'orders' });
     return;
   }
 

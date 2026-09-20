@@ -1,6 +1,7 @@
 import {
   displayTitle,
   EVENT_STATUSES,
+  formatHeadcountLabel,
   headcountFieldLabel,
   headcountUnitForType,
   parseHeadcount,
@@ -9,8 +10,8 @@ import {
   resolveHeadcountFields,
   serviceModeForType,
   typeIdFromLead
-} from '../../shared/js/ops-events.js?v=21';
-import { escapeHtml, typeLabel, typeOptionsHtml } from './types.js?v=21';
+} from '../../shared/js/ops-events.js?v=38';
+import { escapeHtml, typeLabel, typeOptionsHtml } from './types.js?v=38';
 
 /**
  * @param {object} opts
@@ -232,6 +233,359 @@ export function eventFooterHtml(event) {
     }
     ${event?.id && isDraft ? `<button type="button" class="inv-btn inv-btn-danger" data-action="delete">Delete</button>` : ''}
     ${isConfirmed ? `<button type="button" class="inv-btn inv-btn-danger" data-action="cancel">Cancel event</button>` : ''}
+  `;
+}
+
+const DASH_WIDGETS = [
+  { id: 'schedule', title: 'Schedule' },
+  { id: 'menu', title: 'Menu' },
+  { id: 'sales', title: 'Sales' },
+  { id: 'expenses', title: 'Expenses' },
+  { id: 'invoice', title: 'Invoice' },
+  { id: 'inbox', title: 'Inbox' },
+  { id: 'purchasing', title: 'Purchasing' },
+  { id: 'workshops', title: 'Workshops' }
+];
+
+/** Which widgets apply for this event type (mockup filter). */
+function widgetsForEvent(event) {
+  const typeId = event?.typeId;
+  const isPopup = typeId === 'matcha_popup';
+  const isWorkshop = typeId === 'matcha_workshop' || typeId === 'mochi_workshop';
+  const isBar = typeId === 'mobile_bar';
+  return DASH_WIDGETS.filter((w) => {
+    if (w.id === 'menu' || w.id === 'sales') return isPopup;
+    if (w.id === 'purchasing') return isPopup || isWorkshop;
+    if (w.id === 'workshops') return isWorkshop;
+    if (w.id === 'schedule' || w.id === 'expenses' || w.id === 'invoice' || w.id === 'inbox') {
+      return isPopup || isWorkshop || isBar || !typeId;
+    }
+    return true;
+  });
+}
+
+function expensesAllocationLabel(typeId) {
+  if (typeId === 'matcha_popup') return 'Popup';
+  if (typeId === 'mobile_bar') return 'Bar Service';
+  if (typeId === 'matcha_workshop' || typeId === 'mochi_workshop') return 'Workshop';
+  return 'Popup';
+}
+
+/** Hardcoded mock from employees_v2 (nicknames + staff-photos). Not live shifts. */
+const SCHEDULE_MOCK_ROWS = [
+  {
+    name: 'Bea',
+    photoUrl:
+      'https://firebasestorage.googleapis.com/v0/b/matchanese-attendance.firebasestorage.app/o/staff-photos%2F130129?alt=media&token=e20582ce-a877-4887-9482-728bee8ef2e2',
+    timeIn: '9:30 AM',
+    timeOut: '6:30 PM',
+    kind: 'opening'
+  },
+  {
+    name: 'Acerr',
+    photoUrl:
+      'https://firebasestorage.googleapis.com/v0/b/matchanese-attendance.firebasestorage.app/o/staff-photos%2F130429?alt=media&token=68788e50-90b2-4f08-af1f-0c1456cfc3a5',
+    timeIn: '9:30 AM',
+    timeOut: '6:30 PM',
+    kind: 'opening'
+  },
+  {
+    name: 'Mae',
+    photoUrl:
+      'https://firebasestorage.googleapis.com/v0/b/matchanese-attendance.firebasestorage.app/o/staff-photos%2F130829?alt=media&token=efe0081e-b805-476c-bc0e-ab03c9502ecc',
+    timeIn: '1:00 PM',
+    timeOut: '10:00 PM',
+    kind: 'closing'
+  },
+  {
+    name: 'Lester',
+    photoUrl:
+      'https://firebasestorage.googleapis.com/v0/b/matchanese-attendance.firebasestorage.app/o/staff-photos%2F131029?alt=media&token=690f3989-d839-4375-8847-b1edab4e1c37',
+    timeIn: '1:00 PM',
+    timeOut: '10:00 PM',
+    kind: 'closing'
+  }
+];
+
+const SCHEDULE_KIND_LABEL = {
+  opening: 'Opening',
+  closing: 'Closing'
+};
+
+function scheduleCardHtml(row) {
+  return `<div class="event-sched-card is-${escapeAttrValue(row.kind)}">
+      <img class="event-sched-card__photo" src="${escapeAttrValue(row.photoUrl)}" alt="" width="36" height="36" loading="lazy" />
+      <div class="event-sched-card__details">
+        <div class="event-sched-card__name">${escapeHtml(row.name)}</div>
+        <div class="event-sched-card__kind">${escapeHtml(SCHEDULE_KIND_LABEL[row.kind] || row.kind)}</div>
+        <div class="event-sched-card__time">${escapeHtml(row.timeIn)} – ${escapeHtml(row.timeOut)}</div>
+      </div>
+    </div>`;
+}
+
+function scheduleWidgetHtml() {
+  const opening = SCHEDULE_MOCK_ROWS.filter((r) => r.kind === 'opening');
+  const closing = SCHEDULE_MOCK_ROWS.filter((r) => r.kind === 'closing');
+  const total = SCHEDULE_MOCK_ROWS.length;
+
+  const section = (kind, rows) => {
+    if (!rows.length) return '';
+    return `<div class="event-sched-section">
+      <div class="event-sched-section__label">${escapeHtml(SCHEDULE_KIND_LABEL[kind])} · ${rows.length}</div>
+      <div class="event-sched-list">${rows.map(scheduleCardHtml).join('')}</div>
+    </div>`;
+  };
+
+  return `
+    <div class="event-widget__stat-row">
+      <strong>${total} scheduled</strong>
+    </div>
+    ${section('opening', opening)}
+    ${section('closing', closing)}`;
+}
+
+function widgetBodyHtml(id, event) {
+  const allocation = expensesAllocationLabel(event?.typeId);
+  switch (id) {
+    case 'schedule':
+      return scheduleWidgetHtml();
+    case 'menu':
+      return `
+        <div class="event-widget__stat-row">
+          <span class="event-widget__sub">Custom Menu · 6 categories</span>
+        </div>
+        <ul class="event-widget__menu">
+          <li><span>Halaya Latte</span><span>₱200</span></li>
+          <li><span>Ceremonial Matcha</span><span>₱220</span></li>
+          <li><span>Seasalt Cream Cookie</span><span>₱90</span></li>
+        </ul>
+        <p class="event-widget__more">+14 more · from Pop-ups manage event</p>`;
+    case 'sales':
+      return `
+        <div class="event-widget__metric-label">Total Sales</div>
+        <div class="event-widget__money-lg">₱24,850</div>
+        <div class="event-widget__metrics">
+          <div><span class="event-widget__metric-label">Cups Sold</span><span class="event-widget__metric-value">186</span></div>
+          <div><span class="event-widget__metric-label">Orders</span><span class="event-widget__metric-value">94</span></div>
+          <div><span class="event-widget__metric-label">Est. Profit</span><span class="event-widget__metric-value">₱9.1k</span></div>
+        </div>
+        <p class="event-widget__tenders">Cash ₱11.2k · GCash ₱9.4k · Card ₱4.3k</p>
+        <p class="event-widget__more">EOD · Variance +₱120</p>`;
+    case 'expenses':
+      return `
+        <div class="event-widget__stat-row">
+          <strong class="event-widget__money">₱8,420</strong>
+          <span class="linked-badge on">${escapeHtml(allocation)}</span>
+        </div>
+        <ul class="event-widget__list">
+          <li><span class="event-widget__list-main"><span class="event-widget__name">SM Hypermarket</span><span class="event-widget__meta">Supplier</span></span><span>₱2,180</span></li>
+          <li><span class="event-widget__list-main"><span class="event-widget__name">Lazada</span><span class="event-widget__meta">Supplier</span></span><span>₱960</span></li>
+          <li><span class="event-widget__list-main"><span class="event-widget__name">Petty cash</span><span class="event-widget__meta">Pop-up Cash</span></span><span>₱450</span></li>
+        </ul>
+        <p class="event-widget__more">Allocation · ${escapeHtml(allocation)}</p>`;
+    case 'invoice':
+      return `
+        <div class="event-widget__stat-row">
+          <code class="event-widget__code">INV-2026-1042</code>
+          <span class="event-widget__status is-partial">Partial</span>
+        </div>
+        <div class="event-widget__money-stack">
+          <div><span class="event-widget__metric-label">Total</span><span class="event-widget__metric-value">Php 45,000</span></div>
+          <div><span class="event-widget__metric-label">Remaining</span><span class="event-widget__metric-value is-due">Php 30,000</span></div>
+        </div>
+        <p class="event-widget__more">Date Reservation · Payment confirmed</p>`;
+    case 'inbox':
+      return `
+        <div class="event-widget__stat-row">
+          <span class="lead-pip lead-pipeline-quoted">Quoted</span>
+          <span class="event-widget__meta">2h ago</span>
+        </div>
+        <p class="event-widget__name event-widget__name--lg">Lanson Events</p>
+        <p class="event-widget__subline">Private Matcha Workshop · 16 pax · ₱45,000</p>
+        <p class="event-widget__preview">Can we confirm the Saturday setup time and send the deposit slip?</p>`;
+    case 'purchasing':
+      return `
+        <div class="event-widget__stat-row">
+          <span class="event-widget__sub">Week of Sep 22–28</span>
+          <span class="linked-badge on">Ordering</span>
+        </div>
+        <p class="event-widget__name event-widget__name--lg">${escapeHtml(displayTitle(event) || 'Event location')}</p>
+        <div class="event-widget__metrics">
+          <div><span class="event-widget__metric-label">Plan</span><span class="event-widget__metric-value">₱12.4k</span></div>
+          <div><span class="event-widget__metric-label">Lines</span><span class="event-widget__metric-value">18</span></div>
+          <div><span class="event-widget__metric-label">Status</span><span class="event-widget__metric-value">Open</span></div>
+        </div>
+        <p class="event-widget__more">Budget · Order · Reconcile</p>`;
+    case 'workshops':
+      return `
+        <div class="event-widget__stat-row">
+          <span class="event-widget__sub">Session roster</span>
+          <span class="linked-badge on">4 left</span>
+        </div>
+        <p class="event-widget__seats"><strong>12</strong><span>/16 booked</span></p>
+        <ul class="event-widget__people event-widget__people--compact">
+          <li><span class="event-widget__name">Priya</span></li>
+          <li><span class="event-widget__name">Marco</span></li>
+          <li><span class="event-widget__name">Elle</span></li>
+        </ul>
+        <p class="event-widget__more">+9 participants · open</p>`;
+    default:
+      return '';
+  }
+}
+
+function widgetCardHtml(widget, event) {
+  return `<article class="event-widget" data-widget="${escapeAttrValue(widget.id)}">
+    <h3 class="event-widget__title">${escapeHtml(widget.title)}</h3>
+    <div class="event-widget__body">${widgetBodyHtml(widget.id, event)}</div>
+  </article>`;
+}
+
+function dashStatus(event) {
+  if (event?.status === EVENT_STATUSES.cancelled) return { key: 'cancelled', label: 'Cancelled' };
+  if (event?.status === EVENT_STATUSES.confirmed) return { key: 'confirmed', label: 'Confirmed' };
+  if (!String(event?.title || '').trim()) return { key: 'hold', label: 'Hold' };
+  return { key: 'draft', label: 'Draft' };
+}
+
+function formatDashDate(ymd) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd || '')) return '';
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  });
+}
+
+function formatDashTime(value) {
+  if (!value || !/^\d{1,2}:\d{2}/.test(value)) return '';
+  const [hs, ms] = value.split(':');
+  const h = Number(hs);
+  const m = Number(ms);
+  if (!Number.isFinite(h)) return '';
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = ((h + 11) % 12) + 1;
+  if (!m) return `${h12} ${ampm}`;
+  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+function formatDashWhen(event) {
+  const start = formatDashDate(event?.startDate);
+  const end = formatDashDate(event?.endDate || event?.startDate);
+  const range = start && end && start !== end ? `${start} – ${end}` : start;
+  const t1 = formatDashTime(event?.startTime);
+  const t2 = formatDashTime(event?.endTime);
+  const times = t1 && t2 ? `${t1} – ${t2}` : t1 || t2;
+  return [range, times].filter(Boolean).join(' · ');
+}
+
+function dashFacts(event) {
+  const facts = [];
+  const t1 = formatDashTime(event?.startTime);
+  const t2 = formatDashTime(event?.endTime);
+  if (t1 || t2) {
+    facts.push({ label: 'Time', value: t1 && t2 ? `${t1} – ${t2}` : t1 || t2 });
+  }
+  const venue = String(event?.venue || '').trim();
+  if (venue) facts.push({ label: 'Venue', value: venue });
+  for (const field of partyFieldsForType(event?.typeId)) {
+    const value = String(event?.[field.key] || '').trim();
+    if (value) facts.push({ label: field.label, value });
+  }
+  const hc = formatHeadcountLabel(event);
+  if (hc) {
+    facts.push({ label: headcountFieldLabel(event?.typeId) || 'Headcount', value: hc });
+  }
+  return facts;
+}
+
+function dashHeaderActions(event, { editing = false } = {}) {
+  const isDraft = !event?.id || event.status === EVENT_STATUSES.draft;
+  if (editing) {
+    return `
+      ${event?.id ? `<button type="button" class="inv-btn inv-btn-ghost inv-btn-sm" data-action="dash-view">Cancel</button>` : ''}
+      <button type="button" class="inv-btn inv-btn-ghost inv-btn-sm" data-action="dash-close">Close</button>
+    `;
+  }
+  return `
+    ${event?.id && isDraft ? `<button type="button" class="inv-btn inv-btn-primary inv-btn-sm" data-action="confirm">Confirm</button>` : ''}
+    <button type="button" class="inv-btn inv-btn-secondary inv-btn-sm" data-action="dash-edit">Edit</button>
+    <button type="button" class="inv-btn inv-btn-ghost inv-btn-sm" data-action="dash-close">Close</button>
+  `;
+}
+
+/** Read-only event dashboard (header + facts + placeholder widgets). */
+export function renderEventDashboard(event) {
+  const status = dashStatus(event);
+  const type = event?.typeId ? typeLabel(event.typeId) : '';
+  const when = formatDashWhen(event);
+  const venue = String(event?.venue || '').trim();
+  const sub = [when, venue].filter(Boolean).join(' · ');
+  const notes = String(event?.notes || '').trim();
+  const facts = dashFacts(event);
+  return `
+    <header class="event-dash-header">
+      <div class="event-dash-header__main">
+        <div class="event-dash-kicker">
+          ${type ? `<span class="event-dash-type">${escapeHtml(type)}</span>` : ''}
+          <span class="event-dash-status is-${status.key}">${escapeHtml(status.label)}</span>
+        </div>
+        <h2 class="event-dash-title" id="eventModalTitle">${escapeHtml(displayTitle(event))}</h2>
+        ${sub ? `<p class="event-dash-sub">${escapeHtml(sub)}</p>` : ''}
+      </div>
+      <div class="event-dash-header__actions">
+        ${dashHeaderActions(event)}
+      </div>
+    </header>
+    ${
+      facts.length
+        ? `<dl class="event-dash-facts">${facts
+            .map(
+              (f) => `<div class="event-dash-fact">
+          <dt>${escapeHtml(f.label)}</dt>
+          <dd>${escapeHtml(f.value)}</dd>
+        </div>`
+            )
+            .join('')}</dl>`
+        : ''
+    }
+    ${
+      notes
+        ? `<div class="event-dash-notes">
+        <span class="event-dash-notes__label">Notes</span>
+        <p>${escapeHtml(notes)}</p>
+      </div>`
+        : ''
+    }
+    <section class="event-dash-widgets" aria-label="Connected apps">
+      <div class="event-dash-widgets-grid">
+        ${widgetsForEvent(event)
+          .map((w) => widgetCardHtml(w, event))
+          .join('')}
+      </div>
+    </section>
+  `;
+}
+
+/** Edit mode shell inside the event modal (header + form). */
+export function renderEventModalEdit(event) {
+  const isNew = !event?.id;
+  return `
+    <header class="event-dash-header is-editing">
+      <div class="event-dash-header__main">
+        <div class="event-dash-kicker">
+          <span class="event-dash-type">${isNew ? 'New event' : 'Editing'}</span>
+        </div>
+        <h2 class="event-dash-title" id="eventModalTitle">${escapeHtml(displayTitle(event))}</h2>
+      </div>
+      <div class="event-dash-header__actions">
+        ${dashHeaderActions(event, { editing: true })}
+      </div>
+    </header>
+    <div class="event-dash-editor">
+      ${renderEventEditor(event)}
+    </div>
   `;
 }
 
@@ -520,7 +874,7 @@ export function showComposer(rootEl, { date, typesHtml, onSave, onCancel }) {
   return pop;
 }
 
-/** Day overflow list — events + leads for a date. */
+/** Day overflow list — events + leads for a date (same details as calendar pills). */
 export function showDayPeek(
   rootEl,
   { date, items, onEventClick, onLeadClick, onAdd, onClose }
@@ -529,18 +883,38 @@ export function showDayPeek(
     .map((item) => {
       if (item.kind === 'lead') {
         const lead = item.data;
-        const label = String(lead.clientName || lead.quoteReference || 'Lead').trim();
+        const label = String(lead.eventName || lead.clientName || lead.quoteReference || 'Lead').trim();
         const pip = lead.pipelineStatus || 'inquiry';
-        return `<button type="button" class="day-peek-item" data-lead-id="${escapeAttrValue(lead.id)}">
-          <span class="lead-pip lead-pipeline-${escapeHtml(pip)}">${escapeHtml(pipelineLabel(pip))}</span>
-          <span class="day-peek-label">${escapeHtml(label)}</span>
+        const metaParts = [];
+        const venue = String(lead.targetVenue || '').trim();
+        if (venue) metaParts.push(venue);
+        if (lead.targetPax) metaParts.push(String(lead.targetPax));
+        const meta = metaParts.join(' · ');
+        return `<button type="button" class="day-peek-item is-lead" data-lead-id="${escapeAttrValue(lead.id)}">
+          <span class="day-peek-item__body">
+            <span class="day-peek-item__title-row">
+              <span class="lead-pip lead-pipeline-${escapeHtml(pip)}">${escapeHtml(pipelineLabel(pip))}</span>
+              <span class="day-peek-label">${escapeHtml(label)}</span>
+            </span>
+            ${meta ? `<span class="day-peek-meta">${escapeHtml(meta)}</span>` : ''}
+          </span>
         </button>`;
       }
       const ev = item.data;
-      return `<button type="button" class="day-peek-item" data-event-id="${escapeAttrValue(ev.id)}">
-        <span class="day-peek-label">${escapeHtml(displayTitle(ev))}</span>
-        <span class="subtle">${escapeHtml(typeLabel(ev.typeId) || '')}</span>
-      </button>`;
+      const title = displayTitle(ev);
+      const meta = peekEventMeta(ev);
+      const kind =
+        ev.status === EVENT_STATUSES.draft
+          ? String(ev.title || '').trim()
+            ? 'draft'
+            : 'hold'
+          : 'confirmed';
+      return `<button type="button" class="day-peek-item is-event is-${kind}" data-event-id="${escapeAttrValue(ev.id)}">
+          <span class="day-peek-item__body">
+            <span class="day-peek-label">${escapeHtml(title)}</span>
+            ${meta ? `<span class="day-peek-meta">${escapeHtml(meta)}</span>` : ''}
+          </span>
+        </button>`;
     })
     .join('');
 
@@ -566,8 +940,9 @@ export function showDayPeek(
   };
   pop.querySelectorAll('[data-event-id]').forEach((btn) => {
     btn.onclick = () => {
+      const id = btn.dataset.eventId;
       rootEl.innerHTML = '';
-      onEventClick?.(btn.dataset.eventId);
+      onEventClick?.(id);
     };
   });
   pop.querySelectorAll('[data-lead-id]').forEach((btn) => {
@@ -577,6 +952,15 @@ export function showDayPeek(
     };
   });
   return pop;
+}
+
+function peekEventMeta(ev) {
+  const parts = [];
+  const venue = String(ev?.venue || '').trim();
+  if (venue) parts.push(venue);
+  const hc = formatHeadcountLabel(ev);
+  if (hc) parts.push(hc);
+  return parts.join(' · ');
 }
 
 function formatDayHeading(ymd) {

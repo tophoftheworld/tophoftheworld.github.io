@@ -1,6 +1,7 @@
 import { db, collection, addDoc, updateDoc, doc, getDocs, query, orderBy, limit, setDoc, getDoc, onSnapshot, deleteDoc, serverTimestamp } from './firebase-setup.js';
 import { menuData } from './menu-data.js';
 import { isCupItem } from './cup-count.js';
+import { filterPosSelectableEvents, manilaTodayYmd, shouldAutoArchiveEvent } from './event-window.js?v=3';
 
 function getActivePosMenu() {
     if (typeof window !== 'undefined' && window.__posMenu) return window.__posMenu;
@@ -260,30 +261,100 @@ export async function syncAllPendingOrders() {
 
 // Add these functions to firebase-sync.js
 
+function ymdOrNull(value) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(value || '') ? value : null;
+}
+
+function indexOpsEventsByBranch(snapshot) {
+    const byBranchId = new Map();
+    const byKey = new Map();
+    const byOpsId = new Map();
+    snapshot.forEach((d) => {
+        const data = d.data() || {};
+        const rec = { id: d.id, ...data };
+        byOpsId.set(d.id, rec);
+        if (data.links?.branchId) byBranchId.set(data.links.branchId, rec);
+        const key = data.links?.branchKey || data.key;
+        if (!key) return;
+        const prev = byKey.get(key);
+        if (!prev || (prev.status === 'cancelled' && rec.status !== 'cancelled')) {
+            byKey.set(key, rec);
+        }
+    });
+    return { byBranchId, byKey, byOpsId };
+}
+
+function resolveEventDates(branchId, data, opsIndex) {
+    const ops =
+        (data.opsEventId && opsIndex.byOpsId.get(data.opsEventId)) ||
+        opsIndex.byBranchId.get(branchId) ||
+        opsIndex.byKey.get(data.key) ||
+        null;
+    const startDate = ymdOrNull(data.startDate) || ymdOrNull(ops?.startDate);
+    const endDate = ymdOrNull(data.endDate) || ymdOrNull(ops?.endDate) || startDate;
+    return { startDate, endDate };
+}
+
+async function autoArchiveEndedEvents(events) {
+    const todayYmd = manilaTodayYmd();
+    const due = (events || []).filter((event) => event.id && shouldAutoArchiveEvent(event, todayYmd));
+    if (!due.length) return;
+    const now = new Date().toISOString();
+    await Promise.all(due.map(async (event) => {
+        try {
+            await updateDoc(doc(db, 'branches', event.id), {
+                archived: true,
+                status: 'archived',
+                autoArchivedAt: now,
+                lastModified: now
+            });
+            event.archived = true;
+        } catch (err) {
+            console.warn('Auto-archive skipped for', event.key || event.id, err);
+        }
+    }));
+}
+
 export async function loadEventsFromFirebase() {
     try {
         const branchesRef = collection(db, 'branches');
-        const snapshot = await getDocs(branchesRef);
+        const [snapshot, opsSnap] = await Promise.all([
+            getDocs(branchesRef),
+            getDocs(collection(db, 'opsEvents')).catch((err) => {
+                console.warn('opsEvents date join skipped:', err);
+                return { forEach() {} };
+            })
+        ]);
+        const opsIndex = indexOpsEventsByBranch(opsSnap);
         const events = [];
-        snapshot.forEach(doc => {
-            const data = doc.data();
+        snapshot.forEach(docSnap => {
+            const data = docSnap.data();
             if (data.type === 'popup') {
+                const { startDate, endDate } = resolveEventDates(docSnap.id, data, opsIndex);
                 events.push({
+                    id: docSnap.id,
                     key: data.key,
                     name: data.name,
                     type: data.type,
                     serviceType: data.serviceType || 'popup',
                     archived: data.archived || false,
-                    customMenu: data.customMenu || null
+                    autoArchiveExempt: data.autoArchiveExempt || false,
+                    customMenu: data.customMenu || null,
+                    createdAt: data.createdAt || null,
+                    startDate,
+                    endDate
                 });
             }
         });
+        await autoArchiveEndedEvents(events);
         return events;
     } catch (error) {
         console.error('Error loading events:', error);
         return [];
     }
 }
+
+export { filterPosSelectableEvents };
 
 export async function saveEventToFirebase(eventData) {
     try {

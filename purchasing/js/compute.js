@@ -1,4 +1,4 @@
-import { locationLabel, locationSortRank } from './data/catalog.js?v=96';
+import { locationLabel, locationSortRank } from './data/catalog.js?v=106';
 import { compareOrderViewMasterItems, categorySortRank } from '../../inventory/js/shared/order-view-feed.js?v=105';
 
 export const RATE_SANITY_QTY_HINT = 500;

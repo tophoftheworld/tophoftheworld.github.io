@@ -1,10 +1,9 @@
 import {
-  displayTitle,
   EVENT_STATUSES,
   manilaTodayYmd,
   datesInRange,
   isScheduled
-} from '../../shared/js/ops-events.js?v=21';
+} from '../../shared/js/ops-events.js?v=38';
 import {
   seedAndLoadTypes,
   fetchAllEvents,
@@ -22,12 +21,13 @@ import {
   runBackfill,
   getEventById,
   getInvoiceById
-} from './sync.js?v=21';
-import { setTypes, typeOptionsHtml, getType } from './types.js?v=21';
-import { renderCalendar, renderUnscheduled, monthLabel } from './calendar.js?v=21';
+} from './sync.js?v=38';
+import { setTypes, typeOptionsHtml, getType } from './types.js?v=38';
+import { renderCalendar, renderUnscheduled, monthLabel } from './calendar.js?v=38';
 import {
   createDrawer,
-  renderEventEditor,
+  renderEventDashboard,
+  renderEventModalEdit,
   readEventForm,
   eventFooterHtml,
   renderLeadPeek,
@@ -40,8 +40,9 @@ import {
   showDayPeek,
   wireHeadcountField,
   wirePartyFields
-} from './panel.js?v=21';
-import { filterLeadsForMonth } from './leads-overlay.js?v=21';
+} from './panel.js?v=38';
+import { filterLeadsForMonth } from './leads-overlay.js?v=38';
+import { createEventModal, findEventSourceEl } from './event-modal.js?v=38';
 
 const state = {
   year: new Date().getFullYear(),
@@ -53,7 +54,8 @@ const state = {
   selectedLead: null,
   mergeMode: false,
   unscheduledOpen: false,
-  navGeneration: 0
+  navGeneration: 0,
+  eventModalMode: 'view'
 };
 
 const els = {
@@ -77,6 +79,15 @@ const drawer = createDrawer({
   titleEl: document.getElementById('drawerTitle'),
   bodyEl: document.getElementById('drawerBody'),
   footerEl: document.getElementById('drawerFooter')
+});
+
+const eventModal = createEventModal({
+  modal: document.getElementById('eventModal'),
+  backdrop: document.getElementById('eventModalBackdrop'),
+  bodyEl: document.getElementById('eventModalBody'),
+  footerEl: document.getElementById('eventModalFooter'),
+  calendarEl: () => document.querySelector('.cal-panel'),
+  onRequestClose: () => closeEventModal()
 });
 
 function setStatus(text) {
@@ -105,14 +116,14 @@ function paint() {
     filter: state.filter,
     onDayClick: handleDayClick,
     onDayMore: handleDayMore,
-    onEventClick: openEvent,
+    onEventClick: (ev, source) => openEvent(ev, { source }),
     onLeadClick: openLead,
     onEventDrop: handleDrop
   });
 
   renderUnscheduled(els.unscheduledList, els.unscheduledCount, state.events, {
     filter: state.filter,
-    onEventClick: openEvent
+    onEventClick: (ev, source) => openEvent(ev, { source })
   });
 }
 
@@ -221,14 +232,28 @@ function itemsForDay(ymd) {
   return items;
 }
 
-function positionPop(pop) {
-  const gridRect = els.calGrid.getBoundingClientRect();
+function positionPop(pop, anchorEl) {
+  const popW = 440;
+  const popH = 420;
+  let top;
+  let left;
+  if (anchorEl && typeof anchorEl.getBoundingClientRect === 'function') {
+    const r = anchorEl.getBoundingClientRect();
+    top = r.bottom + 6;
+    left = r.left;
+    if (top + popH > window.innerHeight - 8) top = Math.max(8, r.top - popH - 6);
+    if (left + popW > window.innerWidth - 8) left = Math.max(8, window.innerWidth - popW - 8);
+  } else {
+    const gridRect = els.calGrid.getBoundingClientRect();
+    top = Math.min(gridRect.top + 40, window.innerHeight - popH);
+    left = Math.min(gridRect.left + 40, window.innerWidth - popW);
+  }
   pop.style.position = 'fixed';
-  pop.style.top = `${Math.min(gridRect.top + 40, window.innerHeight - 320)}px`;
-  pop.style.left = `${Math.min(gridRect.left + 40, window.innerWidth - 320)}px`;
+  pop.style.top = `${Math.max(8, top)}px`;
+  pop.style.left = `${Math.max(8, left)}px`;
 }
 
-function handleDayMore(ymd) {
+function handleDayMore(ymd, e) {
   els.composerRoot.innerHTML = '';
   const pop = showDayPeek(els.composerRoot, {
     date: ymd,
@@ -246,27 +271,64 @@ function handleDayMore(ymd) {
       if (lead) openLead(lead);
     }
   });
-  positionPop(pop);
+  const anchor = e?.target?.closest?.('[data-more]') || e?.currentTarget || null;
+  positionPop(pop, anchor);
 }
 
-function openEvent(event) {
+function paintEventModalView() {
+  const event = state.selectedEvent;
+  if (!event) return;
+  state.eventModalMode = 'view';
+  eventModal.setBody(renderEventDashboard(event));
+  eventModal.setFooter('');
+  wireEventModalActions();
+}
+
+function paintEventModalEdit() {
+  const event = state.selectedEvent;
+  if (!event) return;
+  state.eventModalMode = 'edit';
+  eventModal.setBody(renderEventModalEdit(event));
+  eventModal.setFooter(eventFooterHtml(event));
+  wireHeadcountField(eventModal.bodyEl);
+  wirePartyFields(eventModal.bodyEl);
+  wireEventModalActions();
+}
+
+async function closeEventModal() {
+  state.selectedEvent = null;
+  state.eventModalMode = 'view';
+  await eventModal.close();
+}
+
+function openEvent(event, { source = null, mode = null } = {}) {
   state.selectedEvent = event;
   state.selectedLead = null;
   state.mergeMode = false;
-  drawer.setTitle(displayTitle(event));
-  drawer.setBody(renderEventEditor(event));
-  drawer.setFooter(eventFooterHtml(event));
-  wireHeadcountField(drawer.bodyEl);
-  wirePartyFields(drawer.bodyEl);
-  drawer.open();
-  wireDrawerActions();
+  drawer.close();
+
+  const isNew = !event?.id;
+  const nextMode = mode || (isNew ? 'edit' : 'view');
+  const sourceEl =
+    source ||
+    (event?.id ? findEventSourceEl(event.id) : null) ||
+    null;
+
+  if (nextMode === 'edit') paintEventModalEdit();
+  else paintEventModalView();
+
+  eventModal.open({
+    source: sourceEl,
+    eventId: event?.id || null
+  });
 }
 
 function openLead(lead) {
   state.selectedLead = lead;
   state.selectedEvent = null;
   state.mergeMode = false;
-  drawer.setTitle(lead.clientName || lead.quoteReference || 'Lead');
+  if (eventModal.isOpen()) eventModal.close({ immediate: true });
+  drawer.setTitle(lead.eventName || lead.clientName || lead.quoteReference || 'Lead');
   drawer.setBody(renderLeadPeek(lead));
   drawer.setFooter(leadFooterHtml(lead));
   drawer.open();
@@ -299,79 +361,6 @@ function wireDrawerActions() {
     if (!btn) return;
     const action = btn.dataset.action;
     try {
-      if (action === 'save-draft' || action === 'save') {
-        const form = readEventForm(drawer.bodyEl);
-        if (!state.selectedEvent?.id) {
-          await saveNewEvent({ ...form, status: EVENT_STATUSES.draft });
-        } else {
-          await patchEvent(state.selectedEvent.id, {
-            ...form,
-            links: state.selectedEvent.links || {}
-          });
-          const links = state.selectedEvent.links || {};
-          const result = await saveBookingDetails({
-            opsEventId: state.selectedEvent.id,
-            title: form.title,
-            venue: form.venue,
-            startDate: form.startDate,
-            endDate: form.endDate,
-            ...(form.organizer !== undefined ? { organizer: form.organizer } : {}),
-            ...(form.clientName !== undefined ? { clientName: form.clientName } : {}),
-            ...(form.contactName !== undefined ? { contactName: form.contactName } : {}),
-            links
-          });
-          if (result.notes?.length) setStatus(result.notes.join(' · '));
-        }
-        state.selectedEvent = null;
-        drawer.close();
-        await reload();
-        return;
-      }
-      if (action === 'confirm') {
-        const form = readEventForm(drawer.bodyEl);
-        let ev = state.selectedEvent;
-        if (!ev?.id) {
-          ev = await saveNewEvent({ ...form, status: EVENT_STATUSES.draft });
-        } else {
-          await patchEvent(ev.id, { ...form, links: ev.links || {} });
-          ev = { ...ev, ...form };
-        }
-        if (!form.typeId) {
-          alert('Pick an event type before confirming.');
-          return;
-        }
-        if (!String(form.title || '').trim()) {
-          alert('Add a title before confirming.');
-          return;
-        }
-        await confirmEvent(ev, getType(form.typeId || ev.typeId));
-        state.selectedEvent = null;
-        drawer.close();
-        await reload();
-        return;
-      }
-      if (action === 'delete') {
-        if (!state.selectedEvent?.id) return;
-        if (!confirm('Delete this draft?')) return;
-        await removeEvent(state.selectedEvent.id);
-        drawer.close();
-        await reload();
-        return;
-      }
-      if (action === 'cancel') {
-        if (!state.selectedEvent?.id) return;
-        if (
-          !confirm(
-            'Cancel this event? It will leave the calendar and archive the linked branch if any.'
-          )
-        ) {
-          return;
-        }
-        await cancelEvent(state.selectedEvent);
-        drawer.close();
-        await reload();
-        return;
-      }
       if (action === 'save-booking') {
         if (!state.selectedLead) return;
         const form = readBookingForm(drawer.bodyEl);
@@ -466,32 +455,6 @@ function wireDrawerActions() {
         if (ev) openEvent(ev);
         return;
       }
-      if (action === 'resplit-invoice') {
-        const invoiceId = state.selectedEvent?.links?.invoiceId;
-        if (!invoiceId) return;
-        if (
-          !confirm(
-            'Replace this multi-day draft with one calendar event per invoice package day (correct cups each day)?'
-          )
-        ) {
-          return;
-        }
-        setStatus('Splitting package days…');
-        const inv = await getInvoiceById(invoiceId);
-        if (!inv) throw new Error('Invoice not found');
-        const created = await promoteInvoice(inv, { forceResplit: true });
-        drawer.close();
-        await reload();
-        const ev =
-          state.events.find((x) => x.id === created.id) || (await getEventById(created.id));
-        if (ev) openEvent(ev);
-        setStatus(
-          created.ids?.length > 1
-            ? `Created ${created.ids.length} package-day events`
-            : statusSummary()
-        );
-        return;
-      }
       if (action === 'open-invoice') {
         const invoiceId =
           btn.dataset.invoiceId ||
@@ -507,6 +470,178 @@ function wireDrawerActions() {
       setStatus('Error');
     }
   };
+}
+
+async function reopenSavedEvent(eventId) {
+  await reload();
+  if (!eventId) {
+    await closeEventModal();
+    return;
+  }
+  const ev = state.events.find((x) => x.id === eventId) || (await getEventById(eventId));
+  if (!ev) {
+    await closeEventModal();
+    return;
+  }
+  state.selectedEvent = ev;
+  eventModal.rebindSource(ev.id);
+  paintEventModalView();
+}
+
+function wireEventModalActions() {
+  const onAction = async (e) => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const action = btn.dataset.action;
+    try {
+      if (action === 'dash-close') {
+        await closeEventModal();
+        return;
+      }
+      if (action === 'dash-edit') {
+        paintEventModalEdit();
+        return;
+      }
+      if (action === 'dash-view') {
+        if (!state.selectedEvent?.id) {
+          await closeEventModal();
+          return;
+        }
+        paintEventModalView();
+        return;
+      }
+      if (action === 'save-draft' || action === 'save') {
+        const form = readEventForm(eventModal.bodyEl);
+        let savedId = state.selectedEvent?.id || null;
+        if (!savedId) {
+          const created = await saveNewEvent({ ...form, status: EVENT_STATUSES.draft });
+          savedId = created.id;
+        } else {
+          await patchEvent(savedId, {
+            ...form,
+            links: state.selectedEvent.links || {}
+          });
+          const links = state.selectedEvent.links || {};
+          const result = await saveBookingDetails({
+            opsEventId: savedId,
+            title: form.title,
+            venue: form.venue,
+            startDate: form.startDate,
+            endDate: form.endDate,
+            ...(form.organizer !== undefined ? { organizer: form.organizer } : {}),
+            ...(form.clientName !== undefined ? { clientName: form.clientName } : {}),
+            ...(form.contactName !== undefined ? { contactName: form.contactName } : {}),
+            links
+          });
+          if (result.notes?.length) setStatus(result.notes.join(' · '));
+        }
+        await reopenSavedEvent(savedId);
+        return;
+      }
+      if (action === 'confirm') {
+        let form =
+          state.eventModalMode === 'edit'
+            ? readEventForm(eventModal.bodyEl)
+            : {
+                title: state.selectedEvent?.title || '',
+                typeId: state.selectedEvent?.typeId || null,
+                startDate: state.selectedEvent?.startDate || null,
+                endDate: state.selectedEvent?.endDate || null,
+                startTime: state.selectedEvent?.startTime || null,
+                endTime: state.selectedEvent?.endTime || null,
+                venue: state.selectedEvent?.venue || '',
+                organizer: state.selectedEvent?.organizer || '',
+                clientName: state.selectedEvent?.clientName || '',
+                contactName: state.selectedEvent?.contactName || '',
+                notes: state.selectedEvent?.notes || '',
+                headcount: state.selectedEvent?.headcount ?? null,
+                headcountUnit: state.selectedEvent?.headcountUnit || null,
+                serviceMode: state.selectedEvent?.serviceMode || null
+              };
+        let ev = state.selectedEvent;
+        if (!ev?.id) {
+          ev = await saveNewEvent({ ...form, status: EVENT_STATUSES.draft });
+        } else if (state.eventModalMode === 'edit') {
+          await patchEvent(ev.id, { ...form, links: ev.links || {} });
+          ev = { ...ev, ...form };
+        }
+        if (!form.typeId) {
+          alert('Pick an event type before confirming.');
+          if (state.eventModalMode !== 'edit') paintEventModalEdit();
+          return;
+        }
+        if (!String(form.title || '').trim()) {
+          alert('Add a title before confirming.');
+          if (state.eventModalMode !== 'edit') paintEventModalEdit();
+          return;
+        }
+        await confirmEvent(ev, getType(form.typeId || ev.typeId));
+        await reopenSavedEvent(ev.id);
+        return;
+      }
+      if (action === 'delete') {
+        if (!state.selectedEvent?.id) return;
+        if (!confirm('Delete this draft?')) return;
+        await removeEvent(state.selectedEvent.id);
+        await closeEventModal();
+        await reload();
+        return;
+      }
+      if (action === 'cancel') {
+        if (!state.selectedEvent?.id) return;
+        if (
+          !confirm(
+            'Cancel this event? It will leave the calendar and archive the linked branch if any.'
+          )
+        ) {
+          return;
+        }
+        await cancelEvent(state.selectedEvent);
+        await closeEventModal();
+        await reload();
+        return;
+      }
+      if (action === 'resplit-invoice') {
+        const invoiceId = state.selectedEvent?.links?.invoiceId;
+        if (!invoiceId) return;
+        if (
+          !confirm(
+            'Replace this multi-day draft with one calendar event per invoice package day (correct cups each day)?'
+          )
+        ) {
+          return;
+        }
+        setStatus('Splitting package days…');
+        const inv = await getInvoiceById(invoiceId);
+        if (!inv) throw new Error('Invoice not found');
+        const created = await promoteInvoice(inv, { forceResplit: true });
+        await reload();
+        const ev =
+          state.events.find((x) => x.id === created.id) || (await getEventById(created.id));
+        if (ev) openEvent(ev);
+        setStatus(
+          created.ids?.length > 1
+            ? `Created ${created.ids.length} package-day events`
+            : statusSummary()
+        );
+        return;
+      }
+      if (action === 'open-invoice') {
+        const invoiceId =
+          btn.dataset.invoiceId || state.selectedEvent?.links?.invoiceId;
+        if (!invoiceId) return;
+        const url = `../invoice-generator/invoices.html?id=${encodeURIComponent(invoiceId)}`;
+        window.open(url, '_blank', 'noopener');
+      }
+    } catch (err) {
+      console.error(err);
+      alert(err.message || 'Action failed');
+      setStatus('Error');
+    }
+  };
+
+  eventModal.bodyEl.onclick = onAction;
+  eventModal.footerEl.onclick = onAction;
 }
 
 async function handleDrop(eventId, ymd) {
@@ -616,7 +751,7 @@ async function applyDeepLink() {
       const ev = await getEventById(inv.opsEventId);
       if (ev) openEvent(ev);
     } else if (inv) {
-      const { invoiceAsLeadOverlay } = await import('../../shared/js/ops-events.js?v=21');
+      const { invoiceAsLeadOverlay } = await import('../../shared/js/ops-events.js?v=38');
       openLead(invoiceAsLeadOverlay(inv));
     }
   } else if (leadId) {

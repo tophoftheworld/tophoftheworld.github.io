@@ -1,4 +1,4 @@
-import { escapeHtml } from '../format.js?v=96';
+import { escapeHtml } from '../format.js?v=106';
 import {
   ADD_LOCATION_CHOICES,
   eventLocationKeyFromLabel,
@@ -7,9 +7,9 @@ import {
   locationLabel,
   LOCATIONS,
   upsertLocationMetaCache,
-} from '../data/catalog.js?v=96';
-import { loadActivePopupEvents, getCachedPopupEvents } from '../data/popup-events.js?v=96';
-import { persist } from '../store.js?v=96';
+} from '../data/catalog.js?v=106';
+import { loadActivePopupEvents, getCachedPopupEvents } from '../data/popup-events.js?v=106';
+import { persist } from '../store.js?v=106';
 
 /**
  * Pin a location on the week so its panel shows even with no lines yet.

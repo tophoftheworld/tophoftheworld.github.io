@@ -1,7 +1,7 @@
-import { pastWeeks } from '../store.js?v=96';
-import { weekTotal } from '../compute.js?v=96';
-import { formatDateRange, formatPeso, escapeHtml, statusLabel } from '../format.js?v=96';
-import { weekHref } from './week-chrome.js?v=96';
+import { pastWeeks } from '../store.js?v=106';
+import { weekTotal } from '../compute.js?v=106';
+import { formatDateRange, formatPeso, escapeHtml, statusLabel } from '../format.js?v=106';
+import { weekHref } from './week-chrome.js?v=106';
 
 export function renderPastWeeks(root) {
   const weeks = pastWeeks();

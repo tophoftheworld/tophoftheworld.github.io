@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Invoices - Matchanese</title>
-    <link rel="stylesheet" href="css/invoices-app.css?v=20260915-calendar">
-    <link rel="stylesheet" href="css/invoice-view.css?v=20260915-extrawt">
+    <link rel="stylesheet" href="css/invoices-app.css?v=20260916-billed-to">
+    <link rel="stylesheet" href="css/invoice-view.css?v=20260916-company-hero">
     <link rel="stylesheet" href="css/invoice-pdf-document.css?v=20260914-pdf-vcenter">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -59,12 +59,16 @@
                     <div class="form-section">
                         <h2>Client</h2>
                         <div class="form-group">
-                            <label for="clientName">Name</label>
-                            <input type="text" id="clientName" placeholder="Contact person (optional)">
+                            <label for="clientName">Billed to</label>
+                            <input type="text" id="clientName" placeholder="Person we bill (optional if company only)">
                         </div>
                         <div class="form-group">
                             <label for="clientCompany">Company</label>
                             <input type="text" id="clientCompany" placeholder="Company / organization (optional)">
+                        </div>
+                        <div class="form-group">
+                            <label for="eventName">Event name</label>
+                            <input type="text" id="eventName" placeholder="Separate from billed-to">
                         </div>
                         <div class="form-group">
                             <label for="clientAddress">Address</label>
@@ -276,8 +280,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="js/invoice-payment-alloc.js?v=20260911-paymodal"></script>
-    <script src="js/invoice-page-render.js?v=20260915-extrawt"></script>
+    <script src="js/invoice-page-render.js?v=20260916-company-hero"></script>
     <script src="js/invoice-pdf-legacy.js?v=20260914-pdf-vcenter"></script>
-    <script src="js/invoices-script.js?v=20260915-unify"></script>
+    <script src="js/invoices-script.js?v=20260916-billed-to"></script>
 </body>
 </html>

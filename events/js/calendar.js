@@ -5,11 +5,11 @@ import {
   isScheduled,
   manilaTodayYmd,
   pipelineLabel
-} from '../../shared/js/ops-events.js?v=21';
-import { escapeAttr, escapeHtml } from './types.js?v=21';
+} from '../../shared/js/ops-events.js?v=38';
+import { escapeAttr, escapeHtml } from './types.js?v=38';
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const LANE_HEIGHT_PX = 36;
+const LANE_HEIGHT_PX = 34;
 
 export function monthLabel(year, monthIndex) {
   return new Date(year, monthIndex, 1).toLocaleString('en-US', {
@@ -265,18 +265,32 @@ export function renderCalendar(opts) {
     requestAnimationFrame(() => fitOverflowChips(gridEl));
   });
 
-  if (typeof ResizeObserver !== 'undefined') {
-    if (gridEl._overflowRo) gridEl._overflowRo.disconnect();
-    gridEl._overflowRo = new ResizeObserver(() => fitOverflowChips(gridEl));
-    gridEl._overflowRo.observe(gridEl);
+  if (gridEl._overflowRo) gridEl._overflowRo.disconnect();
+  if (gridEl._overflowWin) {
+    window.removeEventListener('resize', gridEl._overflowWin);
+    gridEl._overflowWin = null;
   }
+  let resizeTimer = 0;
+  const refit = () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = window.setTimeout(() => fitOverflowChips(gridEl), 50);
+  };
+  if (typeof ResizeObserver !== 'undefined') {
+    gridEl._overflowRo = new ResizeObserver(refit);
+    gridEl._overflowRo.observe(gridEl);
+    gridEl.querySelectorAll('.cal-chips').forEach((wrap) => {
+      gridEl._overflowRo.observe(wrap);
+    });
+  }
+  gridEl._overflowWin = refit;
+  window.addEventListener('resize', gridEl._overflowWin);
 
   gridEl.onclick = (e) => {
     const chip = e.target.closest('[data-event-id], [data-lead-id], [data-more]');
     if (chip?.dataset.eventId) {
       e.stopPropagation();
       const ev = events.find((x) => x.id === chip.dataset.eventId);
-      if (ev) onEventClick?.(ev);
+      if (ev) onEventClick?.(ev, chip);
       return;
     }
     if (chip?.dataset.leadId) {
@@ -324,70 +338,130 @@ export function renderCalendar(opts) {
   };
 }
 
-/** Hide chips that would paint past the cell edge; show +N more. */
+/** Cap each chips box to the week, hide what doesn't fit, +N more under last visible pill. */
 function fitOverflowChips(gridEl) {
-  gridEl.querySelectorAll('.cal-cell[data-date]').forEach((cell) => {
-    const wrap = cell.querySelector('.cal-chips');
-    if (!wrap) return;
-    wrap.querySelectorAll('.cal-more').forEach((el) => el.remove());
-    const chips = [...wrap.querySelectorAll('.cal-chip')];
-    chips.forEach((chip) => {
-      chip.hidden = false;
+  const EDGE = 3;
+
+  gridEl.querySelectorAll('.cal-week').forEach((week) => {
+    const weekBottom = week.getBoundingClientRect().bottom;
+
+    week.querySelectorAll('.cal-cell[data-date]').forEach((cell) => {
+      const wrap = cell.querySelector('.cal-chips');
+      if (!wrap) return;
+
+      wrap.querySelectorAll('.cal-more').forEach((el) => el.remove());
+      wrap.style.maxHeight = '';
+
+      const chips = [...wrap.querySelectorAll('.cal-chip')];
+      chips.forEach((chip) => {
+        chip.hidden = false;
+        chip.style.display = '';
+      });
+      if (!chips.length) return;
+
+      const wrapTop = wrap.getBoundingClientRect().top;
+      const avail = Math.floor(weekBottom - wrapTop - EDGE);
+      if (avail <= 0) {
+        chips.forEach((chip) => {
+          chip.hidden = true;
+          chip.style.display = 'none';
+        });
+        const moreBtn = document.createElement('button');
+        moreBtn.type = 'button';
+        moreBtn.className = 'cal-more';
+        moreBtn.dataset.more = cell.dataset.date;
+        moreBtn.textContent = `+${chips.length} more`;
+        wrap.appendChild(moreBtn);
+        wrap.style.maxHeight = '1.2rem';
+        return;
+      }
+
+      wrap.style.maxHeight = `${avail}px`;
+
+      const gap = parseFloat(getComputedStyle(wrap).rowGap || getComputedStyle(wrap).gap || '0') || 0;
+
+      const probe = document.createElement('button');
+      probe.type = 'button';
+      probe.className = 'cal-more';
+      probe.textContent = '+99 more';
+      probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;left:0;top:0;';
+      wrap.appendChild(probe);
+      const moreH = Math.max(Math.ceil(probe.getBoundingClientRect().height), 17);
+      probe.remove();
+
+      const heights = chips.map((chip) =>
+        Math.ceil(chip.getBoundingClientRect().height || chip.offsetHeight || 0)
+      );
+
+      let total = 0;
+      for (let i = 0; i < heights.length; i++) total += heights[i] + (i ? gap : 0);
+
+      if (total <= avail) {
+        wrap.style.maxHeight = `${avail}px`;
+        return;
+      }
+
+      const budget = avail - moreH - gap;
+      let fitCount = 0;
+      let used = 0;
+      for (let i = 0; i < chips.length; i++) {
+        const next = used + (fitCount ? gap : 0) + heights[i];
+        if (next <= budget) {
+          used = next;
+          fitCount += 1;
+        } else break;
+      }
+
+      for (let i = 0; i < chips.length; i++) {
+        const hide = i >= fitCount;
+        chips[i].hidden = hide;
+        chips[i].style.display = hide ? 'none' : '';
+      }
+
+      const hidden = chips.length - fitCount;
+      if (hidden <= 0) return;
+
+      const moreBtn = document.createElement('button');
+      moreBtn.type = 'button';
+      moreBtn.className = 'cal-more';
+      moreBtn.dataset.more = cell.dataset.date;
+      moreBtn.textContent = `+${hidden} more`;
+      wrap.appendChild(moreBtn);
+
+      // Peel until every visible chip + more is inside the week.
+      let guard = 0;
+      while (guard < 24) {
+        guard += 1;
+        const limit = week.getBoundingClientRect().bottom - 1;
+        let overflow = moreBtn.getBoundingClientRect().bottom > limit;
+        if (!overflow) {
+          for (const chip of chips) {
+            if (chip.hidden) continue;
+            if (chip.getBoundingClientRect().bottom > limit) {
+              overflow = true;
+              break;
+            }
+          }
+        }
+        if (!overflow) break;
+
+        let peeled = false;
+        for (let i = chips.length - 1; i >= 0; i--) {
+          if (chips[i].hidden) continue;
+          chips[i].hidden = true;
+          chips[i].style.display = 'none';
+          peeled = true;
+          break;
+        }
+        moreBtn.textContent = `+${chips.filter((c) => c.hidden).length} more`;
+        if (!peeled) break;
+      }
     });
-    if (!chips.length) return;
-
-    const cellBottom = cell.getBoundingClientRect().bottom - 2;
-    const MORE_RESERVE_PX = 22;
-    let hidden = 0;
-
-    const ensureMore = () => {
-      let more = wrap.querySelector('.cal-more');
-      if (!more) {
-        more = document.createElement('button');
-        more.type = 'button';
-        more.className = 'cal-more';
-        more.dataset.more = cell.dataset.date;
-        wrap.appendChild(more);
-      }
-      more.textContent = `+${hidden} more`;
-      return more;
-    };
-
-    const overflows = () => {
-      const limit = hidden > 0 ? cellBottom - MORE_RESERVE_PX : cellBottom;
-      for (const chip of chips) {
-        if (chip.hidden) continue;
-        if (chip.getBoundingClientRect().bottom > limit) return true;
-      }
-      if (hidden > 0) {
-        const more = ensureMore();
-        if (more.getBoundingClientRect().bottom > cellBottom) return true;
-      }
-      return false;
-    };
-
-    // Cap: if cell has almost no room, hide all but keep +N
-    let guard = 0;
-    while (overflows() && guard < 40) {
-      guard += 1;
-      let hidOne = false;
-      for (let i = chips.length - 1; i >= 0; i--) {
-        if (chips[i].hidden) continue;
-        chips[i].hidden = true;
-        hidden += 1;
-        hidOne = true;
-        break;
-      }
-      if (!hidOne) break;
-    }
-
-    if (hidden > 0) ensureMore();
-    else wrap.querySelectorAll('.cal-more').forEach((el) => el.remove());
   });
 }
 
 function leadChipHtml(lead) {
-  const label = String(lead.clientName || lead.quoteReference || 'Lead').trim();
+  const label = String(lead.eventName || lead.clientName || lead.quoteReference || 'Lead').trim();
   const pip = lead.pipelineStatus || 'inquiry';
   return `<button type="button" class="cal-chip lead" data-lead-id="${escapeAttr(lead.id)}"
     title="${escapeAttr(label)} · ${escapeAttr(pipelineLabel(pip))}">
@@ -430,7 +504,7 @@ export function renderUnscheduled(listEl, countEl, events, { onEventClick, filte
     const btn = e.target.closest('[data-event-id]');
     if (!btn) return;
     const ev = rows.find((x) => x.id === btn.dataset.eventId);
-    if (ev) onEventClick?.(ev);
+    if (ev) onEventClick?.(ev, btn);
   };
 }
 

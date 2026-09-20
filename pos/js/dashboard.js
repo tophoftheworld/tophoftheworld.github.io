@@ -1,5 +1,7 @@
 import { db, collection, doc, getDocs, getDoc, query, orderBy, limit, addDoc, updateDoc, deleteDoc, setDoc } from './firebase-setup.js';
 import { countCupsInItems } from './cup-count.js';
+import { loadEventsFromFirebase as fetchPosEvents } from './firebase-sync.js?v=13';
+import { groupDashboardEvents } from './event-window.js?v=3';
 
 let currentEvent = 'pop-up';
 let selectedDate = new Date();
@@ -170,34 +172,49 @@ function eventOptionLabel(event, archived = false) {
     return `[${kind}] ${event.name}${suffix}`;
 }
 
-function populateEventSelector(activeEvents, archivedEvents) {
+function appendSelectorSeparator(eventSelector, label) {
+    const separator = document.createElement('option');
+    separator.disabled = true;
+    separator.textContent = `--- ${label} ---`;
+    eventSelector.appendChild(separator);
+}
+
+function appendSelectorEvents(eventSelector, events, { archived = false, muted = false } = {}) {
+    events.forEach((event) => {
+        const option = document.createElement('option');
+        option.value = event.key;
+        option.textContent = eventOptionLabel(event, archived);
+        option.title = option.textContent;
+        if (muted || archived) {
+            option.style.color = '#999';
+            option.style.fontStyle = 'italic';
+        }
+        eventSelector.appendChild(option);
+    });
+}
+
+function populateEventSelector(groups) {
     const eventSelector = document.getElementById('eventSelector');
     if (!eventSelector) return;
 
     eventSelector.innerHTML = '';
 
-    activeEvents.forEach((event) => {
-        const option = document.createElement('option');
-        option.value = event.key;
-        option.textContent = eventOptionLabel(event);
-        option.title = option.textContent;
-        eventSelector.appendChild(option);
-    });
-
-    const separator = document.createElement('option');
-    separator.disabled = true;
-    separator.textContent = '--- Archived ---';
-    eventSelector.appendChild(separator);
-
-    archivedEvents.forEach((event) => {
-        const option = document.createElement('option');
-        option.value = event.key;
-        option.textContent = eventOptionLabel(event, true);
-        option.title = option.textContent;
-        option.style.color = '#999';
-        option.style.fontStyle = 'italic';
-        eventSelector.appendChild(option);
-    });
+    if (groups.current.length) {
+        appendSelectorSeparator(eventSelector, 'Current');
+        appendSelectorEvents(eventSelector, groups.current);
+    }
+    if (groups.upcoming.length) {
+        appendSelectorSeparator(eventSelector, 'Upcoming');
+        appendSelectorEvents(eventSelector, groups.upcoming);
+    }
+    if (groups.past.length) {
+        appendSelectorSeparator(eventSelector, 'Past');
+        appendSelectorEvents(eventSelector, groups.past, { muted: true });
+    }
+    if (groups.archived.length) {
+        appendSelectorSeparator(eventSelector, 'Archived');
+        appendSelectorEvents(eventSelector, groups.archived, { archived: true, muted: true });
+    }
 
     const legacyOption = document.createElement('option');
     legacyOption.value = 'pop-up';
@@ -207,34 +224,29 @@ function populateEventSelector(activeEvents, archivedEvents) {
     eventSelector.appendChild(legacyOption);
 }
 
-function applyEventSelectorDefault(activeEvents, archivedEvents) {
+function applyEventSelectorDefault(groups) {
     const eventSelector = document.getElementById('eventSelector');
     if (!eventSelector) return;
 
-    if (activeEvents.length > 0) {
-        const currentEventArchived = archivedEvents.some((event) => event.key === currentEvent);
-        if (currentEventArchived || currentEvent === 'pop-up') {
-            currentEvent = activeEvents[0].key;
-        }
-        eventSelector.value = currentEvent;
-    } else if (archivedEvents.length > 0) {
-        currentEvent = archivedEvents[0].key;
-        eventSelector.value = currentEvent;
-        console.warn('Only archived events available');
-    } else {
-        currentEvent = 'pop-up';
-        eventSelector.value = 'pop-up';
+    const preferred = [...groups.current, ...groups.upcoming, ...groups.past];
+    const all = [...preferred, ...groups.archived];
+    const known = all.some((event) => event.key === currentEvent);
+    const inArchived = groups.archived.some((event) => event.key === currentEvent);
+
+    if (!known || currentEvent === 'pop-up' || inArchived) {
+        currentEvent = preferred[0]?.key || groups.archived[0]?.key || 'pop-up';
     }
+    eventSelector.value = currentEvent;
 }
 
 async function loadAvailableEvents() {
     try {
         const firebaseEvents = await loadEventsFromFirebase();
-        const activeEvents = sortEventsByRecency(firebaseEvents.filter((event) => !event.archived));
-        const archivedEvents = sortEventsByRecency(firebaseEvents.filter((event) => event.archived));
+        const groups = groupDashboardEvents(firebaseEvents);
+        groups.archived = sortEventsByRecency(groups.archived);
 
-        populateEventSelector(activeEvents, archivedEvents);
-        applyEventSelectorDefault(activeEvents, archivedEvents);
+        populateEventSelector(groups);
+        applyEventSelectorDefault(groups);
     } catch (error) {
         console.error('Error loading events:', error);
     }
@@ -2945,33 +2957,11 @@ function showErrorState() {
 
 async function loadEventsFromFirebase() {
     try {
-        console.log('Loading events from Firebase...');
-        const branchesRef = collection(db, 'branches');
-        const snapshot = await getDocs(branchesRef);
-        const events = [];
-
-        snapshot.forEach(doc => {
-            const data = doc.data();
-            console.log('Raw document data:', { id: doc.id, data: data });
-
-            if (data.type === 'popup') {
-                const event = {
-                    id: doc.id,
-                    key: data.key,
-                    name: data.name,
-                    type: data.type,
-                    serviceType: data.serviceType || 'popup',
-                    archived: data.archived || false,
-                    createdAt: data.createdAt,
-                    customMenu: data.customMenu || null
-                };
-                eventMenuByKey[data.key] = data.customMenu || null;
-                console.log('Processed event:', event);
-                events.push(event);
-            }
+        const events = await fetchPosEvents();
+        eventMenuByKey = {};
+        events.forEach((event) => {
+            eventMenuByKey[event.key] = event.customMenu || null;
         });
-
-        console.log('Final events array:', events);
         return events;
     } catch (error) {
         console.error('Error loading events:', error);
@@ -3067,37 +3057,16 @@ async function loadEventsList() {
             return;
         }
 
-        const activeEvents = sortEventsByRecency(events.filter(event => !event.archived));
-        const archivedEvents = sortEventsByRecency(events.filter(event => event.archived));
+        const groups = groupDashboardEvents(events);
+        groups.archived = sortEventsByRecency(groups.archived);
 
         let html = '';
 
-        // Active events
-        if (activeEvents.length > 0) {
-            html += '<div class="events-section"><h4>Active Events</h4>';
-            html += activeEvents.map(event => `
-        <div class="event-item">
-            <div class="event-info">
-                <strong>${escapeHtml(event.name)}</strong>
-                <small>${event.serviceType === 'package' ? 'Package Service' : 'Pop-Up Service'} • Created: ${new Date(event.createdAt).toLocaleDateString()}</small>
-                ${event.customMenu ? '<span class="custom-menu-indicator">Custom Menu</span>' : '<span class="default-menu-indicator">Default Menu</span>'}
-            </div>
-            <div class="event-actions">
-                <button type="button" class="btn-menu" data-action="menu" data-event-id="${escapeHtml(event.id)}" data-event-name="${escapeHtml(event.name)}">Menu</button>
-                <button type="button" class="btn-costs" data-action="costs" data-event-id="${escapeHtml(event.id)}" data-event-name="${escapeHtml(event.name)}">Costs</button>
-                <button type="button" class="btn-edit" data-action="edit" data-event-id="${escapeHtml(event.id)}" data-event-name="${escapeHtml(event.name)}">Edit</button>
-                <button type="button" class="btn-archive" data-action="archive" data-event-id="${escapeHtml(event.id)}" data-event-name="${escapeHtml(event.name)}">Archive</button>
-                <button type="button" class="btn-delete" data-action="delete" data-event-id="${escapeHtml(event.id)}" data-event-name="${escapeHtml(event.name)}">Delete</button>
-            </div>
-        </div>
-    `).join('');
-            html += '</div>';
-        }
-
-        // Archived events
-        if (archivedEvents.length > 0) {
-            html += '<div class="events-section archived-section"><h4>Archived Events</h4>';
-            html += archivedEvents.map(event => `
+        const sectionHtml = (title, list, extraClass = '') => {
+            if (!list.length) return '';
+            return `<div class="events-section${extraClass ? ` ${extraClass}` : ''}"><h4>${title}</h4>` +
+                list.map((event) => extraClass.includes('archived')
+                    ? `
                 <div class="event-item archived">
                     <div class="event-info">
                         <strong>${escapeHtml(event.name)}</strong>
@@ -3107,10 +3076,30 @@ async function loadEventsList() {
                         <button type="button" class="btn-unarchive" data-action="unarchive" data-event-id="${escapeHtml(event.id)}" data-event-name="${escapeHtml(event.name)}">Unarchive</button>
                         <button type="button" class="btn-delete" data-action="delete" data-event-id="${escapeHtml(event.id)}" data-event-name="${escapeHtml(event.name)}">Delete</button>
                     </div>
-                </div>
-            `).join('');
-            html += '</div>';
-        }
+                </div>`
+                    : `
+        <div class="event-item">
+            <div class="event-info">
+                <strong>${escapeHtml(event.name)}</strong>
+                <small>${event.serviceType === 'package' ? 'Package Service' : 'Pop-Up Service'} • Created: ${event.createdAt ? new Date(event.createdAt).toLocaleDateString() : '—'}</small>
+                ${event.customMenu ? '<span class="custom-menu-indicator">Custom Menu</span>' : '<span class="default-menu-indicator">Default Menu</span>'}
+            </div>
+            <div class="event-actions">
+                <button type="button" class="btn-menu" data-action="menu" data-event-id="${escapeHtml(event.id)}" data-event-name="${escapeHtml(event.name)}">Menu</button>
+                <button type="button" class="btn-costs" data-action="costs" data-event-id="${escapeHtml(event.id)}" data-event-name="${escapeHtml(event.name)}">Costs</button>
+                <button type="button" class="btn-edit" data-action="edit" data-event-id="${escapeHtml(event.id)}" data-event-name="${escapeHtml(event.name)}">Edit</button>
+                <button type="button" class="btn-archive" data-action="archive" data-event-id="${escapeHtml(event.id)}" data-event-name="${escapeHtml(event.name)}">Archive</button>
+                <button type="button" class="btn-delete" data-action="delete" data-event-id="${escapeHtml(event.id)}" data-event-name="${escapeHtml(event.name)}">Delete</button>
+            </div>
+        </div>`
+                ).join('') +
+                '</div>';
+        };
+
+        html += sectionHtml('Current Events', groups.current);
+        html += sectionHtml('Upcoming Events', groups.upcoming);
+        html += sectionHtml('Past Events', groups.past);
+        html += sectionHtml('Archived Events', groups.archived, 'archived-section');
 
         container.innerHTML = html;
         container.onclick = (e) => {
@@ -3312,6 +3301,8 @@ window.archiveEvent = async function (eventId, eventName, shouldArchive) {
 
         await updateDoc(eventRef, {
             archived: shouldArchive,
+            status: shouldArchive ? 'archived' : 'active',
+            autoArchiveExempt: shouldArchive ? false : true,
             lastModified: new Date().toISOString()
         });
 

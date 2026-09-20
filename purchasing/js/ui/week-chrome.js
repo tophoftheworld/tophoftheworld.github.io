@@ -1,6 +1,6 @@
-import { THIS_WEEK_ID } from '../data/seed.js?v=96';
-import { getThisWeek, pastWeeks, isThisWeek } from '../store.js?v=96';
-import { weekTotal } from '../compute.js?v=96';
+import { THIS_WEEK_ID } from '../data/seed.js?v=106';
+import { getThisWeek, pastWeeks, isThisWeek, getWeek } from '../store.js?v=106';
+import { weekTotal } from '../compute.js?v=106';
 import {
   formatDateRange,
   formatDateShort,
@@ -9,7 +9,8 @@ import {
   statusLabel,
   resolveWeekLastEdit,
   formatLastEditLabel,
-} from '../format.js?v=96';
+} from '../format.js?v=106';
+import { toast } from './shell.js?v=106';
 
 function todayKeyLocal() {
   const d = new Date();
@@ -137,6 +138,7 @@ export function renderWeekChrome(week, { tab } = {}) {
         <div class="week-total" title="Total budget">
           <span class="week-total-label">Total budget</span>
           <strong class="week-total-amount">${formatPeso(total)}</strong>
+          <button type="button" class="btn secondary btn-sm week-excel-btn" data-download-week-excel title="Download Excel for all branches">Download Excel</button>
         </div>
       </div>
     </header>
@@ -174,6 +176,26 @@ function bindWeekPicker(root) {
   document.addEventListener('pointerdown', window.__purchasingWeekPicker);
 }
 
-export function bindWeekChrome(root) {
+function bindWeekExcel(root, week) {
+  root.querySelectorAll('[data-download-week-excel]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const live = week?.id ? getWeek(week.id) || week : week;
+      btn.disabled = true;
+      try {
+        // Lazy import avoids store/week-chrome/budget-excel cycles (dual module instances).
+        const { downloadWeekBudgetExcel } = await import('./budget-excel.js?v=106');
+        await downloadWeekBudgetExcel(live);
+      } catch (err) {
+        console.warn(err);
+        toast('Could not download Excel');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
+export function bindWeekChrome(root, week) {
   bindWeekPicker(root);
+  bindWeekExcel(root, week);
 }

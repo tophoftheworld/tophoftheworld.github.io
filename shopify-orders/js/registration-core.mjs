@@ -604,6 +604,6 @@ export function workshopManagementUrl(reg, fromOrderId) {
         session_date: reg.sessionDateIso,
     });
     if (fromOrderId) qs.set("from_order", String(fromOrderId));
-    qs.set("v", "54");
+    qs.set("v", "57");
     return `workshop.html?${qs.toString()}`;
 }

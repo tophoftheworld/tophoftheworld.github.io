@@ -154,7 +154,6 @@ function checkTabPermission(tabName) {
             'Sales': 'sales',
             'Expenses': 'expenses',
             'Purchasing': 'purchasing',
-            'Money': 'money',
             'Inventory': 'inventory',
             'Forecast': 'forecast',
             'Pop-ups': 'popups',

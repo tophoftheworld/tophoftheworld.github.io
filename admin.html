@@ -382,13 +382,6 @@
                 </svg>
                 <span class="mobile-nav-text">Forecast</span>
             </a>
-            <a href="#" class="mobile-nav-item" data-app="Money">
-                <svg class="mobile-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="2" y="5" width="20" height="14" rx="2"></rect>
-                    <line x1="2" y1="10" x2="22" y2="10"></line>
-                </svg>
-                <span class="mobile-nav-text">Money</span>
-            </a>
             <a href="#" class="mobile-nav-item" data-app="Pop-ups">
                 <svg class="mobile-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
@@ -601,17 +594,6 @@
                     </svg>
                     <span class="truncate">Forecast</span>
                 </button>
-
-                <button
-                    class="nav-item group flex items-center gap-3 rounded-lg transition font-medium w-full py-2.5 px-3 justify-start text-gray-700 hover:text-emerald-600"
-                    data-app="Money"
-                >
-                    <svg class="shrink-0" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <rect x="2" y="5" width="20" height="14" rx="2"></rect>
-                        <line x1="2" y1="10" x2="22" y2="10"></line>
-                    </svg>
-                    <span class="truncate">Money</span>
-                </button>
                 
                 <button
                     class="nav-item group flex items-center gap-3 rounded-lg transition font-medium w-full py-2.5 px-3 justify-start text-gray-700 hover:text-emerald-600"
@@ -788,7 +770,7 @@
                 title: 'Staff Management'
             },
             'Schedule': {
-                url: 'schedule/index.html?v=46',
+                url: 'schedule/index.html?v=52',
                 title: 'Staff Scheduling'
             },
             'Shopify': {
@@ -804,7 +786,7 @@
                 title: 'Leads & Inbox'
             },
             'Events': {
-                url: 'events/admin.html?v=21',
+                url: 'events/admin.html?v=38',
                 title: 'Event Management'
             },
             'Sales': {
@@ -820,16 +802,12 @@
                 title: 'Inventory Management'
             },
             'Purchasing': {
-                url: 'purchasing/admin.html',
+                url: 'purchasing/admin.html?v=106',
                 title: 'Purchasing'
             },
             'Forecast': {
                 url: 'supply-forecast/admin.html',
                 title: 'Supply Forecast'
-            },
-            'Money': {
-                url: 'money-manager/index.html',
-                title: 'Money'
             },
             'Pop-ups': {
                 url: 'pos/dashboard.html',
@@ -1040,7 +1018,7 @@
         
         // Find the first app the user has access to
         function findFirstAccessibleApp() {
-            const appOrder = ['Payroll', 'Requests', 'Staff', 'Schedule', 'Inbox', 'Events', 'Shopify', 'Workshops', 'Sales', 'Expenses', 'Inventory', 'Purchasing', 'Forecast', 'Money', 'Pop-ups'];
+            const appOrder = ['Payroll', 'Requests', 'Staff', 'Schedule', 'Inbox', 'Events', 'Shopify', 'Workshops', 'Sales', 'Expenses', 'Inventory', 'Purchasing', 'Forecast', 'Pop-ups'];
             
             for (const appName of appOrder) {
                 if (typeof checkTabPermission === 'function' && checkTabPermission(appName)) {

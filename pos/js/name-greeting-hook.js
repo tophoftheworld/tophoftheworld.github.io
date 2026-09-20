@@ -2,7 +2,7 @@
  * Standalone name-greeting publisher.
  * Loaded as its own file so a stale pos/js/script.js cache cannot block greetings.
  */
-import { publishLiveSession } from './firebase-sync.js?v=9';
+import { publishLiveSession } from './firebase-sync.js?v=13';
 
 const BUILD = 'greeting-hook-1';
 console.log('[GREETING_DEBUG][POS-HOOK] MODULE LOADED', { build: BUILD });

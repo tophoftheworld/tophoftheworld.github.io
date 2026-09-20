@@ -1,6 +1,6 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { applyRosterNameOverrides } = require("../workshop-sheets");
+const { applyRosterNameOverrides, sheetCheckInCell } = require("../workshop-sheets");
 
 test("applyRosterNameOverrides edits one seat on the roster", () => {
   const data = {
@@ -31,4 +31,12 @@ test("applyRosterNameOverrides ignores blank overrides", () => {
   };
   applyRosterNameOverrides(data, { "1_1": "  " });
   assert.equal(data.sessions[0].participants[0].participant, "Ada");
+});
+
+test("sheetCheckInCell writes dashboard check-ins and keeps sheet blanks", () => {
+  assert.equal(sheetCheckInCell("2026-09-19T08:00:00.000Z"), true);
+  assert.equal(sheetCheckInCell(true), true);
+  assert.equal(sheetCheckInCell(false), false);
+  assert.equal(sheetCheckInCell(""), "");
+  assert.equal(sheetCheckInCell(undefined), "");
 });

@@ -326,6 +326,17 @@ body.leads-app .split-panel {
   min-width: 10rem;
 }
 
+.filters--inbox .filter-load {
+  flex: 0 0 5.25rem;
+  width: 5.25rem;
+}
+
+.filters--inbox .filter-load select {
+  width: 100%;
+  padding-left: 0.65rem;
+  padding-right: 0.35rem;
+}
+
 .filters--inbox .filter-date-range {
   flex: 0 0 auto;
 }

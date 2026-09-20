@@ -183,6 +183,16 @@ export function normalizePartyFields(input = {}) {
   };
 }
 
+/** Event title must never overwrite billed-to / representative. */
+function clientNamePatchIfDistinct(input, title) {
+  if (input.clientName == null) return undefined;
+  const next = String(input.clientName || '').trim();
+  if (!next) return undefined;
+  const eventTitle = title !== undefined ? String(title || '').trim() : '';
+  if (eventTitle && next === eventTitle) return undefined;
+  return next;
+}
+
 /** Unit for structured headcount by event type. */
 export function headcountUnitForType(typeId) {
   if (typeId === 'mobile_bar') return 'cups';
@@ -801,27 +811,29 @@ export function invoiceAsLeadOverlay(invoice) {
 export function invoiceAsLeadOverlays(invoice) {
   const invoiceId = invoice.id;
   const days = invoicePackageDays(invoice);
-  const baseName =
-    String(invoice.clientName || invoice.clientCompany || invoice.invoiceNumber || 'Invoice').trim() ||
-    'Invoice';
+  const representative = String(invoice.clientName || '').trim();
+  const company = String(invoice.clientCompany || '').trim();
+  const eventName = String(invoice.eventName || invoice.eventTitle || '').trim();
   const quoted =
     invoice.totalAmount != null
       ? String(invoice.totalAmount)
       : invoice.amountTotal != null
         ? String(invoice.amountTotal)
         : null;
-  const eventName = String(invoice.eventName || invoice.eventTitle || '').trim();
-  const contactName = String(invoice.contactName || invoice.contactPerson || '').trim();
-  const organizer = String(invoice.organizer || '').trim();
+  // Contact person defaults from billed-to; company is separate.
+  const contactName = String(
+    invoice.contactName || invoice.contactPerson || invoice.clientName || ''
+  ).trim();
+  const organizer = String(invoice.organizer || invoice.clientCompany || '').trim();
   return days.map((day, index) => ({
     id: `inv:${invoiceId}:${day.date}:${day.itemId || index}`,
     source: 'invoice',
     invoiceId,
     leadId: invoice.leadId || null,
-    clientName: baseName,
-    eventName: eventName || baseName,
+    clientName: company || representative,
+    eventName,
     organizer,
-    contactName,
+    contactName: contactName || representative,
     quoteReference: invoice.invoiceNumber || null,
     targetDate: day.date,
     targetDates: [day.date],
@@ -1003,7 +1015,8 @@ export async function patchBookingDetails(db, firestoreFns, input = {}, opts = {
     if (endDate !== undefined) patch.endDate = endDate || startDate;
     if (party) {
       if (input.organizer != null) patch.organizer = party.organizer;
-      if (input.clientName != null) patch.clientName = party.clientName;
+      const nextClient = clientNamePatchIfDistinct(input, title);
+      if (nextClient !== undefined) patch.clientName = nextClient;
       if (input.contactName != null) patch.contactName = party.contactName;
     }
     await updateDoc(doc(db, OPS_EVENTS_COLLECTION, opsEventId), patch);
@@ -1037,7 +1050,8 @@ export async function patchBookingDetails(db, firestoreFns, input = {}, opts = {
     if (startDate !== undefined) patch.targetDate = startDate;
     if (party) {
       if (input.organizer != null) patch.organizer = party.organizer;
-      if (input.clientName != null) patch.clientName = party.clientName;
+      const nextClient = clientNamePatchIfDistinct(input, title);
+      if (nextClient !== undefined) patch.clientName = nextClient;
       if (input.contactName != null) patch.contactName = party.contactName;
     }
     await updateDoc(doc(db, SERVICE_LEADS_COLLECTION, leadId), patch);
@@ -1058,11 +1072,8 @@ export async function patchBookingDetails(db, firestoreFns, input = {}, opts = {
       const patch = { updatedAt: now };
       if (title !== undefined) patch.eventName = title;
       if (startDate !== undefined) patch.eventDate = startDate;
-      if (party) {
-        if (input.organizer != null) patch.organizer = party.organizer;
-        if (input.clientName != null) patch.clientName = party.clientName;
-        if (input.contactName != null) patch.contactName = party.contactName;
-      }
+      // Event contact / client / organizer must never overwrite invoice billed-to (clientName).
+      // Contact person lives on the event only after promote.
       if (items.length) patch.invoiceItems = items;
       await updateDoc(invRef, patch);
     }
@@ -1168,10 +1179,16 @@ export async function promoteInvoiceToOpsEvent(db, firestoreFns, invoice, opts =
     }
   }
 
-  const clientName = String(invoice.clientName || invoice.clientCompany || '').trim();
+  const billedTo = String(invoice.clientName || '').trim();
+  const company = String(invoice.clientCompany || '').trim();
   const titleBase =
-    String(invoice.eventName || invoice.eventTitle || invoice.invoiceNumber || clientName || '').trim() ||
-    'Invoice event';
+    String(
+      invoice.eventName || invoice.eventTitle || company || invoice.invoiceNumber || ''
+    ).trim() || 'Invoice event';
+  // Invoice billed-to seeds Events contact person (can be changed later without writing back).
+  const contactName = String(
+    invoice.contactName || invoice.contactPerson || invoice.clientName || ''
+  ).trim();
   const created = [];
 
   for (const day of packageDays) {
@@ -1193,9 +1210,9 @@ export async function promoteInvoiceToOpsEvent(db, firestoreFns, invoice, opts =
         startDate: day.date,
         endDate: day.date,
         venue: day.venue,
-        clientName,
-        contactName: String(invoice.contactName || invoice.contactPerson || '').trim(),
-        organizer: String(invoice.organizer || '').trim(),
+        clientName: company,
+        contactName: contactName || billedTo,
+        organizer: String(invoice.organizer || company || '').trim(),
         notes: noteParts.join('\n'),
         headcount,
         headcountUnit,

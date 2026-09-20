@@ -1,5 +1,5 @@
 import { menuData } from './menu-data.js?v=6';
-import { syncOrderToFirebase, syncAllPendingOrders, initializeMenuItems, loadEventsFromFirebase, saveEventToFirebase, subscribeToOrders, publishLiveSession, clearLiveSession } from './firebase-sync.js?v=10';
+import { syncOrderToFirebase, syncAllPendingOrders, initializeMenuItems, loadEventsFromFirebase, saveEventToFirebase, subscribeToOrders, publishLiveSession, clearLiveSession, filterPosSelectableEvents } from './firebase-sync.js?v=13';
 import { app, db, collection, doc, getDocs, deleteDoc, setDoc, getDoc, serverTimestamp } from './firebase-setup.js?v=7';
 
 console.log('[GREETING_DEBUG][POS] MODULE LOADED', { build: 'greeting-fix-2', hasPublishLiveSession: typeof publishLiveSession });
@@ -183,7 +183,7 @@ async function loadAvailableEvents() {
 
     if (cachedEvents.length > 0) {
       console.log('Loading cached events for immediate display');
-      availableEvents = cachedEvents.filter(event => !event.archived).map(event => event.key);
+      availableEvents = filterPosSelectableEvents(cachedEvents).map(event => event.key);
       localStorage.setItem('availableEvents', JSON.stringify(availableEvents));
 
       // Update UI immediately with cached data
@@ -203,8 +203,8 @@ async function loadAvailableEvents() {
       // Update cache
       localStorage.setItem('cachedEvents', JSON.stringify(firebaseEvents));
 
-      // Filter out archived events for POS - only keep active events
-      const activeEvents = firebaseEvents.filter(event => !event.archived);
+      // Filter out archived / out-of-window events for POS
+      const activeEvents = filterPosSelectableEvents(firebaseEvents);
       availableEvents = activeEvents.map(event => event.key);
       localStorage.setItem('availableEvents', JSON.stringify(availableEvents));
 
@@ -235,7 +235,9 @@ function eventsAreEqual(cachedEvents, firebaseEvents) {
     if (cached.key !== firebase.key ||
       cached.name !== firebase.name ||
       cached.serviceType !== firebase.serviceType ||
-      cached.archived !== firebase.archived) {
+      cached.archived !== firebase.archived ||
+      cached.startDate !== firebase.startDate ||
+      cached.endDate !== firebase.endDate) {
       return false;
     }
   }
@@ -260,8 +262,8 @@ function updateEventSelector() {
   eventSelector.innerHTML = '';
 
   loadEventsFromFirebase().then(firebaseEvents => {
-    // Filter out archived events for POS (only show active events)
-    const activeEvents = firebaseEvents.filter(event => !event.archived);
+    // Filter out archived / out-of-window events for POS (only show nearby dates)
+    const activeEvents = filterPosSelectableEvents(firebaseEvents);
 
     console.log('Active events loaded:', activeEvents);
 

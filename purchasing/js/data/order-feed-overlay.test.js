@@ -7,13 +7,16 @@ import {
   shouldIncludeOrderViewRow,
   overlayHasPlanEdits,
   overlayHasOnPlanBudget,
+  overlayHasArchivableBudget,
+  overlayLineIsBudget,
   isManualPlanLine,
   shouldArchiveOverlayForLiveWeek,
   hasFrozenPlanMetrics,
   shouldFreezePlanMetrics,
   weekHasOnPlanBudget,
   preferNonEmptyPastWeek,
-} from './overlay-filter.js?v=96';
+  canReplaceLiveOverlay,
+} from './overlay-filter.js?v=106';
 
 let failed = 0;
 function test(name, fn) {
@@ -194,6 +197,45 @@ test('preferNonEmptyPastWeek refuses empty overwrite of a real week', () => {
   assert.equal(preferNonEmptyPastWeek(existing, richer), richer);
 });
 
+test('preferNonEmptyPastWeek keeps richer existing over poorer incoming (stale tab)', () => {
+  const existing = {
+    id: 'week-2026-09-14',
+    lines: [
+      { onPlan: true, estimatedCost: 50000 },
+      { onPlan: true, estimatedCost: 24328 },
+    ],
+  };
+  const poorer = {
+    id: 'week-2026-09-14',
+    lines: [{ onPlan: true, estimatedCost: 40000 }],
+  };
+  assert.equal(preferNonEmptyPastWeek(existing, poorer), existing);
+});
+
+test('canReplaceLiveOverlay requires archived budget when overlay has budget', () => {
+  const withBudget = {
+    weekStatus: 'draft',
+    lines: { 'a|podium': { onPlan: true, estimatedCost: 100 } },
+  };
+  assert.equal(canReplaceLiveOverlay({ overlay: withBudget, archivedWeek: null }), false);
+  assert.equal(
+    canReplaceLiveOverlay({
+      overlay: withBudget,
+      archivedWeek: { id: 'week-2026-09-14', lines: [{ onPlan: true, estimatedCost: 100 }] },
+    }),
+    true
+  );
+  assert.equal(
+    canReplaceLiveOverlay({
+      overlay: withBudget,
+      archivedWeek: { id: 'week-2026-09-14', lines: [{ onPlan: false }] },
+    }),
+    false
+  );
+  const blank = { weekStart: '2026-09-21', weekStatus: 'draft', lines: {}, manualLines: {} };
+  assert.equal(canReplaceLiveOverlay({ overlay: blank, archivedWeek: null }), true);
+});
+
 test('metrics-only overlay is not archive-worthy (would create a \u20B10 past week)', () => {
   const metricsOnly = {
     weekStatus: 'draft',
@@ -211,6 +253,7 @@ test('metrics-only overlay is not archive-worthy (would create a \u20B10 past we
   };
   assert.equal(overlayHasPlanEdits(metricsOnly), true);
   assert.equal(overlayHasOnPlanBudget(metricsOnly), false);
+  assert.equal(overlayHasArchivableBudget(metricsOnly), false);
   assert.equal(weekHasOnPlanBudget({ lines: Object.values(metricsOnly.lines) }), false);
 });
 
@@ -225,6 +268,37 @@ test('overlay with onPlan lines is archive-worthy', () => {
     },
   };
   assert.equal(overlayHasOnPlanBudget(withPlan), true);
+  assert.equal(overlayHasArchivableBudget(withPlan), true);
+});
+
+test('qtyEdited budget is archivable even if onPlan was dropped', () => {
+  const lostFlag = {
+    weekStatus: 'draft',
+    lines: {
+      'matcha|podium': {
+        onPlan: false,
+        qtyEdited: true,
+        estimatedCost: 72000,
+        status: 'planned',
+      },
+    },
+  };
+  assert.equal(overlayHasOnPlanBudget(lostFlag), false);
+  assert.equal(overlayLineIsBudget(lostFlag.lines['matcha|podium']), true);
+  assert.equal(overlayHasArchivableBudget(lostFlag), true);
+});
+
+test('blank overlay shell (weekStart / branchForecast only) is not archivable', () => {
+  const blank = {
+    weekStart: '2026-09-21',
+    weekEnd: '2026-09-27',
+    weekStatus: 'draft',
+    lines: {},
+    manualLines: {},
+    branchForecast: { podium: { guests: 100 } },
+  };
+  assert.equal(overlayHasArchivableBudget(blank), false);
+  assert.equal(overlayHasOnPlanBudget(blank), false);
 });
 
 if (failed) {

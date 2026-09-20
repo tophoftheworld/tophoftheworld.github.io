@@ -17,39 +17,46 @@ import {
   startOfWeekMonday,
   getIndexFromMondayForDate,
 } from '../../../inventory/js/shared/forecast.js?v=105';
-import { THIS_WEEK_ID } from './seed.js?v=96';
-import { getItemPref, getSupplierRate } from './item-prefs.js?v=96';
-import { getLiveMasterItems, setLocationMetaCache } from './catalog.js?v=96';
-import { sanitizeLineCost, derivedRate, isAbsurdRate } from '../compute.js?v=96';
+import { THIS_WEEK_ID } from './seed.js?v=106';
+import { getItemPref, getSupplierRate } from './item-prefs.js?v=106';
+import { getLiveMasterItems, setLocationMetaCache } from './catalog.js?v=106';
+import { sanitizeLineCost, derivedRate, isAbsurdRate } from '../compute.js?v=106';
 import {
   overlayKeepsLine,
   shouldIncludeOrderViewRow,
   overlayHasPlanEdits,
-  overlayHasOnPlanBudget,
+  overlayHasArchivableBudget,
+  overlayLineIsBudget,
   weekHasOnPlanBudget,
+  canReplaceLiveOverlay,
   isManualPlanLine,
   shouldArchiveOverlayForLiveWeek,
   hasFrozenPlanMetrics,
   shouldFreezePlanMetrics,
-} from './overlay-filter.js?v=96';
+} from './overlay-filter.js?v=106';
 import {
   OVERLAY_KEY,
   emptyOverlay,
   loadLiveOverlay,
   saveLiveOverlay,
   savePastWeekRemote,
+  loadPastWeekRemote,
   getAckedOverlay,
-} from './plan-sync.js?v=96';
+} from './plan-sync.js?v=106';
+import { readLiveWeekCache } from './last-route.js?v=106';
 
 export {
   overlayKeepsLine,
   shouldIncludeOrderViewRow,
   overlayHasPlanEdits,
   overlayHasOnPlanBudget,
+  overlayHasArchivableBudget,
   weekHasOnPlanBudget,
+  canReplaceLiveOverlay,
+  preferNonEmptyPastWeek,
   isManualPlanLine,
-} from './overlay-filter.js?v=96';
-export { OVERLAY_KEY, emptyOverlay } from './plan-sync.js?v=96';
+} from './overlay-filter.js?v=106';
+export { OVERLAY_KEY, emptyOverlay } from './plan-sync.js?v=106';
 export { CORE_BRANCHES } from '../../../inventory/js/shared/order-view-feed.js?v=105';
 
 export const LAST_OPEN_LOC_KEY = 'purchasing-last-open-loc';
@@ -651,7 +658,7 @@ export function buildArchivedWeekFromOverlay(
         supplierOptions: [],
         source: 'archived',
         status: saved.status || 'planned',
-        onPlan: saved.onPlan != null ? !!saved.onPlan : false,
+        onPlan: overlayLineIsBudget(saved),
         needQty: saved.needQty ?? null,
         stockQty: saved.stockQty ?? null,
         ...(() => {
@@ -1003,7 +1010,17 @@ export function mapFeedToWeek(feed, overlay = {}) {
  * @returns {{ thisWeek: object, archivedWeek: object | null, priorityBranches: string[] }}
  */
 export async function fetchThisWeekFromOrderView({ branches = null, full = false } = {}) {
-  const overlay = await loadOverlay();
+  let overlay = await loadOverlay();
+  if (!overlayHasArchivableBudget(overlay)) {
+    const cachedWeek = readLiveWeekCache();
+    if (cachedWeek && weekHasOnPlanBudget(cachedWeek)) {
+      const fromCache = extractOverlayFromWeek(cachedWeek, { priorOverlay: overlay });
+      if (overlayHasArchivableBudget(fromCache)) {
+        overlay = fromCache;
+        cachedOverlay = overlay;
+      }
+    }
+  }
   applyBranchForecastFromOverlay(overlay);
 
   const priority = full
@@ -1021,10 +1038,10 @@ export async function fetchThisWeekFromOrderView({ branches = null, full = false
   await loadFeedForBranches(priority);
 
   const today = new Date();
-  const liveWeekStart =
-    cachedFeed?.meta?.planWeekStart || getDateKey(planWeekStart(today));
-  const liveWeekEnd =
-    cachedFeed?.meta?.planWeekEnd || getDateKey(addDays(planWeekStart(today), 6));
+  const calendarStart = getDateKey(planWeekStart(today));
+  const calendarEnd = getDateKey(addDays(planWeekStart(today), 6));
+  const liveWeekStart = cachedFeed?.meta?.planWeekStart || calendarStart;
+  const liveWeekEnd = cachedFeed?.meta?.planWeekEnd || calendarEnd;
 
   const archiveBounds = resolveOverlayArchiveBounds(overlay, liveWeekStart, today);
   if (archiveBounds) {
@@ -1034,20 +1051,34 @@ export async function fetchThisWeekFromOrderView({ branches = null, full = false
     if (missing.length) await loadFeedForBranches(missing);
 
     // Archive from overlay snapshot only \u2014 never remap through next week's live feed.
-    // Metrics-only overlays must not create a \u20B10 past week; require onPlan lines.
-    // savePastWeekRemote also refuses to overwrite a non-empty week with an empty one.
+    // Metrics-only overlays must not create a \u20B10 past week; require budget lines.
     let archivedWeek = null;
-    if (overlayHasOnPlanBudget(overlay)) {
+    const hasBudget = overlayHasArchivableBudget(overlay);
+    if (hasBudget) {
       archivedWeek = buildArchivedWeekFromOverlay(overlay, {
         weekStart: archiveBounds.archiveWeekStart,
         weekEnd: archiveBounds.archiveWeekEnd,
         mappedWeek: null,
       });
-      if (weekHasOnPlanBudget(archivedWeek)) {
-        archivedWeek = (await savePastWeekRemote(archivedWeek)) || archivedWeek;
-      } else {
-        archivedWeek = null;
+      const saved = await savePastWeekRemote(archivedWeek);
+      if (!saved?.id) {
+        // Keep the live overlay \u2014 do not open next week by destroying this one.
+        const thisWeek = mapFeedToWeek(cachedFeed, overlay);
+        await seedOverlayMetricsIfNeeded(overlay, thisWeek);
+        return { thisWeek, archivedWeek: null, priorityBranches: priority };
       }
+      // Ack: Firebase must actually hold a week with on-plan budget before clear.
+      const acked = await loadPastWeekRemote(saved.id);
+      if (!canReplaceLiveOverlay({ overlay, archivedWeek: acked })) {
+        const thisWeek = mapFeedToWeek(cachedFeed, overlay);
+        await seedOverlayMetricsIfNeeded(overlay, thisWeek);
+        return { thisWeek, archivedWeek: null, priorityBranches: priority };
+      }
+      archivedWeek = acked;
+    } else if (!canReplaceLiveOverlay({ overlay, archivedWeek: null })) {
+      const thisWeek = mapFeedToWeek(cachedFeed, overlay);
+      await seedOverlayMetricsIfNeeded(overlay, thisWeek);
+      return { thisWeek, archivedWeek: null, priorityBranches: priority };
     }
     const fresh = emptyOverlay(liveWeekStart, liveWeekEnd);
     fresh.branchForecast = branchForecastForOverlay();

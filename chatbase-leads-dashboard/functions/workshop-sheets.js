@@ -6,7 +6,8 @@
  *   Order ID | Name | Checked-In | Pass | Email | Contact Number |
  *   Time Slot | Milk Options | Payment Method | Notes
  *
- * Staff-entered columns (Checked-In, Notes) are preserved across syncs.
+ * Staff-entered columns (Checked-In, Notes) are preserved across syncs
+ * unless the dashboard has an explicit check-in value for that seat.
  *
  * Requires:
  *   - GOOGLE_SA_KEY               service-account JSON key (stringified)
@@ -131,9 +132,27 @@ function participantValue(v) {
   return s === "—" ? "" : s;
 }
 
+function seatKey(p) {
+  return `${String(p.orderId || "").trim()}_${String(p.seatIndex ?? "").trim()}`;
+}
+
+function sheetCheckInCell(value) {
+  if (value === false || value === 0) return false;
+  if (value == null || value === "") return "";
+  if (typeof value === "string") {
+    const s = value.trim().toLowerCase();
+    if (!s || s === "false" || s === "no" || s === "0") return false;
+  }
+  return true;
+}
+
 /** Flatten roster into ordered sheet rows with a stable key for manual-column merge. */
 function rosterToRows(data) {
   const sessions = (data && data.sessions) || [];
+  const checkedIn =
+    data && data.checkedIn && typeof data.checkedIn === "object"
+      ? data.checkedIn
+      : {};
   const rows = [];
   for (const session of sessions) {
     const timeLabel =
@@ -148,12 +167,13 @@ function rosterToRows(data) {
       return (a.seatIndex ?? 0) - (b.seatIndex ?? 0);
     });
     for (const p of participants) {
+      const checkIn = sheetCheckInCell(checkedIn[seatKey(p)]);
       rows.push({
         key: rowKey(p),
         values: [
           p.orderName || "",
           participantValue(p.participant),
-          "", // Checked-In (staff)
+          checkIn,
           p.pass || "",
           p.email || "",
           p.contact || "",
@@ -418,8 +438,11 @@ async function writeRows(spreadsheetId, rows, previousManual) {
     if (previousManual) {
       const prev = previousManual.get(manualLookupKey(values));
       if (prev) {
-        if (prev.checkedIn !== undefined && prev.checkedIn !== "") {
-          values[COL.checkedIn] = prev.checkedIn;
+        const fromDashboard = values[COL.checkedIn];
+        if (fromDashboard !== true && fromDashboard !== false) {
+          if (prev.checkedIn !== undefined && prev.checkedIn !== "") {
+            values[COL.checkedIn] = prev.checkedIn;
+          }
         }
         if (prev.notes !== undefined && prev.notes !== "") {
           values[COL.notes] = prev.notes;
@@ -455,25 +478,30 @@ function applyRosterNameOverrides(data, names) {
   return data;
 }
 
-async function loadRosterNameOverrides(eventId, sessionDate) {
+async function loadRosterMeta(eventId, sessionDate) {
   try {
     const snap = await getDb()
       .collection("workshopRosterMeta")
       .doc(dayKey(eventId, sessionDate))
       .get();
-    if (!snap.exists) return {};
-    const names = snap.data()?.names;
-    return names && typeof names === "object" ? names : {};
+    if (!snap.exists) return { names: {}, checkedIn: {} };
+    const data = snap.data() || {};
+    const names = data.names && typeof data.names === "object" ? data.names : {};
+    const checkedIn =
+      data.checkedIn && typeof data.checkedIn === "object" ? data.checkedIn : {};
+    return { names, checkedIn };
   } catch (_) {
-    return {};
+    return { names: {}, checkedIn: {} };
   }
 }
 
 async function fetchRoster(eventId, sessionDate) {
   const getWorkshopRosterData = await loadRosterFn();
   const data = await getWorkshopRosterData(eventId, sessionDate);
-  const names = await loadRosterNameOverrides(eventId, sessionDate);
-  return applyRosterNameOverrides(data, names);
+  const meta = await loadRosterMeta(eventId, sessionDate);
+  applyRosterNameOverrides(data, meta.names);
+  data.checkedIn = meta.checkedIn;
+  return data;
 }
 
 /** Idempotent: create the sheet if missing, then write current roster. */
@@ -561,4 +589,5 @@ module.exports = {
   syncWorkshopSheetsForOrder,
   getWorkshopSheetInfo,
   applyRosterNameOverrides,
+  sheetCheckInCell,
 };

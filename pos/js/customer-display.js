@@ -1,4 +1,4 @@
-import { loadEventsFromFirebase, subscribeToLiveSession } from './firebase-sync.js?v=9';
+import { loadEventsFromFirebase, subscribeToLiveSession, filterPosSelectableEvents } from './firebase-sync.js?v=13';
 
 console.log('[GREETING_DEBUG][display] MODULE LOADED', { build: 'greeting-fix-1' });
 
@@ -533,7 +533,7 @@ function initGreetingKeyboardShortcut() {
 
 async function loadEvents() {
   const events = await loadEventsFromFirebase();
-  const activeEvents = events.filter(event => !event.archived);
+  const activeEvents = filterPosSelectableEvents(events);
 
   els.eventSelector.innerHTML = '';
   activeEvents.forEach(event => {

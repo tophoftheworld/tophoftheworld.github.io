@@ -1,4 +1,4 @@
-import { escapeHtml } from '../format.js?v=96';
+import { escapeHtml } from '../format.js?v=106';
 
 let toastRoot = null;
 

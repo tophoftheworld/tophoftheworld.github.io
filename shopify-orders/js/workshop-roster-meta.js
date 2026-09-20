@@ -1,9 +1,12 @@
-import { rosterMetaDocId } from "./workshop-certificate-core.mjs";
+import {
+    normalizeCheckedInMap,
+    rosterMetaDocId,
+} from "./workshop-certificate-core.mjs";
 
 const COLLECTION = "workshopRosterMeta";
 
 function emptyMeta() {
-    return { venue: "", names: {} };
+    return { venue: "", names: {}, checkedIn: {} };
 }
 
 function normalizeMeta(raw) {
@@ -12,6 +15,7 @@ function normalizeMeta(raw) {
     return {
         venue: String(raw?.venue || "").trim(),
         names,
+        checkedIn: normalizeCheckedInMap(raw?.checkedIn),
     };
 }
 
@@ -79,6 +83,7 @@ export async function saveWorkshopRosterMeta(eventId, sessionDate, meta) {
             sessionDate: String(sessionDate || "").trim(),
             venue: next.venue,
             names: next.names,
+            checkedIn: next.checkedIn,
             updatedAt: serverTimestamp(),
         });
         return next;

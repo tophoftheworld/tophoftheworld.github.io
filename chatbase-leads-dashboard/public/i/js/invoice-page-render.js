@@ -856,24 +856,21 @@
         ? `${packagesHtml}${extrasHtml}`
         : `<div class="inv-empty">No package details yet.</div>`;
 
+    const heroPrimary = client.name
+      ? `<div class="inv-hero-client">${escapeHtml(client.name)}</div>`
+      : client.company
+        ? `<div class="inv-hero-client">${escapeHtml(client.company)}</div>`
+        : `<div class="inv-hero-client">Client</div>`;
+    const heroSecondary =
+      client.name && client.company
+        ? `<div class="inv-hero-company">${escapeHtml(client.company)}</div>`
+        : "";
+
     return `
       <section class="inv-hero">
         <div class="inv-hero-identity">
-          ${
-            client.name
-              ? `<div class="inv-hero-client">${escapeHtml(client.name)}</div>`
-              : ""
-          }
-          ${
-            client.company
-              ? `<div class="inv-hero-company">${escapeHtml(client.company)}</div>`
-              : ""
-          }
-          ${
-            !client.hasEither
-              ? `<div class="inv-hero-client">Client</div>`
-              : ""
-          }
+          ${heroPrimary}
+          ${heroSecondary}
         </div>
         <div class="inv-hero-meta">
           ${doc.invoiceNumber ? `<span>${escapeHtml(doc.invoiceNumber)}</span>` : ""}

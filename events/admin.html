@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <title>Events · Matchanese</title>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/events.css?v=21" />
+  <link rel="stylesheet" href="css/events.css?v=38" />
 </head>
 <body class="events-app">
   <div class="container">
@@ -73,8 +73,17 @@
     <div class="drawer-footer" id="drawerFooter"></div>
   </aside>
 
+  <div class="event-modal-backdrop" id="eventModalBackdrop" hidden></div>
+  <div class="event-modal" id="eventModal" role="dialog" aria-modal="true" aria-labelledby="eventModalTitle" aria-hidden="true" hidden>
+    <div class="event-modal__wash" aria-hidden="true"></div>
+    <div class="event-modal__panel">
+      <div class="event-modal__body" id="eventModalBody"></div>
+      <div class="event-modal__footer" id="eventModalFooter" hidden></div>
+    </div>
+  </div>
+
   <div id="composerRoot"></div>
 
-  <script type="module" src="js/app.js?v=21"></script>
+  <script type="module" src="js/app.js?v=38"></script>
 </body>
 </html>

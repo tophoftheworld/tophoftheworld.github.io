@@ -121,6 +121,7 @@ function saveToLocalStorage() {
         invoiceDate: document.getElementById('invoiceDate').value,
         clientName: document.getElementById('clientName').value,
         clientCompany: document.getElementById('clientCompany')?.value || '',
+        eventName: document.getElementById('eventName')?.value || '',
         clientAddress: document.getElementById('clientAddress').value,
         clientTIN: document.getElementById('clientTIN').value,
         clientEmail: _clientEmail || '',
@@ -170,6 +171,9 @@ function loadFromLocalStorage() {
         if (document.getElementById('clientCompany')) {
             document.getElementById('clientCompany').value = data.clientCompany || '';
         }
+        if (document.getElementById('eventName')) {
+            document.getElementById('eventName').value = data.eventName || data.eventTitle || '';
+        }
         if (data.clientAddress) document.getElementById('clientAddress').value = data.clientAddress;
         if (data.clientTIN) document.getElementById('clientTIN').value = data.clientTIN;
         if (data.notes) document.getElementById('notes').value = data.notes;
@@ -218,6 +222,9 @@ function applyInvoicePreset(data) {
     document.getElementById('clientName').value = data.clientName || '';
     if (document.getElementById('clientCompany')) {
         document.getElementById('clientCompany').value = data.clientCompany || '';
+    }
+    if (document.getElementById('eventName')) {
+        document.getElementById('eventName').value = data.eventName || data.eventTitle || '';
     }
     document.getElementById('clientAddress').value = data.clientAddress || '';
     document.getElementById('clientTIN').value = data.clientTIN || '';
@@ -2348,6 +2355,7 @@ function buildEditorInvoiceDoc() {
         eventDate,
         clientName: document.getElementById('clientName')?.value || '',
         clientCompany: document.getElementById('clientCompany')?.value || '',
+        eventName: document.getElementById('eventName')?.value || '',
         clientAddress: document.getElementById('clientAddress')?.value || '',
         clientTIN: document.getElementById('clientTIN')?.value || '',
         notes: document.getElementById('notes')?.value || '',
@@ -2614,7 +2622,7 @@ function setupEventListeners() {
     // Form inputs with auto-save
     const formInputs = [
         'invoiceNumber', 'invoiceDate',
-        'clientName', 'clientCompany', 'clientAddress', 'clientTIN',
+        'clientName', 'clientCompany', 'eventName', 'clientAddress', 'clientTIN',
         'notes', 'invoiceDiscount'
     ];
 
@@ -2811,6 +2819,7 @@ async function clearForm() {
     // Clear client details
     document.getElementById('clientName').value = '';
     if (document.getElementById('clientCompany')) document.getElementById('clientCompany').value = '';
+    if (document.getElementById('eventName')) document.getElementById('eventName').value = '';
     document.getElementById('clientAddress').value = '';
     document.getElementById('clientTIN').value = '';
     if (document.getElementById('invoiceDiscount')) document.getElementById('invoiceDiscount').value = '';
@@ -3034,7 +3043,7 @@ async function promoteCurrentInvoiceToCalendar() {
     if (_opsEventId) {
         const snap = await fetchCloudInvoiceById(_currentCloudDocId);
         const { invoicePackageDays, promoteInvoiceToOpsEvent } = await import(
-            '../shared/js/ops-events.js?v=18'
+            '../shared/js/ops-events.js?v=30'
         );
         const days = snap ? invoicePackageDays(snap) : [];
         const linked = [
@@ -3097,7 +3106,7 @@ async function promoteCurrentInvoiceToCalendar() {
         const snap = await fetchCloudInvoiceById(_currentCloudDocId);
         if (!snap) throw new Error('Could not load the saved invoice.');
 
-        const { promoteInvoiceToOpsEvent } = await import('../shared/js/ops-events.js?v=18');
+        const { promoteInvoiceToOpsEvent } = await import('../shared/js/ops-events.js?v=30');
         const { db, firestoreFns } = await getOpsPromoteContext();
         const created = await promoteInvoiceToOpsEvent(db, firestoreFns, snap, {
             createdBy: 'invoice-generator'
@@ -3148,7 +3157,7 @@ async function archiveCurrentInvoice() {
     }
     try {
         await persistToCloud();
-        const { archiveInvoice } = await import('../shared/js/ops-events.js?v=18');
+        const { archiveInvoice } = await import('../shared/js/ops-events.js?v=30');
         const { db, firestoreFns } = await getOpsPromoteContext();
         await archiveInvoice(db, firestoreFns, _currentCloudDocId, {
             updatedBy: 'invoice-generator'
@@ -3235,7 +3244,8 @@ async function fetchCloudInvoiceById(docId) {
 
 function buildSavePayload() {
     const pricing = calculatePricingBreakdown();
-    return {
+    const eventName = String(document.getElementById('eventName')?.value || '').trim();
+    const payload = {
         invoiceNumber: document.getElementById('invoiceNumber').value,
         invoiceDate: document.getElementById('invoiceDate').value,
         clientName: document.getElementById('clientName').value,
@@ -3261,6 +3271,8 @@ function buildSavePayload() {
         leadId: _leadId || null,
         savedAt: new Date().toISOString()
     };
+    if (eventName) payload.eventName = eventName;
+    return payload;
 }
 
 function restoreFromPayload(data, docId) {
@@ -3286,6 +3298,9 @@ function restoreFromPayload(data, docId) {
     document.getElementById('clientName').value = data.clientName || '';
     if (document.getElementById('clientCompany')) {
         document.getElementById('clientCompany').value = data.clientCompany || '';
+    }
+    if (document.getElementById('eventName')) {
+        document.getElementById('eventName').value = data.eventName || data.eventTitle || '';
     }
     document.getElementById('clientAddress').value = data.clientAddress || '';
     document.getElementById('clientTIN').value = data.clientTIN || '';
@@ -3420,6 +3435,7 @@ async function persistToCloud() {
     if (_currentCloudDocId) {
         const { doc, updateDoc } = _firebaseModules;
         await updateDoc(doc(db, 'invoice-generator', _currentCloudDocId), payload);
+        await syncLinkedOpsEventFromInvoice(payload);
         syncInvoiceEditorUrl({ docId: _currentCloudDocId });
         return _currentCloudDocId;
     } else {
@@ -3429,6 +3445,41 @@ async function persistToCloud() {
         saveToLocalStorage(); // persist the new doc ID so refresh doesn't lose it
         syncInvoiceEditorUrl({ docId: _currentCloudDocId });
         return _currentCloudDocId;
+    }
+}
+
+/** Push event name to linked calendar event(s). Does not touch Events contact person. */
+async function syncLinkedOpsEventFromInvoice(payload) {
+    const eventIds = [...new Set([_opsEventId].filter(Boolean))];
+    if (!eventIds.length) return;
+    try {
+        const { db, firestoreFns } = await getOpsPromoteContext();
+        const { doc, updateDoc, getDoc } = firestoreFns;
+        const title = String(payload.eventName || '').trim();
+        if (!title) return;
+        const now = new Date().toISOString();
+        const patchIds = new Set(eventIds);
+        if (_currentCloudDocId) {
+            const invSnap = await getDoc(doc(db, 'invoice-generator', _currentCloudDocId));
+            const inv = invSnap.exists() ? invSnap.data() || {} : {};
+            for (const id of [
+                ...(Array.isArray(inv.opsEventIds) ? inv.opsEventIds : []),
+                inv.opsEventId
+            ].filter(Boolean)) {
+                patchIds.add(id);
+            }
+        }
+        for (const eventId of patchIds) {
+            const snap = await getDoc(doc(db, 'opsEvents', eventId));
+            if (!snap.exists()) continue;
+            await updateDoc(doc(db, 'opsEvents', eventId), {
+                title,
+                updatedAt: now,
+                updatedBy: 'invoice-generator'
+            });
+        }
+    } catch (err) {
+        console.warn('Could not sync linked ops event from invoice', err);
     }
 }
 
@@ -3792,6 +3843,7 @@ function filterListInvoices(query) {
         const hay = [
             inv.clientName,
             inv.clientCompany,
+            inv.eventName,
             inv.invoiceNumber,
             inv.eventDate,
             ...(inv.invoiceItems || []).map((i) => [i.description, i.eventVenue, i.eventDate].join(' '))
@@ -3864,6 +3916,7 @@ function renderInvoiceList(invoices) {
 
     const copyIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7a3 3 0 0 1 3-3h7a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3h-7a3 3 0 0 1-3-3V7zm-4 4a3 3 0 0 1 3-3v9a5 5 0 0 0 5 5h5a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-11z"/></svg>';
     const openIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5h5v5h-2V8.41l-6.3 6.3-1.4-1.42 6.29-6.29H14V5zM5 7a2 2 0 0 1 2-2h5v2H7v12h12v-5h2v5a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7z"/></svg>';
+    const archiveIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3h16a1 1 0 0 1 .96 1.27L19.5 8H4.5L3.04 4.27A1 1 0 0 1 4 3zm1 7h14v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V10zm4 2a1 1 0 0 0 0 2h6a1 1 0 0 0 0-2H9z"/></svg>';
 
     list.innerHTML = invoices.map((inv) => {
         const summary = computeClientPaymentSummary(inv);
@@ -3923,7 +3976,7 @@ function renderInvoiceList(invoices) {
                 <div class="invoice-list-actions">
                     <button type="button" class="invoice-list-icon-btn" data-action="copy" title="Copy customer link" aria-label="Copy customer link">${copyIcon}</button>
                     <button type="button" class="invoice-list-icon-btn" data-action="open" title="Open customer page" aria-label="Open customer page" ${published ? '' : 'disabled'} data-url="${escapeHtml(url)}">${openIcon}</button>
-                    <button type="button" class="invoice-list-icon-btn" data-action="archive" title="Archive invoice" aria-label="Archive invoice">Archive</button>
+                    <button type="button" class="invoice-list-icon-btn" data-action="archive" title="Archive invoice" aria-label="Archive invoice">${archiveIcon}</button>
                 </div>
             </div>
             ${metaHtml}
@@ -3955,6 +4008,7 @@ async function startNewInvoice() {
     document.getElementById('invoiceNumber').value = nextInvoiceNumberForDate(today);
     document.getElementById('clientName').value = '';
     if (document.getElementById('clientCompany')) document.getElementById('clientCompany').value = '';
+    if (document.getElementById('eventName')) document.getElementById('eventName').value = '';
     document.getElementById('clientAddress').value = '';
     document.getElementById('clientTIN').value = '';
     document.getElementById('notes').value = '';
@@ -4142,6 +4196,7 @@ function filterInvoices(searchQuery) {
     return _allCloudInvoices.filter(inv =>
         (inv.clientName || '').toLowerCase().includes(q) ||
         (inv.clientCompany || '').toLowerCase().includes(q) ||
+        (inv.eventName || '').toLowerCase().includes(q) ||
         (inv.invoiceNumber || '').toLowerCase().includes(q) ||
         (inv.packageType || '').toLowerCase().includes(q) ||
         (inv.eventType || '').toLowerCase().includes(q) ||
@@ -4394,6 +4449,7 @@ function buildCurrentInvoiceForAi() {
         invoiceDate: document.getElementById('invoiceDate').value,
         clientName: document.getElementById('clientName').value,
         clientCompany: document.getElementById('clientCompany')?.value || '',
+        eventName: document.getElementById('eventName')?.value || '',
         clientAddress: document.getElementById('clientAddress').value,
         clientTIN: document.getElementById('clientTIN').value,
         notes: document.getElementById('notes').value,
@@ -4412,6 +4468,7 @@ function buildInvoiceDocumentPreview() {
     const invDate = document.getElementById('invoiceDate')?.value || '';
     const clientName = document.getElementById('clientName')?.value || '';
     const clientCompany = document.getElementById('clientCompany')?.value || '';
+    const eventName = document.getElementById('eventName')?.value || '';
     const clientAddress = document.getElementById('clientAddress')?.value || '';
     const clientTIN = document.getElementById('clientTIN')?.value || '';
     const notes = document.getElementById('notes')?.value || '';
@@ -4419,8 +4476,9 @@ function buildInvoiceDocumentPreview() {
     lines.push('BILLING INVOICE');
     if (invNo) lines.push(`Invoice #: ${invNo}`);
     if (invDate) lines.push(`Date: ${formatDate(invDate)}`);
-    lines.push(`Name: ${clientName || '(none)'}`);
+    lines.push(`Billed to: ${clientName || '(none)'}`);
     lines.push(`Company: ${clientCompany || '(none)'}`);
+    lines.push(`Event name: ${eventName || '(none)'}`);
     if (clientAddress) lines.push(`Address: ${clientAddress}`);
     if (clientTIN) lines.push(`TIN: ${clientTIN}`);
     lines.push('');
@@ -4736,6 +4794,7 @@ function mergeAiInvoice(current, incoming, { allowClear = false } = {}) {
         invoiceDate: pickMergedString(cur.invoiceDate, inc.invoiceDate, allowClear),
         clientName: pickMergedString(cur.clientName, inc.clientName, allowClear),
         clientCompany: pickMergedString(cur.clientCompany, inc.clientCompany, allowClear),
+        eventName: pickMergedString(cur.eventName, inc.eventName, allowClear),
         clientAddress: pickMergedString(cur.clientAddress, inc.clientAddress, allowClear),
         clientTIN: pickMergedString(cur.clientTIN, inc.clientTIN, allowClear),
         notes: pickMergedString(cur.notes, inc.notes, allowClear),
@@ -4758,7 +4817,6 @@ function mergeAiInvoice(current, incoming, { allowClear = false } = {}) {
             merged.clientName = '';
         }
     }
-
     if (isContaminatedAddress(merged.clientAddress)) merged.clientAddress = '';
 
     if (Array.isArray(merged.customLineItems)) {
@@ -5167,7 +5225,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const label = clientListLabel(inv) || inv.invoiceNumber || 'this invoice';
                 if (!confirm(`Archive ${label}?`)) return;
                 try {
-                    const { archiveInvoice } = await import('../shared/js/ops-events.js?v=18');
+                    const { archiveInvoice } = await import('../shared/js/ops-events.js?v=30');
                     const { db, firestoreFns } = await getOpsPromoteContext();
                     await archiveInvoice(db, firestoreFns, inv.id, { updatedBy: 'invoice-generator' });
                     _allCloudInvoices = (_allCloudInvoices || []).filter((row) => row.id !== inv.id);

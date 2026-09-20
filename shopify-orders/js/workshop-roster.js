@@ -17,9 +17,12 @@ import {
 import { showConfirmDialog } from "./confirm-dialog.js";
 import { paidIconHtml, paymentCellHtml } from "./payment-method.js";
 import {
+    applyCheckIns,
     applyNameOverrides,
     certificateParticipantNames,
+    isSameDaySession,
     seatNameKey,
+    setSeatCheckIn,
 } from "./workshop-certificate-core.mjs";
 import { downloadWorkshopCertificatesPdf } from "./workshop-certificates.js?v=2";
 import {
@@ -38,6 +41,7 @@ const els = {
     workshopInfoBar: document.getElementById("workshopInfoBar"),
     infoWorkshop: document.getElementById("infoWorkshop"),
     infoDate: document.getElementById("infoDate"),
+    infoCheckIn: document.getElementById("infoCheckIn"),
     tbody: document.getElementById("rosterBody"),
     rosterCardList: document.getElementById("rosterCardList"),
     table: document.getElementById("rosterTable"),
@@ -67,7 +71,7 @@ const state = {
     sessionPillClasses: new Map(),
     selectedRowKey: null,
     sheet: { configured: false, exists: false, url: null },
-    meta: { venue: "", names: {} },
+    meta: { venue: "", names: {}, checkedIn: {} },
     certificatesBusy: false,
 };
 
@@ -203,6 +207,12 @@ function comparePrimaryRows(a, b, sortKey, sortDir) {
         if (av !== bv) return (av - bv) * dir;
         return parseOrderNum(b.orderName) - parseOrderNum(a.orderName);
     }
+    if (sortKey === "checkedIn") {
+        const av = a.checkedIn ? 1 : 0;
+        const bv = b.checkedIn ? 1 : 0;
+        if (av !== bv) return (av - bv) * dir;
+        return parseOrderNum(b.orderName) - parseOrderNum(a.orderName);
+    }
     let av = a[sortKey];
     let bv = b[sortKey];
     av = String(av ?? "").toLowerCase();
@@ -299,6 +309,23 @@ function participantNameHtml(r) {
     </span>`;
 }
 
+function canToggleCheckIn() {
+    return isSameDaySession(sessionDate);
+}
+
+function checkInControlHtml(r) {
+    if (!canToggleCheckIn() && !r.checkedIn) return "";
+    if (!canToggleCheckIn()) {
+        return `<span class="roster-checkin-badge">Present</span>`;
+    }
+    const on = Boolean(r.checkedIn);
+    return `<button type="button" class="roster-checkin-btn${on ? " roster-checkin-btn--on" : ""}" data-checkin data-row-key="${escapeHtml(participantRowKey(r))}" aria-pressed="${on ? "true" : "false"}">${on ? "Present" : "Check in"}</button>`;
+}
+
+function rosterColCount() {
+    return document.body.classList.contains("workshop-checkin-visible") ? 11 : 10;
+}
+
 function renderSessionBadge(r) {
     if (r.noBooking) {
         return '<span class="roster-badge roster-badge--no-booking">No booking</span>';
@@ -314,14 +341,16 @@ function renderParticipantCard(r) {
         state.selectedRowKey === participantRowKey(r)
             ? " entity-card--selected"
             : "";
+    const present = r.checkedIn ? " roster-card--present" : "";
     const contactLine = r.contact
         ? `<a href="tel:${escapeHtml(r.contact.replace(/[^\d+]/g, ""))}">${escapeHtml(r.contact)}</a>`
         : "—";
     const emailLine = r.email
         ? `<a href="mailto:${escapeHtml(r.email)}">${escapeHtml(r.email)}</a>`
         : "—";
+    const checkIn = checkInControlHtml(r);
 
-    return `<article class="entity-card roster-card${r.isSeatFollower ? " roster-card--seat-follow" : ""}${r.noBooking ? " roster-card--no-booking" : ""}${selected}" data-order-id="${r.orderId}" data-row-key="${escapeHtml(participantRowKey(r))}" tabindex="0" role="button">
+    return `<article class="entity-card roster-card${r.isSeatFollower ? " roster-card--seat-follow" : ""}${r.noBooking ? " roster-card--no-booking" : ""}${present}${selected}" data-order-id="${r.orderId}" data-row-key="${escapeHtml(participantRowKey(r))}" tabindex="0" role="button">
         <div class="entity-card__head">
             <span class="entity-card__title">${escapeHtml(r.orderName)}</span>
             ${renderSessionBadge(r)}
@@ -335,12 +364,14 @@ function renderParticipantCard(r) {
         <div class="entity-card__payment">
             ${paymentCellHtml(r.financialStatus, escapeHtml(r.paymentMethod || "—"))}
         </div>
+        ${checkIn ? `<div class="roster-card__checkin">${checkIn}</div>` : ""}
     </article>`;
 }
 
 function renderParticipantRow(r) {
     const selected =
         state.selectedRowKey === participantRowKey(r) ? " roster-row--selected" : "";
+    const present = r.checkedIn ? " roster-row--present" : "";
     const orderCell = escapeHtml(r.orderName);
     const emailCell = r.email
         ? `<a href="mailto:${escapeHtml(r.email)}">${escapeHtml(r.email)}</a>`
@@ -356,11 +387,12 @@ function renderParticipantRow(r) {
     const rowClass = r.isSeatFollower
         ? "roster-row roster-row--seat-follow"
         : "roster-row";
-    return `<tr class="${rowClass}${selected}${r.noBooking ? " roster-row--no-booking" : ""}" data-order-id="${r.orderId}" data-row-key="${escapeHtml(participantRowKey(r))}" tabindex="0">
+    return `<tr class="${rowClass}${selected}${present}${r.noBooking ? " roster-row--no-booking" : ""}" data-order-id="${r.orderId}" data-row-key="${escapeHtml(participantRowKey(r))}" tabindex="0">
         <td class="col-num">${escapeHtml(String(r.rowNum ?? ""))}</td>
         <td class="col-session">${renderSessionBadge(r)}</td>
         <td class="col-order">${orderCell}</td>
         <td class="col-customer">${participantNameHtml(r)}</td>
+        <td class="col-checkin">${checkInControlHtml(r)}</td>
         <td class="col-pass">${passPillHtml(r.pass)}</td>
         <td class="col-contact">${contactCell}</td>
         <td class="col-email">${emailCell}</td>
@@ -370,6 +402,26 @@ function renderParticipantRow(r) {
     </tr>`;
 }
 
+function updateCheckInChrome() {
+    const sameDay = canToggleCheckIn();
+    const present = state.rows.filter((r) => r.checkedIn).length;
+    const total = state.rows.length;
+    document.body.classList.toggle("workshop-checkin-day", sameDay);
+    document.body.classList.toggle(
+        "workshop-checkin-visible",
+        sameDay || present > 0
+    );
+
+    if (!els.infoCheckIn) return;
+    if (total && (sameDay || present > 0)) {
+        els.infoCheckIn.hidden = false;
+        els.infoCheckIn.textContent = `${present} of ${total} present`;
+    } else {
+        els.infoCheckIn.hidden = true;
+        els.infoCheckIn.textContent = "";
+    }
+}
+
 function renderWorkshopInfo(day) {
     if (!day) return;
     els.workshopInfoBar.hidden = false;
@@ -377,6 +429,7 @@ function renderWorkshopInfo(day) {
         day.workshop || "Workshop"
     );
     els.infoDate.textContent = day.dateLabel || day.sessionDate || "";
+    updateCheckInChrome();
 }
 
 function getSortedRows() {
@@ -389,10 +442,11 @@ function getSortedRows() {
 function renderTable() {
     const rows = getSortedRows();
     updateSortHeaderIndicators();
+    updateCheckInChrome();
 
     if (!rows.length) {
         els.tbody.innerHTML =
-            '<tr><td colspan="10" class="muted">No participants found for this day.</td></tr>';
+            `<tr><td colspan="${rosterColCount()}" class="muted">No participants found for this day.</td></tr>`;
         if (els.rosterCardList) {
             els.rosterCardList.innerHTML =
                 '<p class="entity-card-empty muted">No participants found for this day.</p>';
@@ -423,7 +477,7 @@ function exportRowValues(r) {
     return [
         r.orderName || "",
         r.participant === "—" ? "" : r.participant || "",
-        "",
+        r.checkedIn ? "Yes" : "",
         r.pass || "",
         r.email || "",
         r.contact || "",
@@ -495,6 +549,26 @@ async function handleEditName(row) {
     renderTable();
     if (state.selectedRowKey === participantRowKey(row)) {
         const updated = state.rows.find((r) => participantRowKey(r) === state.selectedRowKey);
+        if (updated) openParticipantModal(updated);
+    }
+    await persistMeta();
+    backgroundSyncSheet();
+}
+
+async function handleCheckIn(row) {
+    if (!row || !canToggleCheckIn()) return;
+    state.meta.checkedIn = setSeatCheckIn(
+        state.meta.checkedIn,
+        row.orderId,
+        row.seatIndex,
+        !row.checkedIn
+    );
+    applyCheckIns(state.rows, state.meta.checkedIn);
+    renderTable();
+    if (state.selectedRowKey === participantRowKey(row)) {
+        const updated = state.rows.find(
+            (r) => participantRowKey(r) === state.selectedRowKey
+        );
         if (updated) openParticipantModal(updated);
     }
     await persistMeta();
@@ -722,14 +796,22 @@ function openParticipantModal(r) {
                 <div><span class="entity-card__label">Email</span><p>${emailLine}</p></div>
             </div>
             <div class="detail-actions detail-actions--stack">
+                ${canToggleCheckIn()
+                    ? `<button type="button" class="action-btn ${r.checkedIn ? "secondary" : "primary"}" id="btnToggleCheckIn">${r.checkedIn ? "Undo check-in" : "Check in"}</button>`
+                    : r.checkedIn
+                      ? `<p class="roster-checkin-badge">Present</p>`
+                      : ""}
                 <button type="button" class="action-btn secondary" id="btnEditParticipantName">Edit name</button>
-                <a class="action-btn primary" href="${escapeHtml(dashboardUrl)}">Open full order</a>
+                <a class="action-btn ${canToggleCheckIn() ? "secondary" : "primary"}" href="${escapeHtml(dashboardUrl)}">Open full order</a>
                 ${shopifyUrl ? `<a class="action-btn secondary" href="${escapeHtml(shopifyUrl)}" target="_blank" rel="noopener">Open in Shopify</a>` : ""}
                 ${showCancel ? `<div class="detail-cancel-row"><button type="button" class="detail-cancel-link" id="btnCancelRegistration">Cancel registration</button></div>` : ""}
             </div>
         </section>`;
 
     document.getElementById("btnParticipantClose")?.addEventListener("click", closeParticipantModal);
+    document.getElementById("btnToggleCheckIn")?.addEventListener("click", () => {
+        handleCheckIn(r);
+    });
     document.getElementById("btnEditParticipantName")?.addEventListener("click", () => {
         handleEditName(r);
     });
@@ -788,6 +870,7 @@ function setupRowClicks() {
     const activate = (ev) => {
         if (ev.type === "keydown" && ev.key !== "Enter") return;
         if (ev.target.closest("[data-edit-name]")) return;
+        if (ev.target.closest("[data-checkin]")) return;
         openParticipantFromTarget(ev.target);
     };
     const onEditClick = (ev) => {
@@ -799,9 +882,22 @@ function setupRowClicks() {
         const row = state.rows.find((r) => participantRowKey(r) === key);
         handleEditName(row);
     };
+    const onCheckInClick = (ev) => {
+        const btn = ev.target.closest("[data-checkin]");
+        if (!btn) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        const key = btn.getAttribute("data-row-key");
+        const row = state.rows.find((r) => participantRowKey(r) === key);
+        handleCheckIn(row);
+    };
     els.tbody.addEventListener("click", (ev) => {
         if (ev.target.closest("[data-edit-name]")) {
             onEditClick(ev);
+            return;
+        }
+        if (ev.target.closest("[data-checkin]")) {
+            onCheckInClick(ev);
             return;
         }
         if (ev.target.closest("a")) return;
@@ -812,6 +908,10 @@ function setupRowClicks() {
         els.rosterCardList.addEventListener("click", (ev) => {
             if (ev.target.closest("[data-edit-name]")) {
                 onEditClick(ev);
+                return;
+            }
+            if (ev.target.closest("[data-checkin]")) {
+                onCheckInClick(ev);
                 return;
             }
             if (ev.target.closest("a")) return;
@@ -855,6 +955,7 @@ async function loadWorkshopDay() {
     }
 
     setStatus("Loading participants…");
+    updateCheckInChrome();
 
     try {
         const qs = new URLSearchParams({
@@ -884,8 +985,10 @@ async function loadWorkshopDay() {
         state.meta = {
             venue: state.meta.venue || loaded.venue,
             names: { ...loaded.names, ...state.meta.names },
+            checkedIn: { ...loaded.checkedIn, ...state.meta.checkedIn },
         };
         applyNameOverrides(state.rows, state.meta.names);
+        applyCheckIns(state.rows, state.meta.checkedIn);
         renderTable();
 
         await fetchSheetInfo();

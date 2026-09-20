@@ -1,4 +1,4 @@
-import { loadCatalog } from './data/catalog.js?v=97';
+import { loadCatalog } from './data/catalog.js?v=106';
 import {
   loadStateFromOrderView,
   tryHydrateFromLocalCache,
@@ -8,22 +8,22 @@ import {
   flushPersist,
   startLiveOverlaySync,
   isOverlayDirty,
-} from './store.js?v=97';
-import { THIS_WEEK_ID } from './data/seed.js?v=97';
-import { loadSuppliers } from './data/suppliers.js?v=97';
-import { loadItemPrefs } from './data/item-prefs.js?v=97';
-import { loadCustomItems } from './data/custom-items.js?v=97';
+} from './store.js?v=106';
+import { THIS_WEEK_ID } from './data/seed.js?v=106';
+import { loadSuppliers } from './data/suppliers.js?v=106';
+import { loadItemPrefs } from './data/item-prefs.js?v=106';
+import { loadCustomItems } from './data/custom-items.js?v=106';
 import {
   saveLastRoute,
   restoreHashFromLastRoute,
   routeToHash,
-} from './data/last-route.js?v=97';
-import { renderPlan } from './ui/plan.js?v=97';
-import { renderOrders } from './ui/orders.js?v=97';
-import { renderSpent } from './ui/spent.js?v=97';
-import { renderPastWeeks } from './ui/past-weeks.js?v=97';
-import { initShell } from './ui/shell.js?v=97';
-import { renderLoadingShell } from './ui/loading-shell.js?v=97';
+} from './data/last-route.js?v=106';
+import { renderPlan } from './ui/plan.js?v=106';
+import { renderOrders } from './ui/orders.js?v=106';
+import { renderSpent } from './ui/spent.js?v=106';
+import { renderPastWeeks } from './ui/past-weeks.js?v=106';
+import { initShell } from './ui/shell.js?v=106';
+import { renderLoadingShell } from './ui/loading-shell.js?v=106';
 
 const root = document.getElementById('app');
 let renderQueued = false;

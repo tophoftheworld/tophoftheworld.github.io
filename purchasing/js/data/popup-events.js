@@ -3,7 +3,7 @@
  * the Pop-ups sales dashboard uses (type: 'popup').
  */
 import { collection, getDocs } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
-import { db } from '../firebase.js?v=96';
+import { db } from '../firebase.js?v=106';
 
 const CACHE_KEY = 'purchasing-popup-events-v1';
 

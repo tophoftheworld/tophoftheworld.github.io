@@ -1,4 +1,4 @@
-﻿import {
+import {
   getWeek,
   updateLine,
   setLineOnPlan,
@@ -11,11 +11,11 @@
   saveLastOpenLoc,
   isBranchFeedLoaded,
   CORE_BRANCHES,
-} from '../store.js?v=97';
+} from '../store.js?v=106';
 import {
   itemDisplayName,
   buildLocationGroups,
-} from '../data/catalog.js?v=97';
+} from '../data/catalog.js?v=106';
 import {
   sortByInventoryOrder,
   lineWarning,
@@ -24,7 +24,7 @@ import {
   isLockedStatus,
   fulfillmentStatus,
   orderQtyState,
-} from '../compute.js?v=97';
+} from '../compute.js?v=106';
 import {
   formatPeso,
   formatQty,
@@ -34,17 +34,17 @@ import {
   escapeHtml,
   statusLabel,
   formatLineEditTitle,
-} from '../format.js?v=97';
-import { renderWeekChrome, bindWeekChrome } from './week-chrome.js?v=97';
-import { toast } from './shell.js?v=97';
-import { openPlanLineModal, openAddLineModal } from './plan-line-modal.js?v=97';
-import { openAddLocationChooser } from './location-chooser.js?v=97';
+} from '../format.js?v=106';
+import { renderWeekChrome, bindWeekChrome } from './week-chrome.js?v=106';
+import { toast } from './shell.js?v=106';
+import { openPlanLineModal, openAddLineModal } from './plan-line-modal.js?v=106';
+import { openAddLocationChooser } from './location-chooser.js?v=106';
 import {
   createAutocomplete,
-} from '../../../expenses/js/autocomplete.js?v=97';
-import { getSuppliers, ensureSupplier } from '../data/suppliers.js?v=97';
-import { buildItemSupplierMatchList, getSupplierRate } from '../data/item-prefs.js?v=97';
-import { isManualPlanLine } from '../data/overlay-filter.js?v=97';
+} from '../../../expenses/js/autocomplete.js?v=99';
+import { getSuppliers, ensureSupplier } from '../data/suppliers.js?v=106';
+import { buildItemSupplierMatchList, getSupplierRate } from '../data/item-prefs.js?v=106';
+import { isManualPlanLine } from '../data/overlay-filter.js?v=106';
 import {
   VALID_ORDER_BASELINES,
   VALID_ORDER_HORIZONS,
@@ -158,8 +158,12 @@ function toggleCollapsed(key, hasIncluded) {
 export function renderPlan(root, weekId) {
   const week = getWeek(weekId);
   if (!week) {
-    // Route/state can briefly disagree during boot \u2014 avoid a hard empty state flash.
-    root.innerHTML = '<p class="app-loading-inline">Loading week\u2026</p>';
+    // Never soft-lock on a bare status line (dual-store / hash races). App re-renders on notify.
+    root.innerHTML =
+      '<p class="app-loading-inline" role="status">Loading week\u2026</p>';
+    queueMicrotask(() => {
+      if (getWeek(weekId)) renderPlan(root, weekId);
+    });
     return;
   }
 
@@ -728,20 +732,25 @@ function renderRow(week, line, editable, withRunout = true) {
     ordered: 'Order already sent to the supplier',
     delivered: 'Goods arrived at the store',
   };
+  // Delivered uses the action-column check only — no duplicate "Delivered" pill.
   const state =
-    fulfill !== 'planned'
+    fulfill !== 'planned' && fulfill !== 'delivered'
       ? `<span class="status-flags"><span class="status-pill status-pill--${fulfill}" title="${escapeHtml(stateTips[fulfill] || '')}">${escapeHtml(statusLabel(fulfill, 'line'))}</span></span>`
       : '';
 
-  const includeCell = !editable
-    ? ''
-    : canToggle && suggested
+  const deliveredIcon =
+    `<span class="icon-btn icon-btn--delivered" title="Delivered" aria-label="Delivered"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span>`;
+
+  const includeCell =
+    canToggle && suggested
       ? `<button type="button" class="icon-btn icon-btn--add" data-include="1" title="Add to budget">+</button>`
       : canToggle && !suggested
         ? `<button type="button" class="icon-btn icon-btn--remove" data-include="0" title="${
             isManualPlanLine(line) ? 'Remove' : 'Remove from budget'
           }">-</button>`
-        : '';
+        : fulfill === 'delivered' && line.onPlan
+          ? deliveredIcon
+          : '';
 
   const editTitle = formatLineEditTitle(line);
   const itemTitle = editTitle ? ` title="${escapeHtml(editTitle)}"` : '';

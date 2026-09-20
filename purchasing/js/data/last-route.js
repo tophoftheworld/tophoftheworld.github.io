@@ -1,7 +1,7 @@
 /**
  * Remember last Purchasing week + tab so reopen skips the empty default route.
  */
-import { THIS_WEEK_ID } from './seed.js?v=96';
+import { THIS_WEEK_ID } from './seed.js?v=106';
 
 export const LAST_ROUTE_KEY = 'purchasing-last-route-v1';
 export const LIVE_WEEK_CACHE_KEY = 'purchasing-live-week-cache-v1';

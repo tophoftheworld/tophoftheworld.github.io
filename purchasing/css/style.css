@@ -218,6 +218,9 @@ body.embedded .step-bar {
   color: var(--brand);
   line-height: 1.15;
 }
+.week-excel-btn {
+  margin-top: 0.4rem;
+}
 .week-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 
 .metric-row {
@@ -667,7 +670,7 @@ body.embedded .step-bar {
   font-weight: 500;
   line-height: 1.25;
 }
-.item-name { font-weight: 700; display: block; line-height: 1.25; }
+.item-name { font-weight: 700; display: inline; line-height: 1.25; }
 .plan-table tr.add-row td.col-item,
 .plan-table tr.add-row td.col-supplier {
   overflow: visible;
@@ -1132,6 +1135,16 @@ body.embedded .step-bar {
 .icon-btn--add:hover { background: #dcfce7; }
 .icon-btn--remove { color: #888; }
 .icon-btn--remove:hover { background: #fdecea; color: #dc3545; border-color: #f5c2c7; }
+.icon-btn--delivered {
+  border-color: #bbf7d0;
+  background: #ecfdf3;
+  color: #15803d;
+  cursor: default;
+  pointer-events: none;
+}
+.icon-btn--delivered svg {
+  display: block;
+}
 .col-act .icon-btn + .icon-btn { margin-left: 0.15rem; }
 
 .suggested-divider td {

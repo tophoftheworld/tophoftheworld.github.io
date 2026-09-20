@@ -7,8 +7,8 @@ import {
   addOffPlanExpense,
   ensureLinkedExpenseLinks,
   hydrateWeekExpenseLinks,
-} from '../store.js?v=96';
-import { itemDisplayName, locationLabel } from '../data/catalog.js?v=96';
+} from '../store.js?v=106';
+import { itemDisplayName, locationLabel } from '../data/catalog.js?v=106';
 import {
   plannedLines,
   settlementSummary,
@@ -16,10 +16,11 @@ import {
   lineUnitRate,
   isFee,
   orderedVsSuggestedSummary,
-} from '../compute.js?v=96';
-import { formatPeso, formatQty, formatDateMedium, escapeHtml } from '../format.js?v=96';
-import { toast, confirmDialog } from './shell.js?v=96';
-import { renderWeekChrome, bindWeekChrome } from './week-chrome.js?v=96';
+} from '../compute.js?v=106';
+import { formatPeso, formatQty, formatDateMedium, escapeHtml } from '../format.js?v=106';
+import { toast, confirmDialog } from './shell.js?v=106';
+import { renderWeekChrome, bindWeekChrome } from './week-chrome.js?v=106';
+import { renderLoadingShell } from './loading-shell.js?v=106';
 import {
   loadRecentExpenses,
   searchExpenses,
@@ -28,15 +29,15 @@ import {
   createExpenseFromLines,
   getExpenseById,
   patchExpenseReceipt,
-} from '../data/expense-link.js?v=96';
-import { uploadExpenseReceipt, fetchExpenseReceiptUrl } from '../firebase.js?v=96';
+} from '../data/expense-link.js?v=106';
+import { uploadExpenseReceipt, fetchExpenseReceiptUrl } from '../firebase.js?v=106';
 
 const RECEIPT_MARK = `<span class="recon-receipt-mark" title="Has receipt" aria-label="Has receipt"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16l3-2 3 2 3-2 3 2 3-2 3 2V8z"/><path d="M14 2v6h6"/></svg></span>`;
 
 export function renderSpent(root, weekId) {
   const week = getWeek(weekId);
   if (!week) {
-    root.innerHTML = '<p class="app-loading-inline">Loading week\u2026</p>';
+    renderLoadingShell(root, { tab: 'spent' });
     return;
   }
 

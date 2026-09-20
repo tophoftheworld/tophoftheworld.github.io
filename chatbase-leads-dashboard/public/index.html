@@ -38,9 +38,17 @@
         </label>
         <label class="filter-search">Search
           <span class="search-field-wrap">
-            <input type="text" id="filter-search" name="search" placeholder="Preview or message text" autocomplete="off">
+            <input type="text" id="filter-search" name="search" placeholder="Name or preview in loaded" autocomplete="off">
             <button type="button" id="filter-search-clear" class="search-clear-btn" hidden aria-label="Clear search" title="Clear search">×</button>
           </span>
+        </label>
+        <label class="filter-load">Load
+          <select id="filter-load-count" name="loadCount" aria-label="Conversations to load">
+            <option value="50" selected>50</option>
+            <option value="100">100</option>
+            <option value="200">200</option>
+            <option value="500">500</option>
+          </select>
         </label>
         <label class="filter-date-range">Date range
           <span class="date-range-field">

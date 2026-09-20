@@ -189,6 +189,8 @@ body.invoices-app [hidden] {
   justify-content: center;
   cursor: pointer;
   padding: 0;
+  flex-shrink: 0;
+  overflow: hidden;
 }
 
 .invoice-list-icon-btn svg {

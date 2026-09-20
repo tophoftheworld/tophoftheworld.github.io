@@ -1,38 +1,38 @@
-import { updateLine, addLine } from '../store.js?v=96';
+import { updateLine, addLine } from '../store.js?v=106';
 import {
   catalogItemsForPicker,
   itemDisplayName,
   itemPickerLabel,
   locationLabel,
-} from '../data/catalog.js?v=96';
+} from '../data/catalog.js?v=106';
 import {
   derivedRate,
   recalcLineCost,
   isBudgetLine,
-} from '../compute.js?v=96';
+} from '../compute.js?v=106';
 import {
   formatPesoRate,
   formatQty,
   formatRateInput,
   escapeHtml,
-} from '../format.js?v=96';
-import { createAutocomplete } from '../../../expenses/js/autocomplete.js?v=96';
+} from '../format.js?v=106';
+import { createAutocomplete } from '../../../expenses/js/autocomplete.js?v=99';
 import {
   getSuppliers,
   findSupplierById,
   findSupplierByName,
   ensureSupplier,
-} from '../data/suppliers.js?v=96';
+} from '../data/suppliers.js?v=106';
 import {
   getItemPref,
   getSupplierRate,
   buildItemSupplierMatchList,
-} from '../data/item-prefs.js?v=96';
+} from '../data/item-prefs.js?v=106';
 import {
   findCustomItemByName,
   buildCustomItemMatchList,
-} from '../data/custom-items.js?v=96';
-import { toast } from './shell.js?v=96';
+} from '../data/custom-items.js?v=106';
+import { toast } from './shell.js?v=106';
 
 const SAVED_CHECK_SVG = `<svg class="line-modal-supplier-check" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#2b9348"/><path d="M7 12l3 3 7-7" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
@@ -146,7 +146,7 @@ function openLineModalCore({ week, mode, line = null, location, onSaved }) {
     if (isEditingBudget || itemKind === 'budget') return true;
     if (catalogItem) return false;
     if (unitPrice > 0) return false;
-    // Qty > 1 with only a total → treat as a product line and derive unit price
+    // Qty > 1 with only a total â†’ treat as a product line and derive unit price
     if (isAdd && qty > 1) return false;
     return total > 0 && (!unitPrice || unitPrice <= 0);
   }
@@ -367,7 +367,7 @@ function openLineModalCore({ week, mode, line = null, location, onSaved }) {
                   <span class="line-modal-affix">${unitSuffix}</span>
                   ${
                     showReset
-                      ? `<button type="button" class="line-modal-reset-btn" data-reset-suggested title="Reset to suggested ${escapeHtml(formatQty(suggested, unit))}">→º</button>`
+                      ? `<button type="button" class="line-modal-reset-btn" data-reset-suggested title="Reset to suggested ${escapeHtml(formatQty(suggested, unit))}">â†’Âº</button>`
                       : ''
                   }
                 </div>
@@ -466,7 +466,7 @@ function openLineModalCore({ week, mode, line = null, location, onSaved }) {
       (q) => {
         const custom = buildCustomItemMatchList(q).map((c) => ({
           id: `custom:${c.slug}`,
-          display: `<div style="font-weight:500">${escapeHtml(c.name)}</div><div style="font-size:12px;color:#666">${escapeHtml(c.category)} \u00B7 used ${c.orderCount}×</div>`,
+          display: `<div style="font-weight:500">${escapeHtml(c.name)}</div><div style="font-size:12px;color:#666">${escapeHtml(c.category)} \u00B7 used ${c.orderCount}Ã—</div>`,
           priority: c.priority,
           name: c.name,
           kind: c.kind,
@@ -544,6 +544,8 @@ function openLineModalCore({ week, mode, line = null, location, onSaved }) {
           next.focus();
           const len = next.value.length;
           next.setSelectionRange(len, len);
+          // refresh() rebuilds the input without an input event — re-open suggest.
+          next.dispatchEvent(new Event('input', { bubbles: true }));
         }
       }
     });
@@ -769,7 +771,7 @@ function openLineModalCore({ week, mode, line = null, location, onSaved }) {
         ? itemPickerLabel(catalogItem)
         : composedCustomName();
       const lineId = `line-${Date.now()}`;
-      addLine(week.id, {
+      const added = addLine(week.id, {
         id: lineId,
         kind: itemKind,
         itemId: catalogItem?.id ?? null,
@@ -796,12 +798,20 @@ function openLineModalCore({ week, mode, line = null, location, onSaved }) {
         rateLocked: false,
         ...payload,
       });
+      if (!added) {
+        toast('Could not add - week is not editable or still loading');
+        return;
+      }
       toast('Added to the budget');
     } else {
-      updateLine(week.id, line.id, payload, {
+      const saved = updateLine(week.id, line.id, payload, {
         propagateRate: !!line.itemId,
         savePrefs: true,
       });
+      if (!saved) {
+        toast('Could not save - line is locked or week is not editable');
+        return;
+      }
       toast('Saved');
     }
 

@@ -3,6 +3,7 @@
  */
 
 import { formatWorkshopDisplayName } from "./registration-core.mjs";
+import { isSameDaySession } from "./workshop-certificate-core.mjs";
 import { hasOrdersApi } from "./orders-api-host.js";
 
 const PAGE_SIZE = 10;
@@ -47,13 +48,18 @@ function rosterUrl(session) {
         event_id: session.eventId,
         session_date: session.sessionDateIso,
     });
-    qs.set("v", "54");
+    qs.set("v", "57");
     return `workshop.html?${qs.toString()}`;
 }
 
 function formatTimes(timeLabels) {
     const labels = (timeLabels || []).filter(Boolean);
     return labels.length ? labels.join(", ") : "—";
+}
+
+function checkInChipHtml(session) {
+    if (!isSameDaySession(session.sessionDateIso)) return "";
+    return `<span class="workshops-checkin-chip">Check in</span>`;
 }
 
 function renderWorkshopRow(s) {
@@ -66,9 +72,10 @@ function renderWorkshopRow(s) {
         s.noBookingCount > 0 ? String(s.noBookingCount) : "—";
 
     const location = (s.location || "").trim() || "—";
+    const today = isSameDaySession(s.sessionDateIso);
 
-    return `<tr class="workshops-row" data-href="${escapeHtml(href)}" tabindex="0" role="link">
-        <td class="col-date">${escapeHtml(s.dateLabel || s.sessionDateIso)}</td>
+    return `<tr class="workshops-row${today ? " workshops-row--today" : ""}" data-href="${escapeHtml(href)}" tabindex="0" role="link">
+        <td class="col-date">${escapeHtml(s.dateLabel || s.sessionDateIso)}${checkInChipHtml(s)}</td>
         <td class="col-workshop">${escapeHtml(workshop)}</td>
         <td class="col-location">${escapeHtml(location)}</td>
         <td class="col-times">${escapeHtml(times)}</td>
@@ -92,11 +99,15 @@ function renderWorkshopCard(s) {
     const locationLine = location
         ? `<p class="entity-card__sub workshops-card__location">${escapeHtml(location)}</p>`
         : "";
+    const today = isSameDaySession(s.sessionDateIso);
 
-    return `<article class="entity-card workshops-card" data-href="${escapeHtml(href)}" tabindex="0" role="link">
+    return `<article class="entity-card workshops-card${today ? " workshops-card--today" : ""}" data-href="${escapeHtml(href)}" tabindex="0" role="link">
         <div class="entity-card__head">
             <span class="entity-card__title">${escapeHtml(s.dateLabel || s.sessionDateIso)}</span>
-            <span class="workshops-card__seats">${escapeHtml(String(s.seatCount ?? 0))} registered</span>
+            <span class="workshops-card__meta">
+                ${checkInChipHtml(s)}
+                <span class="workshops-card__seats">${escapeHtml(String(s.seatCount ?? 0))} registered</span>
+            </span>
         </div>
         <p class="entity-card__primary">${escapeHtml(workshop)}</p>
         ${locationLine}

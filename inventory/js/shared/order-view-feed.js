@@ -2,7 +2,7 @@
  * Shared Order View feed — same math as Inventory Order View.
  * Inventory builder and Purchasing both call this so numbers cannot drift.
  */
-import { db } from '../firebase-inventory.js';
+import { db } from '../firebase-inventory.js?v=105';
 import { collection, getDocs, doc, getDoc } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
 import {
   buildCategoryOrderMap,

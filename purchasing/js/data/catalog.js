@@ -96,7 +96,7 @@ function normalizePickerItem(item) {
 }
 
 export async function loadCatalog() {
-  if (catalog?.items?.length && liveItems) return catalog;
+  if (catalog?.items?.length && liveItems?.length) return catalog;
 
   let staticCatalog = { items: [], suppliers: [] };
   try {
@@ -106,14 +106,18 @@ export async function loadCatalog() {
     console.warn('Could not load static catalog fallback', err);
   }
 
+  const staticItems = (staticCatalog.items || []).map(normalizePickerItem).filter(Boolean);
+
   try {
     const master = await loadMasterItemsForOrderView();
     rawMasterItems = master;
-    liveItems = master.map(normalizePickerItem).filter(Boolean);
+    const fromLive = master.map(normalizePickerItem).filter(Boolean);
+    // Empty live result must not wipe the static fallback ([] is truthy).
+    liveItems = fromLive.length ? fromLive : staticItems;
   } catch (err) {
     console.warn('Could not load live inventory for picker; using catalog.json', err);
     rawMasterItems = null;
-    liveItems = (staticCatalog.items || []).map(normalizePickerItem).filter(Boolean);
+    liveItems = staticItems;
   }
 
   catalog = {
@@ -239,11 +243,15 @@ export function buildLocationGroups(week) {
  * @param {string} [locationKey] Prefer items enabled for this branch.
  */
 export function catalogItemsForPicker(locationKey) {
-  const items = liveItems || catalog?.items || [];
+  const items =
+    liveItems?.length > 0 ? liveItems : catalog?.items?.length > 0 ? catalog.items : [];
   return items.filter((i) => {
     const branches = i.enabledBranches;
-    if (branches === undefined) return true;
-    if (!Array.isArray(branches) || branches.length === 0) return false;
+    // unset / null → available everywhere. Empty [] is treated the same for the
+    // add picker so custom/legacy catalog rows still suggest (Order View feed
+    // still uses the stricter inventory filter).
+    if (branches == null) return true;
+    if (!Array.isArray(branches) || branches.length === 0) return true;
     if (locationKey && !isFlexibleLocation(locationKey)) {
       return branches.includes(locationKey);
     }

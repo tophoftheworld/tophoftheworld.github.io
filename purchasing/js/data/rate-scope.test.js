@@ -2,7 +2,7 @@
  * Run: node purchasing/js/data/rate-scope.test.js
  */
 import assert from 'node:assert/strict';
-import { sameSupplierForRate, siblingSharesRate, rateForSupplier } from './rate-scope.js?v=96';
+import { sameSupplierForRate, siblingSharesRate, rateForSupplier } from './rate-scope.js?v=106';
 
 let failed = 0;
 function test(name, fn) {

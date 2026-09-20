@@ -7,7 +7,7 @@
     <link rel="icon" href="data:," />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lora:ital,wght@0,600;0,700;1,700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/hub/hub-shell.css" />
-    <link rel="stylesheet" href="css/orders-dashboard.css?v=62" />
+    <link rel="stylesheet" href="css/orders-dashboard.css?v=63" />
     <link rel="stylesheet" href="css/workshop-certificate.css?v=2" />
     <link rel="stylesheet" href="/hub/hub.css" />
 </head>
@@ -30,7 +30,10 @@
 
         <section class="workshop-info-banner app-chrome" id="workshopInfoBar" hidden>
             <h2 class="workshop-info-title" id="infoWorkshop">—</h2>
-            <p class="workshop-info-date" id="infoDate">—</p>
+            <div class="workshop-info-meta">
+                <p class="workshop-info-date" id="infoDate">—</p>
+                <p class="workshop-info-checkin" id="infoCheckIn" hidden></p>
+            </div>
         </section>
 
         <p class="status-bar app-chrome" id="statusBar" aria-live="polite" role="status"></p>
@@ -44,6 +47,7 @@
                         <col class="col-session" />
                         <col class="col-order" />
                         <col class="col-customer" />
+                        <col class="col-checkin" />
                         <col class="col-pass" />
                         <col class="col-contact" />
                         <col class="col-email" />
@@ -57,6 +61,7 @@
                             <th data-sort="timeLabel" class="col-session">Session</th>
                             <th data-sort="orderName" class="col-order">Order</th>
                             <th data-sort="participant" class="col-customer">Participant</th>
+                            <th data-sort="checkedIn" class="col-checkin">Check in</th>
                             <th data-sort="pass" class="col-pass">Pass</th>
                             <th data-sort="contact" class="col-contact">Contact</th>
                             <th data-sort="email" class="col-email">Email</th>
@@ -112,6 +117,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="/hub/hub.js" defer></script>
-    <script type="module" src="js/workshop-roster.js?v=56"></script>
+    <script type="module" src="js/workshop-roster.js?v=57"></script>
 </body>
 </html>

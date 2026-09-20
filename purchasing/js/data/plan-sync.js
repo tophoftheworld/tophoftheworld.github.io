@@ -13,11 +13,11 @@ import {
   onSnapshot,
   runTransaction,
 } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
-import { db } from '../firebase.js?v=96';
-import { STORAGE_KEY, THIS_WEEK_ID } from './seed.js?v=96';
-import { mergeOverlays, stampOverlayEdits } from './overlay-merge.js?v=96';
-import { preferNonEmptyPastWeek, weekHasOnPlanBudget } from './overlay-filter.js?v=96';
-import { actorStamp } from './actor.js?v=96';
+import { db } from '../firebase.js?v=106';
+import { STORAGE_KEY, THIS_WEEK_ID } from './seed.js?v=106';
+import { mergeOverlays, stampOverlayEdits } from './overlay-merge.js?v=106';
+import { preferNonEmptyPastWeek, weekHasOnPlanBudget, overlayHasArchivableBudget } from './overlay-filter.js?v=106';
+import { actorStamp } from './actor.js?v=106';
 
 export const OVERLAY_KEY = 'purchasing-overlay-v2';
 
@@ -165,6 +165,16 @@ export async function loadLiveOverlay() {
   }
 
   const local = readLocalOverlay();
+  const remoteHasBudget = overlayHasArchivableBudget(remote);
+  const localHasBudget = overlayHasArchivableBudget(local);
+  const remoteIsBlankShell = overlayLooksUseful(remote) && !remoteHasBudget;
+
+  // Blank shell (weekStart / branchForecast only) must not clobber a local plan.
+  // Return local so Friday rollover can archive it instead of opening an empty next week.
+  if (remoteIsBlankShell && localHasBudget) {
+    setAckedOverlay(local);
+    return local;
+  }
   if (overlayLooksUseful(remote)) {
     const normalized = {
       ...emptyOverlay(),
@@ -174,7 +184,7 @@ export async function loadLiveOverlay() {
     setAckedOverlay(normalized);
     return normalized;
   }
-  if (overlayLooksUseful(local)) {
+  if (localHasBudget || overlayLooksUseful(local)) {
     // Only migrate when cloud is empty \u2014 never overwrite remote plan work with stale cache.
     try {
       const payload = stripUndefined({ ...local, updatedAt: new Date().toISOString() });
@@ -409,7 +419,8 @@ export async function loadPastWeeksRemote() {
       const data = d.data() || {};
       const week = { ...data, id: data.id || d.id };
       if (!week.id || week.id === THIS_WEEK_ID) continue;
-      byId.set(week.id, week);
+      const prev = byId.get(week.id);
+      byId.set(week.id, preferNonEmptyPastWeek(prev, week) || week);
     }
   } catch (err) {
     console.warn('Could not load past purchasing weeks from Firebase', err);
@@ -425,6 +436,20 @@ export async function loadPastWeeksRemote() {
 /** Sync peek of archived weeks already on disk (no network). */
 export function peekLocalPastWeeks() {
   return readLocalPastWeeks();
+}
+
+/** Read one archived week from Firebase (null if missing / error). */
+export async function loadPastWeekRemote(weekId) {
+  if (!weekId || weekId === THIS_WEEK_ID) return null;
+  try {
+    const snap = await getDoc(weekRef(weekId));
+    if (!snap.exists()) return null;
+    const data = snap.data() || {};
+    return { ...data, id: data.id || snap.id };
+  } catch (err) {
+    console.warn('Could not load past purchasing week from Firebase', err);
+    return null;
+  }
 }
 
 export async function savePastWeekRemote(week) {
@@ -444,13 +469,8 @@ export async function savePastWeekRemote(week) {
 
   const existing = preferNonEmptyPastWeek(existingRemote, existingLocal) || existingLocal;
   const toSave = preferNonEmptyPastWeek(existing, week);
-  if (
-    existing &&
-    weekHasOnPlanBudget(existing) &&
-    !weekHasOnPlanBudget(week) &&
-    toSave === existing
-  ) {
-    // Keep the richer week \u2014 do not write an empty archive over it.
+  // Cloud / local already richer than incoming \u2014 keep it, do not write a poorer snapshot.
+  if (existing && toSave === existing && toSave !== week) {
     writeLocalPastWeeks([
       ...readLocalPastWeeks().filter((w) => w.id !== existing.id),
       existing,
@@ -464,14 +484,18 @@ export async function savePastWeekRemote(week) {
     updatedAt: new Date().toISOString(),
     ...(actor ? { updatedBy: actor } : {}),
   });
-  const local = readLocalPastWeeks().filter((w) => w.id !== payload.id);
-  local.push(payload);
-  writeLocalPastWeeks(local);
   try {
-    await setDoc(weekRef(payload.id), payload, { merge: true });
+    // Full replace \u2014 merge:true replaces the lines array anyway and hides failures.
+    await setDoc(weekRef(payload.id), payload);
   } catch (err) {
     console.warn('Could not save past purchasing week to Firebase', err);
+    // Fail closed: do not pretend the cloud has the archive.
+    return null;
   }
+  writeLocalPastWeeks([
+    ...readLocalPastWeeks().filter((w) => w.id !== payload.id),
+    payload,
+  ]);
   return payload;
 }
 

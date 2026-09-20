@@ -1,12 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+    applyCheckIns,
     applyNameOverrides,
     applyParticipantNameOverridesToRoster,
     certificateParticipantNames,
     formatCertificateDate,
+    isSameDaySession,
+    isSeatCheckedIn,
+    normalizeCheckedInMap,
     rosterMetaDocId,
     seatNameKey,
+    setSeatCheckIn,
+    sheetCheckInCell,
+    todayDateIso,
 } from "./workshop-certificate-core.mjs";
 
 test("rosterMetaDocId sanitizes ids", () => {
@@ -70,4 +77,61 @@ test("applyParticipantNameOverridesToRoster updates nested seats", () => {
     };
     applyParticipantNameOverridesToRoster(data, { "9_1": "Edited" });
     assert.equal(data.sessions[0].participants[0].participant, "Edited");
+});
+
+test("todayDateIso uses Asia/Manila calendar day", () => {
+    assert.equal(
+        todayDateIso(new Date("2026-09-19T16:00:00.000Z")),
+        "2026-09-20"
+    );
+    assert.equal(
+        todayDateIso(new Date("2026-09-19T15:59:00.000Z")),
+        "2026-09-19"
+    );
+});
+
+test("isSameDaySession matches Manila date", () => {
+    const now = new Date("2026-09-19T04:00:00.000Z");
+    assert.equal(isSameDaySession("2026-09-19", now), true);
+    assert.equal(isSameDaySession("2026-09-18", now), false);
+    assert.equal(isSameDaySession("not-a-date", now), false);
+});
+
+test("normalizeCheckedInMap keeps timestamps and explicit false", () => {
+    assert.deepEqual(
+        normalizeCheckedInMap({
+            "1_1": "2026-09-19T08:00:00.000Z",
+            "1_2": false,
+            "1_3": "yes",
+            "": true,
+        }),
+        {
+            "1_1": "2026-09-19T08:00:00.000Z",
+            "1_2": false,
+            "1_3": true,
+        }
+    );
+});
+
+test("applyCheckIns marks only matching seats", () => {
+    const rows = [
+        { orderId: "1", seatIndex: 1, participant: "Ada" },
+        { orderId: "1", seatIndex: 2, participant: "Bea" },
+    ];
+    applyCheckIns(rows, { "1_2": "2026-09-19T08:00:00.000Z" });
+    assert.equal(rows[0].checkedIn, false);
+    assert.equal(rows[1].checkedIn, true);
+    assert.equal(rows[1].checkedInAt, "2026-09-19T08:00:00.000Z");
+});
+
+test("setSeatCheckIn toggles presence without dropping other seats", () => {
+    const at = new Date("2026-09-19T08:30:00.000Z");
+    let map = setSeatCheckIn({}, "9", 1, true, at);
+    map = setSeatCheckIn(map, "9", 2, true, at);
+    map = setSeatCheckIn(map, "9", 1, false, at);
+    assert.equal(isSeatCheckedIn(map["9_1"]), false);
+    assert.equal(isSeatCheckedIn(map["9_2"]), true);
+    assert.equal(sheetCheckInCell(map["9_1"]), false);
+    assert.equal(sheetCheckInCell(map["9_2"]), true);
+    assert.equal(sheetCheckInCell(undefined), "");
 });

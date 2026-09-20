@@ -803,6 +803,18 @@ body.split-active .workspace {
     text-align: right;
 }
 
+.workshop-info-meta {
+    flex-shrink: 0;
+    text-align: right;
+}
+
+.workshop-info-checkin {
+    margin: 0.2rem 0 0;
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: #2b9348;
+}
+
 .workshop-roster-table .col-num {
     width: 2.5rem;
     min-width: 2.5rem;
@@ -835,6 +847,10 @@ body.split-active .workspace {
 
 .workshop-roster-table col.col-customer {
     width: 16%;
+}
+
+.workshop-roster-table col.col-checkin {
+    width: 6.75rem;
 }
 
 .workshop-roster-table col.col-pass {
@@ -900,6 +916,17 @@ body.split-active .workspace {
     text-align: center;
 }
 
+.workshop-roster-table .col-checkin {
+    display: none;
+    text-align: center;
+    white-space: nowrap;
+    width: 6.75rem;
+}
+
+body.workshop-checkin-visible .workshop-roster-table .col-checkin {
+    display: table-cell;
+}
+
 .workshop-roster-table td.col-customer,
 .workshop-roster-table td.col-contact,
 .workshop-roster-table td.col-email,
@@ -930,8 +957,16 @@ body.split-active .workspace {
     cursor: pointer;
 }
 
+.workshops-row--today {
+    background: #f4fbf6;
+}
+
 .workshops-row:hover {
     background: #f5f9f5;
+}
+
+.workshops-row--today:hover {
+    background: #eaf6ee;
 }
 
 .workshops-row:focus-visible {
@@ -968,6 +1003,11 @@ body.split-active .workspace {
     cursor: pointer;
 }
 
+.workshops-card--today {
+    border-color: #a8d5b5;
+    background: #f4fbf6;
+}
+
 .workshops-card__seats {
     font-size: 0.82rem;
     font-weight: 600;
@@ -980,6 +1020,33 @@ body.split-active .workspace {
     font-size: 0.78rem;
     font-weight: 600;
     color: #92400e;
+}
+
+.workshops-card__meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.3rem;
+}
+
+.workshops-checkin-chip {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 0.4rem;
+    padding: 0.12rem 0.5rem;
+    border-radius: 999px;
+    background: #2b9348;
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.workshops-card .workshops-checkin-chip {
+    margin-left: 0;
 }
 
 .session-pill {
@@ -1217,6 +1284,68 @@ body.split-active .workspace {
     outline: none;
 }
 
+.roster-checkin-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 1.85rem;
+    padding: 0.2rem 0.7rem;
+    border-radius: 999px;
+    border: 1px solid #2b9348;
+    background: #fff;
+    color: #2b9348;
+    font-family: inherit;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.roster-checkin-btn:hover,
+.roster-checkin-btn:focus-visible {
+    background: #eef8f0;
+    outline: none;
+}
+
+.roster-checkin-btn--on,
+.roster-checkin-btn[aria-pressed="true"] {
+    background: #2b9348;
+    color: #fff;
+}
+
+.roster-checkin-btn--on:hover,
+.roster-checkin-btn--on:focus-visible {
+    background: #237a3c;
+}
+
+.roster-checkin-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
+    background: #e8f5e9;
+    color: #1f6b34;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.roster-card__checkin {
+    margin-top: 0.7rem;
+}
+
+.roster-card__checkin .roster-checkin-btn {
+    width: 100%;
+    min-height: 2.5rem;
+    font-size: 0.88rem;
+}
+
+.roster-card--present {
+    border-color: #a8d5b5;
+    background: #f4fbf6;
+}
+
 .entity-card__primary .roster-name-cell {
     vertical-align: middle;
 }
@@ -1241,6 +1370,24 @@ tr.roster-row:hover {
 tr.roster-row--selected,
 tr.roster-row--selected:hover {
     background: #e8f5e9;
+}
+
+tr.roster-row--present td {
+    background: #f4fbf6;
+}
+
+tr.roster-row--present:hover td {
+    background: #eaf6ee;
+}
+
+tr.roster-row--present.roster-row--selected td,
+tr.roster-row--present.roster-row--selected:hover td {
+    background: #e8f5e9;
+}
+
+tr.roster-row--present.roster-row--no-booking td,
+tr.roster-row--present.roster-row--seat-follow td {
+    background: #f4fbf6;
 }
 
 tr.roster-row--seat-follow {
@@ -2872,6 +3019,10 @@ body.detail-modal-open .detail-pane {
     }
 
     .workshop-info-date {
+        text-align: left;
+    }
+
+    .workshop-info-meta {
         text-align: left;
     }
 

@@ -1,4 +1,4 @@
-import { THIS_WEEK_ID } from './data/seed.js?v=96';
+import { THIS_WEEK_ID } from './data/seed.js?v=106';
 import {
   weekTotal,
   spentBuckets,
@@ -6,7 +6,7 @@ import {
   lineUnitRate,
   recalcLineCost,
   lineAmount,
-} from './compute.js?v=96';
+} from './compute.js?v=106';
 import {
   fetchThisWeekFromOrderView,
   extractOverlayFromWeek,
@@ -20,12 +20,14 @@ import {
   loadLastOpenLoc,
   isBranchFeedLoaded,
   reloadBranchFeed,
+  buildArchivedWeekFromOverlay,
   CORE_BRANCHES,
-} from './data/order-feed.js?v=96';
+} from './data/order-feed.js?v=106';
 import {
   loadPastWeeksRemote,
   peekLocalPastWeeks,
   savePastWeeksRemote,
+  savePastWeekRemote,
   clearLiveOverlay,
   subscribeLiveOverlay,
   setAckedOverlay,
@@ -33,38 +35,49 @@ import {
   mergeOverlays,
   cancelPendingOverlaySave,
   hasPendingOverlaySave,
-} from './data/plan-sync.js?v=96';
-import { preferNonEmptyPastWeek } from './data/overlay-filter.js?v=96';
-import { savePrefsFromLine } from './data/item-prefs.js?v=96';
-import { savePrefsFromCustomLine } from './data/custom-items.js?v=96';
-import { siblingSharesRate } from './data/rate-scope.js?v=96';
+} from './data/plan-sync.js?v=106';
+import {
+  preferNonEmptyPastWeek,
+  overlayHasArchivableBudget,
+  weekHasOnPlanBudget,
+} from './data/overlay-filter.js?v=106';
+import { savePrefsFromLine } from './data/item-prefs.js?v=106';
+import { savePrefsFromCustomLine } from './data/custom-items.js?v=106';
+import { siblingSharesRate } from './data/rate-scope.js?v=106';
 import {
   readLiveWeekCache,
   writeLiveWeekCache,
-} from './data/last-route.js?v=96';
+} from './data/last-route.js?v=106';
 
-let state = null;
-const listeners = new Set();
-let liveOverlayUnsub = null;
-let applyingRemote = false;
-/** True when this tab has local plan edits not yet acked by the server. */
-let overlayDirty = false;
+/**
+ * Shared across module-graph instances. Cache-busted ?v= imports can load store.js
+ * twice; without a singleton, app.js paints while plan.js reads an empty store
+ * ("Loading week… forever").
+ */
+const shared = (globalThis.__purchasingStore ??= {
+  state: null,
+  listeners: new Set(),
+  liveOverlayUnsub: null,
+  applyingRemote: false,
+  /** True when this tab has local plan edits not yet acked by the server. */
+  overlayDirty: false,
+});
 
 function notifyListeners() {
-  for (const fn of listeners) fn(state);
+  for (const fn of shared.listeners) fn(shared.state);
 }
 
 export function subscribe(fn) {
-  listeners.add(fn);
-  return () => listeners.delete(fn);
+  shared.listeners.add(fn);
+  return () => shared.listeners.delete(fn);
 }
 
 export function getState() {
-  return state;
+  return shared.state;
 }
 
 export function isOverlayDirty() {
-  return overlayDirty;
+  return shared.overlayDirty;
 }
 
 function mergePastWeeks(existing, archivedWeek) {
@@ -88,7 +101,7 @@ function mergePastWeeks(existing, archivedWeek) {
  * Returns true when state was hydrated from cache.
  */
 export function tryHydrateFromLocalCache() {
-  if (state) return false;
+  if (shared.state) return false;
   const live = readLiveWeekCache();
   const past = peekLocalPastWeeks();
   if (!live && !past.length) return false;
@@ -109,7 +122,7 @@ export function tryHydrateFromLocalCache() {
           fromCacheStub: true,
         };
 
-  state = {
+  shared.state = {
     version: 7,
     live: true,
     fromCache: true,
@@ -129,14 +142,14 @@ export async function loadStateFromOrderView({ persist = false, full = false } =
   const feedPromise = fetchThisWeekFromOrderView({ full });
   const pastPromise = loadPastWeeksRemote();
   const { thisWeek, archivedWeek } = await feedPromise;
-  const existingPast = (state?.weeks || []).filter((w) => w.id !== THIS_WEEK_ID);
-  state = {
+  const existingPast = (shared.state?.weeks || []).filter((w) => w.id !== THIS_WEEK_ID);
+  shared.state = {
     version: 7,
     live: true,
     weeks: [thisWeek, ...existingPast],
   };
   writeLiveWeekCache(thisWeek);
-  overlayDirty = false;
+  shared.overlayDirty = false;
   if (persist) persistOverlayOnly({ flush: true });
   notifyListeners();
 
@@ -146,38 +159,38 @@ export async function loadStateFromOrderView({ persist = false, full = false } =
     await savePastWeeksRemote(mergedPast);
   }
   const live = getThisWeek() || thisWeek;
-  state = {
+  shared.state = {
     version: 7,
     live: true,
     weeks: [live, ...mergedPast],
   };
   notifyListeners();
-  return state;
+  return shared.state;
 }
 
 /** Load one core branch’s Order View data into the live week (on expand). */
 export async function ensureBranchLoaded(branch, { remember = true } = {}) {
-  if (!branch || !CORE_BRANCHES.includes(branch)) return state;
-  if (isBranchFeedLoaded(branch)) return state;
+  if (!branch || !CORE_BRANCHES.includes(branch)) return shared.state;
+  if (isBranchFeedLoaded(branch)) return shared.state;
   if (remember) saveLastOpenLoc(branch);
   const thisWeek = await ensureBranchFeed(branch);
-  if (!thisWeek || !state) return state;
-  const past = (state.weeks || []).filter((w) => w.id !== THIS_WEEK_ID);
-  state = { ...state, weeks: [thisWeek, ...past] };
+  if (!thisWeek || !shared.state) return shared.state;
+  const past = (shared.state.weeks || []).filter((w) => w.id !== THIS_WEEK_ID);
+  shared.state = { ...shared.state, weeks: [thisWeek, ...past] };
   notifyListeners();
-  return state;
+  return shared.state;
 }
 
 /** Refetch one branch after forecast controls change. */
 export async function reloadBranchLoaded(branch) {
-  if (!branch || !CORE_BRANCHES.includes(branch)) return state;
+  if (!branch || !CORE_BRANCHES.includes(branch)) return shared.state;
   saveLastOpenLoc(branch);
   const thisWeek = await reloadBranchFeed(branch);
-  if (!thisWeek || !state) return state;
-  const past = (state.weeks || []).filter((w) => w.id !== THIS_WEEK_ID);
-  state = { ...state, weeks: [thisWeek, ...past] };
+  if (!thisWeek || !shared.state) return shared.state;
+  const past = (shared.state.weeks || []).filter((w) => w.id !== THIS_WEEK_ID);
+  shared.state = { ...shared.state, weeks: [thisWeek, ...past] };
   notifyListeners();
-  return state;
+  return shared.state;
 }
 
 /** Warm remaining core branches after first paint (non-blocking). */
@@ -190,26 +203,35 @@ export async function warmRemainingBranches() {
       console.warn('Could not warm purchasing branch', branch, err);
     }
   }
-  return state;
+  return shared.state;
 }
 
 export { loadLastOpenLoc, saveLastOpenLoc, isBranchFeedLoaded, CORE_BRANCHES };
 
 function persistOverlayOnly({ flush = false } = {}) {
-  if (applyingRemote) return Promise.resolve();
+  if (shared.applyingRemote) return Promise.resolve();
   const week = getThisWeek();
   if (!week) return Promise.resolve();
-  overlayDirty = true;
-  return Promise.resolve(saveOverlay(extractOverlayFromWeek(week), { flush })).then(
+  const extracted = extractOverlayFromWeek(week);
+  const acked = getAckedOverlay();
+  if (
+    (week.fromCache || week.fromCacheStub) &&
+    overlayHasArchivableBudget(acked) &&
+    !overlayHasArchivableBudget(extracted)
+  ) {
+    return Promise.resolve();
+  }
+  shared.overlayDirty = true;
+  return Promise.resolve(saveOverlay(extracted, { flush })).then(
     (result) => {
-      if (flush && result) overlayDirty = false;
+      if (flush && result) shared.overlayDirty = false;
       return result;
     }
   );
 }
 
 function persistPastWeeks() {
-  const past = (state?.weeks || []).filter((w) => w.id !== THIS_WEEK_ID);
+  const past = (shared.state?.weeks || []).filter((w) => w.id !== THIS_WEEK_ID);
   return savePastWeeksRemote(past).catch((err) =>
     console.warn('Could not persist past purchasing weeks', err)
   );
@@ -217,7 +239,7 @@ function persistPastWeeks() {
 
 export function persist() {
   const savePromise = persistOverlayOnly();
-  const editingPast = (state?.weeks || []).some(
+  const editingPast = (shared.state?.weeks || []).some(
     (w) => w.id !== THIS_WEEK_ID && w.status !== 'settled'
   );
   if (editingPast) persistPastWeeks();
@@ -227,7 +249,7 @@ export function persist() {
 
 /** Flush debounced Firebase writes (e.g. before unload). Only when dirty. */
 export function flushPersist() {
-  if (overlayDirty || hasPendingOverlaySave()) {
+  if (shared.overlayDirty || hasPendingOverlaySave()) {
     persistOverlayOnly({ flush: true });
   }
   persistPastWeeks();
@@ -242,9 +264,9 @@ export async function clearThisWeekPlan() {
   }
   const thisWeek = getThisWeek();
   await clearLiveOverlay(thisWeek?.weekStart || null, thisWeek?.weekEnd || null);
-  overlayDirty = false;
+  shared.overlayDirty = false;
   await loadStateFromOrderView({ persist: false });
-  return state;
+  return shared.state;
 }
 
 /** @deprecated use clearThisWeekPlan */
@@ -256,13 +278,56 @@ export async function resetDemo() {
  * Apply a remote liveOverlay snapshot (other browser’s edits).
  * If this tab has dirty local edits, merge local + remote instead of replacing
  * (including echoes of our own writes that raced with newer local edits).
+ * A blank next-week shell must not wipe a local prior-week budget \u2014 archive first.
  */
 export async function applyRemoteOverlay(overlay, { isEcho = false } = {}) {
-  if (!state) return null;
-  applyingRemote = true;
+  if (!shared.state) return null;
+  shared.applyingRemote = true;
   try {
+    // Blank next-week shell from another tab: archive local/cache budget first.
+    if (!isEcho && overlay && !overlayHasArchivableBudget(overlay)) {
+      const live = getThisWeek();
+      const localExtract = live ? extractOverlayFromWeek(live) : null;
+      const cachedWeek = readLiveWeekCache();
+      const localBudget = overlayHasArchivableBudget(localExtract)
+        ? localExtract
+        : cachedWeek && weekHasOnPlanBudget(cachedWeek)
+          ? extractOverlayFromWeek(cachedWeek, { priorOverlay: localExtract })
+          : null;
+      const remoteStart = overlay.weekStart || null;
+      const localStart = localBudget?.weekStart || null;
+      if (
+        localBudget &&
+        localStart &&
+        remoteStart &&
+        localStart !== remoteStart
+      ) {
+        const archived = buildArchivedWeekFromOverlay(localBudget, {
+          weekStart: localBudget.weekStart,
+          weekEnd: localBudget.weekEnd,
+          mappedWeek: null,
+        });
+        const saved = await savePastWeekRemote(archived);
+        if (!saved?.id) {
+          // Refuse wipe \u2014 keep editing the prior week until archive lands.
+          return shared.state;
+        }
+        const past = mergePastWeeks(
+          (shared.state.weeks || []).filter((w) => w.id !== THIS_WEEK_ID),
+          saved
+        );
+        shared.state = { ...shared.state, weeks: [live || getThisWeek(), ...past].filter(Boolean) };
+        savePastWeeksRemote(past).catch((err) =>
+          console.warn('Could not persist past weeks after remote rollover archive', err)
+        );
+      } else if (localBudget && !remoteStart) {
+        // Remote cleared without a week tag \u2014 still refuse to paint empty over budget.
+        return shared.state;
+      }
+    }
+
     let toApply = overlay;
-    if (overlayDirty) {
+    if (shared.overlayDirty) {
       const week = getThisWeek();
       const local = week ? extractOverlayFromWeek(week) : null;
       if (local) {
@@ -276,55 +341,55 @@ export async function applyRemoteOverlay(overlay, { isEcho = false } = {}) {
     } else if (!isEcho) {
       setAckedOverlay(overlay);
       cancelPendingOverlaySave();
-      overlayDirty = false;
+      shared.overlayDirty = false;
     } else {
       setAckedOverlay(overlay);
-      if (!hasPendingOverlaySave()) overlayDirty = false;
+      if (!hasPendingOverlaySave()) shared.overlayDirty = false;
     }
 
     const rebuilt = await rebuildWeekFromRemoteOverlay(toApply);
     if (!rebuilt?.thisWeek) return null;
-    const past = (state.weeks || []).filter((w) => w.id !== THIS_WEEK_ID);
-    state = {
-      ...state,
+    const past = (shared.state.weeks || []).filter((w) => w.id !== THIS_WEEK_ID);
+    shared.state = {
+      ...shared.state,
       fromCache: false,
       weeks: [rebuilt.thisWeek, ...past],
     };
     writeLiveWeekCache(rebuilt.thisWeek);
     notifyListeners();
 
-    if (overlayDirty && !isEcho) {
-      applyingRemote = false;
+    if (shared.overlayDirty && !isEcho) {
+      shared.applyingRemote = false;
       await persistOverlayOnly({ flush: true });
     }
-    return state;
+    return shared.state;
   } finally {
-    applyingRemote = false;
+    shared.applyingRemote = false;
   }
 }
 
 /** Start Firestore listener for shared live overlay. */
 export function startLiveOverlaySync() {
-  if (liveOverlayUnsub) return liveOverlayUnsub;
-  liveOverlayUnsub = subscribeLiveOverlay((overlay, meta = {}) => {
+  if (shared.liveOverlayUnsub) return shared.liveOverlayUnsub;
+  shared.liveOverlayUnsub = subscribeLiveOverlay((overlay, meta = {}) => {
     applyRemoteOverlay(overlay, meta).catch((err) =>
       console.warn('Could not apply remote purchasing overlay', err)
     );
   });
-  return liveOverlayUnsub;
+  return shared.liveOverlayUnsub;
 }
 
 export function stopLiveOverlaySync() {
-  if (liveOverlayUnsub) {
-    liveOverlayUnsub();
-    liveOverlayUnsub = null;
+  if (shared.liveOverlayUnsub) {
+    shared.liveOverlayUnsub();
+    shared.liveOverlayUnsub = null;
   }
 }
 
 export function getWeek(id) {
-  if (!state?.weeks) return null;
+  if (!shared.state?.weeks) return null;
   const target = id || THIS_WEEK_ID;
-  return state.weeks.find((w) => w.id === target) || null;
+  return shared.state.weeks.find((w) => w.id === target) || null;
 }
 
 export function getThisWeek() {
@@ -332,8 +397,8 @@ export function getThisWeek() {
 }
 
 export function pastWeeks() {
-  if (!state?.weeks) return [];
-  return state.weeks
+  if (!shared.state?.weeks) return [];
+  return shared.state.weeks
     .filter((w) => w.id !== THIS_WEEK_ID)
     .sort((a, b) => {
       const aOpen = a.status !== 'settled' ? 0 : 1;
@@ -732,8 +797,8 @@ export function removeOffPlanExpense(weekId, offPlanId) {
 }
 
 export function getPriorWeekTotal(week) {
-  if (!state?.weeks) return null;
-  const settled = state.weeks
+  if (!shared.state?.weeks) return null;
+  const settled = shared.state.weeks
     .filter((w) => w.status === 'settled' && w.id !== week.id)
     .sort((a, b) => b.weekStart.localeCompare(a.weekStart));
   if (settled.length) return weekTotal(settled[0]);

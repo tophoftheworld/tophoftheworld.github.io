@@ -1,6 +1,7 @@
 // Import Firebase modules
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
 import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, setDoc, query, where, orderBy, limit, documentId, deleteDoc, addDoc, Timestamp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+import { filterScheduleEventsForDate } from './event-window.js';
 
 // Read-only mode detection
 // Admin access requires explicit ?admin=true parameter — being in an iframe is not enough,
@@ -519,6 +520,8 @@ function setupEventListeners() {
     shiftDate.addEventListener('change', () => {
         if (shiftModal.style.display === 'flex') {
             populateEmployeeDropdownForDate(shiftDate.value);
+            // Event list depends on shift date (±1 day ingress/egress)
+            updateBranchDropdowns();
         }
     });
     if (shiftRole) shiftRole.addEventListener('change', handleShiftRoleChange);
@@ -1713,14 +1716,18 @@ function updateBranchDropdowns() {
     }
 
     // Update Event dropdown from Firestore pop-ups / workshops
+    // Only list events whose period covers the shift date (±1 day ingress/egress)
     if (shiftEvent) {
         const currentEvent = shiftEvent.value;
         shiftEvent.innerHTML = '<option value="">Select event</option>';
 
-        const popupBranches = allBranches
+        const dateYmd = shiftDate?.value || '';
+        const datedBranches = filterScheduleEventsForDate(allBranches, dateYmd);
+
+        const popupBranches = datedBranches
             .filter((b) => b.type === 'popup')
             .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-        const workshopBranches = allBranches
+        const workshopBranches = datedBranches
             .filter((b) => b.type === 'workshop')
             .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
@@ -1812,12 +1819,55 @@ async function loadAllEmployees() {
     }
 }
 
+function ymdOrNull(value) {
+    return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+}
+
+function indexOpsEventsByBranch(opsSnap) {
+    const byBranchId = new Map();
+    const byKey = new Map();
+    const byOpsId = new Map();
+    opsSnap.forEach((d) => {
+        const data = d.data() || {};
+        const rec = { id: d.id, ...data };
+        byOpsId.set(d.id, rec);
+        if (data.links?.branchId) byBranchId.set(data.links.branchId, rec);
+        const key = data.links?.branchKey || data.key;
+        if (!key) return;
+        const prev = byKey.get(key);
+        if (!prev || (prev.status === 'cancelled' && rec.status !== 'cancelled')) {
+            byKey.set(key, rec);
+        }
+    });
+    return { byBranchId, byKey, byOpsId };
+}
+
+function resolveBranchEventDates(branchId, data, opsIndex) {
+    const ops =
+        (data.opsEventId && opsIndex.byOpsId.get(data.opsEventId)) ||
+        opsIndex.byBranchId.get(branchId) ||
+        opsIndex.byKey.get(data.key) ||
+        null;
+    const startDate = ymdOrNull(data.startDate) || ymdOrNull(ops?.startDate);
+    const endDate = ymdOrNull(data.endDate) || ymdOrNull(ops?.endDate) || startDate;
+    return { startDate, endDate };
+}
+
 async function loadBranchesFromFirebase() {
     try {
-        const snapshot = await getDocs(collection(db, "branches"));
+        const [snapshot, opsSnap] = await Promise.all([
+            getDocs(collection(db, "branches")),
+            getDocs(collection(db, "opsEvents")).catch((err) => {
+                console.warn("opsEvents date join skipped:", err);
+                return { forEach() {} };
+            })
+        ]);
+        const opsIndex = indexOpsEventsByBranch(opsSnap);
         const firebaseBranches = [];
-        snapshot.forEach(doc => {
-            firebaseBranches.push({ id: doc.id, ...doc.data() });
+        snapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            const { startDate, endDate } = resolveBranchEventDates(docSnap.id, data, opsIndex);
+            firebaseBranches.push({ id: docSnap.id, ...data, startDate, endDate });
         });
 
         // Filter out archived events - only show active events

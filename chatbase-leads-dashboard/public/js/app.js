@@ -21,9 +21,9 @@ import { clearPanelLoadState, setPanelBusy, setPanelLoading, setPanelSyncing } f
 
 const PAGE_SIZE = 20;
 const REFRESH_STALE_MS = 120_000;
-/** Chatbase returns newest first — one page on load; more via Next. */
-const INBOX_INITIAL_PAGES = 1;
+/** Chatbase returns newest first; load count is how many summaries to fetch. */
 const INBOX_FETCH_PAGE_SIZE = 50;
+const INBOX_LOAD_CHOICES = [50, 100, 200, 500];
 const INBOX_DEFAULT_DAYS = 90;
 
 const panelInbox = document.getElementById("panel-inbox");
@@ -37,6 +37,7 @@ const inboxSummaryDateInput = document.getElementById("inbox-summary-date");
 const inboxSummaryEmailBtn = document.getElementById("inbox-summary-email-btn");
 const searchInput = document.getElementById("filter-search");
 const searchClearBtn = document.getElementById("filter-search-clear");
+const loadCountSelect = document.getElementById("filter-load-count");
 const pagePrevBtns = document.querySelectorAll("#panel-inbox .page-prev");
 const pageNextBtns = document.querySelectorAll("#panel-inbox .page-next");
 const pageInfoEls = document.querySelectorAll("#panel-inbox .page-info");
@@ -98,9 +99,32 @@ function restoreFiltersFromSession() {
     if (start && saved.startDate) start.value = saved.startDate;
     if (end && saved.endDate) end.value = saved.endDate;
     if (source && saved.filteredSources !== undefined) source.value = saved.filteredSources;
+    if (loadCountSelect && INBOX_LOAD_CHOICES.includes(Number(saved.loadCount))) {
+      loadCountSelect.value = String(saved.loadCount);
+    }
   } catch (_err) {
     /* ignore */
   }
+}
+
+function getInboxLoadTarget() {
+  const n = Number(loadCountSelect?.value);
+  return INBOX_LOAD_CHOICES.includes(n) ? n : 50;
+}
+
+function inboxTargetPages(target = getInboxLoadTarget()) {
+  return Math.max(1, Math.ceil(target / INBOX_FETCH_PAGE_SIZE));
+}
+
+function mergeConversationRows(existing, incoming) {
+  const ids = new Set(existing.map((row) => row.id));
+  const next = [...existing];
+  for (const row of incoming || []) {
+    if (!row?.id || ids.has(row.id)) continue;
+    next.push(row);
+    ids.add(row.id);
+  }
+  return next;
 }
 
 function formToQuery() {
@@ -108,19 +132,21 @@ function formToQuery() {
   return {
     startDate: formData.get("startDate") || defaultStartDate(),
     endDate: formData.get("endDate") || defaultEndDate(),
-    filteredSources: formData.get("filteredSources") || ""
+    filteredSources: formData.get("filteredSources") || "",
+    loadCount: getInboxLoadTarget()
   };
 }
 
 /** End date is inclusive for Chatbase — bump by one day for API calls. */
 function formToApiQuery() {
   const query = formToQuery();
-  const end = new Date(`${query.endDate}T12:00:00`);
+  const { loadCount: _loadCount, ...apiQuery } = query;
+  const end = new Date(`${apiQuery.endDate}T12:00:00`);
   if (!Number.isNaN(end.getTime())) {
     end.setDate(end.getDate() + 1);
-    return { ...query, endDate: end.toISOString().slice(0, 10) };
+    return { ...apiQuery, endDate: end.toISOString().slice(0, 10) };
   }
-  return query;
+  return apiQuery;
 }
 
 function renderInboxCount() {
@@ -129,13 +155,15 @@ function renderInboxCount() {
   const filtered = getFilteredConversations();
   const keyword = searchInput?.value?.trim();
 
+  const loaded = allConversations.length;
   if (keyword) {
     const n = filtered.length;
-    countEl.innerHTML = `${n} match${n === 1 ? "" : "es"} · <button type="button" class="link-btn inbox-show-all">Show all</button>`;
+    countEl.innerHTML = `${n} match${n === 1 ? "" : "es"} in ${loaded} loaded · <button type="button" class="link-btn inbox-show-all">Show all</button>`;
     return;
   }
 
-  countEl.textContent = `${filtered.length} conversation${filtered.length === 1 ? "" : "s"}`;
+  const more = inboxHasMoreFromApi ? " loaded" : "";
+  countEl.textContent = `${filtered.length} conversation${filtered.length === 1 ? "" : "s"}${more}`;
 }
 
 function saveFiltersToSession() {
@@ -210,8 +238,7 @@ function updatePaginationUi(totalItems) {
   const totalPages = getTotalPages(totalItems);
   clampCurrentPage(totalPages);
 
-  const keyword = searchInput?.value?.trim();
-  const canLoadMore = inboxHasMoreFromApi && !keyword;
+  const canLoadMore = inboxHasMoreFromApi;
 
   let infoText = "";
   let prevDisabled = true;
@@ -563,6 +590,18 @@ function setCountMessage(message, isError = false) {
   countEl.classList.toggle("count-error", Boolean(isError));
 }
 
+async function loadInboxUpToTarget() {
+  const target = getInboxLoadTarget();
+  if (allConversations.length >= target || !inboxHasMoreFromApi) {
+    renderRows();
+    return;
+  }
+  while (allConversations.length < target && inboxHasMoreFromApi) {
+    const loaded = await loadMoreInboxPage();
+    if (!loaded) break;
+  }
+}
+
 async function loadMoreInboxPage() {
   if (!inboxHasMoreFromApi || inboxFetchInProgress) return false;
 
@@ -600,9 +639,8 @@ async function loadMoreInboxPage() {
 
 async function goToPage(page) {
   let totalPages = getTotalPages(getFilteredConversations().length);
-  const keyword = searchInput?.value?.trim();
 
-  if (page > totalPages && !keyword && inboxHasMoreFromApi) {
+  if (page > totalPages && inboxHasMoreFromApi) {
     const loaded = await loadMoreInboxPage();
     if (loaded) {
       totalPages = getTotalPages(getFilteredConversations().length);
@@ -652,18 +690,20 @@ async function loadAllConversations({ background = false } = {}) {
 
   const query = formToApiQuery();
   let page = 1;
+  let collected = [];
 
   try {
-    while (true) {
+    while (collected.length < getInboxLoadTarget()) {
       const { data, meta } = await listConversationsPage({
         ...query,
         page,
         size: INBOX_FETCH_PAGE_SIZE
       });
 
-      allConversations = [...(data || [])];
+      collected = mergeConversationRows(collected, data || []);
       inboxHasMoreFromApi = Boolean(meta?.hasMore);
       inboxApiNextPage = page + 1;
+      allConversations = collected;
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(allConversations));
       renderRows();
 
@@ -672,8 +712,7 @@ async function loadAllConversations({ background = false } = {}) {
         setPanelBusy(panelInbox, false, { disableTabs: false });
       }
 
-      if (page >= INBOX_INITIAL_PAGES) break;
-      if (!meta?.hasMore) break;
+      if (!meta?.hasMore || !(data || []).length) break;
       page += 1;
     }
 
@@ -747,6 +786,20 @@ searchInput?.addEventListener("input", () => {
 searchClearBtn?.addEventListener("click", () => {
   clearInboxSearch();
   searchInput?.focus();
+});
+
+loadCountSelect?.addEventListener("change", () => {
+  saveFiltersToSession();
+  currentPage = 1;
+  if (allConversations.length >= getInboxLoadTarget()) {
+    renderRows();
+    return;
+  }
+  if (allConversations.length && inboxHasMoreFromApi) {
+    loadInboxUpToTarget();
+    return;
+  }
+  loadAllConversations({ background: allConversations.length > 0 });
 });
 
 loadBtn.addEventListener("click", () => {
@@ -886,7 +939,7 @@ setInterval(() => {
   if (!isInboxTabActive()) return;
   if (inboxFetchInProgress) return;
   if (!inboxFetchComplete || !isInboxFetchStale()) return;
-  if (inboxApiNextPage > INBOX_INITIAL_PAGES + 1) return;
+  if (inboxApiNextPage > inboxTargetPages() + 1) return;
   loadAllConversations({ background: true });
 }, REFRESH_STALE_MS);
 
@@ -895,6 +948,6 @@ document.addEventListener("visibilitychange", () => {
   if (!isInboxTabActive()) return;
   if (inboxFetchInProgress) return;
   if (!inboxFetchComplete || !isInboxFetchStale()) return;
-  if (inboxApiNextPage > INBOX_INITIAL_PAGES + 1) return;
+  if (inboxApiNextPage > inboxTargetPages() + 1) return;
   loadAllConversations({ background: true });
 });
