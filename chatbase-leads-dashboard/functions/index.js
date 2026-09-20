@@ -69,6 +69,13 @@ const {
   syncOpsEventToGoogleCalendar,
   isOpsCalendarConfigured
 } = require("./ops-calendar");
+const {
+  getUpcomingWorkshopSessions,
+  getWorkshopEventDetails,
+  searchWorkshopSessions,
+  getNextAvailableWorkshop,
+  formatSessionsForChat
+} = require("./workshop-events");
 
 function nowIso() {
   return new Date().toISOString();
@@ -878,6 +885,123 @@ app.post("/workshop-sheet/sync", async (req, res) => {
     res.status(200).json({ ok: true, ...result });
   } catch (err) {
     logError("Workshop sheet sync failed", err);
+    res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+app.get("/workshops/upcoming", async (req, res) => {
+  try {
+    const eventType = req.query.eventType || req.query.event_type || null;
+    const limit = Math.min(Number(req.query.limit) || 10, 50);
+    const daysAhead = Math.min(Number(req.query.days_ahead || req.query.daysAhead) || 90, 365);
+    const format = req.query.format || "json";
+
+    const result = await getUpcomingWorkshopSessions({
+      eventType,
+      limit,
+      daysAhead
+    });
+
+    if (!result.ok) {
+      res.status(404).json({ ok: false, message: result.message });
+      return;
+    }
+
+    if (format === "text" || format === "chat") {
+      const text = formatSessionsForChat(result.sessions);
+      res.status(200).json({
+        ok: true,
+        text,
+        count: result.count,
+        sessions: result.sessions
+      });
+    } else {
+      res.status(200).json({
+        ok: true,
+        data: result.sessions,
+        count: result.count,
+        queryDate: result.queryDate
+      });
+    }
+  } catch (err) {
+    logError("Get upcoming workshops failed", err);
+    res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+app.get("/workshops/next", async (req, res) => {
+  try {
+    const eventType = req.query.eventType || req.query.event_type || null;
+    const result = await getNextAvailableWorkshop({ eventType });
+
+    if (!result.ok) {
+      res.status(404).json({ ok: false, message: result.message });
+      return;
+    }
+
+    res.status(200).json({
+      ok: true,
+      data: result.session,
+      message: result.message
+    });
+  } catch (err) {
+    logError("Get next workshop failed", err);
+    res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+app.get("/workshops/search", async (req, res) => {
+  try {
+    const query = req.query.q || req.query.query || "";
+    const date = req.query.date || null;
+    const month = req.query.month || null;
+    const format = req.query.format || "json";
+
+    const result = await searchWorkshopSessions({ query, date, month });
+
+    if (!result.ok) {
+      res.status(404).json({ ok: false, message: result.message });
+      return;
+    }
+
+    if (format === "text" || format === "chat") {
+      const text = formatSessionsForChat(result.sessions);
+      res.status(200).json({
+        ok: true,
+        text,
+        count: result.count,
+        sessions: result.sessions
+      });
+    } else {
+      res.status(200).json({
+        ok: true,
+        data: result.sessions,
+        count: result.count
+      });
+    }
+  } catch (err) {
+    logError("Search workshops failed", err);
+    res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+app.get("/workshops/event/:eventType", async (req, res) => {
+  try {
+    const result = await getWorkshopEventDetails({
+      eventType: req.params.eventType
+    });
+
+    if (!result.ok) {
+      res.status(404).json({ ok: false, message: result.message });
+      return;
+    }
+
+    res.status(200).json({
+      ok: true,
+      data: result.event
+    });
+  } catch (err) {
+    logError("Get workshop event details failed", err);
     res.status(500).json({ ok: false, message: err.message });
   }
 });

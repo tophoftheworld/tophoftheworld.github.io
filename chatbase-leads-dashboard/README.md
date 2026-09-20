@@ -294,6 +294,151 @@ After success, use messageForUser in your reply.
 
 ---
 
+---
+
+## Workshop Availability API (Real-Time Data for Chatbase)
+
+**New**: Real-time workshop availability endpoints that Chatbase can query instead of relying on static trained data.
+
+### Available Endpoints
+
+#### 1. **GET `/workshops/upcoming`** — Get upcoming workshop sessions
+
+**Query Parameters:**
+- `eventType` (optional) — Filter by event type (e.g., "matcha workshop")
+- `limit` (optional, default: 10, max: 50) — Number of sessions to return
+- `days_ahead` (optional, default: 90, max: 365) — Look ahead this many days
+- `format` (optional: "json" or "text") — Response format
+
+**Example:**
+```bash
+GET /workshops/upcoming?eventType=matcha%20workshop&limit=5&format=text
+```
+
+**Response (text format):**
+```json
+{
+  "ok": true,
+  "text": "• Matcha Workshop - Beginner Class\n  📅 Tue, Oct 15 at 14:00\n  🪑 7 slots available (out of 10)",
+  "count": 1,
+  "sessions": [...]
+}
+```
+
+---
+
+#### 2. **GET `/workshops/next`** — Get next available workshop
+
+**Query Parameters:**
+- `eventType` (optional) — Filter by event type
+
+**Use Case:** "When is your next workshop?"
+
+**Response:**
+```json
+{
+  "ok": true,
+  "data": {
+    "sessionId": "matcha-workshop-2026-10-15-14:00",
+    "eventType": "Matcha Workshop",
+    "date": "2026-10-15",
+    "startTime": "14:00",
+    "availableSeats": 7,
+    "capacity": 10
+  },
+  "message": "Next available: Matcha Workshop on 2026-10-15 at 14:00"
+}
+```
+
+---
+
+#### 3. **GET `/workshops/search`** — Search workshops
+
+**Query Parameters:**
+- `q` or `query` (optional) — Text search query
+- `date` (optional) — Specific date (YYYY-MM-DD)
+- `month` (optional) — Month filter (YYYY-MM)
+- `format` (optional: "json" or "text")
+
+**Examples:**
+```bash
+GET /workshops/search?q=matcha
+GET /workshops/search?date=2026-10-15
+GET /workshops/search?month=2026-10
+```
+
+---
+
+#### 4. **GET `/workshops/event/:eventType`** — Get event details
+
+**Example:**
+```bash
+GET /workshops/event/Matcha%20Workshop
+```
+
+**Response:**
+```json
+{
+  "ok": true,
+  "data": {
+    "eventName": "Matcha Workshop",
+    "venue": "Matchanese Cafe",
+    "address": "123 Main St, Manila",
+    "durationHours": 2.5
+  }
+}
+```
+
+---
+
+### Testing the Workshop API
+
+1. **Local testing:**
+   ```bash
+   firebase emulators:start --only functions
+   # Then open: workshop-api-test.html
+   ```
+
+2. **Test with curl:**
+   ```bash
+   curl "http://127.0.0.1:5001/YOUR-PROJECT/us-central1/api/workshops/upcoming?format=text"
+   ```
+
+3. **Visual test interface:**
+   - Open `workshop-api-test.html` in your browser
+   - Update the API URL to your deployed Functions URL
+   - Test all endpoints with various parameters
+
+---
+
+### Chatbase Setup for Workshop Actions
+
+See **[/docs/CHATBASE_WORKSHOP_INTEGRATION.md](/docs/CHATBASE_WORKSHOP_INTEGRATION.md)** for complete setup instructions including:
+
+- How to configure Custom Actions in Chatbase
+- Trigger keywords and phrases
+- Response handling
+- Training examples
+- Troubleshooting
+
+**Quick setup:**
+
+1. Deploy functions: `npm run deploy`
+2. In Chatbase → Actions → Create Custom Action
+3. **Action Name:** `get_upcoming_workshops`
+4. **Description:** "Fetch real-time workshop availability"
+5. **Trigger Keywords:** workshop, next workshop, available slots, etc.
+6. **Endpoint:** `https://YOUR-PROJECT.cloudfunctions.net/api/workshops/upcoming?format=text&limit=5`
+7. Enable on Instagram, Messenger, and Widget channels
+
+**Benefits:**
+- ✅ Real-time slot availability (no more outdated info)
+- ✅ Dynamic workshop schedules (add/remove sessions without retraining)
+- ✅ Natural language queries ("next matcha workshop", "workshops in October")
+- ✅ Seamless integration with your existing Shopify + Lazy Appointment Booking
+
+---
+
 ## Tests
 
 ```bash
