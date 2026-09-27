@@ -13,13 +13,13 @@ test('addDaysYmd shifts calendar days', () => {
   assert.equal(addDaysYmd('2026-09-19', 1), '2026-09-20');
 });
 
-test('dated event visible on period and ±1 day margin', () => {
+test('dated event visible before and during period, hidden after egress', () => {
   const ev = { startDate: '2026-09-20', endDate: '2026-09-21' };
-  assert.equal(isScheduleEventVisibleOnDate(ev, '2026-09-19'), true); // ingress
+  assert.equal(isScheduleEventVisibleOnDate(ev, '2026-09-18'), true); // advance booking
+  assert.equal(isScheduleEventVisibleOnDate(ev, '2026-09-19'), true);
   assert.equal(isScheduleEventVisibleOnDate(ev, '2026-09-20'), true);
   assert.equal(isScheduleEventVisibleOnDate(ev, '2026-09-21'), true);
   assert.equal(isScheduleEventVisibleOnDate(ev, '2026-09-22'), true); // egress
-  assert.equal(isScheduleEventVisibleOnDate(ev, '2026-09-18'), false);
   assert.equal(isScheduleEventVisibleOnDate(ev, '2026-09-23'), false);
 });
 
@@ -28,7 +28,7 @@ test('undated stays selectable; archived hidden', () => {
   assert.equal(isScheduleEventVisibleOnDate({ startDate: DAY, archived: true }, DAY), false);
 });
 
-test('filterScheduleEventsForDate drops out-of-window events', () => {
+test('filterScheduleEventsForDate drops past events but keeps upcoming', () => {
   const keys = filterScheduleEventsForDate(
     [
       { key: 'past', startDate: '2026-09-01', endDate: '2026-09-10' },
@@ -39,5 +39,5 @@ test('filterScheduleEventsForDate drops out-of-window events', () => {
     ],
     DAY
   ).map((e) => e.key);
-  assert.deepEqual(keys, ['now', 'undated']);
+  assert.deepEqual(keys, ['now', 'soon', 'undated']);
 });

@@ -550,6 +550,79 @@ button:hover {
     border-radius: 4px;
 }
 
+.event-combobox {
+    position: relative;
+}
+
+.event-combobox__input {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+
+.event-combobox__input:disabled {
+    cursor: default;
+}
+
+.event-combobox__list {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    right: 0;
+    max-height: 220px;
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+    z-index: 30;
+}
+
+.event-combobox__option {
+    display: block;
+    width: 100%;
+    padding: 0.65rem 0.85rem;
+    border: 0;
+    border-bottom: 1px solid #f0f0f0;
+    background: #fff;
+    color: #333;
+    text-align: left;
+    font: inherit;
+    cursor: pointer;
+}
+
+.event-combobox__option:last-child {
+    border-bottom: 0;
+}
+
+.event-combobox__option:hover,
+.event-combobox__option.is-active {
+    background: #f3f4f6;
+}
+
+.event-combobox__option.is-add {
+    color: #2b9348;
+    font-weight: 500;
+}
+
+.event-combobox__empty {
+    padding: 0.65rem 0.85rem;
+    color: #6b7280;
+    font-size: 0.9rem;
+}
+
+.event-combobox__group {
+    padding: 0.45rem 0.85rem 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: #6b7280;
+    background: #f9fafb;
+}
+
 .form-actions {
     display: flex;
     justify-content: flex-end;
@@ -972,29 +1045,295 @@ button:hover {
 }
 
 .shift-branch-header {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
+    column-gap: 0.75rem;
     cursor: pointer;
     user-select: none;
     text-align: center;
-    padding: 1rem 1.5rem;
+    padding: 1rem 1rem;
     font-weight: 600;
     font-size: 1.1rem;
     color: #1a5d2e;
     background: #e8f5e8;
     transition: background-color 0.15s ease;
+    position: relative;
+}
+
+.shift-branch-chevron {
+    justify-self: start;
+    font-size: 0.7rem;
+    opacity: 0.9;
+    flex-shrink: 0;
+}
+
+.shift-branch-header .shift-branch-heading {
+    grid-column: 2;
+    justify-self: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
+    min-width: 0;
+    text-align: center;
+}
+
+.shift-branch-header .shift-branch-download-btn {
+    grid-column: 3;
+    justify-self: end;
+    position: static;
+    margin: 0;
+    height: auto;
+    display: inline;
+    align-items: unset;
+    justify-content: unset;
+    gap: 0;
+    border: 0 !important;
+    outline: none;
+    box-shadow: none !important;
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent !important;
+    color: #4a7a58;
+    font: inherit;
+    font-size: 0.72rem;
+    font-weight: 500;
+    padding: 0;
+    border-radius: 0;
+    cursor: pointer;
+    line-height: 1;
+    opacity: 0.5;
+    transform: none !important;
+    letter-spacing: 0.02em;
+    transition: color 0.12s ease, opacity 0.12s ease;
+}
+
+.shift-branch-header .shift-branch-download-btn:hover:not(:disabled) {
+    background: transparent !important;
+    color: #123822;
+    opacity: 0.95;
+    box-shadow: none !important;
+    transform: none !important;
+}
+
+.shift-branch-header .shift-branch-download-btn:active:not(:disabled) {
+    background: transparent !important;
+    color: #0d2818;
+    opacity: 1;
+    box-shadow: none !important;
+    transform: none !important;
+}
+
+.shift-branch-header .shift-branch-download-btn:disabled {
+    opacity: 0.35;
+    cursor: wait;
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+/* Off-screen schedule PNG export card */
+.schedule-export-card {
+    box-sizing: border-box;
+    padding: 22px 32px 24px;
+    font-family: 'Inter', sans-serif;
+    color: #1a1a1a;
+}
+
+.schedule-export-header {
+    margin-bottom: 0.85rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 2px solid #2b9348;
+}
+
+.schedule-export-brand {
+    margin: 0 0 0.35rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #2b9348;
+}
+
+.schedule-export-title {
+    margin: 0;
+    font-size: 1.55rem;
+    font-weight: 700;
+    color: #123822;
+    line-height: 1.25;
+}
+
+.schedule-export-venue {
+    margin: 0.35rem 0 0;
+    font-size: 0.95rem;
+    color: #3d7a4f;
+}
+
+.schedule-export-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    border: 1px solid #d7e3d9;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.schedule-export-row {
+    display: grid;
+    grid-template-columns: 96px repeat(var(--export-days, 7), minmax(0, 1fr));
+    border-bottom: 1px solid #e5ebe6;
+    min-height: 0;
+}
+
+.schedule-export-row:last-child {
+    border-bottom: none;
+}
+
+.schedule-export-row--head {
+    min-height: 0;
+    background: #f3f8f4;
+}
+
+.schedule-export-type {
+    display: flex;
+    align-items: center;
+    padding: 0.5rem 0.45rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #2f4f3a;
+    background: #f7faf7;
+    border-right: 1px solid #e5ebe6;
+}
+
+.schedule-export-day-head {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.1rem;
+    padding: 0.55rem 0.25rem;
+    border-right: 1px solid #e5ebe6;
+    text-align: center;
+}
+
+.schedule-export-day-head:last-child,
+.schedule-export-cell:last-child {
+    border-right: none;
+}
+
+.schedule-export-day-name {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #555;
+}
+
+.schedule-export-day-date {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #1a5d2e;
+}
+
+.schedule-export-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding: 0.35rem;
+    border-right: 1px solid #eef2ef;
+    min-height: 0;
+    background: #fff;
+}
+
+.schedule-export-cell-empty {
+    color: #c5ccc7;
+    font-size: 0.85rem;
+    text-align: center;
+    margin: auto 0;
+}
+
+.schedule-export-shift {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #2b9348;
+    color: #fff;
+    border-radius: 6px;
+    padding: 0.45rem 0.5rem;
+    text-align: left;
+}
+
+.schedule-export-shift--opening,
+.schedule-export-shift--adjustedOpening {
+    background: #1e7a3a;
+}
+
+.schedule-export-shift--midshift {
+    background: #2b9348;
+}
+
+.schedule-export-shift--closing {
+    background: #3eb05e;
+}
+
+.schedule-export-shift--closingHalf {
+    background: #54bf72;
+}
+
+.schedule-export-shift--custom {
+    background: #4bb569;
+}
+
+.schedule-export-photo {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.schedule-export-shift-details {
+    min-width: 0;
+    flex: 1;
+}
+
+.schedule-export-shift-name {
+    font-size: 0.92rem;
+    font-weight: 700;
+    line-height: 1.15;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.schedule-export-card-role {
+    display: block;
+    font-size: 0.68rem;
+    font-weight: 600;
+    opacity: 0.9;
+    margin-top: 0.05rem;
+}
+
+.schedule-export-shift-time {
+    font-size: 0.8rem;
+    font-weight: 500;
+    opacity: 0.95;
+    margin-top: 0.05rem;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.schedule-export-empty {
+    padding: 1.5rem;
+    text-align: center;
+    color: #6b7280;
+    font-size: 0.95rem;
 }
 
 .shift-branch-header:hover {
     background: #d4edd4;
-}
-
-.shift-branch-chevron {
-    font-size: 0.7rem;
-    opacity: 0.9;
-    flex-shrink: 0;
 }
 
 .shift-branch-block.shift-branch-collapsed .shift-branch-chevron {
@@ -1004,6 +1343,18 @@ button:hover {
 .shift-branch-header .shift-branch-title {
     padding: 0;
     background: none;
+    font-size: inherit;
+    font-weight: inherit;
+    color: inherit;
+}
+
+.shift-branch-venue {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 500;
+    line-height: 1.2;
+    color: #3d7a4f;
+    opacity: 0.9;
 }
 
 .shift-branch-rows {

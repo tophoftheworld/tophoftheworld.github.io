@@ -13,7 +13,7 @@
     <meta property="og:description" content="Matchanese Employee Scheduling System">
 
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css?v=50">
+    <link rel="stylesheet" href="css/style.css?v=62">
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 </head>
 
@@ -39,12 +39,24 @@
                     </select>
                 </div>
                 <div class="form-group" id="eventFields" style="display: none;">
-                    <label for="shiftEvent">Event</label>
-                    <select id="shiftEvent">
-                        <option value="">Select event</option>
-                    </select>
+                    <label for="shiftEventInput">Event</label>
+                    <div class="event-combobox" id="eventCombobox">
+                        <input type="hidden" id="shiftEvent" value="">
+                        <input
+                            type="text"
+                            id="shiftEventInput"
+                            class="event-combobox__input"
+                            autocomplete="off"
+                            placeholder="Type to search events…"
+                            role="combobox"
+                            aria-autocomplete="list"
+                            aria-expanded="false"
+                            aria-controls="shiftEventList"
+                        >
+                        <div class="event-combobox__list" id="shiftEventList" role="listbox" hidden></div>
+                    </div>
                     <p class="form-hint" id="eventFieldsHint" style="margin: 0.35rem 0 0; font-size: 0.8rem; color: #6b7280;">
-                        Choose a pop-up or workshop, or add a new one.
+                        Type to search any event (pop-up, workshop, or bar service), including upcoming ones, or add a new one.
                     </p>
                 </div>
                 <div class="form-group">
@@ -56,7 +68,7 @@
                         <option value="midshift">Midshift (11:00 AM - 8:00 PM)</option>
                         <option value="closing">Closing (1:00 PM - 10:00 PM)</option>
                         <option value="closingHalf">Closing Half Day (6:00 PM - 10:00 PM)</option>
-                        <option value="custom">Custom</option>
+                        <option value="custom">Custom (defaults 9:30 AM - 6:30 PM)</option>
                     </select>
                 </div>
                 <div class="form-group" id="customTimeGroup" style="display: none;">
@@ -65,11 +77,23 @@
                     <label for="customEndTime">End Time</label>
                     <input type="time" id="customEndTime">
                 </div>
-                <div class="form-group">
-                    <label for="shiftEmployee">Employee</label>
-                    <select id="shiftEmployee">
-                        <option value="">Select employee</option>
-                    </select>
+                <div class="form-group" id="employeeFields">
+                    <label for="shiftEmployeeInput">Employee</label>
+                    <div class="event-combobox" id="employeeCombobox">
+                        <input type="hidden" id="shiftEmployee" value="">
+                        <input
+                            type="text"
+                            id="shiftEmployeeInput"
+                            class="event-combobox__input"
+                            autocomplete="off"
+                            placeholder="Type to search employees…"
+                            role="combobox"
+                            aria-autocomplete="list"
+                            aria-expanded="false"
+                            aria-controls="shiftEmployeeList"
+                        >
+                        <div class="event-combobox__list" id="shiftEmployeeList" role="listbox" hidden></div>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label for="shiftRole">Role</label>
@@ -111,6 +135,7 @@
                         <option value="">Select type</option>
                         <option value="popup">Pop-up</option>
                         <option value="workshop">Workshop</option>
+                        <option value="service">Bar Service</option>
                     </select>
                 </div>
                 <input type="hidden" id="branchKey">
@@ -297,7 +322,7 @@
     </div>
 
     <div id="scheduleToast" class="schedule-toast" aria-live="polite"></div>
-    <script type="module" src="js/script.js?v=52"></script>
+    <script type="module" src="js/script.js?v=72"></script>
 </body>
 
 </html>

@@ -1,8 +1,8 @@
-/** Schedule event picker: show events whose period covers the shift date (± margin). */
+/** Schedule event picker: hide past events; keep current and upcoming ones selectable. */
 
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Days before start / after end allowed for ingress / egress. */
+/** Days after end still treated as the event window (egress). */
 export const SCHEDULE_EVENT_MARGIN_DAYS = 1;
 
 export function addDaysYmd(ymd, days) {
@@ -22,7 +22,8 @@ function eventDateRange(event) {
 
 /**
  * Undated events stay selectable. Archived events are hidden.
- * Dated events show when shiftDate falls in [start - margin, end + margin].
+ * Past events (ended before shiftDate, plus egress margin) are hidden.
+ * Current and future events stay visible so staff can be scheduled in advance.
  */
 export function isScheduleEventVisibleOnDate(
   event,
@@ -33,9 +34,8 @@ export function isScheduleEventVisibleOnDate(
   if (!YMD.test(dateYmd || '')) return true;
   const range = eventDateRange(event);
   if (!range) return true;
-  const windowStart = addDaysYmd(range.start, -marginDays);
   const windowEnd = addDaysYmd(range.end, marginDays);
-  return dateYmd >= windowStart && dateYmd <= windowEnd;
+  return dateYmd <= windowEnd;
 }
 
 export function filterScheduleEventsForDate(events, dateYmd) {
