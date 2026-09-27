@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workshop API Test - Chatbase Integration</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #2b9348 0%, #16a34a 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1rem;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .card h2 {
+            color: #2b9348;
+            margin-bottom: 16px;
+            font-size: 1.5rem;
+        }
+
+        .api-test {
+            margin-bottom: 24px;
+        }
+
+        .api-test:last-child {
+            margin-bottom: 0;
+        }
+
+        .api-test h3 {
+            color: #333;
+            margin-bottom: 12px;
+            font-size: 1.2rem;
+        }
+
+        .api-test .endpoint {
+            background: #f3f4f6;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            overflow-x: auto;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+        }
+
+        button {
+            background: #2b9348;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.95rem;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: #16a34a;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        .response {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 16px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            display: none;
+        }
+
+        .response.show {
+            display: block;
+        }
+
+        .response.error {
+            background: #7f1d1d;
+            color: #fecaca;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+            margin-left: 8px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .config-section {
+            background: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            padding: 16px;
+            margin-bottom: 20px;
+            border-radius: 6px;
+        }
+
+        .config-section h3 {
+            color: #92400e;
+            margin-bottom: 8px;
+        }
+
+        .config-section input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+        }
+
+        .info-box {
+            background: #dbeafe;
+            border-left: 4px solid #3b82f6;
+            padding: 12px;
+            margin-bottom: 12px;
+            border-radius: 6px;
+            font-size: 0.9rem;
+        }
+
+        .success-box {
+            background: #dcfce7;
+            border-left: 4px solid #22c55e;
+            padding: 12px;
+            margin-bottom: 12px;
+            border-radius: 6px;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎓 Workshop API Test</h1>
+            <p>Test your Chatbase workshop integration endpoints</p>
+        </div>
+
+        <div class="card">
+            <div class="config-section">
+                <h3>⚙️ Configuration</h3>
+                <label for="apiUrl" style="display: block; margin-bottom: 8px; color: #92400e; font-weight: 500;">
+                    Firebase Functions URL:
+                </label>
+                <input 
+                    type="text" 
+                    id="apiUrl" 
+                    placeholder="https://YOUR-PROJECT.cloudfunctions.net/api"
+                    value="http://127.0.0.1:5001/YOUR-PROJECT/us-central1/api"
+                />
+                <p style="margin-top: 8px; color: #92400e; font-size: 0.85rem;">
+                    💡 Update this with your deployed Firebase Functions URL
+                </p>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>1️⃣ Get Upcoming Workshops</h2>
+            
+            <div class="api-test">
+                <h3>Default Query (Next 10 workshops)</h3>
+                <div class="endpoint">GET /workshops/upcoming?format=text&limit=10</div>
+                <div class="button-group">
+                    <button onclick="testUpcoming()">Test Default</button>
+                    <button onclick="testUpcoming('matcha workshop', 5)">Test with "matcha workshop" filter</button>
+                </div>
+                <div class="response" id="response-upcoming"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>2️⃣ Get Next Available Workshop</h2>
+            
+            <div class="api-test">
+                <h3>Next Available Session</h3>
+                <div class="endpoint">GET /workshops/next</div>
+                <div class="button-group">
+                    <button onclick="testNext()">Test Next Workshop</button>
+                    <button onclick="testNext('matcha workshop')">Test Next "matcha workshop"</button>
+                </div>
+                <div class="response" id="response-next"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>3️⃣ Search Workshops</h2>
+            
+            <div class="api-test">
+                <h3>Search by Query or Date</h3>
+                <div class="endpoint">GET /workshops/search?format=text&q=matcha</div>
+                <div class="button-group">
+                    <button onclick="testSearch('matcha')">Search "matcha"</button>
+                    <button onclick="testSearch('', '2026-10-15')">Search Oct 15, 2026</button>
+                    <button onclick="testSearch('', '', '2026-10')">Search October 2026</button>
+                </div>
+                <div class="response" id="response-search"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>4️⃣ Get Event Details</h2>
+            
+            <div class="api-test">
+                <h3>Get Specific Event Type Info</h3>
+                <div class="endpoint">GET /workshops/event/:eventType</div>
+                <div class="button-group">
+                    <button onclick="testEventDetails('Matcha Workshop')">Get "Matcha Workshop" details</button>
+                </div>
+                <div class="response" id="response-event"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="info-box">
+                <strong>ℹ️ How to use with Chatbase:</strong>
+                <ol style="margin-top: 8px; margin-left: 20px;">
+                    <li>Deploy your Firebase Functions</li>
+                    <li>Update the API URL above with your deployed URL</li>
+                    <li>Test all endpoints to verify they work</li>
+                    <li>Configure Custom Actions in Chatbase dashboard</li>
+                    <li>Add trigger keywords for each action</li>
+                </ol>
+            </div>
+            <div class="success-box">
+                <strong>✅ Next Steps:</strong><br>
+                See <code>/docs/CHATBASE_WORKSHOP_INTEGRATION.md</code> for complete setup instructions
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function getApiUrl() {
+            const input = document.getElementById('apiUrl');
+            return input.value.trim() || 'http://127.0.0.1:5001/YOUR-PROJECT/us-central1/api';
+        }
+
+        function showResponse(elementId, data, isError = false) {
+            const element = document.getElementById(elementId);
+            element.textContent = JSON.stringify(data, null, 2);
+            element.classList.add('show');
+            element.classList.toggle('error', isError);
+        }
+
+        function showLoading(elementId) {
+            const element = document.getElementById(elementId);
+            element.textContent = 'Loading...';
+            element.classList.add('show');
+            element.classList.remove('error');
+        }
+
+        async function testUpcoming(eventType = null, limit = 10) {
+            const elementId = 'response-upcoming';
+            showLoading(elementId);
+            
+            try {
+                const baseUrl = getApiUrl();
+                let url = `${baseUrl}/workshops/upcoming?format=text&limit=${limit}`;
+                if (eventType) {
+                    url += `&eventType=${encodeURIComponent(eventType)}`;
+                }
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                showResponse(elementId, data, !response.ok);
+            } catch (error) {
+                showResponse(elementId, { error: error.message }, true);
+            }
+        }
+
+        async function testNext(eventType = null) {
+            const elementId = 'response-next';
+            showLoading(elementId);
+            
+            try {
+                const baseUrl = getApiUrl();
+                let url = `${baseUrl}/workshops/next`;
+                if (eventType) {
+                    url += `?eventType=${encodeURIComponent(eventType)}`;
+                }
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                showResponse(elementId, data, !response.ok);
+            } catch (error) {
+                showResponse(elementId, { error: error.message }, true);
+            }
+        }
+
+        async function testSearch(query = '', date = '', month = '') {
+            const elementId = 'response-search';
+            showLoading(elementId);
+            
+            try {
+                const baseUrl = getApiUrl();
+                const params = new URLSearchParams({ format: 'text' });
+                if (query) params.append('q', query);
+                if (date) params.append('date', date);
+                if (month) params.append('month', month);
+                
+                const url = `${baseUrl}/workshops/search?${params.toString()}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                showResponse(elementId, data, !response.ok);
+            } catch (error) {
+                showResponse(elementId, { error: error.message }, true);
+            }
+        }
+
+        async function testEventDetails(eventType) {
+            const elementId = 'response-event';
+            showLoading(elementId);
+            
+            try {
+                const baseUrl = getApiUrl();
+                const url = `${baseUrl}/workshops/event/${encodeURIComponent(eventType)}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                showResponse(elementId, data, !response.ok);
+            } catch (error) {
+                showResponse(elementId, { error: error.message }, true);
+            }
+        }
+
+        // Auto-load API URL from localStorage if available
+        window.addEventListener('DOMContentLoaded', () => {
+            const input = document.getElementById('apiUrl');
+            const saved = localStorage.getItem('workshopApiUrl');
+            if (saved) {
+                input.value = saved;
+            }
+            
+            input.addEventListener('change', () => {
+                localStorage.setItem('workshopApiUrl', input.value);
+            });
+        });
+    </script>
+</body>
+</html>
