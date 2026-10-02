@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gift Certificates Dashboard Demo - Matchanese</title>
+    <link rel="stylesheet" href="css/dashboard.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap" rel="stylesheet">
+</head>
+<body class="certificates-app">
+    <section class="certificates-list-screen">
+        <header class="certificates-list-header">
+            <div>
+                <h1>Gift Certificates</h1>
+                <p class="certificates-list-sub">Create and manage mobile gift vouchers with QR codes.</p>
+            </div>
+            <button type="button" onclick="alert('This is a demo! In the real app, this would open a form to create new certificates connected to Firebase.')" class="gc-btn gc-btn-primary">New Certificate</button>
+        </header>
+
+        <div class="certificates-list-toolbar">
+            <input type="search" placeholder="Search by ID, giver, or recipient…" autocomplete="off">
+            <select class="gc-select">
+                <option value="">All Status</option>
+                <option value="active">Active</option>
+                <option value="claimed">Claimed</option>
+                <option value="expired">Expired</option>
+            </select>
+            <button type="button" class="gc-btn gc-btn-secondary">Refresh</button>
+        </div>
+
+        <div class="certificates-list-status">3 certificates (demo data)</div>
+        
+        <div class="certificates-list-grid">
+            <!-- Active Certificate -->
+            <div class="certificate-card">
+                <div class="certificate-card-main">
+                    <div class="certificate-card-header">
+                        <span class="certificate-id">GC-2026-1002-001</span>
+                        <span class="certificate-status-pill certificate-status-active">Active</span>
+                    </div>
+                    <div class="certificate-value">₱500</div>
+                    <div class="certificate-giver">From: John Doe</div>
+                    <div class="certificate-recipient">To: Jane Smith</div>
+                    <div class="certificate-date">Oct 2, 2026</div>
+                </div>
+                <div class="certificate-card-actions">
+                    <button class="certificate-action-btn" onclick="window.open('demo.html', '_blank')" title="View Certificate">
+                        <svg viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+                    </button>
+                    <button class="certificate-action-btn" onclick="alert('Link copied! (demo)')" title="Copy Link">
+                        <svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Claimed Certificate -->
+            <div class="certificate-card">
+                <div class="certificate-card-main">
+                    <div class="certificate-card-header">
+                        <span class="certificate-id">GC-2026-1001-042</span>
+                        <span class="certificate-status-pill certificate-status-claimed">Claimed</span>
+                    </div>
+                    <div class="certificate-value">₱1,000</div>
+                    <div class="certificate-giver">From: Sarah Lee</div>
+                    <div class="certificate-recipient">To: Mike Chen</div>
+                    <div class="certificate-date">Oct 1, 2026</div>
+                </div>
+                <div class="certificate-card-actions">
+                    <button class="certificate-action-btn" onclick="window.open('demo.html', '_blank')" title="View Certificate">
+                        <svg viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+                    </button>
+                    <button class="certificate-action-btn" onclick="alert('Link copied! (demo)')" title="Copy Link">
+                        <svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Active Certificate 2 -->
+            <div class="certificate-card">
+                <div class="certificate-card-main">
+                    <div class="certificate-card-header">
+                        <span class="certificate-id">GC-2026-0930-087</span>
+                        <span class="certificate-status-pill certificate-status-active">Active</span>
+                    </div>
+                    <div class="certificate-value">₱250</div>
+                    <div class="certificate-giver">From: Anna Park</div>
+                    <div class="certificate-date">Sep 30, 2026</div>
+                </div>
+                <div class="certificate-card-actions">
+                    <button class="certificate-action-btn" onclick="window.open('demo.html', '_blank')" title="View Certificate">
+                        <svg viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+                    </button>
+                    <button class="certificate-action-btn" onclick="alert('Link copied! (demo)')" title="Copy Link">
+                        <svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div style="margin-top: 2rem; padding: 1.5rem; background: white; border-radius: 12px; text-align: center;">
+            <p style="margin: 0 0 1rem; color: var(--gc-ink); font-weight: 600;">
+                📌 This is a demo with mock data
+            </p>
+            <p style="margin: 0 0 1rem; color: var(--gc-muted); font-size: 0.9rem;">
+                The real dashboard connects to Firebase and shows actual certificates with real-time updates.
+                Click "View" buttons above to see the certificate display demo!
+            </p>
+            <a href="index.html" style="display: inline-block; padding: 0.75rem 1.5rem; background: var(--gc-green); color: white; text-decoration: none; border-radius: 999px; font-weight: 600;">
+                Back to Home
+            </a>
+        </div>
+    </section>
+</body>
+</html>

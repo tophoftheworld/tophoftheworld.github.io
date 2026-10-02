@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Scan Gift Certificate - Matchanese</title>
+    <link rel="stylesheet" href="css/scanner.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+</head>
+<body class="scanner-page">
+    <!-- Scanner Section -->
+    <div id="scannerSection" class="scanner-section">
+        <div class="scanner-header">
+            <h1>Scan Gift Certificate</h1>
+            <p>Point your camera at the QR code</p>
+        </div>
+
+        <div class="scanner-wrapper">
+            <div id="scannerContainer" class="scanner-container"></div>
+            <div class="scanner-overlay">
+                <div class="scan-frame"></div>
+            </div>
+        </div>
+
+        <div id="scanStatus" class="scan-status">Point camera at QR code</div>
+
+        <div class="scanner-footer">
+            <a href="dashboard.html" class="footer-link">Go to Dashboard</a>
+        </div>
+    </div>
+
+    <!-- Result Section -->
+    <div id="resultContainer" class="result-container is-hidden" hidden>
+        <div class="result-card">
+            <div class="result-header">
+                <div class="result-icon">🎁</div>
+                <h2>Gift Certificate</h2>
+            </div>
+
+            <div class="result-value-section">
+                <div class="value-label">Value</div>
+                <div id="resultValue" class="result-value">₱0.00</div>
+            </div>
+
+            <div class="result-details">
+                <div id="resultGivenBy" class="result-detail is-hidden" hidden></div>
+                <div id="resultGivenTo" class="result-detail is-hidden" hidden></div>
+                <div id="resultDescription" class="result-description is-hidden" hidden></div>
+                <div id="resultExpiry" class="result-expiry is-hidden" hidden></div>
+            </div>
+
+            <div id="resultId" class="result-id">GC-0000-0000-000</div>
+
+            <div id="statusMessage" class="result-status is-hidden" hidden></div>
+
+            <div class="result-actions">
+                <button id="claimBtn" class="gc-btn gc-btn-primary">
+                    Claim Certificate
+                </button>
+                <button id="scanAgainBtn" class="gc-btn gc-btn-secondary">
+                    Scan Again
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="js/scanner.js"></script>
+</body>
+</html>
