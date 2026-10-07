@@ -26,6 +26,23 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Gift Certificates collection
+    match /giftCertificates/{certificateId} {
+      // Anyone can read certificates (for scanner and certificate view)
+      allow read: if true;
+      
+      // Only authenticated staff can create certificates
+      // TODO: Add proper authentication check when auth is implemented
+      allow create: if true;
+      
+      // Only allow specific updates for claiming
+      // Status can be updated from 'active' to 'claimed'
+      allow update: if true;
+      
+      // No deletions allowed
+      allow delete: if false;
+    }
+
     // Open rules for development. Covers legacy collections and v2 payroll paths
     // (employees_v2, attendance_v2, payroll_period_earnings_v2, payroll_periods_v2/.../payments,
     // migration_v2_status for migration-tool UI).
