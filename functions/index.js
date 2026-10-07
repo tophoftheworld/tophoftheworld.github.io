@@ -2,15 +2,18 @@
  * Cloud Functions for payroll Firestore v2 collections.
  * Deploy: from repo root, `firebase deploy --only functions`
  */
-const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const PayCalculator = require('./payCalculator');
 const { extractExpenseFieldsFromImage } = require('./extractExpenseReceipt');
 const { extractDiscountIdFromImage } = require('./extractDiscountId');
 const { generateInvoiceFromChat } = require('./generateInvoiceFromChat');
+const { createDiscordExpensePoll } = require('./discordExpensePoll');
+const { onSchedule } = require('firebase-functions/v2/scheduler');
 
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
+const discordBotToken = defineSecret('DISCORD_BOT_TOKEN');
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -478,3 +481,27 @@ exports.generateInvoiceFromChat = onCall(
     }
   }
 );
+
+
+// All ingestion runs inside a scheduled request: no idle Gateway / background CPU dependency.
+const discordReceipts = createDiscordExpensePoll({
+  admin,
+  getGeminiApiKey: () => geminiApiKey.value(),
+  getBotToken: () => discordBotToken.value()
+});
+exports.discordExpensePoll = onSchedule({
+  schedule: 'every 1 minutes', timeZone: 'Asia/Manila', region: 'us-central1',
+  memory: '1GiB', timeoutSeconds: 540, minInstances: 0, maxInstances: 1, concurrency: 1,
+  retryCount: 0, secrets: [geminiApiKey, discordBotToken]
+}, async () => { await discordReceipts.poll(); });
+
+// Preserve the old URL as a read-only, meaningful health check.
+exports.discordExpenseBot = onRequest({
+  region: 'us-central1', memory: '256MiB', timeoutSeconds: 30,
+  minInstances: 0, maxInstances: 1, invoker: 'public'
+}, async (req, res) => {
+  try {
+    const health = await discordReceipts.health();
+    res.status(health.ok ? 200 : 503).json(health);
+  } catch (_) { res.status(503).json({ ok: false, mode: 'scheduled-poll' }); }
+});

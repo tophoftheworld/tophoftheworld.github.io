@@ -8,7 +8,7 @@
  * Orders leave the board when status changes away from pending (DONE / void / delete).
  */
 
-import { loadEventsFromFirebase, subscribeToOrders, filterPosSelectableEvents } from './firebase-sync.js?v=13';
+import { loadEventsFromFirebase, subscribeToOrders, filterPosSelectableEvents } from './firebase-sync.js?v=15';
 
 const READY_LIMIT = 6;
 const PREP_LIMIT = 14;

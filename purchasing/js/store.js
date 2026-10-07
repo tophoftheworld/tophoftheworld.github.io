@@ -1,4 +1,4 @@
-import { THIS_WEEK_ID } from './data/seed.js?v=106';
+import { THIS_WEEK_ID } from './data/seed.js?v=111';
 import {
   weekTotal,
   spentBuckets,
@@ -6,7 +6,7 @@ import {
   lineUnitRate,
   recalcLineCost,
   lineAmount,
-} from './compute.js?v=106';
+} from './compute.js?v=111';
 import {
   fetchThisWeekFromOrderView,
   extractOverlayFromWeek,
@@ -21,8 +21,9 @@ import {
   isBranchFeedLoaded,
   reloadBranchFeed,
   buildArchivedWeekFromOverlay,
+  loadOverlay,
   CORE_BRANCHES,
-} from './data/order-feed.js?v=106';
+} from './data/order-feed.js?v=111';
 import {
   loadPastWeeksRemote,
   peekLocalPastWeeks,
@@ -35,24 +36,25 @@ import {
   mergeOverlays,
   cancelPendingOverlaySave,
   hasPendingOverlaySave,
-} from './data/plan-sync.js?v=106';
+} from './data/plan-sync.js?v=111';
 import {
   preferNonEmptyPastWeek,
   overlayHasArchivableBudget,
   weekHasOnPlanBudget,
-} from './data/overlay-filter.js?v=106';
-import { savePrefsFromLine } from './data/item-prefs.js?v=106';
-import { savePrefsFromCustomLine } from './data/custom-items.js?v=106';
-import { siblingSharesRate } from './data/rate-scope.js?v=106';
+} from './data/overlay-filter.js?v=111';
+import { savePrefsFromLine } from './data/item-prefs.js?v=111';
+import { savePrefsFromCustomLine } from './data/custom-items.js?v=111';
+import { siblingSharesRate } from './data/rate-scope.js?v=111';
 import {
   readLiveWeekCache,
   writeLiveWeekCache,
-} from './data/last-route.js?v=106';
+  LIVE_WEEK_CACHE_KEY,
+} from './data/last-route.js?v=111';
 
 /**
  * Shared across module-graph instances. Cache-busted ?v= imports can load store.js
  * twice; without a singleton, app.js paints while plan.js reads an empty store
- * ("Loading week… forever").
+ * ("Loading week... forever").
  */
 const shared = (globalThis.__purchasingStore ??= {
   state: null,
@@ -168,7 +170,7 @@ export async function loadStateFromOrderView({ persist = false, full = false } =
   return shared.state;
 }
 
-/** Load one core branch’s Order View data into the live week (on expand). */
+/** Load one core branch's Order View data into the live week (on expand). */
 export async function ensureBranchLoaded(branch, { remember = true } = {}) {
   if (!branch || !CORE_BRANCHES.includes(branch)) return shared.state;
   if (isBranchFeedLoaded(branch)) return shared.state;
@@ -221,6 +223,13 @@ function persistOverlayOnly({ flush = false } = {}) {
   ) {
     return Promise.resolve();
   }
+  // Only rollover / clear (replace writes) may move the live overlay to another week.
+  if (acked?.weekStart && extracted.weekStart && acked.weekStart !== extracted.weekStart) {
+    console.warn(
+      `Purchasing save skipped: week ${extracted.weekStart} does not match live overlay ${acked.weekStart}`
+    );
+    return Promise.resolve();
+  }
   shared.overlayDirty = true;
   return Promise.resolve(saveOverlay(extracted, { flush })).then(
     (result) => {
@@ -269,13 +278,74 @@ export async function clearThisWeekPlan() {
   return shared.state;
 }
 
+/**
+ * One-off repair: live overlay holds `correctStart`'s budget but was stamped with a later week.
+ * Restamps it, then lets the normal rollover archive it and open a blank current plan week.
+ * Run from the console: `await __purchasingRepairWeek('2026-09-21')`.
+ */
+export async function repairLiveWeekStart(correctStart) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(correctStart || ''))) {
+    throw new Error('Pass the Monday as YYYY-MM-DD, e.g. 2026-09-21');
+  }
+  const monday = new Date(`${correctStart}T12:00:00`);
+  if (monday.getDay() !== 1) throw new Error(`${correctStart} is not a Monday`);
+  const sunday = new Date(monday);
+  sunday.setDate(sunday.getDate() + 6);
+  const correctEnd = [
+    sunday.getFullYear(),
+    String(sunday.getMonth() + 1).padStart(2, '0'),
+    String(sunday.getDate()).padStart(2, '0'),
+  ].join('-');
+
+  cancelPendingOverlaySave();
+  shared.overlayDirty = false;
+  const overlay = await loadOverlay();
+  if (!overlayHasArchivableBudget(overlay)) {
+    throw new Error('Live overlay has no budget to move \u2014 nothing repaired');
+  }
+  const liveStart = getThisWeek()?.weekStart || null;
+  if (overlay.weekStart === correctStart) {
+    console.info(`Live overlay already stamped ${correctStart}; re-running rollover`);
+  } else {
+    if (overlay.weekStart && overlay.weekStart < correctStart) {
+      throw new Error(`Live overlay is ${overlay.weekStart}, older than ${correctStart}`);
+    }
+    await saveOverlay(
+      { ...overlay, weekStart: correctStart, weekEnd: correctEnd },
+      { flush: true, replace: true }
+    );
+  }
+  try {
+    localStorage.removeItem(LIVE_WEEK_CACHE_KEY);
+  } catch (_) {
+    /* ignore */
+  }
+
+  await loadStateFromOrderView({ persist: false });
+  const archived = getWeek(`week-${correctStart}`);
+  const now = getThisWeek();
+  const result = {
+    archived: !!archived,
+    archivedTotal: archived ? weekTotal(archived) : 0,
+    previousLiveStart: liveStart,
+    liveWeekStart: now?.weekStart || null,
+    rolloverPending: now?.weekStart === correctStart,
+  };
+  console.info('Purchasing week repair', result);
+  return result;
+}
+
+if (typeof window !== 'undefined') {
+  window.__purchasingRepairWeek = repairLiveWeekStart;
+}
+
 /** @deprecated use clearThisWeekPlan */
 export async function resetDemo() {
   return clearThisWeekPlan();
 }
 
 /**
- * Apply a remote liveOverlay snapshot (other browser’s edits).
+ * Apply a remote liveOverlay snapshot (other browser's edits).
  * If this tab has dirty local edits, merge local + remote instead of replacing
  * (including echoes of our own writes that raced with newer local edits).
  * A blank next-week shell must not wipe a local prior-week budget \u2014 archive first.

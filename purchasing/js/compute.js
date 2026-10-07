@@ -1,4 +1,4 @@
-import { locationLabel, locationSortRank } from './data/catalog.js?v=106';
+import { locationLabel, locationSortRank } from './data/catalog.js?v=111';
 import { compareOrderViewMasterItems, categorySortRank } from '../../inventory/js/shared/order-view-feed.js?v=105';
 
 export const RATE_SANITY_QTY_HINT = 500;
@@ -45,9 +45,9 @@ export function lineUnitRate(line) {
 
 /**
  * Recalculate cost fields after an edit. All three stay editable.
- * - unit → total = qty × unit
- * - total → unit = total ÷ qty (qty unchanged)
- * - qty → usually total = qty × unit; pass preserveTotal to keep total and derive unit instead
+ * - unit -> total = qty x unit
+ * - total -> unit = total / qty (qty unchanged)
+ * - qty -> usually total = qty x unit; pass preserveTotal to keep total and derive unit instead
  * @param {object} line
  * @param {'qty'|'unit'|'total'} editedField
  * @param {{ preserveTotal?: boolean }} [opts]
@@ -140,6 +140,23 @@ export function weekTotal(week) {
   return weekSubtotal(week);
 }
 
+/**
+ * Budget totals for on-plan lines: total, already ordered/delivered, and left.
+ * @param {object[]} lines
+ * @returns {{ total: number, ordered: number, left: number }}
+ */
+export function budgetSpendSplit(lines) {
+  let total = 0;
+  let ordered = 0;
+  for (const line of lines || []) {
+    if (!line?.onPlan) continue;
+    const amount = lineAmount(line);
+    total += amount;
+    if (isLinePaid(line)) ordered += amount;
+  }
+  return { total, ordered, left: total - ordered };
+}
+
 export function locationSubtotals(week) {
   const out = { 'sm-north': 0, podium: 0, moa: 0, events: 0, general: 0 };
   for (const line of plannedLines(week)) {
@@ -179,7 +196,7 @@ export function sortByInventoryOrder(lines) {
 
 /**
  * Order qty visual state vs suggested.
- * Italic = edited away from suggested. →“ = order qty is below suggested.
+ * Italic = edited away from suggested. down-arrow = order qty is below suggested.
  * (Need is week demand; stock + order vs need is a different check \u2014 not this flag.)
  * @returns {{ edited: boolean, belowNeed: boolean, aboveNeed: boolean, classes: string, tip: string }}
  */

@@ -1,0 +1,56 @@
+/* Shared ops design tokens — mirrors invoice-generator/css/invoice-view.css. */
+
+:root {
+  --inv-green: #2b9348;
+  --inv-green-dark: #1f7a38;
+  --inv-green-soft: #eef5f0;
+  --inv-green-soft-hover: #e1efe5;
+  --inv-green-wash: #f7faf7;
+  --inv-ink: #142018;
+  --inv-ink-2: #3a4a3e;
+  --inv-muted: #5c6b60;
+  --inv-faint: #b0b8b2;
+  --inv-line: #dce5de;
+  --inv-bg: #eef3ef;
+  --inv-card: #ffffff;
+
+  --inv-warn-bg: #fff6d8;
+  --inv-warn-ink: #6b5300;
+  --inv-info-bg: #e8f4ff;
+  --inv-info-ink: #0b4f8a;
+  --inv-ok-bg: #d7efdb;
+  --inv-ok-ink: #1b5e20;
+  --inv-navy-bg: #e8eef8;
+  --inv-navy-ink: #1e3a5f;
+  --inv-amber-bg: #fff6eb;
+  --inv-amber-ink: #8a4b0a;
+  --inv-danger: #b42318;
+  --inv-danger-bg: #fdecea;
+  --inv-grey-bg: #eeeeee;
+  --inv-grey-ink: #555555;
+
+  --inv-radius: 16px;
+  --inv-radius-card: 12px;
+  --inv-radius-input: 10px;
+  --inv-shadow-card: 0 10px 30px rgba(20, 32, 24, 0.06);
+  --inv-shadow-hover: 0 8px 22px rgba(20, 32, 24, 0.07);
+  --inv-shadow-modal: 0 18px 48px rgba(20, 32, 24, 0.22);
+  --inv-shadow-bar: 0 -6px 18px rgba(20, 32, 24, 0.06);
+  --inv-font: "DM Sans", system-ui, sans-serif;
+
+  /* Booking stages */
+  --stage-new-bg: var(--inv-grey-bg);
+  --stage-new-ink: var(--inv-grey-ink);
+  --stage-qualifying-bg: #f1ecfb;
+  --stage-qualifying-ink: #4b2e83;
+  --stage-quoted-bg: var(--inv-info-bg);
+  --stage-quoted-ink: var(--inv-info-ink);
+  --stage-invoiced-bg: var(--inv-warn-bg);
+  --stage-invoiced-ink: var(--inv-warn-ink);
+  --stage-booked-bg: var(--inv-ok-bg);
+  --stage-booked-ink: var(--inv-ok-ink);
+  --stage-delivered-bg: var(--inv-navy-bg);
+  --stage-delivered-ink: var(--inv-navy-ink);
+  --stage-lost-bg: #f3f3f3;
+  --stage-lost-ink: #8a8a8a;
+}

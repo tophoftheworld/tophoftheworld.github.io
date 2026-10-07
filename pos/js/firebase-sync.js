@@ -1,35 +1,105 @@
 import { db, collection, addDoc, updateDoc, doc, getDocs, query, orderBy, limit, setDoc, getDoc, onSnapshot, deleteDoc, serverTimestamp } from './firebase-setup.js';
 import { menuData } from './menu-data.js';
 import { isCupItem } from './cup-count.js';
-import { filterPosSelectableEvents, manilaTodayYmd, shouldAutoArchiveEvent } from './event-window.js?v=3';
+import { filterPosSelectableEvents, manilaTodayYmd, manilaYmdFromDate, shouldAutoArchiveEvent } from './event-window.js?v=4';
+import {
+    getPendingOrders,
+    readOrderHistory,
+    writeOrderHistory,
+    markOrderSyncedInList,
+    enqueueOutbox,
+    removeFromOutbox,
+    bumpOutboxAttempt,
+    syncOutboxFromHistory,
+    readOutbox,
+    patchOrderNeedsSync
+} from './order-sync-core.js?v=1';
 
 function getActivePosMenu() {
     if (typeof window !== 'undefined' && window.__posMenu) return window.__posMenu;
     return menuData;
 }
 
-let syncQueue = [];
-let isSyncing = false;
 let menuItemsMap = new Map();
+let flushInProgress = false;
+let flushQueued = false;
+let backoffTimer = null;
+let backoffMs = 1000;
+const BACKOFF_MAX_MS = 30000;
 
-function isOnline() {
-    return navigator.onLine;
+let lastSyncedAt = null;
+let lastSyncError = null;
+const syncStatusListeners = new Set();
+
+function getStorage() {
+    return typeof localStorage !== 'undefined' ? localStorage : null;
+}
+
+function emitSyncStatus() {
+    const status = getSyncStatus();
+    syncStatusListeners.forEach((fn) => {
+        try { fn(status); } catch (err) { console.error(err); }
+    });
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('pos-sync-status', { detail: status }));
+    }
+}
+
+export function getSyncStatus() {
+    const storage = getStorage();
+    const pending = storage
+        ? getPendingOrders(readOrderHistory(storage)).length
+        : 0;
+    return {
+        online: typeof navigator === 'undefined' ? true : navigator.onLine,
+        pending,
+        syncing: flushInProgress,
+        lastSyncedAt,
+        lastError: lastSyncError
+    };
+}
+
+export function onSyncStatusChange(fn) {
+    syncStatusListeners.add(fn);
+    try { fn(getSyncStatus()); } catch (_) { /* ignore */ }
+    return () => syncStatusListeners.delete(fn);
+}
+
+function scheduleBackoffRetry() {
+    if (backoffTimer) return;
+    const delay = backoffMs;
+    backoffMs = Math.min(BACKOFF_MAX_MS, backoffMs * 2);
+    backoffTimer = setTimeout(() => {
+        backoffTimer = null;
+        syncAllPendingOrders();
+    }, delay);
+}
+
+function resetBackoff() {
+    backoffMs = 1000;
+    if (backoffTimer) {
+        clearTimeout(backoffTimer);
+        backoffTimer = null;
+    }
+}
+
+/** Manila YMD for order folder keys (exported for callers / tests). */
+export function getOrderDateString(date = new Date()) {
+    return manilaYmdFromDate(date);
 }
 
 export async function initializeMenuItems() {
     try {
-        // Clean menu data without HTML
         const menuItems = menuData.items.map(item => ({
             id: item.categoryId + '-' + item.name.replace(/<[^>]*>/g, '').toLowerCase().replace(/\s+/g, '-'),
-            name: item.name.replace(/<[^>]*>/g, ''), // Remove HTML tags
-            displayName: item.name, // Keep display version with HTML
+            name: item.name.replace(/<[^>]*>/g, ''),
+            displayName: item.name,
             description: item.description,
             basePrice: item.price,
             categoryId: item.categoryId,
             type: item.type
         }));
 
-        // Save to Firebase menu-items collection
         for (const item of menuItems) {
             const docRef = doc(db, 'menu-items', item.id);
             await setDoc(docRef, item);
@@ -42,9 +112,7 @@ export async function initializeMenuItems() {
 
 export async function saveOrderToFirebase(order) {
     try {
-        const orderDate = getLocalDateString(new Date(order.timestamp));
-
-        // Optimize order data
+        const orderDate = getOrderDateString(new Date(order.timestamp));
         const optimizedOrder = {
             id: order.id,
             items: order.items.map(item => ({
@@ -64,13 +132,13 @@ export async function saveOrderToFirebase(order) {
             timestamp: order.timestamp,
             status: order.status,
             customerName: order.customerName || '',
+            lastModified: order.lastModified || order.timestamp,
+            event: order.event || window.currentEvent || 'pop-up',
             readyAt: order.readyAt || null
         };
 
-        // Use the new structure: pos-orders > pop-up > date > order-id
-        const orderRef = doc(db, `pos-orders/${window.currentEvent || 'pop-up'}`, orderDate, order.id);
+        const orderRef = doc(db, `pos-orders/${order.event || window.currentEvent || 'pop-up'}`, orderDate, order.id);
         await setDoc(orderRef, optimizedOrder);
-
         return order.id;
     } catch (error) {
         console.error('Error saving to Firebase:', error);
@@ -80,32 +148,22 @@ export async function saveOrderToFirebase(order) {
 
 export async function updateOrderInFirebase(orderId, orderDate, updates) {
     try {
-        // If we have a firebaseId, use that instead of the local orderId
         const documentId = updates.firebaseId || orderId;
-
-        // Use the new structure
         const orderRef = doc(db, `pos-orders/${window.currentEvent || 'pop-up'}`, orderDate, documentId);
         await updateDoc(orderRef, updates);
         console.log('Order updated in Firebase:', documentId);
     } catch (error) {
         console.error('Error updating Firebase:', error);
-        // Don't re-throw the error - just log it and continue
     }
 }
 
 function getLocalDateString(date = new Date()) {
-    // Get local date components 
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+    return getOrderDateString(date);
 }
 
 export async function loadOrdersFromFirebase(date) {
     try {
-        const orderDate = getLocalDateString(date);
-
-        // Use the new structure to get orders for a specific date
+        const orderDate = getOrderDateString(date);
         const q = query(
             collection(db, `pos-orders/${window.currentEvent || 'pop-up'}`, orderDate),
             orderBy('timestamp', 'desc')
@@ -116,12 +174,8 @@ export async function loadOrdersFromFirebase(date) {
 
         querySnapshot.forEach((document) => {
             const orderData = document.data();
-
-            // Reconstruct full order data
-            const fullItems = orderData.items.map(item => {
-                // Try to get full menu item details
+            const fullItems = (orderData.items || []).map(item => {
                 const menuItem = item.menuItemId ? menuItemsMap.get(item.menuItemId) : null;
-
                 if (menuItem) {
                     return {
                         ...menuItem,
@@ -130,15 +184,13 @@ export async function loadOrdersFromFirebase(date) {
                         price: item.price || menuItem.basePrice,
                         basePrice: item.basePrice || menuItem.basePrice
                     };
-                } else {
-                    // If menu item not found, ensure item has minimum required properties
-                    return {
-                        ...item,
-                        name: item.name || (item.menuItemId ? item.menuItemId.split('-').slice(1).join(' ') : 'Unknown Item'),
-                        price: item.price || 0,
-                        basePrice: item.basePrice || 0
-                    };
                 }
+                return {
+                    ...item,
+                    name: item.name || (item.menuItemId ? item.menuItemId.split('-').slice(1).join(' ') : 'Unknown Item'),
+                    price: item.price || 0,
+                    basePrice: item.basePrice || 0
+                };
             });
 
             firebaseOrders.push({
@@ -156,13 +208,11 @@ export async function loadOrdersFromFirebase(date) {
 }
 
 function getMenuItemId(item) {
-    // Check if item.name exists first
     if (!item.name) {
         console.warn('Item with missing name detected:', item);
         return 'unknown-item-' + (item.id || Date.now());
     }
 
-    // Extract clean name from the item
     const cleanName = item.name.replace(/<[^>]*>/g, '');
     const categoryId = item.categoryId
         || menuData.items.find(m => m.name.replace(/<[^>]*>/g, '') === cleanName)?.categoryId
@@ -173,18 +223,12 @@ function getMenuItemId(item) {
 
 export async function syncOrderToFirebase(order) {
     try {
-        if (!isOnline()) {
-            console.log('Offline - sync will retry later');
-            return false;
-        }
-
-        const orderDate = getLocalDateString(new Date(order.timestamp));
+        const orderDate = getOrderDateString(new Date(order.timestamp));
         console.log(`Syncing order ${order.id} to Firebase...`);
 
-        // Prepare order data for Firebase
         const firebaseOrder = {
             id: order.id,
-            items: order.items.map(item => ({
+            items: (order.items || []).map(item => ({
                 menuItemId: getMenuItemId(item),
                 quantity: item.quantity,
                 customizations: item.customizations,
@@ -201,12 +245,11 @@ export async function syncOrderToFirebase(order) {
             timestamp: order.timestamp,
             status: order.status,
             customerName: order.customerName || '',
-            lastModified: order.lastModified || order.timestamp,
+            lastModified: order.lastModified || order.timestamp || new Date().toISOString(),
             event: order.event || 'pop-up',
             readyAt: order.readyAt || null
         };
 
-        // Save to Firebase
         const orderRef = doc(db, `pos-orders/${order.event || 'pop-up'}`, orderDate, order.id);
         await setDoc(orderRef, firebaseOrder);
 
@@ -214,52 +257,117 @@ export async function syncOrderToFirebase(order) {
         return true;
     } catch (error) {
         console.error(`Failed to sync order ${order.id}:`, error);
+        lastSyncError = error?.message || String(error);
         return false;
     }
 }
 
+/**
+ * Flush pending orders safely:
+ * - mutex (no overlapping flushes)
+ * - includes soft-deletes
+ * - re-reads localStorage per success (never stale whole-array overwrite)
+ * - durable outbox
+ * - does NOT hard-gate on navigator.onLine
+ */
 export async function syncAllPendingOrders() {
-    if (!isOnline()) {
-        console.log('Offline - skipping sync');
-        return;
+    if (flushInProgress) {
+        flushQueued = true;
+        return { synced: 0, failed: 0, skipped: true };
     }
 
-    console.log('Starting background sync of all pending orders...');
+    const storage = getStorage();
+    if (!storage) return { synced: 0, failed: 0 };
 
-    const orderHistory = JSON.parse(localStorage.getItem('orderHistory') || '[]');
-    const pendingOrders = orderHistory.filter(order => order.needsSync === true && order.status !== 'deleted');
-
-    if (pendingOrders.length === 0) {
-        console.log('No orders need syncing');
-        return;
-    }
-
-    console.log(`Found ${pendingOrders.length} orders that need syncing`);
+    flushInProgress = true;
+    emitSyncStatus();
 
     let syncedCount = 0;
+    let failCount = 0;
 
-    for (const order of pendingOrders) {
-        const success = await syncOrderToFirebase(order);
+    try {
+        console.log('Starting background sync of all pending orders...');
 
-        if (success) {
-            // Mark as synced in local storage
-            const orderIndex = orderHistory.findIndex(o => o.id === order.id);
-            if (orderIndex > -1) {
-                orderHistory[orderIndex].needsSync = false;
-                syncedCount++;
-            }
+        const history = readOrderHistory(storage);
+        syncOutboxFromHistory(history, storage);
+
+        const outbox = readOutbox(storage);
+        if (outbox.length === 0) {
+            console.log('No orders need syncing');
+            resetBackoff();
+            lastSyncError = null;
+            return { synced: 0, failed: 0 };
         }
 
-        // Small delay to avoid overwhelming Firebase
-        await new Promise(resolve => setTimeout(resolve, 100));
-    }
+        console.log(`Found ${outbox.length} outbox entries to sync`);
 
-    // Save updated order history
-    localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
-    console.log(`Successfully synced ${syncedCount} of ${pendingOrders.length} orders`);
+        for (const entry of outbox) {
+            const fresh = readOrderHistory(storage);
+            const order = fresh.find((o) => o.id === entry.orderId);
+
+            if (!order) {
+                removeFromOutbox(entry.orderId, storage);
+                continue;
+            }
+            if (!order.needsSync) {
+                removeFromOutbox(entry.orderId, storage);
+                continue;
+            }
+
+            const success = await syncOrderToFirebase(order);
+            if (success) {
+                const after = markOrderSyncedInList(readOrderHistory(storage), order.id);
+                writeOrderHistory(after, storage);
+                removeFromOutbox(order.id, storage);
+                syncedCount += 1;
+                lastSyncedAt = new Date().toISOString();
+                lastSyncError = null;
+
+                if (typeof window !== 'undefined' && typeof window.__posOnOrderSynced === 'function') {
+                    try { window.__posOnOrderSynced(order.id); } catch (_) { /* ignore */ }
+                }
+            } else {
+                bumpOutboxAttempt(order.id, storage);
+                failCount += 1;
+            }
+
+            await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+
+        if (failCount > 0) {
+            scheduleBackoffRetry();
+        } else {
+            resetBackoff();
+        }
+
+        console.log(`Successfully synced ${syncedCount}; failed ${failCount}`);
+        return { synced: syncedCount, failed: failCount };
+    } finally {
+        flushInProgress = false;
+        emitSyncStatus();
+        if (flushQueued) {
+            flushQueued = false;
+            queueMicrotask(() => { syncAllPendingOrders(); });
+        }
+    }
 }
 
-// Add these functions to firebase-sync.js
+/** Enqueue an order for durable sync and kick a flush. */
+export function queueOrderSync(orderId) {
+    const storage = getStorage();
+    if (!storage || !orderId) return;
+    enqueueOutbox(orderId, storage);
+    emitSyncStatus();
+    syncAllPendingOrders();
+}
+
+export function markLocalOrderSynced(orderId) {
+    const storage = getStorage();
+    if (!storage || !orderId) return;
+    patchOrderNeedsSync(orderId, false, storage);
+    removeFromOutbox(orderId, storage);
+    emitSyncStatus();
+}
 
 function ymdOrNull(value) {
     return /^\d{4}-\d{2}-\d{2}$/.test(value || '') ? value : null;
@@ -315,7 +423,8 @@ async function autoArchiveEndedEvents(events) {
     }));
 }
 
-export async function loadEventsFromFirebase() {
+/** @returns {Promise<{ ok: boolean, events: object[], error?: Error }>} */
+export async function loadEventsFromFirebaseResult() {
     try {
         const branchesRef = collection(db, 'branches');
         const [snapshot, opsSnap] = await Promise.all([
@@ -329,14 +438,21 @@ export async function loadEventsFromFirebase() {
         const events = [];
         snapshot.forEach(docSnap => {
             const data = docSnap.data();
-            if (data.type === 'popup') {
+            // Pop-ups always; bar/service branches only when they have a package POS menu.
+            const isPopup = data.type === 'popup';
+            const isPackageService =
+                data.type === 'service' &&
+                (data.serviceType === 'package' || !!data.customMenu);
+            if (isPopup || isPackageService) {
                 const { startDate, endDate } = resolveEventDates(docSnap.id, data, opsIndex);
                 events.push({
                     id: docSnap.id,
                     key: data.key,
                     name: data.name,
                     type: data.type,
-                    serviceType: data.serviceType || 'popup',
+                    serviceType:
+                        data.serviceType ||
+                        (isPackageService ? 'package' : 'popup'),
                     archived: data.archived || false,
                     autoArchiveExempt: data.autoArchiveExempt || false,
                     customMenu: data.customMenu || null,
@@ -347,14 +463,19 @@ export async function loadEventsFromFirebase() {
             }
         });
         await autoArchiveEndedEvents(events);
-        return events;
+        return { ok: true, events };
     } catch (error) {
         console.error('Error loading events:', error);
-        return [];
+        return { ok: false, events: [], error };
     }
 }
 
-export { filterPosSelectableEvents };
+export async function loadEventsFromFirebase() {
+    const result = await loadEventsFromFirebaseResult();
+    return result.events;
+}
+
+export { filterPosSelectableEvents, manilaYmdFromDate, getLocalDateString };
 
 export async function saveEventToFirebase(eventData) {
     try {
@@ -381,26 +502,58 @@ export async function saveEventToFirebase(eventData) {
 let unsubscribeOrderListener = null;
 let unsubscribeLiveSessionListener = null;
 
+/**
+ * Shared day subscription used by POS, queue strip, and dashboard.
+ * handlers: { onAdded?, onModified?, onRemoved?, onDoc?, onError? }
+ * onDoc(doc, changeType) is called for every change when provided.
+ */
+export function subscribeToDayOrders(event, date, handlers = {}) {
+    const dateStr = typeof date === 'string' ? date : getOrderDateString(date);
+    const eventKey = event || 'pop-up';
+    const ordersRef = collection(db, `pos-orders/${eventKey}/${dateStr}`);
+
+    console.log(`Subscribing to real-time orders for ${eventKey} / ${dateStr}`);
+
+    const unsub = onSnapshot(ordersRef, (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+            if (typeof handlers.onDoc === 'function') {
+                handlers.onDoc(change.doc, change.type);
+            }
+            if (change.type === 'added' && typeof handlers.onAdded === 'function') {
+                handlers.onAdded(change.doc);
+            } else if (change.type === 'modified' && typeof handlers.onModified === 'function') {
+                handlers.onModified(change.doc);
+            } else if (change.type === 'removed' && typeof handlers.onRemoved === 'function') {
+                handlers.onRemoved(change.doc);
+            }
+            // Back-compat: single onUpdate for added/modified
+            if ((change.type === 'added' || change.type === 'modified') && typeof handlers.onUpdate === 'function') {
+                handlers.onUpdate(change.doc);
+            }
+        });
+    }, (error) => {
+        console.error('Order listener error:', error);
+        if (typeof handlers.onError === 'function') handlers.onError(error);
+    });
+
+    return unsub;
+}
+
 export function subscribeToOrders(event, date, onUpdate) {
-    // Detach any existing listener before attaching a new one
     if (unsubscribeOrderListener) {
         unsubscribeOrderListener();
         unsubscribeOrderListener = null;
     }
 
-    const dateStr = getLocalDateString(date);
-    const ordersRef = collection(db, `pos-orders/${event}/${dateStr}`);
-
-    console.log(`Subscribing to real-time orders for ${event} / ${dateStr}`);
-
-    unsubscribeOrderListener = onSnapshot(ordersRef, (snapshot) => {
-        snapshot.docChanges().forEach(change => {
-            if (change.type === 'added' || change.type === 'modified') {
-                onUpdate(change.doc);
+    unsubscribeOrderListener = subscribeToDayOrders(event, date, {
+        onUpdate,
+        onRemoved: (docSnap) => {
+            if (typeof onUpdate === 'function' && onUpdate.handleRemoved) {
+                onUpdate.handleRemoved(docSnap);
+            } else if (typeof window !== 'undefined' && typeof window.__posOnRemoteOrderRemoved === 'function') {
+                window.__posOnRemoteOrderRemoved(docSnap);
             }
-        });
-    }, (error) => {
-        console.error('Order listener error:', error);
+        }
     });
 
     return () => {
@@ -469,4 +622,20 @@ export function subscribeToLiveSession(event, onUpdate) {
             unsubscribeLiveSessionListener = null;
         }
     };
+}
+
+// Wire online / visibility for retries
+if (typeof window !== 'undefined') {
+    window.addEventListener('online', () => {
+        resetBackoff();
+        emitSyncStatus();
+        setTimeout(() => syncAllPendingOrders(), 500);
+    });
+    window.addEventListener('offline', () => emitSyncStatus());
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            syncAllPendingOrders();
+            emitSyncStatus();
+        }
+    });
 }

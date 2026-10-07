@@ -744,8 +744,85 @@ async function fetchOrdersBetween(createdAtIso, daysBefore = 7, daysAfter = 180)
     return all;
 }
 
+const SESSION_CATALOG_TTL_MS = 3 * 60 * 1000;
+const INFER_DAYS_BEFORE = 14;
+const INFER_DAYS_AFTER = 180;
+/** @type {Map<string, { at: number, catalog: object }>} */
+const sessionCatalogCache = new Map();
+/** @type {Map<string, Promise<object>>} */
+const sessionCatalogInflight = new Map();
+
+function sessionCatalogWindowKey(createdAtIso, daysBefore, daysAfter) {
+    const center = new Date(createdAtIso || Date.now());
+    if (Number.isNaN(center.getTime())) center.setTime(Date.now());
+    const min = new Date(center);
+    min.setUTCDate(min.getUTCDate() - daysBefore);
+    const max = new Date(center);
+    max.setUTCDate(max.getUTCDate() + daysAfter);
+    const day = (d) => d.toISOString().slice(0, 10);
+    return `${day(min)}..${day(max)}`;
+}
+
+function getCachedSessionCatalog(key) {
+    const hit = sessionCatalogCache.get(key);
+    if (!hit) return null;
+    if (Date.now() - hit.at > SESSION_CATALOG_TTL_MS) {
+        sessionCatalogCache.delete(key);
+        return null;
+    }
+    return hit.catalog;
+}
+
+function ensureSessionCatalogLoading(createdAtIso, daysBefore, daysAfter) {
+    const key = sessionCatalogWindowKey(createdAtIso, daysBefore, daysAfter);
+    const cached = getCachedSessionCatalog(key);
+    if (cached) return { key, catalog: cached, promise: null };
+
+    let promise = sessionCatalogInflight.get(key);
+    if (!promise) {
+        promise = fetchOrdersBetween(createdAtIso, daysBefore, daysAfter)
+            .then((orders) => {
+                const catalog = buildSessionCatalogFromOrders(orders);
+                sessionCatalogCache.set(key, { at: Date.now(), catalog });
+                sessionCatalogInflight.delete(key);
+                return catalog;
+            })
+            .catch((err) => {
+                sessionCatalogInflight.delete(key);
+                throw err;
+            });
+        sessionCatalogInflight.set(key, promise);
+    }
+    return { key, catalog: null, promise };
+}
+
+function buildInferredRegsFromCatalog(needsInfer, order, catalog) {
+    const orderDateIso = orderCreatedDateIso(order);
+    const fallback = orderContactFallback(order);
+    const results = [];
+    for (const li of needsInfer) {
+        const next = catalog
+            ? findNextSessionAfter(
+                  sessionsForLineItem(li, catalog),
+                  orderDateIso
+              )
+            : null;
+        const reg = inferRegistrationStub(li, fallback, next);
+        results.push({ lineItemId: li.id, ...reg });
+    }
+    return results;
+}
+
+/**
+ * Infer workshop session stubs for line items missing Easy Booking props.
+ * Never blocks the detail response on a cold order-window scan — returns
+ * contact-only stubs with `pending: true` so the client can re-fetch once
+ * the shared session catalog is warm.
+ */
 async function inferWorkshopRegistrationsForOrder(order, products) {
-    if (!orderIsWorkshop(order, products)) return [];
+    if (!orderIsWorkshop(order, products)) {
+        return { inferred: [], pending: false };
+    }
 
     const needsInfer = [];
     for (const li of order.line_items || []) {
@@ -763,24 +840,37 @@ async function inferWorkshopRegistrationsForOrder(order, products) {
         }
         needsInfer.push(li);
     }
-    if (!needsInfer.length) return [];
-
-    const orderDateIso = orderCreatedDateIso(order);
-    const orders = await fetchOrdersBetween(order.created_at, 14, 180);
-    const catalog = buildSessionCatalogFromOrders(orders);
-    const fallback = orderContactFallback(order);
-    const results = [];
-
-    for (const li of needsInfer) {
-        const next = findNextSessionAfter(
-            sessionsForLineItem(li, catalog),
-            orderDateIso
-        );
-        const reg = inferRegistrationStub(li, fallback, next);
-        results.push({ lineItemId: li.id, ...reg });
+    if (!needsInfer.length) {
+        return { inferred: [], pending: false };
     }
 
-    return results;
+    const { catalog, promise } = ensureSessionCatalogLoading(
+        order.created_at,
+        INFER_DAYS_BEFORE,
+        INFER_DAYS_AFTER
+    );
+
+    if (catalog) {
+        return {
+            inferred: buildInferredRegsFromCatalog(needsInfer, order, catalog),
+            pending: false,
+        };
+    }
+
+    // Warm the catalog in the background; do not await the multi-page scan.
+    if (promise) {
+        void promise.catch((e) => {
+            console.warn(
+                "Session catalog preload failed:",
+                e.message || e
+            );
+        });
+    }
+
+    return {
+        inferred: buildInferredRegsFromCatalog(needsInfer, order, null),
+        pending: true,
+    };
 }
 
 function todayDateIso() {
@@ -1263,6 +1353,314 @@ async function proxyProducts(idsParam) {
     };
 }
 
+function gidNumericId(gid, type) {
+    const prefix = `gid://shopify/${type}/`;
+    const s = String(gid || "");
+    if (s.startsWith(prefix)) return s.slice(prefix.length);
+    if (/^\d+$/.test(s)) return s;
+    const m = s.match(/\/(\d+)\s*$/);
+    return m ? m[1] : "";
+}
+
+function moneyAmount(priceSet) {
+    const amount = priceSet?.shopMoney?.amount;
+    return amount == null || amount === "" ? null : String(amount);
+}
+
+function mapGraphqlFinancialStatus(display) {
+    return String(display || "PENDING")
+        .toLowerCase()
+        .replace(/-/g, "_");
+}
+
+function mapGraphqlFulfillmentStatus(display) {
+    const s = String(display || "").toUpperCase();
+    if (s === "FULFILLED") return "fulfilled";
+    if (s === "PARTIALLY_FULFILLED") return "partial";
+    return null;
+}
+
+function mapGraphqlMailingAddress(addr) {
+    if (!addr) return null;
+    return {
+        first_name: addr.firstName || "",
+        last_name: addr.lastName || "",
+        name: addr.name || "",
+        company: addr.company || "",
+        address1: addr.address1 || "",
+        address2: addr.address2 || "",
+        city: addr.city || "",
+        province: addr.province || "",
+        province_code: addr.provinceCode || "",
+        country: addr.country || "",
+        country_code: addr.countryCodeV2 || "",
+        zip: addr.zip || "",
+        phone: addr.phone || "",
+    };
+}
+
+const ORDER_DETAIL_GRAPHQL = `query OrderDetail($id: ID!) {
+  order(id: $id) {
+    id
+    legacyResourceId
+    name
+    email
+    phone
+    createdAt
+    cancelledAt
+    note
+    tags
+    displayFinancialStatus
+    displayFulfillmentStatus
+    currencyCode
+    paymentGatewayNames
+    currentTotalPriceSet { shopMoney { amount currencyCode } }
+    totalPriceSet { shopMoney { amount currencyCode } }
+    currentSubtotalPriceSet { shopMoney { amount currencyCode } }
+    subtotalPriceSet { shopMoney { amount currencyCode } }
+    totalShippingPriceSet { shopMoney { amount currencyCode } }
+    billingAddress {
+      firstName lastName name company address1 address2
+      city province provinceCode country countryCodeV2 zip phone
+    }
+    shippingAddress {
+      firstName lastName name company address1 address2
+      city province provinceCode country countryCodeV2 zip phone
+    }
+    customer { firstName lastName phone email }
+    shippingLines(first: 20) {
+      nodes {
+        title
+        code
+        originalPriceSet { shopMoney { amount } }
+        discountedPriceSet { shopMoney { amount } }
+      }
+    }
+    lineItems(first: 250) {
+      nodes {
+        id
+        name
+        title
+        sku
+        quantity
+        variantTitle
+        requiresShipping
+        unfulfilledQuantity
+        originalUnitPriceSet { shopMoney { amount } }
+        discountedUnitPriceSet { shopMoney { amount } }
+        customAttributes { key value }
+        lineItemGroup { id title quantity }
+        product {
+          id
+          legacyResourceId
+          productType
+          tags
+          title
+          featuredImage { url }
+        }
+      }
+    }
+    transactions {
+      id
+      status
+      kind
+      gateway
+      processedAt
+    }
+    fulfillments {
+      status
+      displayStatus
+    }
+    fulfillmentOrders(first: 15) {
+      nodes {
+        id
+        status
+        deliveryMethod {
+          methodType
+          presentedName
+        }
+        assignedLocation {
+          location { id name }
+        }
+        destination { address1 }
+        lineItems(first: 50) {
+          nodes { id remainingQuantity }
+        }
+      }
+    }
+  }
+}`;
+
+function mapGraphqlOrderDetail(node) {
+    if (!node) return null;
+    const orderId =
+        node.legacyResourceId || gidNumericId(node.id, "Order") || "";
+    const productsById = new Map();
+    const line_item_bundles = {};
+    const line_items = [];
+
+    for (const li of node.lineItems?.nodes || []) {
+        const lineItemId = gidNumericId(li.id, "LineItem");
+        if (!lineItemId) continue;
+        const productId =
+            li.product?.legacyResourceId ||
+            gidNumericId(li.product?.id, "Product") ||
+            null;
+        if (productId && li.product && !productsById.has(String(productId))) {
+            const tags = Array.isArray(li.product.tags)
+                ? li.product.tags.join(", ")
+                : li.product.tags || "";
+            productsById.set(String(productId), {
+                id: productId,
+                product_type: li.product.productType || "",
+                tags,
+                title: li.product.title || "",
+                image_url: li.product.featuredImage?.url || null,
+            });
+        }
+        const group = li.lineItemGroup;
+        if (group?.id) {
+            line_item_bundles[lineItemId] = {
+                groupId: group.id,
+                bundleTitle: group.title || "Bundle",
+                bundleQuantity: group.quantity || 1,
+            };
+        }
+        const unitPrice =
+            moneyAmount(li.discountedUnitPriceSet) ??
+            moneyAmount(li.originalUnitPriceSet) ??
+            "0";
+        line_items.push({
+            id: lineItemId,
+            product_id: productId,
+            title: li.title || li.name || "",
+            name: li.name || li.title || "",
+            sku: li.sku || "",
+            quantity: li.quantity || 0,
+            price: unitPrice,
+            variant_title: li.variantTitle || "",
+            product_type: li.product?.productType || "",
+            properties: (li.customAttributes || []).map((a) => ({
+                name: a.key,
+                value: a.value,
+            })),
+            requires_shipping: li.requiresShipping !== false,
+            fulfillable_quantity:
+                Number(li.unfulfilledQuantity) >= 0
+                    ? Number(li.unfulfilledQuantity)
+                    : li.quantity || 0,
+        });
+    }
+
+    const shipping_lines = (node.shippingLines?.nodes || []).map((sl) => ({
+        title: sl.title || "",
+        code: sl.code || "",
+        price: moneyAmount(sl.originalPriceSet) || "0",
+        discounted_price:
+            moneyAmount(sl.discountedPriceSet) ??
+            moneyAmount(sl.originalPriceSet) ??
+            "0",
+    }));
+
+    const transactions = (node.transactions || []).map((t) => ({
+        id: gidNumericId(t.id, "OrderTransaction") || t.id,
+        status: String(t.status || "").toLowerCase(),
+        kind: String(t.kind || "").toLowerCase(),
+        gateway: t.gateway || "",
+        processed_at: t.processedAt || null,
+    }));
+
+    const fulfillments = (node.fulfillments || []).map((f) => {
+        const display = String(f.displayStatus || "").toLowerCase();
+        const status = String(f.status || "").toLowerCase();
+        let shipment_status = null;
+        if (display.includes("ready_for_pickup")) {
+            shipment_status = "ready_for_pickup";
+        } else if (display.includes("picked_up")) {
+            shipment_status = "picked_up";
+        }
+        return {
+            status: status === "cancelled" || status === "canceled"
+                ? "cancelled"
+                : status,
+            shipment_status,
+            display_status: display,
+        };
+    });
+
+    const fulfillmentOrders = (node.fulfillmentOrders?.nodes || []).map((gfo) =>
+        graphqlFulfillmentOrderToRest(gfo)
+    );
+
+    const currency =
+        node.currencyCode ||
+        node.currentTotalPriceSet?.shopMoney?.currencyCode ||
+        "PHP";
+
+    const order = {
+        id: orderId,
+        name: node.name || "",
+        email: node.email || "",
+        phone: node.phone || "",
+        created_at: node.createdAt || "",
+        cancelled_at: node.cancelledAt || null,
+        note: node.note || "",
+        tags: Array.isArray(node.tags) ? node.tags.join(", ") : node.tags || "",
+        financial_status: mapGraphqlFinancialStatus(
+            node.displayFinancialStatus
+        ),
+        fulfillment_status: mapGraphqlFulfillmentStatus(
+            node.displayFulfillmentStatus
+        ),
+        currency,
+        current_total_price: moneyAmount(node.currentTotalPriceSet),
+        total_price: moneyAmount(node.totalPriceSet),
+        current_subtotal_price: moneyAmount(node.currentSubtotalPriceSet),
+        subtotal_price: moneyAmount(node.subtotalPriceSet),
+        total_shipping_price_set: node.totalShippingPriceSet
+            ? {
+                  shop_money: {
+                      amount: moneyAmount(node.totalShippingPriceSet),
+                      currency_code: currency,
+                  },
+              }
+            : null,
+        payment_gateway_names: node.paymentGatewayNames || [],
+        billing_address: mapGraphqlMailingAddress(node.billingAddress),
+        shipping_address: mapGraphqlMailingAddress(node.shippingAddress),
+        customer: node.customer
+            ? {
+                  first_name: node.customer.firstName || "",
+                  last_name: node.customer.lastName || "",
+                  phone: node.customer.phone || "",
+                  email: node.customer.email || "",
+              }
+            : null,
+        shipping_lines,
+        line_items,
+        transactions,
+        fulfillments,
+    };
+
+    return {
+        order,
+        products: [...productsById.values()],
+        fulfillmentOrders,
+        line_item_bundles,
+    };
+}
+
+async function fetchOrderDetailViaGraphql(orderId) {
+    const data = await shopifyGraphql(ORDER_DETAIL_GRAPHQL, {
+        id: orderGid(orderId),
+    });
+    const mapped = mapGraphqlOrderDetail(data?.order);
+    if (!mapped?.order?.id) {
+        throw new Error("Order not found");
+    }
+    return mapped;
+}
+
 async function fetchOrderLineItemBundleMeta(orderId) {
     try {
         const data = await shopifyGraphql(
@@ -1308,7 +1706,7 @@ function mergeLineItemBundleMetaFromGraphql(restLineItems, graphqlMeta) {
     return mergeLineItemBundleMeta(restLineItems, graphqlMeta);
 }
 
-async function proxyOrderDetail(orderId) {
+async function proxyOrderDetailRest(orderId) {
     const order = await fetchOrder(orderId);
     try {
         order.transactions = await fetchOrderTransactions(orderId);
@@ -1326,29 +1724,63 @@ async function proxyOrderDetail(orderId) {
         const batch = await proxyProducts(productIds.join(","));
         products = batch.products;
     }
+    const line_item_bundles = mergeLineItemBundleMetaFromGraphql(
+        order.line_items,
+        await fetchOrderLineItemBundleMeta(orderId)
+    );
+    return { order, products, fulfillmentOrders, line_item_bundles };
+}
+
+async function proxyOrderDetail(orderId) {
+    let order;
+    let products;
+    let fulfillmentOrders;
+    let line_item_bundles;
+
+    try {
+        const mapped = await fetchOrderDetailViaGraphql(orderId);
+        order = mapped.order;
+        products = mapped.products;
+        fulfillmentOrders = mapped.fulfillmentOrders;
+        line_item_bundles = mergeLineItemBundleMetaFromGraphql(
+            order.line_items,
+            mapped.line_item_bundles
+        );
+    } catch (e) {
+        console.warn(
+            "Order detail GraphQL failed, falling back to REST:",
+            e.message || e
+        );
+        const rest = await proxyOrderDetailRest(orderId);
+        order = rest.order;
+        products = rest.products;
+        fulfillmentOrders = rest.fulfillmentOrders;
+        line_item_bundles = rest.line_item_bundles;
+    }
+
     const fulfillment_context = buildFulfillmentContext(
         order,
         fulfillmentOrders,
         products
     );
+
     let inferred_registrations = [];
+    let inferred_registrations_pending = false;
     try {
-        inferred_registrations = await inferWorkshopRegistrationsForOrder(
-            order,
-            products
-        );
+        const infer = await inferWorkshopRegistrationsForOrder(order, products);
+        inferred_registrations = infer.inferred || [];
+        inferred_registrations_pending = Boolean(infer.pending);
     } catch (_) {
         inferred_registrations = [];
+        inferred_registrations_pending = false;
     }
-    const line_item_bundles = mergeLineItemBundleMetaFromGraphql(
-        order.line_items,
-        await fetchOrderLineItemBundleMeta(orderId)
-    );
+
     return {
         order,
         products,
         fulfillment_context,
         inferred_registrations,
+        inferred_registrations_pending,
         line_item_bundles,
     };
 }

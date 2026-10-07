@@ -4,12 +4,12 @@ import {
   getDocs,
   setDoc,
 } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
-import { db } from '../firebase.js?v=106';
-import { getCatalog } from './catalog.js?v=106';
+import { db } from '../firebase.js?v=111';
+import { getCatalog } from './catalog.js?v=111';
 import { buildSupplierMatchList } from '../../../expenses/js/autocomplete.js?v=99';
-import { getSuppliers } from './suppliers.js?v=106';
-import { isAbsurdRate, RATE_SANITY_QTY_HINT } from '../compute.js?v=106';
-import { rateForSupplier } from './rate-scope.js?v=106';
+import { getSuppliers } from './suppliers.js?v=111';
+import { isAbsurdRate, RATE_SANITY_QTY_HINT } from '../compute.js?v=111';
+import { rateForSupplier } from './rate-scope.js?v=111';
 
 const PREFS_PATH = ['purchasing', '_config', 'itemPrefs'];
 
@@ -62,7 +62,7 @@ export function getAllItemPrefs() {
   return prefsByItem;
 }
 
-export { isAbsurdRate, RATE_SANITY_QTY_HINT } from '../compute.js?v=106';
+export { isAbsurdRate, RATE_SANITY_QTY_HINT } from '../compute.js?v=111';
 
 export function getSupplierRate(itemId, supplierId) {
   return rateForSupplier(getItemPref(itemId), supplierId);

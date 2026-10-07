@@ -8,7 +8,7 @@
   },
   "scripts": {
     "serve": "firebase emulators:start",
-    "deploy": "node ../scripts/prepare-deploy.mjs && firebase deploy --only functions:api,functions:publicInvoicePage,functions:inboxSummaryEmailMorning,functions:inboxSummaryEmailEvening,functions:opsEventCalendarSync,hosting",
+    "deploy": "node ../scripts/prepare-deploy.mjs && firebase deploy --only functions:api,functions:publicInvoicePage,functions:inboxSummaryEmailEvening,functions:opsEventCalendarSync,hosting",
     "lint": "echo \"No lint configured\"",
     "test": "node --test tests/*.test.js"
   },

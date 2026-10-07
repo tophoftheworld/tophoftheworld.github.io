@@ -3,7 +3,7 @@
  * Includes invoice-sourced rows shaped as Invoiced leads.
  */
 
-import { normalizeTargetDate, pipelineLabel } from '../../shared/js/ops-events.js?v=38';
+import { normalizeTargetDate, pipelineLabel } from '../../shared/js/ops-events.js?v=46';
 
 export function filterLeadsForMonth(leads, year, monthIndex) {
   const prefix = `${year}-${String(monthIndex + 1).padStart(2, '0')}`;

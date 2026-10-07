@@ -1,7 +1,7 @@
-import { db, collection, doc, getDocs, getDoc, query, orderBy, limit, addDoc, updateDoc, deleteDoc, setDoc } from './firebase-setup.js';
+import { db, collection, doc, getDocs, getDoc, query, orderBy, limit, addDoc, updateDoc, deleteDoc, setDoc } from './firebase-setup.js?v=8';
 import { countCupsInItems } from './cup-count.js';
-import { loadEventsFromFirebase as fetchPosEvents } from './firebase-sync.js?v=13';
-import { groupDashboardEvents } from './event-window.js?v=3';
+import { loadEventsFromFirebase as fetchPosEvents, subscribeToDayOrders } from './firebase-sync.js?v=15';
+import { groupDashboardEvents, manilaYmdFromDate } from './event-window.js?v=4';
 
 let currentEvent = 'pop-up';
 let selectedDate = new Date();
@@ -30,6 +30,9 @@ const eventDateBoundsCache = new Map();
 /** Max days to scan when finding an event's first/last order date. */
 const EVENT_DATE_SCAN_MAX_DAYS = 365;
 const EVENT_DATE_SCAN_CHUNK = 25;
+/** Live day listener unsubscribe */
+let unsubscribeDayOrders = null;
+let dayLiveReloadTimer = null;
 
 const MANUAL_SALES_STORAGE_KEY = 'posDashboardManualSales';
 
@@ -252,6 +255,47 @@ async function loadAvailableEvents() {
     }
 }
 
+function stopDayOrdersLive() {
+    if (unsubscribeDayOrders) {
+        unsubscribeDayOrders();
+        unsubscribeDayOrders = null;
+    }
+    if (dayLiveReloadTimer) {
+        clearTimeout(dayLiveReloadTimer);
+        dayLiveReloadTimer = null;
+    }
+}
+
+function startDayOrdersLive(eventKey, dateObj) {
+    stopDayOrdersLive();
+    if (!eventKey) return;
+
+    unsubscribeDayOrders = subscribeToDayOrders(eventKey, dateObj, {
+        onDoc: () => {
+            // Debounce rapid multi-doc snapshots into one reload
+            if (dayLiveReloadTimer) clearTimeout(dayLiveReloadTimer);
+            dayLiveReloadTimer = setTimeout(async () => {
+                if (dataScope !== 'day') return;
+                const gen = ++dashboardLoadGeneration;
+                try {
+                    const dayData = await loadSelectedDayData(currentEvent);
+                    if (gen !== dashboardLoadGeneration) return;
+                    updateStatsFromData(dayData, 'day');
+                    updatePaymentBreakdown(dayData);
+                    updateRecentOrders(dayData);
+                    updateCustomizationBreakdowns(dayData);
+                    updateSalesByItemReport(dayData);
+                    lastLoadedDashboardData = { ...dayData, _exportKey: getCsvExportCacheKey() };
+                    updateHourlySalesChart();
+                } catch (err) {
+                    console.error('Live day reload failed:', err);
+                }
+            }, 400);
+        },
+        onError: (err) => console.error('Dashboard day listener error:', err)
+    });
+}
+
 async function loadDashboardData() {
     const gen = ++dashboardLoadGeneration;
     try {
@@ -281,7 +325,17 @@ async function loadDashboardData() {
 
             // Day view: hide 1-row history table.
             hideDayViewHistoryTable();
+
+            // Live updates for selected day (same path POS writes)
+            startDayOrdersLive(currentEvent, selectedDate);
+
+            const emptyHint = document.getElementById('dashboardEmptyHint');
+            if (emptyHint) {
+                emptyHint.style.display = (dayData.orders || []).length === 0 ? 'block' : 'none';
+                emptyHint.textContent = `No orders under "${currentEvent}" for this date. Check Legacy (pop-up), another event, or Force Sync on the POS.`;
+            }
         } else {
+            stopDayOrdersLive();
             updateDailySalesHistoryTitle('range');
             setScopeSectionTitles('range');
             setChartSectionForScope('range');
@@ -1918,10 +1972,7 @@ async function renderRangeSalesHistory(startDate, endDate, rangeData) {
 
 // Utility functions
 function getLocalDateString(date = new Date()) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+    return manilaYmdFromDate(date);
 }
 
 function setDefaultRangeDates() {

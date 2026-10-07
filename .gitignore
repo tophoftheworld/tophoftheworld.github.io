@@ -70,6 +70,9 @@ node_modules/
 .env
 .env.local
 **/.env.local
+functions/.env.matchanese-attendance
+functions/.env.*
+!functions/.env.example
 
 # MMF merchant hub plaintext access codes (email privately; do not commit)
 mmf-merchant-hub/merchant-codes.csv

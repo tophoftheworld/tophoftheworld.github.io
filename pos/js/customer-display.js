@@ -1,4 +1,4 @@
-import { loadEventsFromFirebase, subscribeToLiveSession, filterPosSelectableEvents } from './firebase-sync.js?v=13';
+import { loadEventsFromFirebase, subscribeToLiveSession, filterPosSelectableEvents } from './firebase-sync.js?v=15';
 
 console.log('[GREETING_DEBUG][display] MODULE LOADED', { build: 'greeting-fix-1' });
 

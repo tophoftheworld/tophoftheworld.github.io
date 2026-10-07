@@ -134,7 +134,34 @@ function computePaymentSummary(doc, payments = []) {
       ) + roundMoney(doc?.invoiceDiscount)
     );
   }
-  const amountSubtotal = roundMoney(total + amountDiscount);
+  let amountVat = roundMoney(doc?.amountVat);
+  if (!(amountVat > 0) && doc?.vatApplied && total > 0) {
+    const preVat = roundMoney(total / 1.12);
+    amountVat = roundMoney(total - preVat);
+  }
+  // Recover when total is VAT-inclusive but amountVat was never saved.
+  if (!(amountVat > 0) && total > 0 && Array.isArray(doc?.invoiceItems)) {
+    const lineTotal = roundMoney(
+      (doc.invoiceItems || []).reduce((sum, item) => {
+        const charged = Number(item.unitPrice);
+        if (!Number.isFinite(charged)) return sum;
+        return sum + charged;
+      }, 0) +
+        (Array.isArray(doc.customLineItems) ? doc.customLineItems : []).reduce(
+          (sum, item) =>
+            sum + roundMoney((Number(item.quantity) || 0) * (Number(item.price) || 0)),
+          0
+        ) -
+        roundMoney(doc?.invoiceDiscount)
+    );
+    if (lineTotal > 0) {
+      const expectedInclusive = roundMoney(lineTotal * 1.12);
+      if (Math.abs(total - expectedInclusive) <= 0.5) {
+        amountVat = roundMoney(total - lineTotal);
+      }
+    }
+  }
+  const amountSubtotal = roundMoney(total - amountVat + amountDiscount);
   const enriched = enrichMilestonesWithPayments(doc?.paymentMilestones, payments);
   const fromPayments = activePayments(payments);
   let amountPaid;
@@ -171,6 +198,8 @@ function computePaymentSummary(doc, payments = []) {
     amountTotal: total,
     amountSubtotal,
     amountDiscount,
+    amountVat,
+    vatApplied: amountVat > 0 || !!doc?.vatApplied,
     invoiceDiscount: roundMoney(doc?.invoiceDiscount),
     amountPaid,
     amountRemaining,
@@ -229,6 +258,8 @@ function toPublicInvoice(doc, payments = []) {
     clientCompany: doc.clientCompany || "",
     clientAddress: doc.clientAddress || "",
     clientTIN: doc.clientTIN || "",
+    clientEmail: doc.clientEmail || "",
+    clientPhone: doc.clientPhone || "",
     notes: doc.notes || "",
     invoiceItems: Array.isArray(doc.invoiceItems) ? doc.invoiceItems : [],
     customLineItems: Array.isArray(doc.customLineItems) ? doc.customLineItems : [],

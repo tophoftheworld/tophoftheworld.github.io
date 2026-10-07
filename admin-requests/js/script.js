@@ -594,6 +594,17 @@ function formatRelativeTime(timestamp) {
     return time.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+// Format the exact submission date for the request's hover tooltip.
+function formatRequestTimestamp(timestamp) {
+    if (!timestamp) return 'Unknown';
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    if (Number.isNaN(date.getTime())) return 'Unknown';
+    return date.toLocaleString('en-US', {
+        month: 'short', day: 'numeric', year: 'numeric',
+        hour: 'numeric', minute: '2-digit', timeZoneName: 'short'
+    });
+}
+
 // Get user initials for avatar
 function getInitials(name) {
     if (!name) return '?';
@@ -1404,7 +1415,7 @@ function renderRequests({ preserveScroll = false } = {}) {
                         <div class="request-header">
                             <div class="request-header-left">
                                 <span class="request-name">${request.employeeName || 'Unknown'}</span>
-                                <span class="request-date">${timeAgo}</span>
+                                <span class="request-date" title="${escapeHtml(formatRequestTimestamp(request.requestedAt))}">${timeAgo}</span>
                             </div>
                             ${typeBadge}
                         </div>

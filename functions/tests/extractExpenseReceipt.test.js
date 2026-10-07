@@ -59,6 +59,25 @@ function testNormalizeParsedEmpty() {
   assert.deepStrictEqual(parsed.items, []);
 }
 
+function testInputVatClaimableAndSupplierVat() {
+  const claimableFalse = normalizeParsed({
+    supplierVatRegistered: true,
+    inputVatClaimable: false,
+    items: [{ name: 'Part', quantity: 1, price: 100, total: 100 }],
+    totalAmount: 100
+  });
+  assert.strictEqual(claimableFalse.supplierVatRegistered, true);
+  assert.strictEqual(claimableFalse.inputVatClaimable, false);
+
+  const fromPrinted = normalizeParsed({
+    items: [{ name: 'A', quantity: 1, price: 112, total: 112 }],
+    totalAmount: 112,
+    printedVat: { vatableSale: 100, vatAmount: 12 }
+  });
+  assert.strictEqual(fromPrinted.supplierVatRegistered, true);
+  assert.strictEqual(fromPrinted.inputVatClaimable, true);
+}
+
 function testEuropeanDayFirstDate() {
   const parsed = normalizeParsed({ date: '22/07/2026' }, FIXED_NOW);
   assert.strictEqual(parsed.date, '2026-07-22');
@@ -125,6 +144,7 @@ function testSolaireStyleRestaurantVat() {
 testNormalizeParsedHappyPath();
 testNormalizeParsedDropsUnreconciledItems();
 testNormalizeParsedEmpty();
+testInputVatClaimableAndSupplierVat();
 testEuropeanDayFirstDate();
 testWrongYearForcedToCurrent();
 testPreviousYearKeptWithinLookback();

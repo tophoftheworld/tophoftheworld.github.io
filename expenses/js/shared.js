@@ -17,6 +17,16 @@ export const EXPENSE_CATEGORY_OPTIONS = [
 
 export const DEFAULT_EXPENSE_CATEGORY = 'Supplies';
 
+/** All allocation values (category = what; allocation = where/why). */
+export const ALLOCATION_OPTIONS = [
+    'Store',
+    'General',
+    'R&D',
+    'Workshop',
+    'Popup',
+    'Bar Service'
+];
+
 /** Allocations that use an event name instead of a store branch. */
 export const EVENT_ALLOCATIONS = ['Workshop', 'Popup', 'Bar Service'];
 
@@ -27,6 +37,11 @@ export function isEventAllocation(allocation) {
 /** Allocations that track cash vs company payer. */
 export function allocationUsesPaidBy(allocation) {
     return allocation === 'Store' || allocation === 'Popup';
+}
+
+/** True when allocation needs neither branch nor event name. */
+export function isCompanyWideAllocation(allocation) {
+    return allocation === 'General' || allocation === 'R&D';
 }
 
 /** Cash payer value stored on expenses (Store vs Pop-up wording). */
@@ -593,36 +608,21 @@ export function isSupportedReceiptImageFile(file) {
 /** Accept attribute for receipt file pickers (images + HEIC + PDF). */
 export const RECEIPT_FILE_ACCEPT = 'image/*,.heic,.heif,image/heic,image/heif,application/pdf,.pdf';
 
-let heic2anyLoader = null;
+let heicToLoader = null;
 let pdfJsLoader = null;
 
-async function loadHeic2Any() {
-    if (typeof window !== 'undefined' && typeof window.heic2any === 'function') {
-        return window.heic2any;
-    }
-    if (heic2anyLoader) return heic2anyLoader;
-    heic2anyLoader = new Promise((resolve, reject) => {
-        const existing = document.querySelector('script[data-heic2any]');
-        if (existing) {
-            existing.addEventListener('load', () => {
-                if (typeof window.heic2any === 'function') resolve(window.heic2any);
-                else reject(new Error('HEIC converter failed to load'));
-            });
-            existing.addEventListener('error', () => reject(new Error('HEIC converter failed to load')));
-            return;
+/** Newer iOS HEIC needs a current libheif build; heic2any@0.0.4 cannot parse them. */
+async function loadHeicTo() {
+    if (heicToLoader) return heicToLoader;
+    heicToLoader = (async () => {
+        const mod = await import('https://cdn.jsdelivr.net/npm/heic-to@1.5.2/+esm');
+        const heicTo = mod.heicTo || mod.default;
+        if (typeof heicTo !== 'function') {
+            throw new Error('HEIC converter failed to load');
         }
-        const script = document.createElement('script');
-        script.src = 'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js';
-        script.async = true;
-        script.dataset.heic2any = '1';
-        script.onload = () => {
-            if (typeof window.heic2any === 'function') resolve(window.heic2any);
-            else reject(new Error('HEIC converter failed to load'));
-        };
-        script.onerror = () => reject(new Error('HEIC converter failed to load'));
-        document.head.appendChild(script);
-    });
-    return heic2anyLoader;
+        return heicTo;
+    })();
+    return heicToLoader;
 }
 
 async function loadPdfJs() {
@@ -690,13 +690,12 @@ export async function ensureBrowserDecodableImageFile(file) {
 
     if (!isHeicLikeFile(file)) return file;
     try {
-        const heic2any = await loadHeic2Any();
-        const converted = await heic2any({
+        const heicTo = await loadHeicTo();
+        const blob = await heicTo({
             blob: file,
-            toType: 'image/jpeg',
+            type: 'image/jpeg',
             quality: 0.92
         });
-        const blob = Array.isArray(converted) ? converted[0] : converted;
         if (!blob) throw new Error('HEIC conversion returned empty result');
         const baseName = String(file.name || 'receipt').replace(/\.hei[cf]$/i, '') || 'receipt';
         return new File([blob], `${baseName}.jpg`, {
@@ -704,7 +703,7 @@ export async function ensureBrowserDecodableImageFile(file) {
             lastModified: file.lastModified || Date.now()
         });
     } catch (error) {
-        console.error('HEIC conversion failed:', error);
+        console.error('HEIC conversion failed:', error?.message || error, error);
         throw new Error('Could not read HEIC photo. Try converting to JPG or take a new photo.');
     }
 }
@@ -814,28 +813,74 @@ async function loadImageForCanvas(src) {
  * Returns a new JPEG data URL.
  */
 export async function rotateReceiptImage(src, direction, quality = 0.85) {
+    if (direction !== 1 && direction !== -1) {
+        throw new Error('direction must be 1 or -1');
+    }
+    return rotateReceiptImageByDegrees(src, direction === 1 ? 90 : 270, quality);
+}
+
+/**
+ * Rotate receipt image clockwise by 0/90/180/270 degrees. Returns a new JPEG data URL.
+ * @param {string} src
+ * @param {number} cwDegrees
+ * @param {number} [quality]
+ */
+export async function rotateReceiptImageByDegrees(src, cwDegrees, quality = 0.85) {
+    let deg = Math.round(Number(cwDegrees) || 0) % 360;
+    if (deg < 0) deg += 360;
+    if (![0, 90, 180, 270].includes(deg)) {
+        throw new Error('cwDegrees must be 0, 90, 180, or 270');
+    }
+    if (deg === 0) {
+        return src;
+    }
+
     const img = await loadImageForCanvas(src);
     const w = img.naturalWidth;
     const h = img.naturalHeight;
     if (!w || !h) {
         throw new Error('Invalid image dimensions');
     }
+
     const canvas = document.createElement('canvas');
-    canvas.width = h;
-    canvas.height = w;
     const ctx = canvas.getContext('2d');
-    if (direction === 1) {
+    if (!ctx) throw new Error('Could not create canvas');
+
+    if (deg === 90) {
+        canvas.width = h;
+        canvas.height = w;
         ctx.translate(canvas.width, 0);
         ctx.rotate(Math.PI / 2);
-        ctx.drawImage(img, 0, 0);
-    } else if (direction === -1) {
+    } else if (deg === 180) {
+        canvas.width = w;
+        canvas.height = h;
+        ctx.translate(canvas.width, canvas.height);
+        ctx.rotate(Math.PI);
+    } else {
+        // 270 CW = 90 CCW
+        canvas.width = h;
+        canvas.height = w;
         ctx.translate(0, canvas.height);
         ctx.rotate(-Math.PI / 2);
-        ctx.drawImage(img, 0, 0);
-    } else {
-        throw new Error('direction must be 1 or -1');
     }
+    ctx.drawImage(img, 0, 0);
     return canvas.toDataURL('image/jpeg', quality);
+}
+
+/**
+ * If OCR suggests a non-zero upright rotation, return rotated JPEG data URL; else original.
+ * @param {string} dataUrl
+ * @param {{ suggestedRotationCw?: number|null }} parsed
+ */
+export async function applySuggestedReceiptRotation(dataUrl, parsed) {
+    const deg = Number(parsed?.suggestedRotationCw);
+    if (![90, 180, 270].includes(deg)) return dataUrl;
+    try {
+        return await rotateReceiptImageByDegrees(dataUrl, deg);
+    } catch (err) {
+        console.warn('Auto-rotate receipt failed:', err);
+        return dataUrl;
+    }
 }
 
 // Fetch receipt image from Firebase for an expense
@@ -1041,6 +1086,12 @@ function getCachedReceiptUrl(expenseId) {
     return hasReceiptUrlValue(url) && !isReceiptDataUrl(url) ? url : null;
 }
 
+function clearReceiptUrlCache() {
+    try {
+        localStorage.removeItem(RECEIPT_URL_CACHE_KEY);
+    } catch (_) {}
+}
+
 export function cacheReceiptUrlForExpense(expenseId, url) {
     if (!expenseId || !hasReceiptUrlValue(url) || isReceiptDataUrl(url)) return;
     try {
@@ -1049,6 +1100,16 @@ export function cacheReceiptUrlForExpense(expenseId, url) {
         cache[expenseId] = url;
         localStorage.setItem(RECEIPT_URL_CACHE_KEY, JSON.stringify(cache));
     } catch (error) {
+        const isQuota =
+            error?.name === 'QuotaExceededError' ||
+            /quota/i.test(String(error?.message || ''));
+        if (isQuota) {
+            clearReceiptUrlCache();
+            try {
+                localStorage.setItem(RECEIPT_URL_CACHE_KEY, JSON.stringify({ [expenseId]: url }));
+                return;
+            } catch (_) {}
+        }
         console.warn('Failed to cache receipt URL:', error);
     }
 }
@@ -3478,12 +3539,374 @@ export function findSimilarExpense(newExpense, tolerancePercent = 0.05) {
     });
 }
 
+/** Levenshtein distance for short OCR strings. */
+export function editDistance(a, b) {
+    const s = String(a ?? '');
+    const t = String(b ?? '');
+    if (s === t) return 0;
+    const n = s.length;
+    const m = t.length;
+    if (!n) return m;
+    if (!m) return n;
+    /** @type {number[]} */
+    let prev = new Array(m + 1);
+    /** @type {number[]} */
+    let curr = new Array(m + 1);
+    for (let j = 0; j <= m; j++) prev[j] = j;
+    for (let i = 1; i <= n; i++) {
+        curr[0] = i;
+        const si = s.charCodeAt(i - 1);
+        for (let j = 1; j <= m; j++) {
+            const cost = si === t.charCodeAt(j - 1) ? 0 : 1;
+            curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+        }
+        const tmp = prev;
+        prev = curr;
+        curr = tmp;
+    }
+    return prev[m];
+}
+
+function normalizeInvoiceKey(value) {
+    return String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[\s\-#._/]/g, '');
+}
+
+function normalizeAmountDigitKey(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return '';
+    return String(Math.round(n * 100));
+}
+
+function normalizeDateKey(value) {
+    const s = String(value || '').trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '';
+}
+
 /**
- * Find possible duplicate expenses for batch upload flagging (no auto-merge).
- * Matches if same date + amount within 5%, OR same date + invoice #, OR same date + supplier + amount within 5%.
+ * Calendar date match — never string edit-distance on ISO dates
+ * (that falsely treats 07-14 and 07-18 as "near").
+ * @returns {'exact'|'near'|null}
+ */
+function dateFieldMatch(aVal, bVal) {
+    const a = normalizeDateKey(aVal);
+    const b = normalizeDateKey(bVal);
+    if (!a || !b) return null;
+    if (a === b) return 'exact';
+    const da = Date.parse(`${a}T12:00:00Z`);
+    const db = Date.parse(`${b}T12:00:00Z`);
+    if (!Number.isFinite(da) || !Number.isFinite(db)) return null;
+    const diffDays = Math.abs(da - db) / 86400000;
+    if (diffDays <= 1) return 'near';
+    return null;
+}
+
+/** Both sides have invoice #s that aren't the same — different purchases. */
+function invoicesClearlyDifferent(aVal, bVal) {
+    const a = normalizeInvoiceKey(aVal);
+    const b = normalizeInvoiceKey(bVal);
+    if (!a || !b || a.length < 4 || b.length < 4) return false;
+    return a !== b;
+}
+
+function normalizeTinKey(value) {
+    return String(value || '').replace(/\D/g, '');
+}
+
+/**
+ * @param {string} a
+ * @param {string} b
+ * @param {{ minLen?: number, nearMax?: number }} [opts]
+ * @returns {'exact'|'near'|null}
+ */
+function compareNormalizedFields(a, b, opts = {}) {
+    const minLen = opts.minLen ?? 1;
+    const nearMax = opts.nearMax ?? 1;
+    if (!a || !b) return null;
+    if (a.length < minLen || b.length < minLen) return null;
+    if (a === b) return 'exact';
+    if (editDistance(a, b) <= nearMax) return 'near';
+    return null;
+}
+
+function supplierFieldMatch(aName, bName) {
+    const a = normalizeSupplierNameKey(aName);
+    const b = normalizeSupplierNameKey(bName);
+    if (!a || !b) return null;
+    if (a === b) return 'exact';
+    if (editDistance(a, b) <= 2) return 'near';
+    const aTokens = a.split(/\s+/).filter((t) => t.length >= 3);
+    const bTokens = b.split(/\s+/).filter((t) => t.length >= 3);
+    if (aTokens.length && bTokens.length) {
+        const shared = aTokens.filter((t) => bTokens.includes(t));
+        if (shared.length >= 1 && shared.length >= Math.min(aTokens.length, bTokens.length)) {
+            return 'near';
+        }
+    }
+    return null;
+}
+
+function amountFieldMatch(aVal, bVal) {
+    const na = Number(aVal) || 0;
+    const nb = Number(bVal) || 0;
+    if (na <= 0 || nb <= 0) return null;
+
+    const aCents = Math.round(na * 100);
+    const bCents = Math.round(nb * 100);
+    if (aCents === bCents) return 'exact';
+
+    const diff = Math.abs(na - nb);
+    const rel = diff / Math.max(na, nb);
+    // Small OCR / rounding drift
+    if (diff <= 2 || (rel <= 0.02 && diff <= 50)) return 'near';
+
+    // Single-digit typo in the cent string only when values stay in the same ballpark.
+    // (Plain edit-distance alone falsely matches 1000↔8000.)
+    const a = normalizeAmountDigitKey(aVal);
+    const b = normalizeAmountDigitKey(bVal);
+    if (
+        a &&
+        b &&
+        a.length === b.length &&
+        editDistance(a, b) === 1 &&
+        rel <= 0.25 &&
+        diff <= 500
+    ) {
+        return 'near';
+    }
+    return null;
+}
+
+/**
+ * Multi-field OCR-tolerant similarity score between two expense-like objects.
+ * @returns {{ score: number, confidence: 'likely'|'possible'|null, reasons: string[], fieldHits: Record<string, 'exact'|'near'> }}
+ */
+export function scoreExpenseSimilarity(candidate, existing) {
+    /** @type {Record<string, 'exact'|'near'>} */
+    const fieldHits = {};
+    /** @type {string[]} */
+    const reasons = [];
+    let score = 0;
+
+    const addHit = (field, kind) => {
+        if (!kind) return;
+        fieldHits[field] = kind;
+        score += kind === 'exact' ? 2 : 1;
+        reasons.push(`${field} ${kind}`);
+    };
+
+    addHit(
+        'invoice',
+        compareNormalizedFields(
+            normalizeInvoiceKey(candidate?.invoiceNumber),
+            normalizeInvoiceKey(existing?.invoiceNumber),
+            // Exact only — consecutive SI#s (…77 vs …78) are different purchases, not OCR near-misses.
+            { minLen: 4, nearMax: 0 }
+        )
+    );
+    addHit('amount', amountFieldMatch(candidate?.totalAmount, existing?.totalAmount));
+    addHit('date', dateFieldMatch(candidate?.date, existing?.date));
+    addHit('supplier', supplierFieldMatch(candidate?.supplierName, existing?.supplierName));
+    // TIN is redundant when supplier already matched (same vendor ⇒ same TIN).
+    if (!fieldHits.supplier) {
+        addHit(
+            'tin',
+            compareNormalizedFields(
+                normalizeTinKey(candidate?.tin),
+                normalizeTinKey(existing?.tin),
+                { minLen: 9, nearMax: 1 }
+            )
+        );
+    }
+
+    // Distinct invoice numbers ⇒ different purchases (repeat vendor is normal).
+    if (invoicesClearlyDifferent(candidate?.invoiceNumber, existing?.invoiceNumber)) {
+        return { score, confidence: null, reasons, fieldHits };
+    }
+
+    const invoiceHit = Boolean(fieldHits.invoice);
+    const supplierHit = Boolean(fieldHits.supplier);
+    const tinHit = Boolean(fieldHits.tin);
+    const dateHit = Boolean(fieldHits.date);
+    const amountHit = Boolean(fieldHits.amount);
+    const identityHit = supplierHit || tinHit;
+
+    // Same vendor across days is normal. Only flag shared invoice #, or
+    // same calendar day (±1 for OCR) with matching amount + identity.
+    let confidence = null;
+    if (invoiceHit && (identityHit || dateHit || amountHit)) {
+        if (
+            fieldHits.invoice === 'exact' &&
+            (identityHit || (dateHit && amountHit) || score >= 4)
+        ) {
+            confidence = 'likely';
+        } else if (score >= 3) {
+            confidence = 'possible';
+        }
+    } else if (dateHit && amountHit && identityHit) {
+        // Adjacent-day OCR slip only counts with an exact amount match.
+        if (fieldHits.date === 'near' && fieldHits.amount !== 'exact') {
+            confidence = null;
+        } else if (
+            fieldHits.date === 'exact' &&
+            fieldHits.amount === 'exact' &&
+            (fieldHits.supplier === 'exact' || fieldHits.tin === 'exact')
+        ) {
+            confidence = 'likely';
+        } else {
+            confidence = 'possible';
+        }
+    }
+
+    return { score, confidence, reasons, fieldHits };
+}
+
+/**
+ * Human-readable one-liner for a duplicate match hit (dialogs / titles).
+ * @param {{ expense: object, confidence?: string, reasons?: string[] } | object} match
+ */
+export function formatDuplicateMatchSummary(match) {
+    const expense = match?.expense || match;
+    const amt = Number(expense?.totalAmount) || 0;
+    const supplier = expense?.supplierName || 'expense';
+    const dateLabel = expense?.date || '?';
+    return `${dateLabel} ${supplier} ₱${amt.toLocaleString()}`;
+}
+
+const DUP_FIELD_LABELS = {
+    invoice: 'Invoice',
+    amount: 'Amount',
+    date: 'Date',
+    supplier: 'Supplier',
+    tin: 'TIN'
+};
+
+/** @type {Set<string>} session-only "not a duplicate" dismissals */
+const dismissedDuplicatePairs = new Set();
+
+function escapeDupHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+/**
+ * Stable key for a draft/candidate when dismissing a duplicate pair.
+ * @param {object} candidate
+ */
+export function duplicateCandidateKey(candidate) {
+    if (candidate?.id) return String(candidate.id);
+    const sn = normalizeSupplierNameKey(candidate?.supplierName || '');
+    return `tmp:${candidate?.date || ''}|${candidate?.invoiceNumber || ''}|${candidate?.totalAmount || ''}|${sn}`;
+}
+
+/**
+ * @param {object} candidate
+ * @param {string} matchExpenseId
+ */
+export function dismissDuplicatePair(candidate, matchExpenseId) {
+    if (!matchExpenseId) return;
+    dismissedDuplicatePairs.add(`${duplicateCandidateKey(candidate)}::${matchExpenseId}`);
+}
+
+/**
+ * @param {object} candidate
+ * @param {string} matchExpenseId
+ */
+export function isDuplicatePairDismissed(candidate, matchExpenseId) {
+    if (!matchExpenseId) return false;
+    return dismissedDuplicatePairs.has(`${duplicateCandidateKey(candidate)}::${matchExpenseId}`);
+}
+
+/**
+ * Compact duplicate notice HTML (dashboard-aligned actions).
+ * @param {{ expense: object, confidence?: string, reasons?: string[], fieldHits?: Record<string, string> }} match
+ * @param {{ showActions?: boolean, discardLabel?: string }} [opts]
+ */
+export function formatDuplicateBannerHtml(match, opts = {}) {
+    const showActions = opts.showActions !== false;
+    const discardLabel = opts.discardLabel || 'Discard';
+    const expense = match?.expense || match;
+    const matchId = expense?.id ? String(expense.id) : '';
+    const badge = match?.confidence === 'likely' ? 'Likely match' : 'Possible match';
+    const amt = Number(expense?.totalAmount) || 0;
+    const supplier = expense?.supplierName || 'Expense';
+    let dateLabel = expense?.date || '?';
+    try {
+        if (expense?.date) dateLabel = formatDateDisplay(expense.date, false) || expense.date;
+    } catch (_) {
+        /* keep raw */
+    }
+    const vs = `${supplier} · ${dateLabel} · ₱${amt.toLocaleString()}`;
+
+    /** @type {{ field: string, kind: string }[]} */
+    let rows = [];
+    const hits = match?.fieldHits;
+    if (hits && typeof hits === 'object') {
+        for (const key of ['invoice', 'amount', 'date', 'supplier', 'tin']) {
+            if (!hits[key]) continue;
+            if (key === 'tin' && hits.supplier) continue;
+            rows.push({ field: key, kind: hits[key] });
+        }
+    }
+    if (!rows.length && Array.isArray(match?.reasons)) {
+        for (const r of match.reasons) {
+            const parts = String(r).trim().split(/\s+/);
+            if (!parts[0] || (parts[0] === 'tin' && rows.some((x) => x.field === 'supplier'))) continue;
+            rows.push({ field: parts[0], kind: parts[1] || 'exact' });
+        }
+    }
+
+    const chips = rows
+        .map(({ field, kind }) => {
+            const label = DUP_FIELD_LABELS[field] || field;
+            const near = kind !== 'exact';
+            return `<span class="expense-dup-chip${near ? ' expense-dup-chip--near' : ''}">${escapeDupHtml(label)}</span>`;
+        })
+        .join('');
+
+    const previewAttr = matchId ? ` data-dup-preview="${escapeDupHtml(matchId)}"` : '';
+    const matchLine = matchId
+        ? `<button type="button" class="expense-dup-match"${previewAttr}>${escapeDupHtml(vs)}</button>`
+        : `<div class="expense-dup-match expense-dup-match--static">${escapeDupHtml(vs)}</div>`;
+
+    const actionsHtml = showActions
+        ? `<div class="expense-dup-actions">
+            <button type="button" class="action-btn secondary" data-dup-keep="${escapeDupHtml(matchId)}">Keep both</button>
+            ${
+                matchId
+                    ? `<button type="button" class="action-btn primary" data-dup-replace="${escapeDupHtml(matchId)}">Use this instead</button>`
+                    : ''
+            }
+            <button type="button" class="action-btn danger-outline" data-dup-discard>${escapeDupHtml(discardLabel)}</button>
+          </div>`
+        : '';
+
+    return `<div class="expense-dup-top">
+        <div class="expense-dup-copy">
+            <div class="expense-dup-badge">${escapeDupHtml(badge)}</div>
+            <p class="expense-dup-lead">Similar expense already saved</p>
+            ${matchLine}
+            ${chips ? `<div class="expense-dup-chips" aria-label="Matched fields">${chips}</div>` : ''}
+        </div>
+        ${
+            matchId
+                ? `<button type="button" class="action-btn secondary expense-dup-preview-btn"${previewAttr}>Preview</button>`
+                : ''
+        }
+      </div>${actionsHtml}`;
+}
+
+/**
+ * Find possible duplicate expenses (warn-only; no auto-merge).
+ * Multi-field near-match scoring (exact = 2, off-by-one digit = 1).
  * @param {object} candidate
  * @param {{ excludeIds?: string[], extraCandidates?: object[] }} [options]
- * @returns {object[]} matching expenses (may include peers from extraCandidates)
+ * @returns {{ expense: object, confidence: 'likely'|'possible', reasons: string[], score: number }[]}
  */
 export function findPossibleDuplicateExpenses(candidate, options = {}) {
     const excludeIds = new Set((options.excludeIds || []).filter(Boolean));
@@ -3502,31 +3925,29 @@ export function findPossibleDuplicateExpenses(candidate, options = {}) {
         pool.push(e);
     }
 
-    const date = candidate?.date || '';
-    const amount = Number(candidate?.totalAmount) || 0;
-    const tolerance = Math.max(amount * 0.05, 0.01);
-    const invoice = String(candidate?.invoiceNumber || '')
-        .trim()
-        .toLowerCase();
-    const supplierKey = normalizeSupplierNameKey(candidate?.supplierName);
+    /** @type {{ expense: object, confidence: 'likely'|'possible', reasons: string[], fieldHits?: object, score: number }[]} */
+    const hits = [];
+    for (const existing of pool) {
+        if (isDuplicatePairDismissed(candidate, existing.id)) continue;
+        const result = scoreExpenseSimilarity(candidate, existing);
+        if (!result.confidence) continue;
+        hits.push({
+            expense: existing,
+            confidence: result.confidence,
+            reasons: result.reasons,
+            fieldHits: result.fieldHits,
+            score: result.score
+        });
+    }
 
-    return pool.filter((existing) => {
-        if ((existing.date || '') !== date) return false;
-
-        const existingInvoice = String(existing.invoiceNumber || '')
-            .trim()
-            .toLowerCase();
-        if (invoice && existingInvoice && invoice === existingInvoice) return true;
-
-        const amountDiff = Math.abs((Number(existing.totalAmount) || 0) - amount);
-        if (amount > 0 && amountDiff <= tolerance) return true;
-
-        const existingSupplier = normalizeSupplierNameKey(existing.supplierName);
-        if (supplierKey && existingSupplier && supplierKey === existingSupplier && amountDiff <= tolerance) {
-            return true;
+    hits.sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        if (a.confidence !== b.confidence) {
+            return a.confidence === 'likely' ? -1 : 1;
         }
-        return false;
+        return 0;
     });
+    return hits;
 }
 
 export function mergeExpenseData(existingExpense, newExpense) {
@@ -3635,6 +4056,27 @@ export function saveSupplierIfNew(expense) {
     );
 
     if (existingSupplier) {
+        let touched = false;
+        if (expense.isVatRegistered && !existingSupplier.isVatRegistered) {
+            existingSupplier.isVatRegistered = true;
+            touched = true;
+        }
+        if (!(existingSupplier.tin || '').trim() && (expense.tin || '').trim()) {
+            existingSupplier.tin = String(expense.tin).trim();
+            touched = true;
+        }
+        if (!(existingSupplier.address || '').trim() && (expense.address || '').trim()) {
+            existingSupplier.address = String(expense.address).trim();
+            touched = true;
+        }
+        if (!(existingSupplier.businessName || '').trim() && businessName) {
+            existingSupplier.businessName = businessName;
+            touched = true;
+        }
+        if (touched) {
+            existingSupplier.updatedAt = new Date().toISOString();
+            saveToLocalStorage();
+        }
         return existingSupplier.id;
     }
 
@@ -3917,38 +4359,59 @@ export function createExpenseObject(data, options = {}) {
     };
 
     if (autoCalculateVAT && !isPettyCash) {
-        // Check if VAT computation is explicitly disabled
-        const vatComputationExplicitlyDisabled = getValue('vatComputationEnabled') === 'false' || 
-                                                 getValue('vatComputationEnabled') === false;
-        
-        // Auto-enable VAT computation if supplier is VAT registered (unless explicitly disabled)
-        // If supplier is VAT registered, default to enabled unless explicitly set to false
-        const vatComputationEnabled = vatComputationExplicitlyDisabled ? false :
-                                     (supplier?.isVatRegistered ? true :
-                                     (getValue('vatComputationEnabled') === 'true' || 
-                                      getValue('vatComputationEnabled') === true ||
-                                      getValue('vatComputationEnabled') === 'checked' ||
-                                      (existingExpense?.isVatRegistered && getValue('vatComputationEnabled') === '')));
+        const vatComputationExplicitlyDisabled =
+            getValue('vatComputationEnabled') === 'false' ||
+            getValue('vatComputationEnabled') === false;
 
-        // Calculate VAT if VAT computation is enabled and (supplier is VAT registered or no supplier found)
-        if (vatComputationEnabled && (supplier?.isVatRegistered || !supplier)) {
-            vatBreakdown = calculateVATFromSupplier(totalAmount, vatExemptAmount, supplier);
-        } else if (supplier && !supplier.isVatRegistered) {
-            // Supplier is not VAT registered and VAT not enabled - clear VAT
+        const vatComputationExplicitlyEnabled =
+            getValue('vatComputationEnabled') === 'true' ||
+            getValue('vatComputationEnabled') === true ||
+            getValue('vatComputationEnabled') === 'checked';
+
+        // New-supplier / OCR intent: payload may set isVatRegistered before a supplier row exists.
+        const payloadMarksVat =
+            getValue('isVatRegistered') === true ||
+            getValue('isVatRegistered') === 'true' ||
+            getValue('isVatRegistered') === 'checked';
+
+        const treatAsVatRegistered = Boolean(
+            supplier?.isVatRegistered || (!supplier && payloadMarksVat)
+        );
+
+        // Prefer explicit toggle; else default On for VAT-registered merchants.
+        const vatComputationEnabled = vatComputationExplicitlyDisabled
+            ? false
+            : vatComputationExplicitlyEnabled
+              ? true
+              : treatAsVatRegistered
+                ? true
+                : Boolean(
+                      existingExpense?.isVatRegistered && getValue('vatComputationEnabled') === ''
+                  );
+
+        if (vatComputationEnabled && treatAsVatRegistered) {
+            vatBreakdown = calculateVatBreakdown(totalAmount, vatExemptAmount, true);
+        } else if (vatComputationEnabled && !supplier && !payloadMarksVat) {
+            // Toggle On but no VAT intent yet — do not invent VAT amounts.
+            vatBreakdown = {
+                vatableSale: 0,
+                vatAmount: 0,
+                isVatRegistered: false
+            };
+        } else if (supplier && !supplier.isVatRegistered && !payloadMarksVat) {
             vatBreakdown = {
                 vatableSale: 0,
                 vatAmount: 0,
                 isVatRegistered: false
             };
         } else if (!vatComputationEnabled) {
-            // VAT computation explicitly disabled - clear VAT
+            // Toggle Off: clear VAT amounts, but preserve merchant VAT flag when known.
             vatBreakdown = {
                 vatableSale: 0,
                 vatAmount: 0,
-                isVatRegistered: false
+                isVatRegistered: treatAsVatRegistered
             };
         }
-        // If expense had VAT and supplier still registered, preserve (handled by existingExpense default above)
     }
 
     if (isPettyCash) {

@@ -1,16 +1,16 @@
-import { getWeek, setLineStatus, setLinesStatus, canActOnWeek } from '../store.js?v=106';
-import { itemDisplayName, locationLabel, locationSortRank } from '../data/catalog.js?v=106';
+import { getWeek, setLineStatus, setLinesStatus, canActOnWeek } from '../store.js?v=111';
+import { itemDisplayName, locationLabel, locationSortRank } from '../data/catalog.js?v=111';
 import {
   groupOrderSheets,
   plannedLines,
   lineAmount,
   isFee,
   fulfillmentStatus,
-} from '../compute.js?v=106';
-import { formatDateRange, formatPeso, formatQty, formatDateMedium, escapeHtml, statusLabel } from '../format.js?v=106';
-import { renderWeekChrome, bindWeekChrome } from './week-chrome.js?v=106';
-import { toast } from './shell.js?v=106';
-import { renderLoadingShell } from './loading-shell.js?v=106';
+} from '../compute.js?v=111';
+import { formatDateRange, formatPeso, formatQty, formatDateMedium, escapeHtml, statusLabel } from '../format.js?v=111';
+import { renderWeekChrome, bindWeekChrome } from './week-chrome.js?v=111';
+import { toast } from './shell.js?v=111';
+import { renderLoadingShell } from './loading-shell.js?v=111';
 
 const STATUS_OPTIONS = [
   ['planned', 'Not ordered'],
@@ -51,7 +51,7 @@ function loadOrderView() {
   } catch (_) {
     /* ignore */
   }
-  return 'list';
+  return 'suppliers';
 }
 
 function saveOrderView(value) {
@@ -160,12 +160,12 @@ function renderOrderList(week, lines, canAct) {
       </colgroup>
       <thead>
         <tr>
-          <th>Item</th>
-          <th>Branch</th>
-          <th>Supplier</th>
-          <th class="num">Qty</th>
-          <th class="num">Cost</th>
-          <th class="col-status">Status</th>
+          <th class="ol-item">Item</th>
+          <th class="ol-branch">Branch</th>
+          <th class="ol-supplier">Supplier</th>
+          <th class="num ol-qty">Qty</th>
+          <th class="num ol-cost">Cost</th>
+          <th class="col-status ol-status">Status</th>
         </tr>
       </thead>
       <tbody>

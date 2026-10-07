@@ -1379,6 +1379,16 @@ th {
   background: #e5e7eb;
 }
 
+.lead-pipeline-qualifying {
+  color: #0e7490;
+  background: #cffafe;
+}
+
+.lead-pipeline-lost {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
 .lead-detail-meta-row {
   display: flex;
   align-items: center;

@@ -1,4 +1,4 @@
-import { loadCatalog } from './data/catalog.js?v=106';
+import { loadCatalog } from './data/catalog.js?v=111';
 import {
   loadStateFromOrderView,
   tryHydrateFromLocalCache,
@@ -8,22 +8,22 @@ import {
   flushPersist,
   startLiveOverlaySync,
   isOverlayDirty,
-} from './store.js?v=106';
-import { THIS_WEEK_ID } from './data/seed.js?v=106';
-import { loadSuppliers } from './data/suppliers.js?v=106';
-import { loadItemPrefs } from './data/item-prefs.js?v=106';
-import { loadCustomItems } from './data/custom-items.js?v=106';
+} from './store.js?v=111';
+import { THIS_WEEK_ID } from './data/seed.js?v=111';
+import { loadSuppliers } from './data/suppliers.js?v=111';
+import { loadItemPrefs } from './data/item-prefs.js?v=111';
+import { loadCustomItems } from './data/custom-items.js?v=111';
 import {
   saveLastRoute,
   restoreHashFromLastRoute,
   routeToHash,
-} from './data/last-route.js?v=106';
-import { renderPlan } from './ui/plan.js?v=106';
-import { renderOrders } from './ui/orders.js?v=106';
-import { renderSpent } from './ui/spent.js?v=106';
-import { renderPastWeeks } from './ui/past-weeks.js?v=106';
-import { initShell } from './ui/shell.js?v=106';
-import { renderLoadingShell } from './ui/loading-shell.js?v=106';
+} from './data/last-route.js?v=111';
+import { renderPlan } from './ui/plan.js?v=111';
+import { renderOrders } from './ui/orders.js?v=111';
+import { renderSpent } from './ui/spent.js?v=111';
+import { renderPastWeeks } from './ui/past-weeks.js?v=111';
+import { initShell } from './ui/shell.js?v=111';
+import { renderLoadingShell } from './ui/loading-shell.js?v=111';
 
 const root = document.getElementById('app');
 let renderQueued = false;
@@ -37,13 +37,13 @@ function parseRoute() {
   if (parts[0] === 'past') return { tab: 'past', weekId: null };
   if (parts[0] === 'week' && parts[1]) {
     const tab = parts[2] || 'plan';
-    // Legacy #/week/.../summary → Budget
+    // Legacy #/week/.../summary -> Budget
     return { tab: tab === 'summary' ? 'plan' : tab, weekId: parts[1] };
   }
   if (['orders', 'spent'].includes(parts[0])) {
     return { tab: parts[0], weekId: THIS_WEEK_ID };
   }
-  // Legacy #/summary → Budget
+  // Legacy #/summary -> Budget
   if (parts[0] === 'summary') {
     return { tab: 'plan', weekId: THIS_WEEK_ID };
   }

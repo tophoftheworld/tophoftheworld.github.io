@@ -1,17 +1,17 @@
 /**
  * Download the open week's on-plan budget as one Excel file (all branches).
- * Cost / qty cells stay numeric — display units via Excel number formats.
+ * Cost / qty cells stay numeric - display units via Excel number formats.
  */
-import { buildLocationGroups, itemDisplayName } from '../data/catalog.js?v=106';
-import { lineAmount, plannedLines } from '../compute.js?v=106';
-import { formatDateRange, statusLabel } from '../format.js?v=106';
-import { isThisWeek, warmRemainingBranches } from '../store.js?v=106';
-import { toast } from './shell.js?v=106';
+import { buildLocationGroups, itemDisplayName } from '../data/catalog.js?v=111';
+import { lineAmount, plannedLines } from '../compute.js?v=111';
+import { formatDateRange, statusLabel } from '../format.js?v=111';
+import { isThisWeek, warmRemainingBranches } from '../store.js?v=111';
+import { toast } from './shell.js?v=111';
 
 const XLSX_CDN = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm';
 
-/** Excel currency format — peso sign is display-only, value stays a number. */
-const PESO_FMT = '"₱"#,##0.00';
+/** Excel currency format - peso sign is display-only, value stays a number. */
+const PESO_FMT = '"\u20B1"#,##0.00';
 
 function slugDate(iso) {
   return String(iso || '').replace(/-/g, '') || 'week';

@@ -1160,6 +1160,253 @@ body.modal-open {
     -webkit-overflow-scrolling: touch;
 }
 
+.expense-duplicate-banner {
+    margin: 0 0 0.75rem;
+    padding: 0.85rem 1rem;
+    border-radius: 10px;
+    border: 1px solid #e8e8e8;
+    background: #fff;
+    color: #333;
+    font-size: 0.86rem;
+    line-height: 1.4;
+}
+
+.expense-duplicate-banner[hidden] {
+    display: none !important;
+}
+
+.expense-duplicate-banner--likely {
+    background: #fffcf5;
+    border-color: #ecd9a8;
+}
+
+.expense-dup-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.expense-dup-copy {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.expense-dup-badge {
+    display: inline-block;
+    font-size: 0.68rem;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #9a6b00;
+}
+
+.expense-dup-lead {
+    margin: 0.2rem 0 0;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #1a1a1a;
+}
+
+.expense-dup-match {
+    display: block;
+    width: 100%;
+    margin-top: 0.25rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #2b9348;
+    font: inherit;
+    font-size: 0.84rem;
+    text-align: left;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.expense-dup-match--static {
+    color: #555;
+    text-decoration: none;
+    cursor: default;
+}
+
+.expense-dup-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-top: 0.5rem;
+}
+
+.expense-dup-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.18rem 0.5rem;
+    border-radius: 999px;
+    background: #eef8f1;
+    border: 1px solid #c6e6cf;
+    color: #1f6b38;
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+.expense-dup-chip::before {
+    content: '✓';
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.expense-dup-chip--near {
+    background: #fff8e8;
+    border-color: #ead7a0;
+    color: #8a6500;
+}
+
+.expense-dup-chip--near::before {
+    content: '~';
+}
+
+.expense-dup-preview-btn.action-btn {
+    flex-shrink: 0;
+    padding: 0.4rem 0.7rem;
+    font-size: 0.78rem;
+}
+
+.expense-dup-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid #f0f0f0;
+}
+
+.expense-dup-actions .action-btn {
+    padding: 0.45rem 0.8rem;
+    font-size: 0.8rem;
+}
+
+.expense-dup-actions .action-btn.danger-outline {
+    margin-left: auto;
+}
+
+.expense-duplicate-banner .action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    border: 1px solid #e5e5e5;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 500;
+    font-family: inherit;
+    background: #fff;
+    color: #555;
+}
+
+.expense-duplicate-banner .action-btn.primary {
+    background: #2b9348;
+    border-color: #2b9348;
+    color: #fff;
+}
+
+.expense-duplicate-banner .action-btn.secondary:hover {
+    border-color: #2b9348;
+    color: #2b9348;
+    background: #f0f9f2;
+}
+
+.expense-duplicate-banner .action-btn.danger-outline {
+    border-color: #f1aeb5;
+    color: #a61e4d;
+    background: #fff;
+}
+
+.expense-duplicate-banner .action-btn.danger-outline:hover {
+    background: #fff5f5;
+    border-color: #e03131;
+}
+
+.mobile-dup-peek {
+    position: fixed;
+    inset: 0;
+    z-index: 8000;
+    background: rgba(20, 20, 20, 0.45);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 0.75rem;
+}
+
+.mobile-dup-peek-card {
+    width: min(480px, 100%);
+    max-height: min(85vh, 720px);
+    overflow: auto;
+    background: #fff;
+    border-radius: 14px 14px 10px 10px;
+    padding: 0.9rem 1rem 1.1rem;
+    box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.2);
+}
+
+.mobile-dup-peek-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.mobile-dup-peek-close {
+    border: 0;
+    background: transparent;
+    font-size: 1.4rem;
+    line-height: 1;
+    color: #555;
+    cursor: pointer;
+    padding: 0.1rem 0.35rem;
+}
+
+.mobile-dup-peek-receipt {
+    margin-top: 0.75rem;
+    min-height: 160px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f7f8fa;
+    border: 1px solid #e9ecef;
+    border-radius: 10px;
+    overflow: hidden;
+    padding: 0.5rem;
+}
+
+.mobile-dup-peek-receipt img {
+    max-width: 100%;
+    max-height: 280px;
+    object-fit: contain;
+}
+
+.mobile-dup-peek-meta {
+    margin-top: 0.75rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem 0.75rem;
+}
+
+.mobile-dup-peek-meta dt {
+    margin: 0;
+    font-size: 0.7rem;
+    font-weight: 650;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #6b7280;
+}
+
+.mobile-dup-peek-meta dd {
+    margin: 0.1rem 0 0;
+    font-size: 0.88rem;
+    font-weight: 550;
+}
+
 #expenseFormFields[hidden] {
     display: none !important;
 }
@@ -3205,7 +3452,7 @@ body.modal-open {
     transform: scale(0.98);
 }
 
-/* Modal Overlay for Date Picker */
+/* Modal Overlay for Date Picker — above expense form (2000) so Date is tappable while adding */
 .modal-overlay {
     display: none;
     position: fixed;
@@ -3214,7 +3461,7 @@ body.modal-open {
     width: 100%;
     height: 100%;
     background: rgba(0, 0, 0, 0.5);
-    z-index: 1000;
+    z-index: 2600;
     justify-content: center;
     align-items: center;
 }

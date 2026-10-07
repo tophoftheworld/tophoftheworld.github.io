@@ -430,6 +430,37 @@ body.invoices-app [hidden] {
   margin-bottom: 0.25rem;
 }
 
+.form-group label.pkg-checkbox-label,
+.form-group label.customize-toggle,
+.form-group label.inv-check-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 0.5rem;
+  font-weight: 500;
+  margin-bottom: 0;
+  cursor: pointer;
+}
+
+.form-group-check {
+  margin-bottom: 0.65rem;
+}
+
+.inv-check-row {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  margin: 0;
+}
+
+.inv-check-row span {
+  line-height: 1.3;
+}
+
 .form-group input,
 .form-group textarea,
 .form-group select,
@@ -449,6 +480,28 @@ body.invoices-app [hidden] {
   font-size: 0.9rem;
   background: #fff;
   box-sizing: border-box;
+}
+
+.form-group .pkg-checkbox-label input[type="checkbox"],
+.form-group .customize-toggle input[type="checkbox"],
+.form-group .inv-check-row input[type="checkbox"],
+.package-form .pkg-checkbox-label input[type="checkbox"],
+.package-form .customize-toggle input[type="checkbox"],
+.inv-check-row input[type="checkbox"] {
+  width: 1rem !important;
+  height: 1rem !important;
+  min-width: 1rem !important;
+  max-width: 1rem !important;
+  flex: 0 0 1rem !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  accent-color: var(--inv-green, #2b9348);
+  -webkit-appearance: checkbox;
+  appearance: checkbox;
 }
 
 .form-group input:disabled,
@@ -1519,6 +1572,7 @@ body.invoices-app [hidden] {
   gap: 0.45rem;
   align-items: center;
   font-size: 0.85rem;
+  cursor: pointer;
 }
 
 .pkg-addons-heading {

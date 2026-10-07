@@ -1,12 +1,221 @@
-import * as shared from './shared.js?v=1.5.91';
+import * as shared from './shared.js?v=1.5.104';
 import {
     createAutocomplete,
     getItemMatches,
     buildSupplierMatchList,
 } from './autocomplete.js?v=1.5.42';
-import { initAdminBatch } from './admin-batch.js?v=6';
+import { initAdminBatch, clearBatchDuplicateWarning } from './admin-batch.js?v=23';
 
 const ADMIN_STORE_BRANCHES = ['SM North', 'Podium', 'Mall of Asia'];
+
+const EXPENSE_COLUMNS_STORAGE_KEY = 'expenseAdmin_visibleColumns_v1';
+
+/** @type {{ id: string, label: string, sort?: string, defaultOn: boolean, alwaysOn?: boolean }[]} */
+const EXPENSE_COLUMN_DEFS = [
+    { id: 'select', label: '', defaultOn: true, alwaysOn: true },
+    { id: 'date', label: 'Date', sort: 'date', defaultOn: true },
+    { id: 'createdAt', label: 'Date Added', sort: 'createdAt', defaultOn: false },
+    { id: 'supplier', label: 'Supplier', sort: 'supplier', defaultOn: true },
+    { id: 'items', label: 'Items', defaultOn: true },
+    { id: 'category', label: 'Category', sort: 'category', defaultOn: true },
+    { id: 'amount', label: 'Amount', sort: 'amount', defaultOn: true },
+    { id: 'allocation', label: 'Allocation', sort: 'allocation', defaultOn: true },
+    { id: 'branchevent', label: 'Branch', sort: 'branchevent', defaultOn: true },
+    { id: 'paidby', label: 'Paid By', sort: 'paidby', defaultOn: true },
+    { id: 'recordedby', label: 'Recorded By', sort: 'recordedby', defaultOn: true },
+    { id: 'vat', label: 'VAT', sort: 'vat', defaultOn: true }
+];
+
+function getDefaultExpenseColumnVisibility() {
+    /** @type {Record<string, boolean>} */
+    const map = {};
+    for (const col of EXPENSE_COLUMN_DEFS) {
+        map[col.id] = col.alwaysOn ? true : col.defaultOn !== false;
+    }
+    return map;
+}
+
+function loadExpenseColumnVisibility() {
+    const defaults = getDefaultExpenseColumnVisibility();
+    try {
+        const raw = localStorage.getItem(EXPENSE_COLUMNS_STORAGE_KEY);
+        if (!raw) return defaults;
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object') return defaults;
+        for (const col of EXPENSE_COLUMN_DEFS) {
+            if (col.alwaysOn) {
+                defaults[col.id] = true;
+            } else if (typeof parsed[col.id] === 'boolean') {
+                defaults[col.id] = parsed[col.id];
+            }
+        }
+        return defaults;
+    } catch {
+        return defaults;
+    }
+}
+
+/** @type {Record<string, boolean>} */
+let expenseColumnVisibility = loadExpenseColumnVisibility();
+
+function saveExpenseColumnVisibility() {
+    try {
+        const toStore = { ...expenseColumnVisibility };
+        delete toStore.select;
+        localStorage.setItem(EXPENSE_COLUMNS_STORAGE_KEY, JSON.stringify(toStore));
+    } catch {
+        /* ignore */
+    }
+}
+
+function getVisibleExpenseColumns() {
+    return EXPENSE_COLUMN_DEFS.filter((col) => expenseColumnVisibility[col.id] !== false);
+}
+
+function expenseTableColspan() {
+    return Math.max(1, getVisibleExpenseColumns().length);
+}
+
+function formatDateAddedCell(expense) {
+    if (!expense?.createdAt) return '—';
+    const d = new Date(expense.createdAt);
+    if (Number.isNaN(d.getTime())) return '—';
+    return shared.formatDate(expense.createdAt);
+}
+
+function renderExpenseTableHeaders() {
+    const tr = document.getElementById('expenseTableHeaders');
+    if (!tr) return;
+    const cols = getVisibleExpenseColumns();
+    tr.innerHTML = cols
+        .map((col) => {
+            if (col.id === 'select') {
+                return `<th class="col-select"><input type="checkbox" id="selectAllExpenses" onchange="toggleSelectAll()"></th>`;
+            }
+            if (col.sort) {
+                return `<th class="col-${escapeHtml(col.id)}" data-sort="${escapeHtml(col.sort)}">${escapeHtml(col.label)}</th>`;
+            }
+            return `<th class="col-${escapeHtml(col.id)}">${escapeHtml(col.label)}</th>`;
+        })
+        .join('');
+
+    // Re-apply sort indicator
+    if (currentSort?.column) {
+        const th = [...tr.querySelectorAll('th[data-sort]')].find(
+            (el) => el.getAttribute('data-sort') === currentSort.column
+        );
+        if (th) {
+            th.classList.add(currentSort.direction === 'asc' ? 'sorted-asc' : 'sorted-desc');
+        }
+    }
+    setupTableSorting();
+}
+
+function buildExpenseRowHtml(expense, { useFormattedDate = true } = {}) {
+    const itemsText = expense.items ? expense.items.map((i) => i.name).join(', ') : 'No items';
+    const itemsShort = itemsText.length > 50 ? itemsText.substring(0, 50) + '...' : itemsText;
+    const vatLbl = shared.formatExpenseVatColumnLabel(expense);
+    const vatText = vatLbl.title
+        ? `<span title="${escapeHtml(vatLbl.title)}">${escapeHtml(vatLbl.text)}</span>`
+        : escapeHtml(vatLbl.text);
+    const supplierCell = `<strong>${escapeHtml((expense.supplierName || '').trim() || 'No supplier')}</strong>`;
+    const paidByCell = escapeHtml(expense.paidBy || '—');
+    const dateCell = useFormattedDate
+        ? escapeHtml(formatDate(expense.date))
+        : escapeHtml(expense.date || 'No date');
+
+    /** @type {Record<string, string>} */
+    const cells = {
+        select: `<td class="col-select"><input type="checkbox" onchange="updateBulkActionBar()" onclick="handleCheckboxClick(event)"></td>`,
+        date: `<td class="col-date">${dateCell}</td>`,
+        createdAt: `<td class="col-createdAt">${escapeHtml(formatDateAddedCell(expense))}</td>`,
+        supplier: `<td class="col-supplier">${supplierCell}</td>`,
+        items: `<td class="col-items" title="${escapeHtml(itemsText)}">${escapeHtml(itemsShort)}</td>`,
+        category: `<td class="col-category">${escapeHtml(expense.expenseCategory || shared.DEFAULT_EXPENSE_CATEGORY)}</td>`,
+        amount: `<td class="col-amount">₱${(expense.totalAmount || 0).toLocaleString()}</td>`,
+        allocation: `<td class="col-allocation">${escapeHtml(expense.allocation || '—')}</td>`,
+        branchevent: `<td class="col-branchevent" title="${escapeHtml(shared.formatExpenseBranchOrEvent(expense) || '')}">${escapeHtml(shared.formatExpenseBranchOrEvent(expense) || '—')}</td>`,
+        paidby: `<td class="col-paidby">${paidByCell}</td>`,
+        recordedby: `<td class="col-recordedby">${formatRecordedByCell(expense)}</td>`,
+        vat: `<td class="col-vat">${vatText}</td>`
+    };
+
+    return getVisibleExpenseColumns()
+        .map((col) => cells[col.id] || '<td>—</td>')
+        .join('');
+}
+
+function refreshExpenseTableAfterColumnChange() {
+    renderExpenseTableHeaders();
+    if (Array.isArray(totalFilteredExpenses) && totalFilteredExpenses.length >= 0) {
+        // Prefer filtered path when filters are active
+        const dateRangeInput = document.getElementById('dateRange');
+        if (dateRangeInput?._flatpickr?.selectedDates?.length === 2) {
+            filterAndRender();
+            return;
+        }
+    }
+    const expenses = shared.getExpenses();
+    renderFilteredTable(expenses);
+}
+
+function wireExpenseColumnsPopover() {
+    const btn = document.getElementById('expenseColumnsBtn');
+    const pop = document.getElementById('expenseColumnsPopover');
+    if (!btn || !pop || btn.dataset.wired === '1') return;
+    btn.dataset.wired = '1';
+
+    const renderPopover = () => {
+        const options = EXPENSE_COLUMN_DEFS.filter((c) => !c.alwaysOn)
+            .map((col) => {
+                const checked = expenseColumnVisibility[col.id] !== false ? 'checked' : '';
+                return `<label class="admin-columns-option"><input type="checkbox" data-col-id="${escapeHtml(col.id)}" ${checked} /> ${escapeHtml(col.label)}</label>`;
+            })
+            .join('');
+        pop.innerHTML = `<p class="admin-columns-popover-title">Show columns</p>${options}`;
+        pop.querySelectorAll('input[data-col-id]').forEach((input) => {
+            input.addEventListener('change', () => {
+                const id = input.getAttribute('data-col-id');
+                if (!id) return;
+                expenseColumnVisibility[id] = input.checked;
+                // Keep at least Date + Supplier visible for usability
+                const toggles = EXPENSE_COLUMN_DEFS.filter((c) => !c.alwaysOn);
+                const anyOn = toggles.some((c) => expenseColumnVisibility[c.id] !== false);
+                if (!anyOn) {
+                    expenseColumnVisibility.date = true;
+                    input.checked = id === 'date';
+                    if (id !== 'date') expenseColumnVisibility[id] = false;
+                }
+                saveExpenseColumnVisibility();
+                refreshExpenseTableAfterColumnChange();
+            });
+        });
+    };
+
+    const close = () => {
+        pop.hidden = true;
+        btn.setAttribute('aria-expanded', 'false');
+    };
+
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const opening = pop.hidden;
+        if (opening) {
+            renderPopover();
+            pop.hidden = false;
+            btn.setAttribute('aria-expanded', 'true');
+        } else {
+            close();
+        }
+    });
+
+    document.addEventListener('click', (e) => {
+        if (pop.hidden) return;
+        if (e.target.closest('#expenseColumnsWrap') || e.target.closest('.admin-columns-wrap')) return;
+        if (pop.contains(/** @type {Node} */ (e.target)) || btn.contains(/** @type {Node} */ (e.target))) return;
+        close();
+    });
+}
 
 function normalizeAdminPaidBy(value, allocation = 'Store') {
     const v = (value || '').trim();
@@ -550,10 +759,13 @@ function requestCloseAdminExpenseModal() {
         });
     };
     if (adminExpenseModalDirty) {
+        const fromBatch = typeof batchAlbumReturnHandler === 'function';
         showAdminConfirmation(
-            'Unsaved changes',
-            'You have unsaved changes. Close anyway?',
-            'Close',
+            fromBatch ? 'Leave without saving?' : 'Unsaved changes',
+            fromBatch
+                ? 'Your edits will be lost. This receipt stays a draft in the batch until you Apply and then Save all.'
+                : 'You have unsaved changes. Close anyway?',
+            fromBatch ? 'Leave' : 'Close',
             finish
         );
         return;
@@ -717,7 +929,7 @@ function showAdminLoadError(message) {
     }
     const tbody = document.getElementById('expenseTableBody');
     if (tbody) {
-        tbody.innerHTML = `<tr><td colspan="11">${message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${expenseTableColspan()}">${message}</td></tr>`;
     }
 }
 
@@ -734,7 +946,7 @@ function renderTable() {
     tbody.innerHTML = '';
 
     if (expenses.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="11">No expenses found</td></tr>';
+        tbody.innerHTML = `<tr><td colspan="${expenseTableColspan()}">No expenses found</td></tr>`;
         return;
     }
 
@@ -749,30 +961,7 @@ function renderTable() {
         const row = document.createElement('tr');
         row.className = 'data-table-clickable-row';
         row.dataset.expenseId = expense.id;
-
-        const itemsText = expense.items ? expense.items.map((i) => i.name).join(', ') : 'No items';
-        const itemsShort = itemsText.length > 50 ? itemsText.substring(0, 50) + '...' : itemsText;
-        const vatLbl = shared.formatExpenseVatColumnLabel(expense);
-        const vatText = vatLbl.title
-            ? `<span title="${escapeHtml(vatLbl.title)}">${escapeHtml(vatLbl.text)}</span>`
-            : escapeHtml(vatLbl.text);
-        const supplierCell = `<strong>${escapeHtml((expense.supplierName || '').trim() || 'No supplier')}</strong>`;
-        const paidByCell = escapeHtml(expense.paidBy || '—');
-
-        row.innerHTML = `
-            <td><input type="checkbox" onchange="updateBulkActionBar()" onclick="handleCheckboxClick(event)"></td>
-            <td>${escapeHtml(expense.date || 'No date')}</td>
-            <td>${supplierCell}</td>
-            <td title="${escapeHtml(itemsText)}">${escapeHtml(itemsShort)}</td>
-            <td>${escapeHtml(expense.expenseCategory || shared.DEFAULT_EXPENSE_CATEGORY)}</td>
-            <td>₱${(expense.totalAmount || 0).toLocaleString()}</td>
-            <td>${escapeHtml(expense.allocation || '—')}</td>
-            <td>${escapeHtml(shared.formatExpenseBranchOrEvent(expense) || '—')}</td>
-            <td>${paidByCell}</td>
-            <td>${formatRecordedByCell(expense)}</td>
-            <td>${vatText}</td>
-        `;
-
+        row.innerHTML = buildExpenseRowHtml(expense, { useFormattedDate: false });
         tbody.appendChild(row);
     });
 
@@ -927,7 +1116,10 @@ function updateSummaryCards(expenses, rangeLabel) {
         .filter((e) => shared.isCashPaidBy(e.paidBy))
         .reduce((sum, e) => sum + (e.totalAmount || 0), 0);
     const unassignedCount = list.filter((e) => !e.supplierId).length;
+    const vatTotal = list.reduce((sum, e) => sum + (Number(e.vatAmount) || 0), 0);
+    const vatReceipts = list.filter((e) => (Number(e.vatAmount) || 0) > 0).length;
     const receiptWord = list.length === 1 ? 'receipt' : 'receipts';
+    const vatReceiptWord = vatReceipts === 1 ? 'receipt' : 'receipts';
 
     let html = `
         <div class="summary-card">
@@ -944,6 +1136,11 @@ function updateSummaryCards(expenses, rangeLabel) {
             <div class="card-title">Cash</div>
             <div class="card-value">₱${cashTotal.toLocaleString()}</div>
             <div class="card-subtitle">Till / pop-up</div>
+        </div>
+        <div class="summary-card">
+            <div class="card-title">Total VAT</div>
+            <div class="card-value">₱${vatTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            <div class="card-subtitle">${vatReceipts} ${vatReceiptWord} with VAT</div>
         </div>
     `;
     if (unassignedCount > 0) {
@@ -1561,18 +1758,13 @@ function setupEventListeners() {
         });
     }
 
-    // Export CSV button
-    const exportBtn = document.getElementById('exportBtn');
-    if (exportBtn) {
-        exportBtn.addEventListener('click', () => {
-            exportExpensesToCSV();
-        });
-    }
+    // Download Excel (filtered / all)
+    wireExportExcelPopover();
 
     // Note: Date shortcuts are now handled by createDateShortcuts and setDateRangeShortcut functions
 
-    // Setup table sorting
-    setupTableSorting();
+    renderExpenseTableHeaders();
+    wireExpenseColumnsPopover();
     
     // Branch selector
     const branchSelector = document.getElementById('branchSelector');
@@ -1590,6 +1782,18 @@ function setupEventListeners() {
             console.log('Category changed, re-filtering...');
             filterAndRender();
         });
+    }
+
+    const expenseSearchInput = document.getElementById('expenseSearchInput');
+    if (expenseSearchInput && expenseSearchInput.dataset.wired !== '1') {
+        expenseSearchInput.dataset.wired = '1';
+        let searchTimer = null;
+        const runSearch = () => filterAndRender();
+        expenseSearchInput.addEventListener('input', () => {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(runSearch, 180);
+        });
+        expenseSearchInput.addEventListener('search', runSearch);
     }
     
     
@@ -1766,8 +1970,13 @@ function filterAndRender() {
     
     const selectedBranch = branchSelector ? branchSelector.value : 'all';
     const selectedCategory = categorySelector ? categorySelector.value : 'all';
+    const searchQuery = (
+        document.getElementById('expenseSearchInput')?.value || ''
+    )
+        .trim()
+        .toLowerCase();
     
-    console.log('Filter values:', { selectedBranch, selectedCategory });
+    console.log('Filter values:', { selectedBranch, selectedCategory, searchQuery });
     
     const expenses = shared.getExpenses();
     console.log('Total expenses loaded:', expenses.length);
@@ -1793,7 +2002,28 @@ function filterAndRender() {
             categoryMatch = (expense.expenseCategory || shared.DEFAULT_EXPENSE_CATEGORY) === selectedCategory;
         }
 
-        return dateMatch && branchMatch && categoryMatch;
+        let searchMatch = true;
+        if (searchQuery) {
+            const hay = [
+                expense.supplierName,
+                expense.businessName,
+                expense.invoiceNumber,
+                expense.notes,
+                expense.expenseCategory,
+                expense.allocation,
+                expense.branch,
+                expense.eventName,
+                expense.recordedBy,
+                expense.recordedByEmployeeCode,
+                shared.getRecordedByShortLabel(expense),
+                expense.totalAmount != null ? String(expense.totalAmount) : ''
+            ]
+                .map((v) => String(v || '').toLowerCase())
+                .join(' ');
+            searchMatch = hay.includes(searchQuery);
+        }
+
+        return dateMatch && branchMatch && categoryMatch && searchMatch;
     });
 
     console.log(`Filtered ${filteredExpenses.length} expenses from ${expenses.length} total`);
@@ -1845,7 +2075,7 @@ function renderWeeklyView(filteredExpenses) {
     tbody.innerHTML = '';
     
     if (weeks.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="11">No expenses found for this date range</td></tr>';
+        tbody.innerHTML = `<tr><td colspan="${expenseTableColspan()}">No expenses found for this date range</td></tr>`;
         setupPagination('expenses');
         return;
     }
@@ -1907,7 +2137,7 @@ function renderMonthlyView(filteredExpenses) {
     tbody.innerHTML = '';
     
     if (months.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="11">No expenses found for this date range</td></tr>';
+        tbody.innerHTML = `<tr><td colspan="${expenseTableColspan()}">No expenses found for this date range</td></tr>`;
         setupPagination('expenses');
         return;
     }
@@ -1964,6 +2194,7 @@ function renderFilteredTable(filteredExpenses) {
 
     const expenseTableSortColumns = new Set([
         'date',
+        'createdAt',
         'supplier',
         'category',
         'amount',
@@ -1974,7 +2205,16 @@ function renderFilteredTable(filteredExpenses) {
         'payment',
         'vat'
     ]);
-    if (!currentSort.column || !expenseTableSortColumns.has(currentSort.column)) {
+    const visibleSortKeys = new Set(
+        getVisibleExpenseColumns()
+            .map((c) => c.sort)
+            .filter(Boolean)
+    );
+    if (
+        !currentSort.column ||
+        !expenseTableSortColumns.has(currentSort.column) ||
+        !visibleSortKeys.has(currentSort.column)
+    ) {
         currentSort = { column: 'date', direction: 'desc' };
         document.querySelectorAll('#expenseTableHeaders th[data-sort]').forEach((h) => {
             h.classList.remove('sorted-asc', 'sorted-desc');
@@ -1991,6 +2231,13 @@ function renderFilteredTable(filteredExpenses) {
                 case 'date':
                     aVal = a.date || '';
                     bVal = b.date || '';
+                    break;
+                case 'createdAt':
+                    aVal = a.createdAt || '';
+                    bVal = b.createdAt || '';
+                    // Empty dates sort last
+                    if (!aVal && bVal) return 1;
+                    if (aVal && !bVal) return -1;
                     break;
                 case 'supplier':
                     aVal = (a.supplierName || '').toLowerCase();
@@ -2039,7 +2286,7 @@ function renderFilteredTable(filteredExpenses) {
     tbody.innerHTML = '';
 
     if (totalFilteredExpenses.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="11">No expenses found for this date range</td></tr>';
+        tbody.innerHTML = `<tr><td colspan="${expenseTableColspan()}">No expenses found for this date range</td></tr>`;
         setupPagination('expenses');
         return;
     }
@@ -2053,30 +2300,7 @@ function renderFilteredTable(filteredExpenses) {
         const row = document.createElement('tr');
         row.className = 'data-table-clickable-row';
         row.dataset.expenseId = expense.id;
-
-        const itemsText = expense.items ? expense.items.map((i) => i.name).join(', ') : 'No items';
-        const itemsShort = itemsText.length > 50 ? itemsText.substring(0, 50) + '...' : itemsText;
-        const vatLbl = shared.formatExpenseVatColumnLabel(expense);
-        const vatText = vatLbl.title
-            ? `<span title="${escapeHtml(vatLbl.title)}">${escapeHtml(vatLbl.text)}</span>`
-            : escapeHtml(vatLbl.text);
-        const supplierCell = `<strong>${escapeHtml((expense.supplierName || '').trim() || 'No supplier')}</strong>`;
-        const paidByCell = escapeHtml(expense.paidBy || '—');
-
-        row.innerHTML = `
-            <td><input type="checkbox" onchange="updateBulkActionBar()" onclick="handleCheckboxClick(event)"></td>
-            <td>${escapeHtml(formatDate(expense.date))}</td>
-            <td>${supplierCell}</td>
-            <td title="${escapeHtml(itemsText)}">${escapeHtml(itemsShort)}</td>
-            <td>${escapeHtml(expense.expenseCategory || shared.DEFAULT_EXPENSE_CATEGORY)}</td>
-            <td>₱${(expense.totalAmount || 0).toLocaleString()}</td>
-            <td>${escapeHtml(expense.allocation || '—')}</td>
-            <td>${escapeHtml(shared.formatExpenseBranchOrEvent(expense) || '—')}</td>
-            <td>${paidByCell}</td>
-            <td>${formatRecordedByCell(expense)}</td>
-            <td>${vatText}</td>
-        `;
-
+        row.innerHTML = buildExpenseRowHtml(expense, { useFormattedDate: true });
         tbody.appendChild(row);
     });
 
@@ -2090,11 +2314,15 @@ function updateFilteredSummary(filteredExpenses) {
 
 // Add sorting functionality
 function setupTableSorting() {
+    // Rebuild listeners after header re-render (avoid duplicates)
+    document.querySelectorAll('#expenseTableHeaders th[data-sort]').forEach((header) => {
+        header.replaceWith(header.cloneNode(true));
+    });
+
     document.querySelectorAll('#expenseTableHeaders th[data-sort]').forEach((header) => {
         header.addEventListener('click', () => {
             const column = header.dataset.sort;
 
-            // Toggle direction if same column, otherwise start with asc
             if (currentSort.column === column) {
                 currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
             } else {
@@ -2145,16 +2373,10 @@ function setupSuppliersTableSorting() {
 
 function formatDate(dateString) {
     if (!dateString) return 'No date';
-
     try {
         const date = new Date(dateString);
-        if (isNaN(date.getTime())) return dateString; // Invalid date
-
-        return date.toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-        });
+        if (isNaN(date.getTime())) return dateString;
+        return shared.formatDate(dateString);
     } catch (error) {
         return dateString;
     }
@@ -2272,13 +2494,57 @@ function refreshPagination(viewType = 'expenses') {
     }
 }
 
-// CSV Export Functions
+// CSV / Excel Export Functions
+function getActiveSearchQuery() {
+    return (document.getElementById('expenseSearchInput')?.value || '').trim().toLowerCase();
+}
+
+function expenseMatchesSearch(expense, searchQuery) {
+    if (!searchQuery) return true;
+    const hay = [
+        expense.supplierName,
+        expense.businessName,
+        expense.invoiceNumber,
+        expense.notes,
+        expense.expenseCategory,
+        expense.allocation,
+        expense.branch,
+        expense.eventName,
+        expense.recordedBy,
+        expense.recordedByEmployeeCode,
+        shared.getRecordedByShortLabel(expense),
+        expense.totalAmount != null ? String(expense.totalAmount) : ''
+    ]
+        .map((v) => String(v || '').toLowerCase())
+        .join(' ');
+    return hay.includes(searchQuery);
+}
+
+function getActiveFilterSummary() {
+    const parts = [];
+    const hasDateRange =
+        dateRangeInput?._flatpickr && dateRangeInput._flatpickr.selectedDates.length === 2;
+    parts.push(hasDateRange ? getActiveRangeLabel() : 'All time');
+
+    const branch = document.getElementById('branchSelector')?.value || 'all';
+    if (branch !== 'all') parts.push(branch);
+
+    const category = document.getElementById('categorySelector')?.value || 'all';
+    if (category !== 'all') parts.push(category);
+
+    const search = (document.getElementById('expenseSearchInput')?.value || '').trim();
+    if (search) parts.push(`“${search}”`);
+
+    return parts.join(' · ');
+}
+
 function getExpensesForCurrentFilters() {
     const allExpenses = shared.getExpenses();
     const branchSelector = document.getElementById('branchSelector');
     const categorySelector = document.getElementById('categorySelector');
     const selectedBranch = branchSelector ? branchSelector.value : 'all';
     const selectedCategory = categorySelector ? categorySelector.value : 'all';
+    const searchQuery = getActiveSearchQuery();
 
     const hasDateRange =
         dateRangeInput &&
@@ -2310,12 +2576,177 @@ function getExpensesForCurrentFilters() {
             return false;
         }
 
+        if (!expenseMatchesSearch(expense, searchQuery)) return false;
+
         return true;
     });
 }
 
+function buildExpenseExportRows(expensesList) {
+    return expensesList
+        .slice()
+        .sort((a, b) => {
+            if (!a.date) return 1;
+            if (!b.date) return -1;
+            return b.date.localeCompare(a.date);
+        })
+        .map((expense) => {
+            const itemsText = expense.items
+                ? expense.items.map((i) => `${i.name} (${i.quantity}x ₱${i.price})`).join('; ')
+                : 'No items';
+
+            return {
+                Date: expense.date || '',
+                'Supplier Name': expense.isPettyCash
+                    ? 'Petty cash voucher'
+                    : expense.supplierName || '',
+                'Business Name': expense.businessName || '',
+                TIN: expense.tin || '',
+                Address: expense.address || '',
+                'Invoice Number': expense.invoiceNumber || '',
+                Items: itemsText,
+                Category: expense.expenseCategory || shared.DEFAULT_EXPENSE_CATEGORY,
+                'Total Amount': Number(expense.totalAmount) || 0,
+                'VAT Exempt Amount': Number(expense.vatExemptAmount) || 0,
+                'VATable Sale': Number(expense.vatableSale) || 0,
+                'VAT Amount': Number(expense.vatAmount) || 0,
+                'VAT Registered': expense.isVatRegistered ? 'Yes' : 'No',
+                Branch: expense.branch || '',
+                Allocation: expense.allocation || '',
+                'Event Name': expense.eventName || '',
+                'Is Petty Cash': expense.isPettyCash ? 'Yes' : 'No',
+                'Payment Method': expense.paymentMethod || '',
+                'Paid By': expense.paidBy || '',
+                'Recorded By': shared.getRecordedByShortLabel(expense) || '',
+                'Recorded Via': expense.recordedVia || '',
+                'Recorded By Employee Code': expense.recordedByEmployeeCode || '',
+                Notes: expense.notes || '',
+                'Created At': expense.createdAt || '',
+                'Updated At': expense.updatedAt || ''
+            };
+        });
+}
+
+function buildExportFilename(mode, count) {
+    const now = new Date();
+    const dateStr = now.toISOString().split('T')[0];
+    let filename = `matchanese-expenses-${dateStr}`;
+    if (mode === 'filtered') {
+        filename += '-filtered';
+        const branchSelector = document.getElementById('branchSelector');
+        const categorySelector = document.getElementById('categorySelector');
+        if (branchSelector && branchSelector.value !== 'all') {
+            filename += `-${branchSelector.value.replace(/\s+/g, '')}`;
+        }
+        if (categorySelector && categorySelector.value !== 'all') {
+            filename += `-${categorySelector.value.replace(/\s+/g, '')}`;
+        }
+        if (
+            dateRangeInput &&
+            dateRangeInput._flatpickr &&
+            dateRangeInput._flatpickr.selectedDates.length === 2
+        ) {
+            const [start, end] = dateRangeInput._flatpickr.selectedDates;
+            filename += `-${start.toISOString().split('T')[0]}-to-${end.toISOString().split('T')[0]}`;
+        }
+    } else {
+        filename += '-all';
+    }
+    filename += `-${count}rows.xlsx`;
+    return filename;
+}
+
+function closeExportExcelPopover() {
+    const btn = document.getElementById('exportExcelBtn');
+    const pop = document.getElementById('exportExcelPopover');
+    if (pop) pop.hidden = true;
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
+function refreshExportExcelPopoverMeta() {
+    const filtered = getExpensesForCurrentFilters();
+    const allCount = shared.getExpenses().length;
+    const filteredMeta = document.getElementById('exportFilteredMeta');
+    const allMeta = document.getElementById('exportAllMeta');
+    if (filteredMeta) {
+        filteredMeta.textContent = `${filtered.length} row${filtered.length === 1 ? '' : 's'} · ${getActiveFilterSummary()}`;
+    }
+    if (allMeta) {
+        allMeta.textContent = `${allCount} row${allCount === 1 ? '' : 's'} · every expense on file`;
+    }
+}
+
+function wireExportExcelPopover() {
+    const btn = document.getElementById('exportExcelBtn');
+    const pop = document.getElementById('exportExcelPopover');
+    if (!btn || !pop) return;
+
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const open = pop.hidden;
+        if (open) {
+            refreshExportExcelPopoverMeta();
+            pop.hidden = false;
+            btn.setAttribute('aria-expanded', 'true');
+        } else {
+            closeExportExcelPopover();
+        }
+    });
+
+    pop.addEventListener('click', (e) => {
+        const opt = e.target.closest('[data-export-mode]');
+        if (!opt) return;
+        e.preventDefault();
+        const mode = opt.getAttribute('data-export-mode') === 'all' ? 'all' : 'filtered';
+        closeExportExcelPopover();
+        downloadExpensesExcel(mode);
+    });
+
+    document.addEventListener('click', (e) => {
+        if (!pop.hidden && !e.target.closest('.admin-export-wrap')) {
+            closeExportExcelPopover();
+        }
+    });
+}
+
+async function downloadExpensesExcel(mode = 'filtered') {
+    const source =
+        mode === 'all' ? shared.getExpenses().slice() : getExpensesForCurrentFilters();
+    const rows = buildExpenseExportRows(source);
+
+    if (!rows.length) {
+        shared.showToast(
+            mode === 'all'
+                ? 'No expenses to download'
+                : 'No expenses match the current filters'
+        );
+        return;
+    }
+
+    try {
+        showAdminBusyOverlay('Building Excel…');
+        const mod = await import('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm');
+        const XLSX = mod.default || mod;
+        const sheet = XLSX.utils.json_to_sheet(rows);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, sheet, 'Expenses');
+        const filename = buildExportFilename(mode, rows.length);
+        XLSX.writeFile(workbook, filename);
+        shared.showToast(
+            mode === 'all'
+                ? `Downloaded all ${rows.length} expenses`
+                : `Downloaded ${rows.length} filtered expenses`
+        );
+    } catch (err) {
+        console.error(err);
+        shared.showToast(err?.message || 'Could not build Excel file');
+    } finally {
+        hideAdminBusyOverlay();
+    }
+}
+
 function exportExpensesToCSV() {
-    // Export currently filtered expenses (selected range + branch/category). No receipt images.
+    // Legacy CSV export of currently filtered expenses (no receipt images).
     const expensesToExport = getExpensesForCurrentFilters().slice().sort((a, b) => {
         if (!a.date) return 1;
         if (!b.date) return -1;
@@ -2327,66 +2758,27 @@ function exportExpensesToCSV() {
         return;
     }
 
-    // Prepare data for CSV export (text fields only — no receipt images/URLs)
-    const csvData = expensesToExport.map(expense => {
-        const itemsText = expense.items ? expense.items.map(i => `${i.name} (${i.quantity}x ₱${i.price})`).join('; ') : 'No items';
-
-        return {
-            'Date': expense.date || '',
-            'Supplier Name': expense.isPettyCash ? 'Petty cash voucher' : expense.supplierName || '',
-            'Business Name': expense.businessName || '',
-            'TIN': expense.tin || '',
-            'Address': expense.address || '',
-            'Invoice Number': expense.invoiceNumber || '',
-            'Items': itemsText,
-            'Category': expense.expenseCategory || shared.DEFAULT_EXPENSE_CATEGORY,
-            'Total Amount': expense.totalAmount || 0,
-            'VAT Exempt Amount': expense.vatExemptAmount || 0,
-            'VATable Sale': expense.vatableSale || 0,
-            'VAT Amount': expense.vatAmount || 0,
-            'VAT Registered': expense.isVatRegistered ? 'Yes' : 'No',
-            'Branch': expense.branch || '',
-            'Allocation': expense.allocation || '',
-            'Event Name': expense.eventName || '',
-            'Is Petty Cash': expense.isPettyCash ? 'Yes' : 'No',
-            'Payment Method': expense.paymentMethod || '',
-            'Paid By': expense.paidBy || '',
-            'Recorded By': shared.getRecordedByShortLabel(expense) || '',
-            'Recorded Via': expense.recordedVia || '',
-            'Recorded By Employee Code': expense.recordedByEmployeeCode || '',
-            'Notes': expense.notes || '',
-            'Created At': expense.createdAt || '',
-            'Updated At': expense.updatedAt || ''
-        };
-    });
-
-    // Generate filename with current date and filter info
+    const csvData = buildExpenseExportRows(expensesToExport);
     const now = new Date();
     const dateStr = now.toISOString().split('T')[0];
     let filename = `matchanese-expenses-${dateStr}`;
-
-    // Add filter info to filename if filters are applied
     const branchSelector = document.getElementById('branchSelector');
     const categorySelector = document.getElementById('categorySelector');
-
     if (branchSelector && branchSelector.value !== 'all') {
         filename += `-${branchSelector.value.replace(/\s+/g, '')}`;
     }
-
     if (categorySelector && categorySelector.value !== 'all') {
         filename += `-${categorySelector.value.replace(/\s+/g, '')}`;
     }
-
-    if (dateRangeInput && dateRangeInput._flatpickr && dateRangeInput._flatpickr.selectedDates.length === 2) {
+    if (
+        dateRangeInput &&
+        dateRangeInput._flatpickr &&
+        dateRangeInput._flatpickr.selectedDates.length === 2
+    ) {
         const [start, end] = dateRangeInput._flatpickr.selectedDates;
-        const startStr = start.toISOString().split('T')[0];
-        const endStr = end.toISOString().split('T')[0];
-        filename += `-${startStr}-to-${endStr}`;
+        filename += `-${start.toISOString().split('T')[0]}-to-${end.toISOString().split('T')[0]}`;
     }
-
     filename += '.csv';
-
-    // Export the data
     shared.exportToCSV(csvData, filename);
     shared.showToast(`Exported ${expensesToExport.length} expenses to ${filename}`);
 }
@@ -3425,10 +3817,12 @@ function adminEnterSupplierVerifiedMode(supplier) {
     const mWrap = document.getElementById('adminSupplierManualWrap');
     const nameEl = document.getElementById('adminSupplierVerifiedName');
     const bizEl = document.getElementById('adminSupplierVerifiedBiz');
+    const vatEl = document.getElementById('adminSupplierVerifiedVat');
     const hSn = document.getElementById('adminHSupplierName');
     const hBn = document.getElementById('adminHBusinessName');
     const hTin = document.getElementById('adminHTin');
     const hAddr = document.getElementById('adminHAddress');
+    const hId = document.getElementById('adminHSupplierId');
     const mSn = document.getElementById('adminSupplierName');
     const mBn = document.getElementById('adminBusinessName');
     const mTin = document.getElementById('adminTin');
@@ -3436,15 +3830,36 @@ function adminEnterSupplierVerifiedMode(supplier) {
     if (!vWrap || !mWrap || !supplier) return;
     if (nameEl) nameEl.textContent = supplier.name || '';
     if (bizEl) bizEl.textContent = supplier.businessName || '';
+    if (vatEl) vatEl.textContent = supplier.isVatRegistered ? 'VAT registered' : 'Not registered';
     adminSetSupplierVerifiedDetailRows(supplier.tin, supplier.address);
     if (hSn) hSn.value = supplier.name || '';
     if (hBn) hBn.value = supplier.businessName || '';
     if (hTin) hTin.value = supplier.tin || '';
     if (hAddr) hAddr.value = supplier.address || '';
+    if (hId) hId.value = supplier.id || '';
     if (mSn) mSn.value = supplier.name || '';
     if (mBn) mBn.value = supplier.businessName || '';
     if (mTin) mTin.value = supplier.tin || '';
     if (mAd) mAd.value = supplier.address || '';
+    const iName = document.getElementById('adminInlineSupName');
+    const iBiz = document.getElementById('adminInlineSupBiz');
+    const iTin = document.getElementById('adminInlineSupTin');
+    const iAddr = document.getElementById('adminInlineSupAddr');
+    const iVat = document.getElementById('adminInlineSupVat');
+    if (iName) iName.value = supplier.name || '';
+    if (iBiz) iBiz.value = supplier.businessName || '';
+    if (iTin) iTin.value = supplier.tin || '';
+    if (iAddr) iAddr.value = supplier.address || '';
+    if (iVat) iVat.checked = !!supplier.isVatRegistered;
+    const inlineEdit = document.getElementById('adminSupplierInlineEdit');
+    const extras = document.getElementById('adminSupplierVerifiedExtras');
+    const toggleBtn = document.getElementById('adminSupplierEditToggleBtn');
+    if (inlineEdit) inlineEdit.classList.add('admin-hidden');
+    if (extras) extras.classList.remove('admin-hidden');
+    if (toggleBtn) {
+        toggleBtn.setAttribute('aria-expanded', 'false');
+        toggleBtn.textContent = 'Edit details';
+    }
     vWrap.classList.remove('admin-hidden');
     mWrap.classList.add('admin-hidden');
     applyAdminSupplierFieldNameMode(true);
@@ -3457,6 +3872,7 @@ function adminEnterSupplierVerifiedMode(supplier) {
         if (track) track.classList.add('active');
         if (shell) shell.setAttribute('aria-checked', 'true');
     }
+    if (typeof adminSyncVatSection === 'function') adminSyncVatSection();
     markAdminExpenseModalDirty();
 }
 
@@ -3478,6 +3894,8 @@ function adminLeaveSupplierVerifiedMode() {
     if (hBn) hBn.value = '';
     if (hTin) hTin.value = '';
     if (hAddr) hAddr.value = '';
+    const hId = document.getElementById('adminHSupplierId');
+    if (hId) hId.value = '';
     if (mSn) mSn.value = '';
     if (mBn) mBn.value = '';
     if (mTin) mTin.value = '';
@@ -3496,6 +3914,58 @@ function adminApplySupplierRecord(supplier) {
 function wireAdminSupplierClearButton() {
     document.getElementById('adminSupplierClearBtn')?.addEventListener('click', () => {
         adminLeaveSupplierVerifiedMode();
+    });
+}
+
+function setAdminSupplierInlineEditOpen(open) {
+    const inlineEdit = document.getElementById('adminSupplierInlineEdit');
+    const extras = document.getElementById('adminSupplierVerifiedExtras');
+    const toggleBtn = document.getElementById('adminSupplierEditToggleBtn');
+    if (!inlineEdit) return;
+    inlineEdit.classList.toggle('admin-hidden', !open);
+    if (extras) extras.classList.toggle('admin-hidden', open);
+    if (toggleBtn) {
+        toggleBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        toggleBtn.textContent = open ? 'Hide details' : 'Edit details';
+    }
+}
+
+function wireAdminSupplierInlineEdit() {
+    const toggleBtn = document.getElementById('adminSupplierEditToggleBtn');
+    const saveBtn = document.getElementById('adminInlineSupSave');
+    const cancelBtn = document.getElementById('adminInlineSupCancel');
+    if (!toggleBtn || toggleBtn.dataset.wired === '1') return;
+    toggleBtn.dataset.wired = '1';
+
+    toggleBtn.addEventListener('click', () => {
+        const inlineEdit = document.getElementById('adminSupplierInlineEdit');
+        const open = inlineEdit?.classList.contains('admin-hidden');
+        setAdminSupplierInlineEditOpen(Boolean(open));
+    });
+
+    cancelBtn?.addEventListener('click', () => {
+        const id = document.getElementById('adminHSupplierId')?.value;
+        const supplier = shared.getSuppliers().find((s) => s.id === id);
+        if (supplier) adminEnterSupplierVerifiedMode(supplier);
+        else setAdminSupplierInlineEditOpen(false);
+    });
+
+    saveBtn?.addEventListener('click', () => {
+        const id = document.getElementById('adminHSupplierId')?.value;
+        if (!id) {
+            shared.showToast('No supplier selected');
+            return;
+        }
+        const updated = saveAdminSupplierFromFormData(id, {
+            name: document.getElementById('adminInlineSupName')?.value?.trim() || '',
+            businessName: document.getElementById('adminInlineSupBiz')?.value?.trim() || '',
+            tin: document.getElementById('adminInlineSupTin')?.value?.trim() || '',
+            address: document.getElementById('adminInlineSupAddr')?.value?.trim() || '',
+            isVatRegistered: !!document.getElementById('adminInlineSupVat')?.checked
+        });
+        if (!updated) return;
+        adminEnterSupplierVerifiedMode(updated);
+        if (typeof adminUpdateVatPreview === 'function') adminUpdateVatPreview();
     });
 }
 
@@ -3593,6 +4063,44 @@ function applyAdminReceiptExtraction(parsed) {
         }
     }
 
+    const suggestedAllocation = String(parsed.suggestedAllocation || '').trim();
+    if (suggestedAllocation && shared.ALLOCATION_OPTIONS.includes(suggestedAllocation)) {
+        const allocSelect = document.getElementById('adminAllocationSelect');
+        if (allocSelect) {
+            allocSelect.value = suggestedAllocation;
+            if (typeof adminSyncAllocationBranchPaidUI === 'function') {
+                adminSyncAllocationBranchPaidUI();
+            }
+        }
+    }
+
+    const hasPrintedVat =
+        (Number(parsed.printedVat?.vatableSale) || 0) > 0 ||
+        (Number(parsed.printedVat?.vatAmount) || 0) > 0;
+    const supplierVatFromOcr =
+        typeof parsed.supplierVatRegistered === 'boolean'
+            ? parsed.supplierVatRegistered
+            : hasPrintedVat
+              ? true
+              : null;
+    if (supplierVatFromOcr === true && supplierName) {
+        const match = findAdminSupplierMatchForExtract(supplierName);
+        if (match && !match.isVatRegistered) {
+            saveAdminSupplierFromFormData(match.id, {
+                name: match.name,
+                businessName: match.businessName || '',
+                tin: match.tin || '',
+                address: match.address || '',
+                isVatRegistered: true
+            });
+            adminApplySupplierRecord(
+                shared.getSuppliers().find((s) => s.id === match.id) || match
+            );
+        }
+        const newVatCb = document.getElementById('adminNewSupplierVatRegistered');
+        if (newVatCb) newVatCb.checked = true;
+    }
+
     const items = Array.isArray(parsed.items) ? parsed.items.filter((i) => i && i.name) : [];
     const container = document.getElementById('itemsContainer');
     if (container && items.length > 0) {
@@ -3630,24 +4138,454 @@ function applyAdminReceiptExtraction(parsed) {
     }
 
     const vatExempt = Number(parsed.vatExemptAmount) || 0;
-    const hasPrintedVat =
+    const hasPrintedVatLines =
         (Number(parsed.printedVat?.vatableSale) || 0) > 0 ||
         (Number(parsed.printedVat?.vatAmount) || 0) > 0;
+    const claimable =
+        typeof parsed.inputVatClaimable === 'boolean' ? parsed.inputVatClaimable : null;
+    let forceVatOn =
+        parsed.supplierVatRegistered === true ||
+        vatExempt > 0 ||
+        hasPrintedVatLines;
+    if (claimable === false) {
+        forceVatOn = false;
+    }
     const vatExemptInput = document.getElementById('adminVatExemptAmount');
-    if (vatExemptInput && (vatExempt > 0 || hasPrintedVat)) {
-        if (vatExempt > 0) vatExemptInput.value = String(vatExempt);
-        const cb = document.getElementById('adminVatComputationEnabled');
-        const track = document.getElementById('adminVatToggleTrack');
-        const shell = document.getElementById('adminVatToggleShell');
-        if (cb) cb.checked = true;
-        if (track) track.classList.add('active');
-        if (shell) shell.setAttribute('aria-checked', 'true');
+    const cb = document.getElementById('adminVatComputationEnabled');
+    const track = document.getElementById('adminVatToggleTrack');
+    const shell = document.getElementById('adminVatToggleShell');
+    if (vatExemptInput && vatExempt > 0) {
+        vatExemptInput.value = String(vatExempt);
+    }
+    if (cb && (forceVatOn || claimable === false || supplierVatFromOcr === true)) {
+        cb.checked = Boolean(forceVatOn);
+        track?.classList.toggle('active', forceVatOn);
+        shell?.setAttribute('aria-checked', String(forceVatOn));
     }
 
     if (typeof adminSyncVatSection === 'function') adminSyncVatSection();
     if (typeof adminUpdateTotalsFromItems === 'function') adminUpdateTotalsFromItems();
     if (typeof adminUpdateVatPreview === 'function') adminUpdateVatPreview();
     markAdminExpenseModalDirty();
+    refreshAdminDuplicateBannerFromForm(undefined, { toastPossible: true });
+}
+
+/**
+ * Build a lightweight candidate from the open admin expense form for duplicate checks.
+ * @param {string} [expenseId]
+ */
+function buildAdminFormDuplicateCandidate(expenseId) {
+    const form = document.getElementById('expenseForm');
+    if (!form) return null;
+    const get = (sel) => form.querySelector(sel);
+    const totalInput = document.getElementById('adminTotalAmountInput');
+    return {
+        id: expenseId || form.closest('.admin-expense-modal-overlay')?.dataset?.expenseId || '',
+        date: get('input[name="date"]')?.value || '',
+        supplierName: document.getElementById('adminSupplierName')?.value
+            || document.getElementById('adminSupplierVerifiedName')?.textContent
+            || '',
+        tin: document.getElementById('adminTin')?.value
+            || document.getElementById('adminSupplierVerifiedTin')?.textContent
+            || '',
+        invoiceNumber: get('input[name="invoiceNumber"]')?.value || '',
+        totalAmount: totalInput ? shared.getPesoValue(totalInput) : 0
+    };
+}
+
+/**
+ * @param {{ expense: object, confidence: string, reasons: string[], fieldHits?: object }[]} matches
+ */
+function renderAdminDuplicateBanner(matches) {
+    const form = document.getElementById('expenseForm');
+    if (!form) return;
+    let banner = document.getElementById('adminExpenseDuplicateBanner');
+    if (!matches?.length) {
+        if (banner) banner.hidden = true;
+        closeAdminDupPeek();
+        return;
+    }
+    const top = matches[0];
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'adminExpenseDuplicateBanner';
+        banner.className = 'expense-duplicate-banner';
+        banner.setAttribute('role', 'status');
+        form.prepend(banner);
+    }
+    banner.hidden = false;
+    banner.classList.toggle('expense-duplicate-banner--likely', top.confidence === 'likely');
+    const shell = adminExpenseModalEl;
+    const expenseId = shell?.dataset?.expenseId || '';
+    const existsInStore = expenseId && shared.getExpenses().some((e) => e.id === expenseId);
+    const isBatchDraft = typeof batchAlbumReturnHandler === 'function' && !existsInStore;
+    banner.innerHTML = shared.formatDuplicateBannerHtml(top, {
+        discardLabel: isBatchDraft ? 'Discard' : 'Delete'
+    });
+    banner._dupMatch = top;
+    wireAdminDuplicateBanner(banner);
+}
+
+function clearAdminDuplicateNotesField(match) {
+    const ta = document.querySelector('#expenseForm textarea[name="notes"]');
+    if (!ta) return;
+    const v = String(ta.value || '').trim();
+    if (!v) return;
+    const summary = shared.formatDuplicateMatchSummary(match);
+    if (/duplicate/i.test(v) || (summary && v.includes(summary))) {
+        ta.value = '';
+        markAdminExpenseModalDirty();
+    }
+}
+
+/**
+ * Build a validated expense object from the open admin form.
+ * @param {string} expenseId id to stamp on the payload (draft or target)
+ * @param {{ existingExpense?: object|null }} [opts]
+ * @returns {{ success: boolean, expense?: object, errors?: string[] }}
+ */
+function buildAdminExpenseFromForm(expenseId, opts = {}) {
+    const form = document.getElementById('expenseForm');
+    if (!form) return { success: false, errors: ['Form not found'] };
+
+    const formData = new FormData(form);
+    const existingExpense =
+        opts.existingExpense !== undefined
+            ? opts.existingExpense
+            : shared.getExpenses().find((e) => e.id === expenseId) || null;
+    const isEditing = Boolean(existingExpense);
+
+    const items = [];
+    document.querySelectorAll('.item-row').forEach((row) => {
+        const nameInput = row.querySelector('input[name^="itemName_"]');
+        const qtyInput = row.querySelector('input[name^="itemQty_"]');
+        const priceInput = row.querySelector('input[name^="itemPrice_"]');
+        const name = (nameInput?.value || '').trim();
+        const qty = parseFloat(qtyInput?.value) || 1;
+        const price = parseFloat(priceInput?.value) || 0;
+        if (name) {
+            items.push({
+                name,
+                quantity: qty,
+                price,
+                total: shared.calculateItemTotal(qty, price)
+            });
+        }
+    });
+
+    const totalInputEl = document.getElementById('adminTotalAmountInput');
+    const totalAmount = totalInputEl ? shared.getPesoValue(totalInputEl) : 0;
+    const allocation = (formData.get('allocation') || 'Store').toString();
+    const isPettyCash = Boolean(document.getElementById('adminPettyCash')?.checked);
+    let supplierNameRaw = (formData.get('supplierName') || '').toString();
+    const resolvedSupplier = isPettyCash
+        ? null
+        : shared.getSuppliers().find(
+              (s) => (s.name || '').toLowerCase() === supplierNameRaw.trim().toLowerCase()
+          );
+
+    const { isVatRegistered: supplierVatIntent } = adminResolveSupplierVatIntent();
+    const vatSectionEl = document.getElementById('adminVatSection');
+    const vatHidden = vatSectionEl?.classList.contains('admin-hidden');
+    let vatExemptAmount = isPettyCash
+        ? 0
+        : parseFloat(document.getElementById('adminVatExemptAmount')?.value) || 0;
+    let vatComputationEnabled = isPettyCash
+        ? false
+        : document.getElementById('adminVatComputationEnabled')?.checked === true;
+    if (!isPettyCash && vatHidden && resolvedSupplier && !resolvedSupplier.isVatRegistered) {
+        vatComputationEnabled = false;
+        vatExemptAmount = 0;
+    }
+
+    const expensePayload = {
+        id: expenseId,
+        date: formData.get('date'),
+        allocation,
+        branch: allocation === 'Store' ? formData.get('branch') : null,
+        eventName: shared.isEventAllocation(allocation)
+            ? String(formData.get('eventName') || '').trim()
+            : null,
+        isPettyCash,
+        supplierName: supplierNameRaw.trim(),
+        ...(isPettyCash || !resolvedSupplier ? {} : { supplierId: resolvedSupplier.id }),
+        businessName: isPettyCash ? '' : formData.get('businessName'),
+        tin: isPettyCash ? '' : formData.get('tin'),
+        address: isPettyCash ? '' : formData.get('address'),
+        invoiceNumber: formData.get('invoiceNumber'),
+        expenseCategory:
+            formData.get('expenseCategory') ||
+            existingExpense?.expenseCategory ||
+            shared.DEFAULT_EXPENSE_CATEGORY,
+        items,
+        totalAmount,
+        vatExemptAmount,
+        vatComputationEnabled,
+        isVatRegistered: isPettyCash ? false : supplierVatIntent,
+        paidBy: shared.allocationUsesPaidBy(allocation)
+            ? normalizeAdminPaidBy(formData.get('paidBy'), allocation)
+            : 'Company',
+        notes: formData.get('notes'),
+        receiptImage: (() => {
+            if (window.adminReceiptRemove) return null;
+            if (adminPendingReceiptUrl) return adminPendingReceiptUrl;
+            return existingExpense?.receiptImage || null;
+        })()
+    };
+
+    const result = shared.createExpenseObject(expensePayload, {
+        existingExpense: isEditing ? existingExpense : null,
+        isEditing,
+        calculateTotalFromItems: false,
+        autoCalculateVAT: true,
+        validate: true,
+        recorderContext: isEditing ? null : 'admin'
+    });
+
+    if (!result.success || !result.expense) return result;
+
+    const expense = result.expense;
+    if (existingExpense?.paymentMethod) {
+        expense.paymentMethod = existingExpense.paymentMethod;
+    }
+    if (!isEditing) {
+        expense.createdAt = new Date().toISOString();
+    } else if (existingExpense?.createdAt) {
+        expense.createdAt = existingExpense.createdAt;
+    }
+    if (isPettyCash) expense.supplierId = null;
+    return { success: true, expense };
+}
+
+function wireAdminDuplicateBanner(banner) {
+    if (!banner) return;
+    banner.onclick = async (e) => {
+        const previewBtn = e.target.closest('[data-dup-preview]');
+        const keepBtn = e.target.closest('[data-dup-keep]');
+        const replaceBtn = e.target.closest('[data-dup-replace]');
+        const discardBtn = e.target.closest('[data-dup-discard]');
+        if (previewBtn) {
+            e.preventDefault();
+            const id = previewBtn.getAttribute('data-dup-preview');
+            openAdminDupPeek(id, banner._dupMatch);
+            return;
+        }
+        if (keepBtn) {
+            e.preventDefault();
+            const matchId = keepBtn.getAttribute('data-dup-keep') || banner._dupMatch?.expense?.id;
+            const shell = adminExpenseModalEl;
+            const expenseId = shell?.dataset?.expenseId || '';
+            const candidate = buildAdminFormDuplicateCandidate(expenseId) || { id: expenseId };
+            shared.dismissDuplicatePair(candidate, matchId);
+            clearAdminDuplicateNotesField(banner._dupMatch);
+            if (expenseId) clearBatchDuplicateWarning(expenseId);
+            closeAdminDupPeek();
+            renderAdminDuplicateBanner([]);
+            shared.showToast('Keeping both — warning cleared');
+            return;
+        }
+        if (replaceBtn) {
+            e.preventDefault();
+            const matchId =
+                replaceBtn.getAttribute('data-dup-replace') || banner._dupMatch?.expense?.id;
+            await replaceExistingExpenseWithCurrentDraft(matchId);
+            return;
+        }
+        if (discardBtn) {
+            e.preventDefault();
+            const expenseId = adminExpenseModalEl?.dataset?.expenseId;
+            if (expenseId && typeof window.deleteExpenseFromDetail === 'function') {
+                window.deleteExpenseFromDetail(expenseId);
+            }
+        }
+    };
+}
+
+/**
+ * Overwrite the matched existing expense with this draft's details + receipt, then drop the draft.
+ * @param {string} matchId
+ */
+async function replaceExistingExpenseWithCurrentDraft(matchId) {
+    if (!matchId) return;
+    const existing = shared.getExpenses().find((e) => e.id === matchId);
+    if (!existing) {
+        shared.showToast('Could not find that expense');
+        return;
+    }
+
+    const ok = await confirmAdminAsync(
+        'Use this instead?',
+        'Overwrite the existing expense with this receipt and details. The other record stays the same id.',
+        'Use this'
+    );
+    if (!ok) return;
+
+    const draftId = adminExpenseModalEl?.dataset?.expenseId || '';
+    showAdminBusyOverlay('Updating expense…');
+    try {
+        let receiptSrc = null;
+        if (!window.adminReceiptRemove) {
+            receiptSrc = adminPendingReceiptUrl || null;
+            if (!receiptSrc) {
+                const preview = document.querySelector('#adminReceiptPanelMount img');
+                if (preview?.src?.startsWith('data:')) receiptSrc = preview.src;
+            }
+        }
+
+        let receiptUrl = existing.receiptImage || null;
+        if (receiptSrc && String(receiptSrc).startsWith('data:')) {
+            const uploaded = await shared.uploadReceiptImageToStorage(matchId, receiptSrc);
+            if (uploaded) receiptUrl = uploaded;
+            else receiptUrl = receiptSrc;
+        } else if (receiptSrc) {
+            receiptUrl = receiptSrc;
+        } else if (window.adminReceiptRemove) {
+            receiptUrl = null;
+        }
+
+        adminPendingReceiptUrl = receiptUrl;
+        const built = buildAdminExpenseFromForm(matchId, { existingExpense: existing });
+        if (!built.success || !built.expense) {
+            shared.showToast((built.errors && built.errors.join(', ')) || 'Could not update expense');
+            return;
+        }
+        const expense = built.expense;
+        expense.id = matchId;
+        expense.receiptImage = receiptUrl;
+        if (receiptUrl) expense.hasReceiptImage = true;
+        if (existing.createdAt) expense.createdAt = existing.createdAt;
+
+        shared.updateExpense(matchId, expense);
+        shared.dismissDuplicatePair({ id: draftId }, matchId);
+        if (draftId) clearBatchDuplicateWarning(draftId);
+        closeAdminDupPeek();
+        renderAdminDuplicateBanner([]);
+        adminExpenseModalDirty = false;
+        shared.showToast('Replaced with this version');
+        const returnedToBatch = finishAdminExpenseModalClose({
+            deleted: true,
+            expenseId: draftId,
+            replacedId: matchId
+        });
+        if (!returnedToBatch) refreshAdminTables();
+        shared.flushPendingSync().catch((err) => {
+            console.warn('Sync after duplicate replace:', err);
+        });
+    } catch (err) {
+        console.error(err);
+        shared.showToast(err?.message || 'Could not replace expense');
+    } finally {
+        hideAdminBusyOverlay();
+    }
+}
+
+function closeAdminDupPeek() {
+    const peek = adminExpenseModalEl?.querySelector('.admin-dup-peek');
+    if (peek) peek.remove();
+}
+
+/**
+ * In-modal preview of the matched existing expense (does not leave the draft editor).
+ * @param {string} matchId
+ * @param {{ expense?: object } | null} [match]
+ */
+async function openAdminDupPeek(matchId, match) {
+    const shell = adminExpenseModalEl?.querySelector('.admin-expense-modal-shell');
+    if (!shell || !matchId) return;
+
+    let expense = match?.expense;
+    if (!expense || expense.id !== matchId) {
+        expense = shared.getExpenses().find((e) => e.id === matchId) || null;
+    }
+    if (!expense) {
+        shared.showToast('Could not find that expense');
+        return;
+    }
+
+    let peek = shell.querySelector('.admin-dup-peek');
+    if (!peek) {
+        peek = document.createElement('aside');
+        peek.className = 'admin-dup-peek';
+        peek.setAttribute('aria-label', 'Similar expense preview');
+        shell.appendChild(peek);
+    }
+
+    const amt = Number(expense.totalAmount) || 0;
+    let dateLabel = expense.date || '—';
+    try {
+        dateLabel = shared.formatDateDisplay(expense.date, false) || expense.date;
+    } catch (_) {
+        /* keep */
+    }
+    const inv = expense.invoiceNumber ? escapeHtml(expense.invoiceNumber) : '—';
+    const supplier = escapeHtml(expense.supplierName || '—');
+    const tin = escapeHtml(expense.tin || '—');
+
+    peek.innerHTML = `
+        <div class="admin-dup-peek-head">
+            <div>
+                <div class="admin-dup-peek-kicker">Similar expense</div>
+                <div class="admin-dup-peek-title">${supplier}</div>
+            </div>
+            <button type="button" class="admin-modal-icon-btn" data-dup-peek-close aria-label="Close preview">&times;</button>
+        </div>
+        <div class="admin-dup-peek-receipt" data-dup-peek-receipt>
+            <p class="muted">Loading receipt…</p>
+        </div>
+        <dl class="admin-dup-peek-meta">
+            <div><dt>Date</dt><dd>${escapeHtml(dateLabel)}</dd></div>
+            <div><dt>Amount</dt><dd>₱${amt.toLocaleString()}</dd></div>
+            <div><dt>Invoice</dt><dd>${inv}</dd></div>
+            <div><dt>TIN</dt><dd>${tin}</dd></div>
+        </dl>
+    `;
+
+    peek.querySelector('[data-dup-peek-close]')?.addEventListener('click', () => closeAdminDupPeek());
+
+    const receiptMount = peek.querySelector('[data-dup-peek-receipt]');
+    const showReceipt = (url) => {
+        if (!receiptMount) return;
+        if (!url) {
+            receiptMount.innerHTML = '<p class="muted">No receipt image</p>';
+            return;
+        }
+        receiptMount.innerHTML = `<img src="${url}" alt="Similar receipt" class="admin-dup-peek-img"/>`;
+        receiptMount.querySelector('img')?.addEventListener('error', () => {
+            receiptMount.innerHTML = '<p class="muted">Failed to load receipt</p>';
+        });
+    };
+
+    if (expense.receiptImage && String(expense.receiptImage).startsWith('data:')) {
+        showReceipt(expense.receiptImage);
+    } else if (expense.receiptImage && /^https?:/i.test(expense.receiptImage)) {
+        showReceipt(expense.receiptImage);
+    } else {
+        try {
+            const url =
+                (await shared.fetchReceiptImageFromFirebase?.(matchId)) ||
+                expense.receiptImage ||
+                '';
+            showReceipt(url);
+        } catch (_) {
+            showReceipt(expense.receiptImage || '');
+        }
+    }
+}
+
+function refreshAdminDuplicateBannerFromForm(expenseId, { toastPossible = false } = {}) {
+    const candidate = buildAdminFormDuplicateCandidate(expenseId);
+    if (!candidate) {
+        renderAdminDuplicateBanner([]);
+        return [];
+    }
+    const matches = shared.findPossibleDuplicateExpenses(candidate, {
+        excludeIds: candidate.id ? [candidate.id] : []
+    });
+    renderAdminDuplicateBanner(matches);
+    if (toastPossible && matches.length && matches[0].confidence === 'possible') {
+        shared.showToast('Possible duplicate found — review before saving');
+    }
+    return matches;
 }
 
 function initAdminReceiptPanel(expense, isEditing, expenseId) {
@@ -3813,20 +4751,40 @@ function initAdminReceiptPanel(expense, isEditing, expenseId) {
         if (!imageDataUrl || !String(imageDataUrl).startsWith('data:image/')) return;
         setExtracting(true);
         setExtractStatus('');
+        let activeUrl = imageDataUrl;
         try {
             const parsed = await shared.extractExpenseReceiptFromImage(imageDataUrl);
             if (window.adminReceiptImageForAi !== imageDataUrl) return;
+            const rotated = await shared.applySuggestedReceiptRotation(imageDataUrl, parsed);
+            if (window.adminReceiptImageForAi !== imageDataUrl) return;
+            if (rotated && rotated !== imageDataUrl) {
+                activeUrl = rotated;
+                window.adminReceiptImageForAi = rotated;
+                showPreview(rotated, true);
+                shared
+                    .uploadReceiptImageToStorage(expenseId, rotated)
+                    .then((url) => {
+                        if (url && window.adminReceiptImageForAi === rotated) {
+                            showPreview(url, true);
+                        }
+                    })
+                    .catch(() => {});
+            }
             applyAdminReceiptExtraction(parsed);
             setExtractStatus('Details filled — review before saving.', 'success');
             shared.showToast('Receipt details filled');
         } catch (error) {
-            if (window.adminReceiptImageForAi !== imageDataUrl) return;
+            if (window.adminReceiptImageForAi !== activeUrl && window.adminReceiptImageForAi !== imageDataUrl) {
+                return;
+            }
             console.error('Admin receipt extract failed:', error);
             const msg = error?.message || 'Could not extract receipt details';
             setExtractStatus(msg, 'error');
             shared.showToast(msg);
         } finally {
-            if (window.adminReceiptImageForAi === imageDataUrl) setExtracting(false);
+            if (window.adminReceiptImageForAi === activeUrl) {
+                setExtracting(false);
+            }
         }
     };
 
@@ -4068,15 +5026,8 @@ function adminSyncPettyCashUI() {
     adminSyncVatSection();
 }
 
-/** Show/hide VAT fields (non–petty cash); hide when supplier is not VAT-registered (mobile parity). */
-function adminSyncVatSection() {
-    const section = document.getElementById('adminVatSection');
-    if (!section) return;
-    const petty = Boolean(document.getElementById('adminPettyCash')?.checked);
-    if (petty) {
-        section.classList.add('admin-hidden');
-        return;
-    }
+/** Resolve whether the open admin form intends VAT for this expense's supplier. */
+function adminResolveSupplierVatIntent() {
     const name = (
         document.getElementById('adminHSupplierName')?.value ||
         document.getElementById('adminSupplierName')?.value ||
@@ -4085,10 +5036,34 @@ function adminSyncVatSection() {
     const sup = name
         ? shared.getSuppliers().find((s) => s.name.toLowerCase() === name.toLowerCase())
         : null;
-    if (sup && !sup.isVatRegistered) {
+    if (sup) {
+        return { supplier: sup, isVatRegistered: Boolean(sup.isVatRegistered), isNew: false };
+    }
+    const newCb = document.getElementById('adminNewSupplierVatRegistered');
+    const checked = Boolean(newCb?.checked);
+    return { supplier: null, isVatRegistered: checked, isNew: true };
+}
+
+/** Show/hide VAT fields (non–petty cash); hide when known supplier is not VAT-registered. */
+function adminSyncVatSection() {
+    const section = document.getElementById('adminVatSection');
+    if (!section) return;
+    const petty = Boolean(document.getElementById('adminPettyCash')?.checked);
+    if (petty) {
         section.classList.add('admin-hidden');
         return;
     }
+    const { supplier, isVatRegistered, isNew } = adminResolveSupplierVatIntent();
+    // Known non-VAT supplier: hide section. New supplier or VAT supplier: show.
+    if (supplier && !isVatRegistered) {
+        section.classList.add('admin-hidden');
+        return;
+    }
+    if (!supplier && !isNew && !isVatRegistered) {
+        section.classList.add('admin-hidden');
+        return;
+    }
+    // New supplier with no VAT intent yet: still show section so user can toggle/check
     section.classList.remove('admin-hidden');
     adminUpdateVatPreview();
 }
@@ -4125,15 +5100,7 @@ function adminUpdateVatPreview() {
     const totalInput = document.getElementById('adminTotalAmountInput');
     const total = totalInput ? shared.getPesoValue(totalInput) : 0;
     const exempt = parseFloat(document.getElementById('adminVatExemptAmount')?.value) || 0;
-
-    const name = (
-        document.getElementById('adminHSupplierName')?.value ||
-        document.getElementById('adminSupplierName')?.value ||
-        ''
-    ).trim();
-    const sup = name
-        ? shared.getSuppliers().find((s) => s.name.toLowerCase() === name.toLowerCase())
-        : null;
+    const { isVatRegistered } = adminResolveSupplierVatIntent();
 
     const setDash = () => {
         if (totalEl) totalEl.textContent = '—';
@@ -4157,11 +5124,12 @@ function adminUpdateVatPreview() {
     }
     panel?.classList.remove('admin-hidden');
 
-    if (!sup?.isVatRegistered) {
+    if (!isVatRegistered) {
         panel?.classList.add('admin-hidden');
         if (offNote) {
             offNote.classList.remove('admin-hidden');
-            offNote.textContent = 'Select a VAT-registered supplier to see the breakdown.';
+            offNote.textContent =
+                'Mark the supplier as VAT-registered (or pick a VAT supplier) to see the breakdown.';
         }
         return;
     }
@@ -4285,7 +5253,16 @@ function showExpenseModal(expense, isNew = false) {
     const matchedSupplierForModal = shared.getSuppliers().find(
         (s) => (s.name || '').toLowerCase() === (expense.supplierName || '').toLowerCase()
     );
-    const modalTitle = fromBatch ? 'Edit expense' : isNew ? 'Add New Expense' : 'Expense Details';
+    const expenseAlreadySaved = Boolean(
+        expense?.id && shared.getExpenses().some((e) => e.id === expense.id)
+    );
+    const modalTitle = fromBatch
+        ? expenseAlreadySaved
+            ? 'Edit saved expense'
+            : 'Review draft'
+        : isNew
+          ? 'Add New Expense'
+          : 'Expense Details';
 
     const shell = document.createElement('div');
     shell.className = 'admin-expense-modal-overlay';
@@ -4301,11 +5278,18 @@ function showExpenseModal(expense, isNew = false) {
             </div>
             <div class="admin-expense-modal-main">
                 <div class="admin-expense-modal-header">
-                    <h2 class="admin-expense-modal-title">${escapeHtml(modalTitle)}</h2>
+                    <div class="admin-expense-modal-title-block">
+                        <h2 class="admin-expense-modal-title">${escapeHtml(modalTitle)}</h2>
+                    </div>
                     <div class="admin-expense-modal-actions">
                         ${
                             fromBatch
-                                ? `<button type="button" class="action-btn secondary admin-batch-back-btn" data-batch-back>← Back</button>`
+                                ? `<button type="button" class="action-btn primary admin-batch-header-save" data-batch-header-save>${
+                                      expenseAlreadySaved ? 'Save &amp; back' : 'Apply to draft'
+                                  }</button>
+                        <button type="button" class="admin-modal-icon-btn admin-batch-back-btn" data-batch-back title="Back" aria-label="Back to batch">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+                        </button>`
                                 : ''
                         }
                         ${
@@ -4343,6 +5327,12 @@ function showExpenseModal(expense, isNew = false) {
 
     shell.querySelector('[data-close-exp-modal]')?.addEventListener('click', requestCloseAdminExpenseModal);
     shell.querySelector('[data-batch-back]')?.addEventListener('click', requestCloseAdminExpenseModal);
+    shell.querySelector('[data-batch-header-save]')?.addEventListener('click', () => {
+        const form = document.getElementById('expenseForm');
+        if (!form) return;
+        if (typeof form.requestSubmit === 'function') form.requestSubmit();
+        else form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+    });
     shell.addEventListener('click', (e) => {
         if (e.target === shell) requestCloseAdminExpenseModal();
     });
@@ -4363,6 +5353,7 @@ function showExpenseModal(expense, isNew = false) {
     if (isEditing && modalBody) {
         wireAdminExpenseAutocompletes(modalBody);
         wireAdminSupplierClearButton();
+        wireAdminSupplierInlineEdit();
         applyAdminSupplierFieldNameMode(Boolean(matchedSupplierForModal));
         const preferredEventName = expense.eventName || '';
         shared.loadActivePopupEvents().then(() => {
@@ -4377,7 +5368,12 @@ function showExpenseModal(expense, isNew = false) {
         document.getElementById('adminSupplierName')?.addEventListener('blur', () => adminSyncVatSection());
         document.getElementById('adminVatExemptAmount')?.addEventListener('input', () => adminUpdateVatPreview());
         document.getElementById('adminVatExemptAmount')?.addEventListener('change', () => adminUpdateVatPreview());
+        document.getElementById('adminNewSupplierVatRegistered')?.addEventListener('change', () => {
+            adminSyncVatSection();
+            adminUpdateVatPreview();
+        });
         adminUpdateVatPreview();
+        refreshAdminDuplicateBannerFromForm(expense.id);
     }
 }
 
@@ -4393,7 +5389,7 @@ function generateExpenseForm(expense, isEditing) {
         if (!dateStr) return '—';
         const date = new Date(dateStr);
         if (isNaN(date.getTime())) return escapeHtml(String(dateStr));
-        return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+        return escapeHtml(shared.formatDate(dateStr));
     };
 
     const fmtMoney = (n) =>
@@ -4533,7 +5529,10 @@ function generateExpenseForm(expense, isEditing) {
                                 <strong id="adminSupplierVerifiedName">${supplierVerifiedInitially ? escapeHtml(matchedSupplier.name) : ''}</strong>
                                 ${ADMIN_SUPPLIER_SAVED_CHECK_SVG}
                             </div>
-                            <button type="button" class="admin-supplier-clear-btn" id="adminSupplierClearBtn" aria-label="Change supplier">&times;</button>
+                            <div class="admin-supplier-verified-actions">
+                                <button type="button" class="action-btn secondary admin-supplier-edit-toggle" id="adminSupplierEditToggleBtn" aria-expanded="false">Edit details</button>
+                                <button type="button" class="admin-supplier-clear-btn" id="adminSupplierClearBtn" aria-label="Change supplier">&times;</button>
+                            </div>
                         </div>
                         <div id="adminSupplierVerifiedExtras">
                         <div class="admin-supplier-business-line">
@@ -4548,13 +5547,54 @@ function generateExpenseForm(expense, isEditing) {
                                 <dt>Address</dt>
                                 <dd id="adminSupplierVerifiedAddr">${supplierVerifiedInitially && (matchedSupplier.address || '').trim() ? escapeHtml(matchedSupplier.address) : ''}</dd>
                             </div>
+                            <div id="adminSupplierVerifiedVatRow" class="admin-supplier-detail-row">
+                                <dt>VAT</dt>
+                                <dd id="adminSupplierVerifiedVat">${
+                                    supplierVerifiedInitially
+                                        ? matchedSupplier.isVatRegistered
+                                            ? 'VAT registered'
+                                            : 'Not registered'
+                                        : '—'
+                                }</dd>
+                            </div>
                         </dl>
+                        </div>
+                        <div id="adminSupplierInlineEdit" class="admin-supplier-inline-edit admin-hidden">
+                            <div class="admin-field">
+                                <label for="adminInlineSupName">Supplier name</label>
+                                <input type="text" id="adminInlineSupName" value="${supplierVerifiedInitially ? escapeHtml(matchedSupplier.name) : ''}">
+                            </div>
+                            <div class="admin-field">
+                                <label for="adminInlineSupBiz">Business name</label>
+                                <input type="text" id="adminInlineSupBiz" value="${supplierVerifiedInitially ? escapeHtml(matchedSupplier.businessName || '') : ''}">
+                            </div>
+                            <div class="admin-field">
+                                <label for="adminInlineSupTin">TIN</label>
+                                <input type="text" id="adminInlineSupTin" value="${supplierVerifiedInitially ? escapeHtml(matchedSupplier.tin || '') : ''}">
+                            </div>
+                            <div class="admin-field">
+                                <label for="adminInlineSupAddr">Address</label>
+                                <textarea id="adminInlineSupAddr" rows="2">${supplierVerifiedInitially ? escapeHtml(matchedSupplier.address || '') : ''}</textarea>
+                            </div>
+                            <div class="admin-field admin-field--checkbox">
+                                <label class="admin-checkbox-label" for="adminInlineSupVat">
+                                    <input type="checkbox" id="adminInlineSupVat" ${
+                                        supplierVerifiedInitially && matchedSupplier.isVatRegistered ? 'checked' : ''
+                                    }>
+                                    VAT registered
+                                </label>
+                            </div>
+                            <div class="admin-supplier-inline-edit-actions">
+                                <button type="button" class="action-btn secondary" id="adminInlineSupCancel">Cancel</button>
+                                <button type="button" class="action-btn primary" id="adminInlineSupSave">Save supplier</button>
+                            </div>
                         </div>
                     </div>
                     <input type="hidden" id="adminHSupplierName" ${hSnAttr} value="${supplierVerifiedInitially ? escapeHtml(matchedSupplier.name) : ''}">
                     <input type="hidden" id="adminHBusinessName" ${hBnAttr} value="${supplierVerifiedInitially ? escapeHtml(matchedSupplier.businessName || '') : ''}">
                     <input type="hidden" id="adminHTin" ${hTinAttr} value="${supplierVerifiedInitially ? escapeHtml(matchedSupplier.tin || '') : ''}">
                     <input type="hidden" id="adminHAddress" ${hAddrAttr} value="${supplierVerifiedInitially ? escapeHtml(matchedSupplier.address || '') : ''}">
+                    <input type="hidden" id="adminHSupplierId" value="${supplierVerifiedInitially ? escapeHtml(matchedSupplier.id) : ''}">
                 </div>
                 <div id="adminSupplierManualWrap" class="${supplierVerifiedInitially ? 'admin-hidden' : ''}">
                     <div class="admin-field">
@@ -4574,6 +5614,14 @@ function generateExpenseForm(expense, isEditing) {
                         <label>Address</label>
                         <textarea id="adminAddress" ${mAddrAttr} placeholder="Address">${escapeHtml(expense.address || '')}</textarea>
                     </div>
+                    <div class="admin-field admin-field--checkbox">
+                        <label class="admin-checkbox-label" for="adminNewSupplierVatRegistered">
+                            <input type="checkbox" id="adminNewSupplierVatRegistered" ${
+                                expense.isVatRegistered ? 'checked' : ''
+                            }>
+                            VAT registered
+                        </label>
+                    </div>
                     </div>
                 </div>
             </div>
@@ -4590,7 +5638,11 @@ function generateExpenseForm(expense, isEditing) {
     const vatViewLbl = shared.formatExpenseVatColumnLabel(expense);
     const vatExemptView = Number(expense.vatExemptAmount) || 0;
     const vatExemptVal = Number(expense.vatExemptAmount) || 0;
-    const vatToggleOn = expense.vatComputationEnabled !== false;
+    const vatToggleOn = expense.vatComputationEnabled === true
+        ? true
+        : expense.vatComputationEnabled === false
+          ? false
+          : Boolean(expense.isVatRegistered);
     const adminVatEditSectionHtml = isEditing
         ? `<div class="admin-form-section admin-vat-form-section" id="adminVatSection">
                 <div class="admin-vat-header">
@@ -4718,6 +5770,7 @@ function generateExpenseForm(expense, isEditing) {
                         <select name="allocation" id="adminAllocationSelect" required>
                             <option value="Store" ${allocSel('Store')}>Store</option>
                             <option value="General" ${allocSel('General')}>General</option>
+                            <option value="R&amp;D" ${allocSel('R&D')}>R&amp;D</option>
                             <option value="Workshop" ${allocSel('Workshop')}>Workshop</option>
                             <option value="Popup" ${allocSel('Popup')}>Popup</option>
                             <option value="Bar Service" ${allocSel('Bar Service')}>Bar Service</option>
@@ -4904,8 +5957,18 @@ function generateExpenseForm(expense, isEditing) {
                         ? `<button type="button" class="action-btn danger-outline" data-batch-delete-expense>Delete</button>`
                         : ''
                 }
-                <button type="button" class="action-btn secondary" onclick="requestCloseAdminExpenseModal()">Cancel</button>
-                <button type="submit" class="action-btn primary">Save Expense</button>
+                ${
+                    fromBatch
+                        ? ''
+                        : `<button type="button" class="action-btn secondary" onclick="requestCloseAdminExpenseModal()">Cancel</button>`
+                }
+                <button type="submit" class="action-btn primary">${
+                    fromBatch
+                        ? expensePersisted
+                            ? 'Save &amp; back'
+                            : 'Apply to draft'
+                        : 'Save Expense'
+                }</button>
             </div>`
                     : ''
             }
@@ -4978,128 +6041,60 @@ window.removeItem = function(button) {
 window.saveExpense = async function(event, expenseId) {
     event.preventDefault();
 
-    const formData = new FormData(event.target);
     const existingExpense = shared.getExpenses().find((e) => e.id === expenseId) || null;
     const isNew = !existingExpense;
-
-    // Collect items
-    const items = [];
-    const itemRows = document.querySelectorAll('.item-row');
-
-    itemRows.forEach((row) => {
-        const nameInput = row.querySelector('input[name^="itemName_"]');
-        const qtyInput = row.querySelector('input[name^="itemQty_"]');
-        const priceInput = row.querySelector('input[name^="itemPrice_"]');
-
-        const name = (nameInput?.value || '').trim();
-        const qty = parseFloat(qtyInput?.value) || 1;
-        const price = parseFloat(priceInput?.value) || 0;
-        const total = shared.calculateItemTotal(qty, price);
-
-        if (name) {
-            items.push({
-                name,
-                quantity: qty,
-                price,
-                total
-            });
-        }
-    });
-
-    const totalInputEl = document.getElementById('adminTotalAmountInput');
-    const totalAmount = totalInputEl ? shared.getPesoValue(totalInputEl) : 0;
-
-    const allocation = (formData.get('allocation') || 'Store').toString();
-    const isPettyCash = Boolean(document.getElementById('adminPettyCash')?.checked);
-    let supplierNameRaw = (formData.get('supplierName') || '').toString();
-    const resolvedSupplier = isPettyCash
-        ? null
-        : shared.getSuppliers().find(
-              (s) => (s.name || '').toLowerCase() === supplierNameRaw.trim().toLowerCase()
-          );
-
-    const vatSectionEl = document.getElementById('adminVatSection');
-    const vatHidden = vatSectionEl?.classList.contains('admin-hidden');
-    let vatExemptAmount = isPettyCash
-        ? 0
-        : parseFloat(document.getElementById('adminVatExemptAmount')?.value) || 0;
-    let vatComputationEnabled = isPettyCash
-        ? false
-        : document.getElementById('adminVatComputationEnabled')?.checked === true;
-    if (!isPettyCash && vatHidden && resolvedSupplier && !resolvedSupplier.isVatRegistered) {
-        vatComputationEnabled = false;
-        vatExemptAmount = 0;
-    }
-
-    const expensePayload = {
-        id: expenseId,
-        date: formData.get('date'),
-        allocation,
-        branch: allocation === 'Store' ? formData.get('branch') : null,
-        eventName: shared.isEventAllocation(allocation)
-            ? String(formData.get('eventName') || '').trim()
-            : null,
-        isPettyCash,
-        supplierName: supplierNameRaw.trim(),
-        ...(isPettyCash || !resolvedSupplier ? {} : { supplierId: resolvedSupplier.id }),
-        businessName: isPettyCash ? '' : formData.get('businessName'),
-        tin: isPettyCash ? '' : formData.get('tin'),
-        address: isPettyCash ? '' : formData.get('address'),
-        invoiceNumber: formData.get('invoiceNumber'),
-        expenseCategory: formData.get('expenseCategory') || existingExpense?.expenseCategory || shared.DEFAULT_EXPENSE_CATEGORY,
-        items,
-        totalAmount,
-        vatExemptAmount,
-        vatComputationEnabled,
-        paidBy: shared.allocationUsesPaidBy(allocation)
-            ? normalizeAdminPaidBy(formData.get('paidBy'), allocation)
-            : 'Company',
-        notes: formData.get('notes'),
-        receiptImage: (() => {
-            if (window.adminReceiptRemove) return null;
-            if (adminPendingReceiptUrl) return adminPendingReceiptUrl;
-            return existingExpense?.receiptImage || null;
-        })()
-    };
-
-    const result = shared.createExpenseObject(expensePayload, {
-        existingExpense: isNew ? null : existingExpense,
-        isEditing: !isNew,
-        calculateTotalFromItems: false,
-        autoCalculateVAT: true,
-        validate: true,
-        recorderContext: isNew ? 'admin' : null
-    });
-
-    if (!result.success || !result.expense) {
-        shared.showToast((result.errors && result.errors.join(', ')) || 'Could not save expense');
+    const built = buildAdminExpenseFromForm(expenseId, { existingExpense });
+    if (!built.success || !built.expense) {
+        shared.showToast((built.errors && built.errors.join(', ')) || 'Could not save expense');
         return;
     }
 
-    const expense = result.expense;
-    if (existingExpense?.paymentMethod) {
-        expense.paymentMethod = existingExpense.paymentMethod;
-    }
-    if (isNew) {
-        expense.createdAt = new Date().toISOString();
-    } else if (existingExpense?.createdAt) {
-        expense.createdAt = existingExpense.createdAt;
+    const expense = built.expense;
+    const fromBatch = typeof batchAlbumReturnHandler === 'function';
+
+    // Batch drafts stay in-memory until Save all — never bypass with individual Firebase writes.
+    if (fromBatch && isNew) {
+        const peers = [];
+        const batchDupes = shared.findPossibleDuplicateExpenses(expense, {
+            excludeIds: [expenseId],
+            extraCandidates: peers
+        });
+        renderAdminDuplicateBanner(batchDupes);
+        adminExpenseModalDirty = false;
+        shared.showToast('Draft updated — use Save all to add to expenses');
+        finishAdminExpenseModalClose({
+            saved: false,
+            applied: true,
+            draft: expense,
+            expenseId
+        });
+        return;
     }
 
-    if (isPettyCash) {
-        expense.supplierId = null;
-    }
-
     if (isNew) {
+        const dupes = shared.findPossibleDuplicateExpenses(expense, {
+            excludeIds: [expenseId]
+        });
+        renderAdminDuplicateBanner(dupes);
+        const likely = dupes.filter((d) => d.confidence === 'likely');
+        if (likely.length) {
+            const ok = await confirmAdminAsync(
+                'Likely duplicate',
+                `Similar to ${shared.formatDuplicateMatchSummary(likely[0])}\n\nSave this expense anyway?`,
+                'Save anyway'
+            );
+            if (!ok) return;
+        }
         shared.addExpense(expense);
         shared.showToast('Expense added successfully');
     } else {
         shared.updateExpense(expenseId, expense);
-        shared.showToast('Expense updated successfully');
+        shared.showToast(fromBatch ? 'Updated — back to batch' : 'Expense updated successfully');
     }
 
-    await shared.flushPendingSync();
-
+    // Close immediately so Back never shows a false "discard" after a successful save.
+    // Sync can be slow; don't leave the editor open waiting on Firebase.
+    adminExpenseModalDirty = false;
     const returnedToBatch = finishAdminExpenseModalClose({
         saved: true,
         expenseId
@@ -5107,6 +6102,9 @@ window.saveExpense = async function(event, expenseId) {
     if (!returnedToBatch) {
         refreshAdminTables();
     }
+    shared.flushPendingSync().catch((err) => {
+        console.warn('Sync after expense save:', err);
+    });
 };
 
 // Make shared functions available globally for the modal
@@ -5129,4 +6127,5 @@ window.loadData = loadData;
 window.initialize = initialize;
 window.debugDates = shared.debugDates;
 window.exportExpensesToCSV = exportExpensesToCSV;
+window.downloadExpensesExcel = downloadExpensesExcel;
 

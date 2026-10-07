@@ -1,0 +1,1086 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <title>Matchanese Admin Panel</title>
+    <link rel="icon" href="data:,">
+    
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://matchanese.site/admin-payroll_v2/">
+    <meta property="og:title" content="Matchanese Admin Payroll (v2 backup)">
+    <meta property="og:description" content="Previous payroll UI kept for rollback. Use /admin-payroll/ for the current app.">
+    <meta property="og:image" content="https://matchanese.site/admin-payroll_v2/img/matchanese-logo.png">
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link rel="stylesheet" href="css/admin-style.css?v=2.0.52">
+</head>
+
+<body>
+    <!-- Photo modal -->
+    <div class="photo-modal" id="photoModal">
+        <div class="photo-modal-content">
+            <span class="close-modal" id="closeModal">&times;</span>
+            <img class="modal-image" id="modalImage" src="" alt="Employee photo">
+        </div>
+    </div>
+
+    <!-- Clock location map -->
+    <div class="photo-modal punch-map-modal" id="punchMapModal" aria-hidden="true">
+        <div class="punch-map-modal-content" onclick="event.stopPropagation()">
+            <button type="button" class="close-modal punch-map-modal__close" id="closePunchMapModal" aria-label="Close map">&times;</button>
+            <div class="punch-map-modal__header">
+                <div class="punch-map-modal__header-main">
+                    <h3 id="punchMapModalTitle">Clock location</h3>
+                    <p id="punchMapModalMeta"></p>
+                </div>
+                <div class="punch-map-modal__header-place" id="punchMapModalPlaceWrap" hidden>
+                    <p id="punchMapModalPlace"></p>
+                    <span id="punchMapModalPlaceCaption">Time in location</span>
+                </div>
+            </div>
+            <div id="punchMapCanvas" class="punch-map-modal__frame" role="img" aria-label="Clock location map"></div>
+            <div class="punch-map-legend" id="punchMapLegend" hidden>
+                <span class="punch-map-legend__item"><span class="punch-map-legend__dot punch-map-legend__dot--staff"></span> <span id="punchMapLegendStaff">Time In Location</span></span>
+                <span class="punch-map-legend__item"><span class="punch-map-legend__dot punch-map-legend__dot--store"></span> <span id="punchMapLegendStore">Store</span></span>
+            </div>
+            <a id="punchMapOpenExternal" class="punch-map-modal__external" href="#" target="_blank" rel="noopener noreferrer">Open in Google Maps</a>
+        </div>
+    </div>
+
+    <!-- Add Shift Modal -->
+    <div class="modal" id="addShiftModal">
+        <div class="modal-content">
+            <span class="close-modal" id="closeAddShiftModal">&times;</span>
+            <h2>Add New Shift</h2>
+            <form id="addShiftForm">
+                <div class="form-group">
+                    <label for="addShiftDate">Date</label>
+                    <input type="date" id="addShiftDate" required>
+                </div>
+                <div class="checkbox-item" style="margin-bottom: 1rem;">
+                    <input type="checkbox" id="addShiftPaidLeave">
+                    <label for="addShiftPaidLeave">Paid leave (base rate only)</label>
+                </div>
+                <div id="addShiftWorkFields">
+                <div class="form-group">
+                    <label for="addShiftBranch">Branch</label>
+                    <select id="addShiftBranch" required>
+                        <option value="Podium">Podium</option>
+                        <option value="SM North">SM North</option>
+                        <option value="Pop-up">Pop-up</option>
+                        <option value="Workshop">Workshop</option>
+                        <option value="Other Events">Other Events</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="addShiftSchedule">Shift</label>
+                    <select id="addShiftSchedule" required>
+                        <option value="Opening">Opening (9:30 AM - 6:30 PM)</option>
+                        <option value="Adjusted Opening">Adjusted Opening (10:30 AM - 7:30 PM)</option>
+                        <option value="Opening Half-Day">Opening Half-Day (9:30 AM - 1:30 PM)</option>
+                        <option value="Midshift">Midshift (11:00 AM - 8:00 PM)</option>
+                        <option value="Closing">Closing (1:00 PM - 10:00 PM)</option>
+                        <option value="Closing Half-Day">Closing Half-Day (6:00 PM - 10:00 PM)</option>
+                        <option value="Custom">Custom</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="addShiftTimeIn">Time In</label>
+                    <input type="time" id="addShiftTimeIn" required>
+                </div>
+                <div class="form-group">
+                    <label for="addShiftTimeOut">Time Out</label>
+                    <input type="time" id="addShiftTimeOut" required>
+                </div>
+                <!-- Scheduled times for Custom shifts (shown when Custom is selected) -->
+                <div class="form-group" id="addScheduledTimesGroup" style="display: none;">
+                    <div class="form-row">
+                        <div class="form-group half">
+                            <label for="addShiftScheduledIn">Scheduled Time In (for grace period)</label>
+                            <input type="time" id="addShiftScheduledIn">
+                            <small class="form-hint">Enter the scheduled start time. Late arrivals within 30 minutes will use this time for pay calculation.</small>
+                        </div>
+                        <div class="form-group half">
+                            <label for="addShiftScheduledOut">Scheduled Time Out</label>
+                            <input type="time" id="addShiftScheduledOut">
+                            <small class="form-hint">Enter the scheduled end time for undertime calculations.</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pay Calculation -->
+                <div class="form-section">
+                    <h3>Pay Calculation</h3>
+                    
+                    <!-- Pay Type Options -->
+                    <div class="pay-type-options">
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="addShiftDoublePay">
+                            <label for="addShiftDoublePay">Apply double pay</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="addShiftFixedPay">
+                            <label for="addShiftFixedPay">Use fixed pay amount</label>
+                        </div>
+                    </div>
+                    
+                    <!-- Fixed Pay Amount (shown when fixed pay is checked) -->
+                    <div class="form-group" id="addShiftFixedAmountGroup" style="display: none;">
+                        <label for="addShiftFixedAmount">Fixed Pay Amount</label>
+                        <div class="input-with-prefix compact">
+                            <span class="prefix">₱</span>
+                            <input type="number" id="addShiftFixedAmount" min="0" step="50" placeholder="Enter amount">
+                        </div>
+                        <small class="form-hint">This will override normal pay calculation. Meal allowance and transportation will still be added.</small>
+                    </div>
+                    
+                    <!-- Meal Allowance Option -->
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="addShiftMealAllowance" checked>
+                        <label for="addShiftMealAllowance">Include meal allowance (₱150 full day / ₱75 half day)</label>
+                    </div>
+                </div>
+
+                <!-- Additional Allowances & Overtime -->
+                <div class="form-section">
+                    <h3>Additional Options</h3>
+                    
+                    <div class="form-row">
+                        <div class="form-group half">
+                            <label for="addShiftTranspoAllowance">Transportation Allowance</label>
+                            <div class="input-with-prefix compact">
+                                <span class="prefix">₱</span>
+                                <input type="number" id="addShiftTranspoAllowance" min="0" max="9999" step="10" placeholder="0">
+                            </div>
+                        </div>
+                        <div class="form-group half overtime-section">
+                            <label>Overtime Pay</label>
+                            <div class="toggle-container">
+                                <input type="checkbox" id="addShiftOTPay">
+                                <label for="addShiftOTPay">Apply overtime pay</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                </div><!-- /addShiftWorkFields -->
+
+                <input type="hidden" id="addShiftEmployeeId">
+                <div class="form-actions">
+                    <button type="submit" class="submit-btn" id="addShiftSubmitBtn">Add Shift</button>
+                    <button type="button" class="cancel-btn" id="cancelAddShiftBtn">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Employee Edit Modal -->
+    <div class="modal" id="employeeEditModal">
+        <div class="modal-content">
+            <span class="close-modal" id="closeEditModal">&times;</span>
+            <h2>Edit Employee Details</h2>
+            <form id="employeeEditForm">
+                <div class="form-group">
+                    <label for="editEmployeeName">Employee Name</label>
+                    <input type="text" id="editEmployeeName" required>
+                </div>
+                <div class="form-group">
+                    <label for="editNickname">Nickname</label>
+                    <input type="text" id="editNickname" placeholder="Auto-generated if empty">
+                </div>
+                <div class="form-group">
+                    <label for="editBaseRate">Base Rate</label>
+                    <input type="number" id="editBaseRate" min="0" step="10" required>
+                </div>
+                <div class="form-group" id="editPaySchemeGroup">
+                    <label for="editPayScheme">Pay scheme</label>
+                    <select id="editPayScheme">
+                        <option value="standard">Base + meal allowance</option>
+                        <option value="inclusive">Meal included in daily rate</option>
+                    </select>
+                    <small class="form-hint" id="editPaySchemeHint">₱150 is added on top of the daily base (₱75 half day).</small>
+                </div>
+                <div class="form-group">
+                    <label for="editSalesBonus">Sales Bonus Eligible</label>
+                    <div class="toggle-container">
+                        <input type="checkbox" id="editSalesBonus">
+                        <label for="editSalesBonus">Eligible for sales bonus</label>
+                    </div>
+                </div>
+                <input type="hidden" id="editEmployeeId">
+                <div class="form-actions">
+                    <button type="submit" class="submit-btn">Save Changes</button>
+                    <button type="button" class="cancel-btn" id="cancelEditBtn">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Shift Edit Modal -->
+    <div class="modal" id="shiftEditModal">
+        <div class="modal-content shift-edit-modal">
+            <span class="close-modal" id="closeShiftEditModal">&times;</span>
+            <h2>Edit Shift Details</h2>
+            <form id="shiftEditForm">
+                <div class="checkbox-item" style="margin-bottom: 1rem;">
+                    <input type="checkbox" id="editShiftPaidLeave">
+                    <label for="editShiftPaidLeave">Paid leave (base rate only)</label>
+                </div>
+                <!-- Basic Shift Info -->
+                <div id="editShiftWorkFields">
+                <div class="form-section">
+                    <h3>Shift Information</h3>
+                    <div class="form-row">
+                        <div class="form-group half">
+                            <label for="editShiftBranch">Branch</label>
+                            <select id="editShiftBranch" required>
+                                <option value="Podium">Podium</option>
+                                <option value="SM North">SM North</option>
+                                <option value="Pop-up">Pop-up</option>
+                                <option value="Workshop">Workshop</option>
+                                <option value="Other Events">Other Events</option>
+                            </select>
+                        </div>
+                        <div class="form-group half">
+                            <label for="editShiftSchedule">Shift Type</label>
+                            <select id="editShiftSchedule" class="shift-type-select" required>
+                                <option value="Opening">Opening (9:30 AM - 6:30 PM)</option>
+                                <option value="Adjusted Opening">Adjusted Opening (10:30 AM - 7:30 PM)</option>
+                                <option value="Opening Half-Day">Opening Half-Day (9:30 AM - 1:30 PM)</option>
+                                <option value="Midshift">Midshift (11:00 AM - 8:00 PM)</option>
+                                <option value="Closing">Closing (1:00 PM - 10:00 PM)</option>
+                                <option value="Closing Half-Day">Closing Half-Day (6:00 PM - 10:00 PM)</option>
+                                <option value="Custom">Custom</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group half">
+                            <label for="editShiftTimeIn">Time In</label>
+                            <input type="time" id="editShiftTimeIn">
+                            <button type="button" class="remove-punch-btn" id="removeTimeInBtn">Remove Time In</button>
+                        </div>
+                        <div class="form-group half">
+                            <label for="editShiftTimeOut">Time Out</label>
+                            <input type="time" id="editShiftTimeOut">
+                            <button type="button" class="remove-punch-btn" id="removeTimeOutBtn">Remove Time Out</button>
+                        </div>
+                    </div>
+                    <!-- Scheduled times for Custom shifts (shown when Custom is selected) -->
+                    <div class="form-row" id="editScheduledTimesGroup" style="display: none;">
+                        <div class="form-group half">
+                            <label for="editShiftScheduledIn">Scheduled Time In (for grace period)</label>
+                            <input type="time" id="editShiftScheduledIn">
+                            <small class="form-hint">Enter the scheduled start time. Late arrivals within 30 minutes will use this time for pay calculation.</small>
+                        </div>
+                        <div class="form-group half">
+                            <label for="editShiftScheduledOut">Scheduled Time Out</label>
+                            <input type="time" id="editShiftScheduledOut">
+                            <small class="form-hint">Enter the scheduled end time for undertime calculations.</small>
+                        </div>
+                    </div>
+                </div>
+    
+                <!-- Pay Calculation -->
+                <div class="form-section">
+                    <h3>Pay Calculation</h3>
+    
+                    <!-- Pay Type Options -->
+                    <div class="pay-type-options">
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="editShiftDoublePay">
+                            <label for="editShiftDoublePay">Apply double pay</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="editShiftFixedPay">
+                            <label for="editShiftFixedPay">Use fixed pay amount</label>
+                        </div>
+                    </div>
+    
+                    <!-- Fixed Pay Amount (shown when fixed pay is checked) -->
+                    <div class="form-group" id="editShiftFixedAmountGroup" style="display: none;">
+                        <label for="editShiftFixedAmount">Fixed Pay Amount</label>
+                        <div class="input-with-prefix compact">
+                            <span class="prefix">₱</span>
+                            <input type="number" id="editShiftFixedAmount" min="0" step="50" placeholder="Enter amount">
+                        </div>
+                        <small class="form-hint">This will override normal pay calculation. Meal allowance and
+                            transportation will still be added.</small>
+                    </div>
+    
+                    <!-- Meal Allowance Option -->
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="editMealAllowance" checked>
+                        <label for="editMealAllowance">Include meal allowance (₱150 full day / ₱75 half day)</label>
+                    </div>
+                </div>
+    
+                <!-- Additional Allowances & Overtime -->
+                <div class="form-section">
+                    <h3>Additional Options</h3>
+    
+                    <div class="form-row">
+                        <div class="form-group half">
+                            <label for="editTranspoAllowance">Transportation Allowance</label>
+                            <div class="input-with-prefix compact">
+                                <span class="prefix">₱</span>
+                                <input type="number" id="editTranspoAllowance" min="0" max="9999" step="10" placeholder="0">
+                            </div>
+                        </div>
+                        <div class="form-group half overtime-section">
+                            <label>Overtime Pay</label>
+                            <div class="toggle-container">
+                                <input type="checkbox" id="editOTPay">
+                                <label for="editOTPay">Apply overtime pay</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                </div><!-- /editShiftWorkFields -->
+    
+                <input type="hidden" id="editShiftEmployeeId">
+                <input type="hidden" id="editShiftDate">
+    
+                <div class="form-actions">
+                    <button type="button" class="delete-log-btn" id="deleteShiftLogBtn">Delete log</button>
+                    <button type="submit" class="submit-btn" id="editShiftSubmitBtn">Save Changes</button>
+                    <button type="button" class="cancel-btn" id="cancelShiftEditBtn">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Batch Edit Modal -->
+    <div class="modal" id="batchEditModal">
+        <div class="modal-content">
+            <span class="close-modal" id="closeBatchEditModal">&times;</span>
+            <h2>Batch Edit Period</h2>
+            <form id="batchEditForm">
+                <div class="form-group">
+                    <label for="batchEditBranch">Change All Branches To</label>
+                    <select id="batchEditBranch">
+                        <option value="">Keep Current</option>
+                        <option value="Podium">Podium</option>
+                        <option value="SM North">SM North</option>
+                        <option value="Pop-up">Pop-up</option>
+                        <option value="Workshop">Workshop</option>
+                        <option value="Other Events">Other Events</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="batchEditShift">Change All Shifts To</label>
+                    <select id="batchEditShift">
+                        <option value="">Keep Current</option>
+                        <option value="Opening">Opening (9:30 AM - 6:30 PM)</option>
+                        <option value="Adjusted Opening">Adjusted Opening (10:30 AM - 7:30 PM)</option>
+                        <option value="Opening Half-Day">Opening Half-Day (9:30 AM - 1:30 PM)</option> <!-- Add this -->
+                        <option value="Midshift">Midshift (11:00 AM - 8:00 PM)</option>
+                        <option value="Closing">Closing (1:00 PM - 10:00 PM)</option>
+                        <option value="Closing Half-Day">Closing Half-Day (6:00 PM - 10:00 PM)</option>
+                        <option value="Custom">Custom</option>
+                    </select>
+                </div>
+                
+                <input type="hidden" id="batchEditEmployeeId">
+                <div class="form-actions">
+                    <button type="submit" class="submit-btn">Apply Changes</button>
+                    <button type="button" class="cancel-btn" id="cancelBatchEditBtn">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add Employee Modal -->
+    <div class="modal" id="addEmployeeModal">
+        <div class="modal-content">
+            <span class="close-modal" id="closeAddEmployeeModal">&times;</span>
+            <h2>Add New Employee</h2>
+            <form id="addEmployeeForm">
+                <div class="form-group">
+                    <label for="addEmployeeId">Employee ID</label>
+                    <input type="text" id="addEmployeeId" required placeholder="e.g., 131929">
+                </div>
+                <div class="form-group">
+                    <label for="addEmployeeName">Full Name</label>
+                    <input type="text" id="addEmployeeName" required placeholder="e.g., John Doe">
+                </div>
+                <div class="form-group">
+                    <label for="addNickname">Nickname (Optional)</label>
+                    <input type="text" id="addNickname" placeholder="Auto-generated if empty">
+                </div>
+                <div class="form-group">
+                    <label for="addPayScheme">Pay scheme</label>
+                    <select id="addPayScheme">
+                        <option value="standard">Base + meal allowance</option>
+                        <option value="inclusive" selected>Meal included in daily rate</option>
+                    </select>
+                    <small class="form-hint">Meal is already part of the daily rate. Set the amount in Base Rate below.</small>
+                </div>
+                <div class="form-group">
+                    <label for="addBaseRate">Base Rate</label>
+                    <input type="number" id="addBaseRate" min="0" step="10" required placeholder="e.g., 750">
+                </div>
+                <div class="form-group">
+                    <label for="addSalesBonus">Sales Bonus Eligible</label>
+                    <div class="toggle-container">
+                        <input type="checkbox" id="addSalesBonus">
+                        <label for="addSalesBonus">Eligible for sales bonus</label>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="submit-btn">Add Employee</button>
+                    <button type="button" class="cancel-btn" id="cancelAddEmployeeBtn">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Holidays Modal -->
+    <div class="modal" id="holidaysModal">
+        <div class="modal-content holidays-modal-content">
+            <span class="close-modal" id="closeHolidaysModal">&times;</span>
+            <h2>Manage Holidays 2025</h2>
+    
+            <!-- Add Holiday Form -->
+            <div class="add-holiday-section">
+                <h3>Add New Holiday</h3>
+                <form id="addHolidayForm" class="inline-form">
+                    <div class="form-row">
+                        <input type="date" id="holidayDate" required>
+                        <input type="text" id="holidayName" required placeholder="Holiday name">
+                        <select id="holidayType" required>
+                            <option value="regular">Regular</option>
+                            <option value="special">Special</option>
+                        </select>
+                        <button type="submit" class="submit-btn">Add</button>
+                    </div>
+                </form>
+            </div>
+    
+            <!-- Bulk Import Section -->
+            <div class="add-holiday-section" style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid #e0e0e0;">
+                <h3>Bulk Import Holidays (JSON)</h3>
+                <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                    <input type="file" id="bulkHolidayFileInput" accept=".json" style="display: none;">
+                    <label for="bulkHolidayFileInput" class="submit-btn" style="cursor: pointer; margin: 0; display: inline-block;">
+                        Add JSON
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                        <input type="checkbox" id="bulkImportOverwrite">
+                        <span>Overwrite existing holidays</span>
+                    </label>
+                </div>
+            </div>
+    
+            <!-- Holidays List -->
+            <div class="holidays-list-container">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                    <h3 style="margin: 0;">Holidays</h3>
+                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.9rem;">
+                        <input type="checkbox" id="showPastHolidays" style="cursor: pointer;">
+                        <span>Show past holidays</span>
+                    </label>
+                </div>
+                <table class="holidays-table" id="holidaysTable">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Holiday Name</th>
+                            <th>Type</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="holidaysTableBody">
+                        <!-- Holiday rows will be populated by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+    
+            <div class="form-actions">
+                <button type="button" class="cancel-btn" id="closeHolidaysBtn">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Payment Modal -->
+    <div class="modal payment-modal" id="paymentModal">
+        <div class="modal-content payment-modal__content">
+            <div id="paymentModalLoadingOverlay" class="payment-modal__loading">
+                <div class="spinner"></div>
+                <div class="payment-modal__loading-text">Confirming payment...</div>
+            </div>
+            <button type="button" class="payment-modal__close close-modal" id="closePaymentModal" aria-label="Close">&times;</button>
+            <h2 class="payment-modal__title">Confirm Payment</h2>
+
+            <div class="payment-summary">
+                <div class="payment-summary__name" id="paymentEmployeeNameDisplay"></div>
+                <div class="payment-summary__period" id="paymentPeriodDisplay"></div>
+            </div>
+
+            <div class="form-group" id="paymentRecipientGroup" style="display: none;">
+                <label>Staff bank details</label>
+                <div id="paymentRecipientList"></div>
+            </div>
+
+            <div id="existingPaymentSection" class="payment-existing-section">
+                <img id="existingPaymentPhoto" class="payment-existing-section__photo thumb" alt="Existing payment screenshot">
+                <div id="existingPaymentInfo" class="payment-existing-section__info"></div>
+            </div>
+
+            <button type="button" id="updateScreenshotBtn" class="action-btn payment-update-screenshot-btn" style="display: none;"
+                onclick="showUpdateForm()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+                Update Screenshot
+            </button>
+
+            <form id="paymentForm" class="payment-form">
+                <div class="form-group">
+                    <label for="paymentMethod">Transfer Method</label>
+                    <select id="paymentMethod" required>
+                        <option value="">Select transfer method</option>
+                        <option value="gotyme">GoTyme</option>
+                        <option value="bdo">BDO</option>
+                        <option value="gcash">GCash</option>
+                        <option value="cash">Cash</option>
+                        <option value="others">Others</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="paymentAmount">Payment Amount</label>
+                    <div class="input-with-prefix">
+                        <span class="prefix">₱</span>
+                        <input type="number" id="paymentAmount" min="0" step="0.01" placeholder="0.00" required>
+                    </div>
+                    <small class="form-hint" id="paymentAmountHint">Enter amount to pay (full or partial)</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="paymentScreenshot">Payment Screenshot</label>
+                    <label class="payment-file-label" for="paymentScreenshot">
+                        <span class="payment-file-label__btn">Choose file</span>
+                        <span class="payment-file-label__name" id="paymentScreenshotName">No file chosen</span>
+                    </label>
+                    <input type="file" id="paymentScreenshot" class="payment-file-input" accept="image/*">
+                </div>
+
+                <div class="form-group">
+                    <label for="paymentNote">Payment Note</label>
+                    <textarea id="paymentNote" placeholder="Add any notes about this payment..." rows="3"></textarea>
+                </div>
+
+                <input type="hidden" id="paymentEmployeeId">
+
+                <div class="form-actions payment-form__actions">
+                    <button type="button" class="cancel-btn" id="cancelPaymentBtn">Cancel</button>
+                    <button type="submit" class="submit-btn">Confirm Payment</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Adjust surplus (correct over-recorded payment total) -->
+    <div class="modal payment-modal" id="adjustSurplusModal">
+        <div class="modal-content payment-modal__content adjust-surplus-modal__content">
+            <button type="button" class="payment-modal__close close-modal" id="closeAdjustSurplusModal" aria-label="Close">&times;</button>
+            <h2 class="payment-modal__title">Adjust surplus</h2>
+            <p class="form-hint adjust-surplus-modal__intro">Fix duplicate Pay Mode clicks that over-recorded how much was paid. This sets the stored paid total for this period — it does not send another transfer.</p>
+
+            <div class="payment-summary">
+                <div class="payment-summary__name" id="adjustSurplusEmployeeName"></div>
+                <div class="payment-summary__period" id="adjustSurplusPeriod"></div>
+            </div>
+
+            <dl class="adjust-surplus-stats">
+                <div class="adjust-surplus-stats__row">
+                    <dt>Period total pay</dt>
+                    <dd id="adjustSurplusTotalPay">—</dd>
+                </div>
+                <div class="adjust-surplus-stats__row">
+                    <dt>Recorded as paid</dt>
+                    <dd id="adjustSurplusRecordedPaid">—</dd>
+                </div>
+                <div class="adjust-surplus-stats__row adjust-surplus-stats__row--surplus">
+                    <dt>Surplus</dt>
+                    <dd id="adjustSurplusAmount">—</dd>
+                </div>
+            </dl>
+
+            <form id="adjustSurplusForm" class="payment-form">
+                <div class="form-group">
+                    <label for="adjustSurplusPaidInput">Correct paid total for this period</label>
+                    <div class="input-with-prefix">
+                        <span class="prefix">₱</span>
+                        <input type="number" id="adjustSurplusPaidInput" min="0" step="0.01" required>
+                    </div>
+                    <small class="form-hint" id="adjustSurplusHint">Usually equals period total pay if they were paid once in full.</small>
+                </div>
+                <div class="form-group">
+                    <label for="adjustSurplusNote">Note (optional)</label>
+                    <textarea id="adjustSurplusNote" rows="2" placeholder="e.g. Corrected duplicate Pay Mode entries"></textarea>
+                </div>
+                <input type="hidden" id="adjustSurplusEmployeeId">
+                <div class="form-actions payment-form__actions">
+                    <button type="button" class="cancel-btn" id="adjustSurplusClearBtn">Clear payment</button>
+                    <button type="button" class="cancel-btn" id="cancelAdjustSurplusBtn">Cancel</button>
+                    <button type="submit" class="submit-btn">Save correction</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Sequential Pay Mode -->
+    <div class="pay-mode-overlay" id="payModeOverlay" aria-hidden="true" style="display: none;">
+        <div class="pay-mode" onclick="event.stopPropagation()">
+            <header class="pay-mode__header">
+                <div class="pay-mode__header-main">
+                    <p class="pay-mode__eyebrow">Pay Mode</p>
+                    <h2 class="pay-mode__period" id="payModePeriodLabel"></h2>
+                </div>
+                <div class="pay-mode__progress" id="payModeProgress" aria-live="polite">
+                    <div class="pay-mode__progress-count"><span id="payModeProgressCount">0 / 0</span> people</div>
+                    <div class="pay-mode__progress-left"><span id="payModeProgressLeft">₱0.00</span> left in queue</div>
+                </div>
+                <button type="button" class="pay-mode__exit" id="payModeExitBtn">Exit</button>
+            </header>
+
+            <div class="pay-mode__body">
+                <div class="pay-mode__panel pay-mode__panel--summary" id="payModeSummaryPanel">
+                    <div class="pay-mode__detail" id="payModeDetail">
+                        <div class="pay-mode__who">
+                            <button type="button" class="pay-mode__employee" id="payModeEmployeeName" title="Jump to someone else" aria-haspopup="listbox" aria-expanded="false"></button>
+                            <div class="pay-mode__status" id="payModeStatusBadge" hidden></div>
+                        </div>
+
+                        <div class="pay-mode__hero">
+                            <div class="pay-mode__hero-top">
+                                <span class="pay-mode__hero-label">Paying now</span>
+                                <button type="button" class="pay-mode__hero-edit" id="payModeHeroEditBtn">Edit</button>
+                                <button type="button" class="pay-mode__hero-reset" id="payModeHeroResetBtn" hidden>Reset</button>
+                            </div>
+                            <button type="button" class="pay-mode__hero-value" id="payModeHeroAmount" title="Click to edit amount">₱0.00</button>
+                            <div class="pay-mode__hero-input-wrap" id="payModeHeroInputWrap" hidden>
+                                <span class="pay-mode__hero-prefix">₱</span>
+                                <input type="number" id="payModeHeroInput" min="0" step="0.01" placeholder="0.00" inputmode="decimal" aria-label="Payment amount">
+                            </div>
+                            <input type="hidden" id="payModeAmount" value="">
+                            <p class="pay-mode__hero-hint" id="payModeHeroHint">Net amount — advances already deducted</p>
+                        </div>
+
+                        <div class="pay-mode__snapshot" id="payModeSnapshot"></div>
+
+                        <div class="pay-mode__math" id="payModeMath" hidden></div>
+
+                        <div class="pay-mode__send" id="payModeSend">
+                            <div class="pay-mode__send-label">Transfer to</div>
+                            <div class="pay-mode__send-body">
+                                <div class="pay-mode__send-methods" id="payModeMethodTabs" role="tablist"></div>
+                                <div class="pay-mode__send-account">
+                                    <span class="pay-mode__send-number" id="payModeAccountNumber"></span>
+                                    <button type="button" class="pay-mode__send-copy" id="payModeCopyBtn" hidden>Copy</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <details class="pay-mode__note-details">
+                            <summary>Add note (optional)</summary>
+                            <textarea id="payModeNote" rows="2" placeholder="Optional note about this payment..."></textarea>
+                        </details>
+                    </div>
+
+                    <div class="pay-mode__picker" id="payModePicker" hidden>
+                        <div class="pay-mode__picker-head">
+                            <button type="button" class="pay-mode__picker-back" id="payModePickerCloseBtn">Back</button>
+                            <div class="pay-mode__picker-title">Jump to person</div>
+                        </div>
+                        <div class="pay-mode__picker-list" id="payModePickerList" role="listbox" aria-label="People in pay queue"></div>
+                    </div>
+                </div>
+
+                <div class="pay-mode__panel pay-mode__panel--qr">
+                    <div class="pay-mode__qr-toolbar">
+                        <div class="pay-mode__qr-label" id="payModeQrLabel">Scan QR with GoTyme</div>
+                        <button type="button" class="pay-mode__qr-view-toggle" id="payModeQrViewToggle" hidden>Full photo</button>
+                    </div>
+                    <div class="pay-mode__qr-wrap" id="payModeQrWrap">
+                        <div class="pay-mode__qr-frame">
+                            <div class="pay-mode__qr-skeleton" id="payModeQrSkeleton" aria-hidden="true"></div>
+                            <img class="pay-mode__qr" id="payModeQrImg" alt="Payment QR code" hidden>
+                            <div class="pay-mode__qr-missing" id="payModeQrMissing" hidden>
+                                <p class="pay-mode__qr-missing-title">No QR on file</p>
+                                <p class="pay-mode__qr-fallback-name" id="payModeQrFallbackName"></p>
+                                <button type="button" class="pay-mode__qr-fallback-number" id="payModeQrFallbackNumber">Copy account number</button>
+                                <p class="form-hint">Use the account on the left, or skip this employee.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <footer class="pay-mode__footer">
+                <button type="button" class="pay-mode__btn pay-mode__btn--ghost" id="payModeBackBtn">Back</button>
+                <div class="pay-mode__footer-actions">
+                    <button type="button" class="pay-mode__btn pay-mode__btn--secondary" id="payModeSkipBtn">Skip</button>
+                    <button type="button" class="pay-mode__btn pay-mode__btn--primary" id="payModeConfirmBtn">Pay</button>
+                </div>
+            </footer>
+
+            <div class="pay-mode__loading" id="payModeLoading" hidden aria-hidden="true">
+                <div class="spinner"></div>
+                <span>Saving payment...</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="periodEarningsModal" style="display: none;" aria-hidden="true">
+        <div class="modal-content" style="max-width: 720px;">
+            <span class="close-modal" id="periodEarningsModalClose" role="button" tabindex="0">&times;</span>
+            <h2>Period earnings (bonuses / adjustments)</h2>
+            <p class="form-hint" style="margin-bottom: 1rem;">Cash advances, reimbursements, salary carry, and adjustments for this period. Negative amounts are deductions. Use Defer to move a line to the next cutoff.</p>
+            <form id="periodEarningsForm" class="inline-form" style="margin-bottom: 1rem;">
+                <input type="hidden" id="periodEarningsEditId" value="" />
+                <div class="form-row" style="flex-wrap: wrap; gap: 0.5rem; align-items: flex-end;">
+                    <div class="form-group">
+                        <label for="periodEarningsEmployeeId">Employee ID</label>
+                        <select id="periodEarningsEmployeeId" required style="min-width: 12rem;">
+                            <option value="">Select…</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="periodEarningsKind">Kind</label>
+                        <select id="periodEarningsKind" style="min-width: 8rem;">
+                            <option value="adjustment">Adjustment</option>
+                            <option value="salary_carry">Salary carry</option>
+                            <option value="cash_advance">Cash advance</option>
+                            <option value="reimbursement">Reimbursement</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="periodEarningsAmount">Amount (₱)</label>
+                        <input type="number" id="periodEarningsAmount" step="0.01" required placeholder="0.00" title="Negative for deductions" />
+                    </div>
+                    <div class="form-group" style="flex: 1; min-width: 10rem;">
+                        <label for="periodEarningsNote">Note (optional)</label>
+                        <input type="text" id="periodEarningsNote" placeholder="e.g. 13th month / prior unpaid" />
+                    </div>
+                    <button type="submit" class="submit-btn">Add line</button>
+                </div>
+            </form>
+            <div style="overflow-x: auto;">
+                <table class="data-table" style="width: 100%; font-size: 0.9rem;">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>ID</th>
+                            <th>Amount</th>
+                            <th>Kind</th>
+                            <th>Note</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="periodEarningsTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal confirm-modal" id="confirmModal" style="display: none;" aria-hidden="true">
+        <div class="modal-content confirm-modal-content" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+            <h2 id="confirmTitle">Confirm</h2>
+            <p id="confirmMessage" class="confirm-modal-message"></p>
+            <p id="confirmDetail" class="confirm-modal-detail" hidden></p>
+            <div class="form-actions">
+                <button type="button" class="cancel-btn" id="confirmCancel">Cancel</button>
+                <button type="button" class="submit-btn" id="confirmOk">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="editPeriodEarningModal" style="display: none;" aria-hidden="true">
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="editPeriodEarningTitle">
+            <span class="close-modal" id="editPeriodEarningModalClose" role="button" tabindex="0">&times;</span>
+            <h2 id="editPeriodEarningTitle">Edit line</h2>
+            <form id="editPeriodEarningForm">
+                <div class="form-group">
+                    <label for="editPeriodEarningAmount">Amount (₱)</label>
+                    <input type="number" id="editPeriodEarningAmount" step="0.01" required>
+                    <p class="form-hint">Negative amounts are deductions.</p>
+                </div>
+                <div class="form-group">
+                    <label for="editPeriodEarningNote">Note</label>
+                    <input type="text" id="editPeriodEarningNote" maxlength="200" placeholder="Optional">
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="cancel-btn" id="editPeriodEarningCancel">Cancel</button>
+                    <button type="submit" class="submit-btn">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="admin-header">
+            <div class="logo-section">
+                <img src="img/matchanese-logo.png" class="logo" alt="Matchanese Logo">
+                <h1 class="app-title">Admin Dashboard</h1>
+            </div>
+            <div class="controls">
+                <div class="control-item">
+                    <label class="control-label">Payroll Period</label>
+                    <select id="periodSelect">
+                        <option value="current">March 29 - April 12, 2025</option>
+                        <option value="previous">March 13 - March 28, 2025</option>
+                        <option value="past">February 27 - March 12, 2025</option>
+                    </select>
+                </div>
+                <div class="control-item">
+                    <label class="control-label">Branch</label>
+                    <select id="branchSelect">
+                        <option value="all">All Branches</option>
+                        <option value="podium">Podium</option>
+                        <option value="smnorth">SM North</option>
+                        <option value="popup">Pop-up</option>
+                        <option value="workshop">Workshop</option>
+                        <option value="other">Other Events</option>
+                    </select>
+                </div>
+                <div class="control-item">
+                    <label class="control-label">Display</label>
+                    <div class="toggle-container">
+                        <input type="checkbox" id="activeOnlyToggle" checked>
+                        <label for="activeOnlyToggle">Active Employees</label>
+                    </div>
+                </div>
+                <div class="control-item">
+                    <label class="control-label">Prior cutoffs</label>
+                    <div class="toggle-container">
+                        <input type="checkbox" id="includePriorEarningsToggle">
+                        <label for="includePriorEarningsToggle">Pending from previous (max 2)</label>
+                    </div>
+                </div>
+                <!-- <div class="control-item">
+                    <input type="file" id="utakImportInput" accept=".csv" />
+                </div> -->
+                <!-- <div class="control-item">
+                    <button class="danger-btn" id="clearLogsBtn">🧹 Clear Logs</button>
+                </div> -->
+                <button class="employee-btn" id="addEmployeeBtn" type="button">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="9" cy="7" r="4"></circle>
+                        <line x1="19" x2="19" y1="8" y2="14"></line>
+                        <line x1="22" x2="16" y1="11" y2="11"></line>
+                    </svg>
+                    Add Employee
+                </button>
+                <button class="employee-btn" id="periodEarningsBtn" type="button" title="Bonuses and adjustments for this period">
+                    Period earnings
+                </button>
+                <button class="employee-btn pay-mode-launch-btn" id="payModeBtn" type="button" title="Sequential QR pay mode — scan and pay each employee quickly">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <rect x="3" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="3" width="7" height="7"></rect>
+                        <rect x="3" y="14" width="7" height="7"></rect>
+                        <path d="M14 14h.01"></path>
+                        <path d="M20 14h.01"></path>
+                        <path d="M14 20h.01"></path>
+                        <path d="M20 20h.01"></path>
+                        <path d="M17 17h.01"></path>
+                    </svg>
+                    Pay Mode
+                </button>
+                <button class="export-btn" id="exportBtn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Export Detailed
+                </button>
+                <button class="export-btn" id="exportPayrollBtn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14,2 14,8 20,8"></polyline>
+                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                        <polyline points="10,9 9,9 8,9"></polyline>
+                    </svg>
+                    Export Payroll
+                </button>
+                <button class="refresh-btn" id="refreshBtn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 2v6h-6"></path>
+                        <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+                        <path d="M3 22v-6h6"></path>
+                        <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+                    </svg>
+                    Refresh Data
+                </button>
+                <button class="push-holidays-btn" onclick="pushHolidaysToFirebase()">Push Holidays to Firebase</button>
+                <!-- <button class="danger-btn" id="cleanupPhotosBtn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6" />
+                    </svg>
+                    Cleanup Orphaned Photos
+                </button> -->
+            </div>
+        </div>
+
+        <div class="summary-cards">
+            <div class="summary-card">
+                <div class="card-title">Total Employees</div>
+                <div class="card-value" id="totalEmployees">0</div>
+                <div class="card-subtitle">All staff</div>
+            </div>
+            <div class="summary-card">
+                <div class="card-title">Active Employees</div>
+                <div class="card-value" id="activeEmployees">0</div>
+                <div class="card-subtitle">For this period</div>
+            </div>
+            <div class="summary-card">
+                <div class="card-title">Holidays</div>
+                <div class="card-value" id="totalLateHours">0.0</div>
+                <div class="card-subtitle">in this period</div>
+            </div>
+            <div class="summary-card">
+                <div class="card-title" id="totalPayrollTitle">Total Payroll</div>
+                <div class="card-value" id="totalPayroll">₱0.00</div>
+                <div class="card-subtitle" id="totalPayrollSubtitle">All branches · this period</div>
+            </div>
+        </div>
+
+        <!-- Wrap table in a container for loading overlay -->
+        <div class="data-table-container">
+            <!-- Loading overlay just for the table -->
+            <!-- Update your loading overlay in the HTML file -->
+            <div class="loading-overlay" id="loadingOverlay">
+                <div class="spinner"></div>
+                <!-- Add this line below the spinner -->
+                <!-- <div class="loading-message" id="refreshIndicator">Loading data...</div> -->
+            </div>
+            <div id="payrollTableBlockingScrim" class="payroll-blocking-scrim payroll-blocking-scrim--table" style="display: none;" aria-hidden="true">
+                <div class="payroll-blocking-scrim__backdrop" aria-hidden="true"></div>
+            </div>
+
+            <table class="data-table" id="employeeTable">
+                <thead>
+                    <tr>
+                        <th class="sortable" data-sort="name" scope="col" title="Sort by employee name">Employee</th>
+                        <th class="sortable" data-sort="daysWorked" scope="col" title="Sort by days worked">Days Worked</th>
+                        <th class="sortable" data-sort="lateness" scope="col" title="Sort by average lateness">Avg. Lateness</th>
+                        <th>Base Rate</th>
+                        <th>Total Pay</th>
+                        <th class="sortable" data-sort="balance" scope="col" title="Sort by balance remaining">Balance</th>
+                        <th class="sortable" data-sort="lastClockIn" scope="col" title="Sort by last clock-in">Last Clock-in</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="employeeTableBody">
+                    <!-- Employee rows will be populated by JavaScript -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Mobile: fixed-height view; summary fixed at top, only cards area scrolls -->
+        <div class="mobile-payroll-view mobile-payroll-scroll" id="mobilePayrollScroll">
+            <div class="mobile-summary-card mobile-summary-card--clickable" id="mobileSummaryCard" role="button" tabindex="0" aria-label="Period summary, tap to change period">
+                <div class="mobile-summary-card__title">Period summary</div>
+                <div class="mobile-summary-card__hero">
+                    <span class="mobile-summary-card__hero-label" id="mobileSummaryPayrollLabel">Total Payroll</span>
+                    <span class="mobile-summary-card__hero-value" id="mobileSummaryTotalPayroll">₱0.00</span>
+                </div>
+                <div class="mobile-summary-card__meta">
+                    <div class="mobile-summary-card__row mobile-summary-card__row--period" id="mobileSummaryPeriodRow">
+                        <span class="mobile-summary-card__label">Period</span>
+                        <span class="mobile-summary-card__value mobile-summary-card__period-label" id="mobileSummaryPeriodLabel">—</span>
+                    </div>
+                    <div class="mobile-summary-card__row">
+                        <span class="mobile-summary-card__label">Active employees</span>
+                        <span class="mobile-summary-card__value" id="mobileSummaryActive">0</span>
+                    </div>
+                </div>
+            </div>
+            <div class="mobile-cards-wrapper" id="mobileCardsWrapper">
+                <div class="mobile-loading-overlay" id="mobileLoadingOverlay" style="display: none;" aria-hidden="true">
+                    <div class="spinner"></div>
+                    <div class="loading-message">Loading data...</div>
+                </div>
+                <div id="payrollMobileBlockingScrim" class="payroll-blocking-scrim payroll-blocking-scrim--mobile-cards" style="display: none;" aria-hidden="true">
+                    <div class="payroll-blocking-scrim__backdrop" aria-hidden="true"></div>
+                </div>
+                <div class="employee-cards-mobile" id="employeeCardsMobile" aria-hidden="true">
+                    <!-- Populated by JS when viewport < 992px -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Mobile: period selection modal -->
+        <div class="modal period-select-modal" id="periodSelectModal" aria-hidden="true" style="display: none;">
+            <div class="period-select-modal__content" onclick="event.stopPropagation()">
+                <span class="close-modal period-select-modal__close" id="periodSelectModalClose" aria-label="Close">×</span>
+                <h3 class="period-select-modal__title">Select payroll period</h3>
+                <ul class="period-select-modal__list" id="periodSelectModalList" role="listbox">
+                    <!-- Populated by JS from window.payrollPeriods -->
+                </ul>
+            </div>
+        </div>
+
+        <!-- Mobile-only employee detail modal (day cards, close, Record payment) -->
+        <div class="modal employee-detail-mobile-modal" id="employeeDetailMobileModal" aria-hidden="true" style="display: none;">
+            <div class="employee-detail-mobile-modal__content" onclick="event.stopPropagation()">
+                <span class="close-modal employee-detail-mobile-modal__close" id="employeeDetailMobileClose" aria-label="Close">×</span>
+                <div class="employee-detail-mobile-modal__body">
+                    <div class="employee-detail-mobile__header">
+                        <h2 class="employee-detail-mobile__name" id="employeeDetailMobileName"></h2>
+                    </div>
+                    <div class="employee-detail-mobile__summary" id="employeeDetailMobileSummary"></div>
+                    <div class="employee-detail-mobile__actions" id="employeeDetailMobileActions"></div>
+                    <div class="employee-detail-mobile-modal__day-cards-scroll">
+                        <div class="employee-detail-mobile__day-cards" id="employeeDetailMobileDayCards"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="pagination" id="pagination">
+            <button class="page-btn" data-page="1">1</button>
+            <button class="page-btn active" data-page="2">2</button>
+            <button class="page-btn" data-page="3">3</button>
+            <span class="pagination-info">Showing 0 of 18 employees</span>
+        </div>
+    </div>
+
+    <!-- Viewport-centered loading card; roster blur stays in .data-table-container / mobile wrapper only -->
+    <div id="payrollBlockingPanelHost" class="payroll-blocking-panel-host" style="display: none;" aria-hidden="true">
+        <div class="payroll-blocking-scrim__panel">
+            <div class="spinner"></div>
+            <p class="payroll-blocking-scrim__message">Loading payroll data…</p>
+            <p class="payroll-blocking-scrim__detail" aria-live="polite"></p>
+        </div>
+    </div>
+
+    <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="../shared/js/PayCalculator.js?v=2.0.9"></script>
+    <script type="module" src="js/admin-script.js?v=2.0.91"></script>
+</body>
+
+</html>

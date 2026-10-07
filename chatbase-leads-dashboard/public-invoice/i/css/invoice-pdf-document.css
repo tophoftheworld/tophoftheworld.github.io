@@ -317,6 +317,25 @@
     border: 0.5px solid #000;
 }
 
+.subtotal-row td,
+.discount-row td,
+.vat-row td {
+    padding: 0.45rem 0.75rem;
+    border: 0.5px solid #000;
+    font-weight: 500;
+}
+
+.discount-row .total-amount {
+    color: #2b9348;
+}
+
+.vat-row .total-label,
+.subtotal-row .total-label,
+.discount-row .total-label {
+    font-weight: 600;
+    text-transform: none;
+}
+
 .total-label {
     font-weight: 700;
     text-transform: uppercase;

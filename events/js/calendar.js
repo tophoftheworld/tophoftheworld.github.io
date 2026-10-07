@@ -5,8 +5,8 @@ import {
   isScheduled,
   manilaTodayYmd,
   pipelineLabel
-} from '../../shared/js/ops-events.js?v=38';
-import { escapeAttr, escapeHtml } from './types.js?v=38';
+} from '../../shared/js/ops-events.js?v=46';
+import { escapeAttr, escapeHtml } from './types.js?v=46';
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const LANE_HEIGHT_PX = 34;

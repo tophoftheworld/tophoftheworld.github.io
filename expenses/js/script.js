@@ -1,6 +1,6 @@
 ﻿// Import shared utilities with version for cache busting
 // Static import with versioned URL to avoid caching issues; keep in sync with index.html
-import * as shared from './shared.js?v=1.5.88';
+import * as shared from './shared.js?v=1.5.104';
 
 // Helper function to get today's date in local timezone (YYYY-MM-DD format)
 function getTodayLocal() {
@@ -535,7 +535,7 @@ function loadDashboard() {
     
     // Filter by selected date and branch / allocation / pop-up event
     const STORE_BRANCHES = ['SM North', 'Podium', 'Mall of Asia'];
-    const ALLOCATION_FILTERS = ['General', 'Workshop', 'Popup', 'Bar Service'];
+    const ALLOCATION_FILTERS = ['General', 'R&D', 'Workshop', 'Popup', 'Bar Service'];
     const isBranchSelected = STORE_BRANCHES.includes(selectedBranch);
     const isAllocationFilter = ALLOCATION_FILTERS.includes(selectedBranch);
 
@@ -1417,7 +1417,7 @@ function resetForm() {
 
     // Prefill allocation/branch from home filter (selectedBranch may be a branch or allocation)
     const STORE_BRANCHES = ['SM North', 'Podium', 'Mall of Asia'];
-    const ALLOCATION_FILTERS = ['General', 'Workshop', 'Popup', 'Bar Service'];
+    const ALLOCATION_FILTERS = ['General', 'R&D', 'Workshop', 'Popup', 'Bar Service'];
     const allocationSelect = document.getElementById('allocationSelect');
     if (allocationSelect) {
         if (STORE_BRANCHES.includes(selectedBranch)) {
@@ -1984,12 +1984,34 @@ async function handleReceiptAiExtract({ silentSuccess = false } = {}) {
 
     try {
         const parsed = await shared.extractExpenseReceiptFromImage(imageDataUrl);
+        if (window.currentReceiptImageForAi !== imageDataUrl) return;
+        const rotated = await shared.applySuggestedReceiptRotation(imageDataUrl, parsed);
+        if (window.currentReceiptImageForAi !== imageDataUrl) return;
+        if (rotated && rotated !== imageDataUrl) {
+            window.currentReceiptImageForAi = rotated;
+            window.currentReceiptData = rotated;
+            showReceiptPreview(rotated, { phase: 'extracting' });
+            const expenseIdForReceipt = window.editingExpenseId || window.currentDraftExpenseId;
+            if (expenseIdForReceipt) {
+                shared
+                    .uploadReceiptImageToStorage(expenseIdForReceipt, rotated)
+                    .then((receiptUrl) => {
+                        if (!receiptUrl) return;
+                        if (window.currentReceiptImageForAi === rotated) {
+                            window.currentReceiptData = receiptUrl;
+                            shared.cacheReceiptUrlForExpense(expenseIdForReceipt, receiptUrl);
+                        }
+                    })
+                    .catch(() => {});
+            }
+        }
         applyReceiptAiExtraction(parsed);
         setReceiptFormPhase('ready');
         setReceiptAiStatus('');
         if (!silentSuccess) showToast('Receipt details filled');
         else showToast('Details filled — review before saving');
     } catch (error) {
+        if (window.currentReceiptImageForAi !== imageDataUrl) return;
         console.error('Receipt AI extract failed:', error);
         const msg = error?.message || 'Could not extract receipt details';
         setReceiptFormPhase('ready');
@@ -2120,7 +2142,10 @@ function applyReceiptAiExtraction(parsed) {
             if (tinInput) tinInput.value = String(parsed.tin || '').trim();
             if (addrInput) addrInput.value = String(parsed.address || '').trim();
             if (vatNew) {
-                vatNew.checked = Boolean(parsed.tin) || Boolean(parsed.printedVat?.vatAmount);
+                vatNew.checked =
+                    parsed.supplierVatRegistered === true ||
+                    Boolean(parsed.tin) ||
+                    Boolean(parsed.printedVat?.vatAmount);
             }
             const vatSection = document.getElementById('vatSection');
             if (vatSection && vatNew?.checked) {
@@ -2147,6 +2172,33 @@ function applyReceiptAiExtraction(parsed) {
     const suggestedCategory = String(parsed.suggestedCategory || '').trim();
     if (suggestedCategory && shared.EXPENSE_CATEGORY_OPTIONS.includes(suggestedCategory)) {
         populateMobileExpenseCategorySelect(suggestedCategory);
+    }
+
+    const suggestedAllocation = String(parsed.suggestedAllocation || '').trim();
+    if (suggestedAllocation && shared.ALLOCATION_OPTIONS.includes(suggestedAllocation)) {
+        const allocationSelect = document.getElementById('allocationSelect');
+        if (allocationSelect) {
+            allocationSelect.value = suggestedAllocation;
+            if (typeof handleAllocationChange === 'function') {
+                handleAllocationChange();
+            }
+        }
+    }
+
+    if (parsed.supplierVatRegistered === true && supplierName) {
+        const match = findSupplierMatchForAiName(supplierName);
+        if (match && !match.isVatRegistered) {
+            shared.updateSupplier(match.id, {
+                ...match,
+                isVatRegistered: true,
+                updatedAt: new Date().toISOString()
+            });
+            enterMobileSupplierVerifiedMode(
+                shared.getSuppliers().find((s) => s.id === match.id) || { ...match, isVatRegistered: true }
+            );
+        }
+        const newVatCb = document.getElementById('newSupplierVatRegistered');
+        if (newVatCb) newVatCb.checked = true;
     }
 
     // Items
@@ -2192,21 +2244,32 @@ function applyReceiptAiExtraction(parsed) {
     const hasPrintedVat =
         (Number(parsed.printedVat?.vatableSale) || 0) > 0 ||
         (Number(parsed.printedVat?.vatAmount) || 0) > 0;
+    const claimable =
+        typeof parsed.inputVatClaimable === 'boolean' ? parsed.inputVatClaimable : null;
+    let wantVatOn =
+        parsed.supplierVatRegistered === true || vatExempt > 0 || hasPrintedVat;
+    if (claimable === false) {
+        wantVatOn = false;
+    }
     const vatExemptInput = document.getElementById('vatExemptAmount');
-    if (vatExemptInput && (vatExempt > 0 || hasPrintedVat)) {
-        const vatSection = document.getElementById('vatSection');
-        const vatToggle = document.getElementById('vatComputationEnabled');
-        const vatToggleTrack = document.getElementById('vatToggleTrack');
-        const vatDetailsSection = document.getElementById('vatDetailsSection');
-        if (vatSection) {
-            vatSection.style.display = 'block';
-            if (vatToggle) vatToggle.checked = true;
-            if (vatToggleTrack) vatToggleTrack.classList.add('active');
-            if (vatDetailsSection) vatDetailsSection.style.display = 'block';
-        }
-        if (vatExempt > 0) {
-            vatExemptInput.value = String(vatExempt);
-        }
+    const vatSection = document.getElementById('vatSection');
+    const vatToggle = document.getElementById('vatComputationEnabled');
+    const vatToggleTrack = document.getElementById('vatToggleTrack');
+    const vatDetailsSection = document.getElementById('vatDetailsSection');
+    if (
+        vatSection &&
+        (wantVatOn ||
+            claimable === false ||
+            parsed.supplierVatRegistered === true ||
+            hasPrintedVat)
+    ) {
+        vatSection.style.display = 'block';
+        if (vatToggle) vatToggle.checked = wantVatOn;
+        if (vatToggleTrack) vatToggleTrack.classList.toggle('active', wantVatOn);
+        if (vatDetailsSection) vatDetailsSection.style.display = wantVatOn ? 'block' : 'none';
+    }
+    if (vatExemptInput && vatExempt > 0) {
+        vatExemptInput.value = String(vatExempt);
     }
 
     if (typeof updateFromItems === 'function') {
@@ -2223,6 +2286,270 @@ function applyReceiptAiExtraction(parsed) {
             // ignore
         }
     }
+    refreshMobileDuplicateBanner({ toastPossible: true });
+}
+
+function buildMobileFormDuplicateCandidate() {
+    const totalInput = document.getElementById('totalAmountInput');
+    return {
+        id: window.editingExpenseId || '',
+        date: document.getElementById('expenseDateValue')?.value || selectedDate || '',
+        supplierName: document.getElementById('supplierName')?.value || '',
+        tin: document.getElementById('tin')?.value || '',
+        invoiceNumber: document.getElementById('invoiceNumber')?.value || '',
+        totalAmount: totalInput ? shared.getPesoValue(totalInput) : 0
+    };
+}
+
+/**
+ * @param {{ expense: object, confidence: string, reasons: string[], fieldHits?: object }[]} matches
+ */
+function renderMobileDuplicateBanner(matches) {
+    const fields = document.getElementById('expenseFormFields');
+    if (!fields) return;
+    let banner = document.getElementById('mobileExpenseDuplicateBanner');
+    if (!matches?.length) {
+        if (banner) banner.hidden = true;
+        closeMobileDupPeek();
+        return;
+    }
+    const top = matches[0];
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'mobileExpenseDuplicateBanner';
+        banner.className = 'expense-duplicate-banner';
+        banner.setAttribute('role', 'status');
+        fields.prepend(banner);
+    }
+    banner.hidden = false;
+    banner.classList.toggle('expense-duplicate-banner--likely', top.confidence === 'likely');
+    banner.innerHTML = shared.formatDuplicateBannerHtml(top, {
+        discardLabel: 'Remove receipt'
+    });
+    banner._dupMatch = top;
+    wireMobileDuplicateBanner(banner);
+}
+
+function clearMobileDuplicateNotesField(match) {
+    const ta = document.getElementById('notes') || document.querySelector('#expenseForm textarea[name="notes"]');
+    if (!ta) return;
+    const v = String(ta.value || '').trim();
+    if (!v) return;
+    const summary = shared.formatDuplicateMatchSummary(match);
+    if (/duplicate/i.test(v) || (summary && v.includes(summary))) {
+        ta.value = '';
+    }
+}
+
+function wireMobileDuplicateBanner(banner) {
+    if (!banner) return;
+    banner.onclick = async (e) => {
+        const previewBtn = e.target.closest('[data-dup-preview]');
+        const keepBtn = e.target.closest('[data-dup-keep]');
+        const replaceBtn = e.target.closest('[data-dup-replace]');
+        const discardBtn = e.target.closest('[data-dup-discard]');
+        if (previewBtn) {
+            e.preventDefault();
+            openMobileDupPeek(previewBtn.getAttribute('data-dup-preview'), banner._dupMatch);
+            return;
+        }
+        if (keepBtn) {
+            e.preventDefault();
+            const matchId = keepBtn.getAttribute('data-dup-keep') || banner._dupMatch?.expense?.id;
+            const candidate = buildMobileFormDuplicateCandidate();
+            shared.dismissDuplicatePair(candidate, matchId);
+            clearMobileDuplicateNotesField(banner._dupMatch);
+            closeMobileDupPeek();
+            renderMobileDuplicateBanner([]);
+            showToast('Keeping both — warning cleared');
+            return;
+        }
+        if (replaceBtn) {
+            e.preventDefault();
+            const matchId =
+                replaceBtn.getAttribute('data-dup-replace') || banner._dupMatch?.expense?.id;
+            await replaceMobileExpenseWithCurrent(matchId);
+            return;
+        }
+        if (discardBtn) {
+            e.preventDefault();
+            removeReceipt({ stopPropagation() {} });
+            closeMobileDupPeek();
+            renderMobileDuplicateBanner([]);
+        }
+    };
+}
+
+async function replaceMobileExpenseWithCurrent(matchId) {
+    if (!matchId) return;
+    const existing = shared.getExpenses().find((e) => e.id === matchId);
+    if (!existing) {
+        showToast('Could not find that expense');
+        return;
+    }
+    if (
+        !window.confirm(
+            'Overwrite the existing expense with this receipt and details?'
+        )
+    ) {
+        return;
+    }
+
+    try {
+        let receipt = window.currentReceiptData || window.currentReceiptImageForAi || null;
+        if (receipt && String(receipt).startsWith('data:')) {
+            const uploaded = await shared.uploadReceiptImageToStorage(matchId, receipt);
+            if (uploaded) receipt = uploaded;
+        }
+        const candidate = buildMobileFormDuplicateCandidate();
+        const items = [];
+        document.querySelectorAll('.item-row').forEach((row) => {
+            const name = row.querySelector('[name="itemName"]')?.value?.trim();
+            if (!name) return;
+            const quantity = parseFloat(row.querySelector('[name="itemQuantity"]')?.value) || 1;
+            const priceInput = row.querySelector('[name="itemPrice"]');
+            const price = priceInput ? shared.getPesoValue(priceInput) : 0;
+            items.push({
+                name,
+                quantity,
+                price,
+                total: shared.calculateItemTotal(quantity, price)
+            });
+        });
+
+        const payload = {
+            ...existing,
+            id: matchId,
+            date: candidate.date || existing.date,
+            supplierName: candidate.supplierName || existing.supplierName,
+            tin: candidate.tin || existing.tin,
+            invoiceNumber: candidate.invoiceNumber || existing.invoiceNumber,
+            totalAmount: candidate.totalAmount || existing.totalAmount,
+            items: items.length ? items : existing.items,
+            businessName: document.getElementById('businessName')?.value || existing.businessName,
+            address: document.getElementById('address')?.value || existing.address,
+            notes: document.getElementById('notes')?.value || existing.notes,
+            receiptImage: receipt || existing.receiptImage,
+            hasReceiptImage: Boolean(receipt || existing.receiptImage),
+            createdAt: existing.createdAt
+        };
+
+        const result = shared.createExpenseObject(payload, {
+            existingExpense: existing,
+            isEditing: true,
+            calculateTotalFromItems: false,
+            autoCalculateVAT: true,
+            validate: true
+        });
+        if (!result.success || !result.expense) {
+            showToast((result.errors && result.errors.join(', ')) || 'Could not update');
+            return;
+        }
+        shared.updateExpense(matchId, result.expense);
+        shared.dismissDuplicatePair(candidate, matchId);
+        closeMobileDupPeek();
+        renderMobileDuplicateBanner([]);
+        showToast('Replaced with this version');
+        shared.flushPendingSync?.().catch?.(() => {});
+        // Clear the draft form so we don't save a second copy
+        if (typeof resetForm === 'function') resetForm();
+        else removeReceipt({ stopPropagation() {} });
+    } catch (err) {
+        console.error(err);
+        showToast(err?.message || 'Could not replace expense');
+    }
+}
+
+function closeMobileDupPeek() {
+    document.getElementById('mobileDupPeek')?.remove();
+}
+
+async function openMobileDupPeek(matchId, match) {
+    if (!matchId) return;
+    let expense = match?.expense;
+    if (!expense || expense.id !== matchId) {
+        expense = shared.getExpenses().find((e) => e.id === matchId) || null;
+    }
+    if (!expense) {
+        showToast('Could not find that expense');
+        return;
+    }
+
+    closeMobileDupPeek();
+    const peek = document.createElement('div');
+    peek.id = 'mobileDupPeek';
+    peek.className = 'mobile-dup-peek';
+    peek.setAttribute('role', 'dialog');
+    peek.setAttribute('aria-label', 'Similar expense preview');
+
+    const amt = Number(expense.totalAmount) || 0;
+    let dateLabel = expense.date || '—';
+    try {
+        dateLabel = shared.formatDateDisplay(expense.date, false) || expense.date;
+    } catch (_) {
+        /* keep */
+    }
+
+    peek.innerHTML = `
+        <div class="mobile-dup-peek-card">
+            <div class="mobile-dup-peek-head">
+                <div>
+                    <div class="expense-dup-title">Similar expense</div>
+                    <div class="expense-dup-vs">${escapeHtmlMobile(expense.supplierName || '—')}</div>
+                </div>
+                <button type="button" class="mobile-dup-peek-close" data-dup-peek-close aria-label="Close">&times;</button>
+            </div>
+            <div class="mobile-dup-peek-receipt" data-dup-peek-receipt><p class="muted">Loading…</p></div>
+            <dl class="admin-dup-peek-meta mobile-dup-peek-meta">
+                <div><dt>Date</dt><dd>${escapeHtmlMobile(dateLabel)}</dd></div>
+                <div><dt>Amount</dt><dd>₱${amt.toLocaleString()}</dd></div>
+                <div><dt>Invoice</dt><dd>${escapeHtmlMobile(expense.invoiceNumber || '—')}</dd></div>
+            </dl>
+        </div>
+    `;
+    document.body.appendChild(peek);
+    peek.addEventListener('click', (e) => {
+        if (e.target === peek || e.target.closest('[data-dup-peek-close]')) closeMobileDupPeek();
+    });
+
+    const receiptMount = peek.querySelector('[data-dup-peek-receipt]');
+    const showReceipt = (url) => {
+        if (!receiptMount) return;
+        if (!url) {
+            receiptMount.innerHTML = '<p class="muted">No receipt image</p>';
+            return;
+        }
+        receiptMount.innerHTML = `<img src="${url}" alt="Similar receipt"/>`;
+    };
+    if (expense.receiptImage && (String(expense.receiptImage).startsWith('data:') || /^https?:/i.test(expense.receiptImage))) {
+        showReceipt(expense.receiptImage);
+    } else {
+        try {
+            showReceipt((await shared.fetchReceiptImageFromFirebase(matchId)) || '');
+        } catch (_) {
+            showReceipt('');
+        }
+    }
+}
+
+function escapeHtmlMobile(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function refreshMobileDuplicateBanner({ toastPossible = false } = {}) {
+    const candidate = buildMobileFormDuplicateCandidate();
+    const matches = shared.findPossibleDuplicateExpenses(candidate, {
+        excludeIds: candidate.id ? [candidate.id] : []
+    });
+    renderMobileDuplicateBanner(matches);
+    if (toastPossible && matches.length && matches[0].confidence === 'possible') {
+        showToast('Possible duplicate found — review before saving');
+    }
+    return matches;
 }
 
 function createAutocomplete(inputElement, getMatches, onSelect, showOnFocus = false) {
@@ -2790,10 +3117,28 @@ async function handleFormSubmission(e) {
     // Check for validation errors
     if (!result.success) {
         showToast(result.errors.join(', '));
+        releaseSubmitLock();
         return;
     }
 
     const expense = result.expense;
+
+    if (!isEditing) {
+        const dupes = shared.findPossibleDuplicateExpenses(expense, {
+            excludeIds: expense.id ? [expense.id] : []
+        });
+        renderMobileDuplicateBanner(dupes);
+        const likely = dupes.filter((d) => d.confidence === 'likely');
+        if (likely.length) {
+            const ok = window.confirm(
+                `Similar to ${shared.formatDuplicateMatchSummary(likely[0])}\n\nSave this expense anyway?`
+            );
+            if (!ok) {
+                releaseSubmitLock();
+                return;
+            }
+        }
+    }
 
     // Check if supplier is new (before saving) to show appropriate feedback
     const supplierName = (expense.supplierName || '').trim();

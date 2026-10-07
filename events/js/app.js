@@ -3,7 +3,7 @@ import {
   manilaTodayYmd,
   datesInRange,
   isScheduled
-} from '../../shared/js/ops-events.js?v=38';
+} from '../../shared/js/ops-events.js?v=47';
 import {
   seedAndLoadTypes,
   fetchAllEvents,
@@ -21,9 +21,9 @@ import {
   runBackfill,
   getEventById,
   getInvoiceById
-} from './sync.js?v=38';
-import { setTypes, typeOptionsHtml, getType } from './types.js?v=38';
-import { renderCalendar, renderUnscheduled, monthLabel } from './calendar.js?v=38';
+} from './sync.js?v=47';
+import { setTypes, typeOptionsHtml, getType } from './types.js?v=47';
+import { renderCalendar, renderUnscheduled, monthLabel } from './calendar.js?v=47';
 import {
   createDrawer,
   renderEventDashboard,
@@ -40,9 +40,10 @@ import {
   showDayPeek,
   wireHeadcountField,
   wirePartyFields
-} from './panel.js?v=38';
-import { filterLeadsForMonth } from './leads-overlay.js?v=38';
-import { createEventModal, findEventSourceEl } from './event-modal.js?v=38';
+} from './panel.js?v=47';
+import { filterLeadsForMonth } from './leads-overlay.js?v=47';
+import { createEventModal, findEventSourceEl } from './event-modal.js?v=47';
+import { hydrateWidgets, unmountWidgets } from './widgets/index.js?v=47';
 
 const state = {
   year: new Date().getFullYear(),
@@ -279,15 +280,20 @@ function paintEventModalView() {
   const event = state.selectedEvent;
   if (!event) return;
   state.eventModalMode = 'view';
+  unmountWidgets(eventModal.bodyEl);
   eventModal.setBody(renderEventDashboard(event));
   eventModal.setFooter('');
   wireEventModalActions();
+  hydrateWidgets(eventModal.bodyEl, event).catch((err) => {
+    console.warn('Widget hydrate failed', err);
+  });
 }
 
 function paintEventModalEdit() {
   const event = state.selectedEvent;
   if (!event) return;
   state.eventModalMode = 'edit';
+  unmountWidgets(eventModal.bodyEl);
   eventModal.setBody(renderEventModalEdit(event));
   eventModal.setFooter(eventFooterHtml(event));
   wireHeadcountField(eventModal.bodyEl);
@@ -296,6 +302,7 @@ function paintEventModalEdit() {
 }
 
 async function closeEventModal() {
+  unmountWidgets(eventModal.bodyEl);
   state.selectedEvent = null;
   state.eventModalMode = 'view';
   await eventModal.close();
@@ -327,7 +334,10 @@ function openLead(lead) {
   state.selectedLead = lead;
   state.selectedEvent = null;
   state.mergeMode = false;
-  if (eventModal.isOpen()) eventModal.close({ immediate: true });
+  if (eventModal.isOpen()) {
+    unmountWidgets(eventModal.bodyEl);
+    eventModal.close({ immediate: true });
+  }
   drawer.setTitle(lead.eventName || lead.clientName || lead.quoteReference || 'Lead');
   drawer.setBody(renderLeadPeek(lead));
   drawer.setFooter(leadFooterHtml(lead));
@@ -751,7 +761,7 @@ async function applyDeepLink() {
       const ev = await getEventById(inv.opsEventId);
       if (ev) openEvent(ev);
     } else if (inv) {
-      const { invoiceAsLeadOverlay } = await import('../../shared/js/ops-events.js?v=38');
+      const { invoiceAsLeadOverlay } = await import('../../shared/js/ops-events.js?v=47');
       openLead(invoiceAsLeadOverlay(inv));
     }
   } else if (leadId) {

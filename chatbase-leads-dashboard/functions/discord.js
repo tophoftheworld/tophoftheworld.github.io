@@ -85,10 +85,12 @@ const SERVICE_LABELS = {
 
 const PIPELINE_LABELS = {
   inquiry: "Inquiry",
+  qualifying: "Qualifying",
   quoted: "Quoted",
   invoiced: "Invoiced",
   deposit: "Deposit",
-  completed: "Completed"
+  completed: "Completed",
+  lost: "Lost"
 };
 
 const PROFILE_LABELS = {

@@ -12,7 +12,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"
         integrity="sha512-ElRFoEQdI5Ht6kZvyzXhYG9NqjtkmlkfYk0wr6wHxU9JEHakS7UJZNeml5ALk+8IKlU6jDgMabC3vkumRokgJA=="
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <link rel="stylesheet" href="css/admin.css?v=1078">
+    <link rel="stylesheet" href="css/admin.css?v=1092">
 </head>
 
 <body>
@@ -37,14 +37,26 @@
                 <button class="view-btn" data-table="analytics">Analytics</button>
             </div>
             <div class="table-type-actions" id="tableTypeActions">
-                <button class="action-btn secondary" id="exportBtn" title="Export expenses for the selected date range (no receipt images)">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                        <polyline points="7,10 12,15 17,10"></polyline>
-                        <line x1="12" y1="15" x2="12" y2="3"></line>
-                    </svg>
-                    Export CSV
-                </button>
+                <div class="admin-export-wrap">
+                    <button type="button" class="action-btn secondary" id="exportExcelBtn" aria-expanded="false" aria-haspopup="true" title="Download expenses as Excel">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7,10 12,15 17,10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        Download Excel
+                    </button>
+                    <div class="admin-export-popover" id="exportExcelPopover" hidden role="menu" aria-label="Download options">
+                        <button type="button" class="admin-export-option" data-export-mode="filtered" role="menuitem">
+                            <span class="admin-export-option-title">Download filtered</span>
+                            <span class="admin-export-option-meta" id="exportFilteredMeta">Current filters</span>
+                        </button>
+                        <button type="button" class="admin-export-option" data-export-mode="all" role="menuitem">
+                            <span class="admin-export-option-title">Download all</span>
+                            <span class="admin-export-option-meta" id="exportAllMeta">Every expense on file</span>
+                        </button>
+                    </div>
+                </div>
                 <button class="action-btn secondary" id="addBatchExpenseBtn" title="Upload multiple receipts">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <rect x="3" y="3" width="7" height="7" rx="1"/>
@@ -70,9 +82,8 @@
             <div class="filter-row" id="adminFilterSection">
                 <div class="left-filters">
                     <div class="branch-selector">
-                        <span class="branch-label">Branch:</span>
-                        <select class="branch-dropdown" id="branchSelector">
-                            <option value="all">All Branches</option>
+                        <select class="branch-dropdown" id="branchSelector" aria-label="Branch">
+                            <option value="all">All branches</option>
                             <option value="SM North">SM North</option>
                             <option value="Podium">Podium</option>
                             <option value="Mall of Asia">Mall of Asia</option>
@@ -80,10 +91,20 @@
                     </div>
 
                     <div class="category-filter-group">
-                        <span class="category-label">Category:</span>
-                        <select class="category-dropdown" id="categorySelector">
-                            <option value="all">All Categories</option>
+                        <select class="category-dropdown" id="categorySelector" aria-label="Category">
+                            <option value="all">All categories</option>
                         </select>
+                    </div>
+
+                    <div class="admin-search-group">
+                        <input type="search" id="expenseSearchInput" class="admin-search-input" placeholder="Supplier, invoice, person…" aria-label="Search expenses" autocomplete="off" />
+                    </div>
+
+                    <div class="admin-columns-wrap">
+                        <button type="button" class="action-btn secondary admin-columns-btn" id="expenseColumnsBtn" aria-expanded="false" aria-haspopup="true" title="Customize columns">
+                            Columns
+                        </button>
+                        <div class="admin-columns-popover" id="expenseColumnsPopover" hidden role="dialog" aria-label="Visible columns"></div>
                     </div>
                 </div>
 
@@ -97,14 +118,14 @@
 
                     <div class="date-filter-option" data-date-mode="month">
                         <span class="date-filter-option-label">By month</span>
-                        <select id="monthDropdown" class="month-dropdown date-filter-control">
+                        <select id="monthDropdown" class="month-dropdown date-filter-control" aria-label="Month">
                             <option value="">Select month…</option>
                         </select>
                     </div>
 
                     <div class="date-filter-option" data-date-mode="custom">
-                        <span class="date-filter-option-label">Custom range</span>
-                        <input type="text" id="dateRange" class="date-filter-control" placeholder="Pick dates…" readonly />
+                        <span class="date-filter-option-label">Custom</span>
+                        <input type="text" id="dateRange" class="date-filter-control" placeholder="Pick dates…" readonly aria-label="Custom date range" />
                     </div>
                 </div>
             </div>
@@ -157,17 +178,7 @@
                 <table class="data-table">
                     <thead>
                         <tr id="expenseTableHeaders">
-                            <th><input type="checkbox" id="selectAllExpenses" onchange="toggleSelectAll()"></th>
-                            <th data-sort="date">Date</th>
-                            <th data-sort="supplier">Supplier</th>
-                            <th>Items</th>
-                            <th data-sort="category">Category</th>
-                            <th data-sort="amount">Amount</th>
-                            <th data-sort="allocation">Allocation</th>
-                            <th data-sort="branchevent">Branch / Event</th>
-                            <th data-sort="paidby">Paid By</th>
-                            <th data-sort="recordedby">Recorded By</th>
-                            <th data-sort="vat">VAT</th>
+                            <!-- Filled by JS from column prefs -->
                         </tr>
                     </thead>
                     <tbody id="expenseTableBody">
@@ -313,7 +324,7 @@
     </div>
 
     <!-- Load admin script at the bottom to ensure DOM is ready -->
-    <script type="module" src="./js/admin.js?v=1097"></script>
+    <script type="module" src="./js/admin.js?v=1120"></script>
 
 </body>
 

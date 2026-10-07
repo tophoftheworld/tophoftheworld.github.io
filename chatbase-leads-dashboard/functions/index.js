@@ -1005,18 +1005,6 @@ const scheduleOpts = {
   secrets: [emailjsPrivateKey]
 };
 
-exports.inboxSummaryEmailMorning = onSchedule(
-  { ...scheduleOpts, schedule: "0 9 * * *" },
-  async () => {
-    try {
-      await runScheduledInboxSummaryEmail("morning");
-    } catch (err) {
-      logError("Morning inbox summary email failed", err);
-      throw err;
-    }
-  }
-);
-
 exports.inboxSummaryEmailEvening = onSchedule(
   { ...scheduleOpts, schedule: "0 21 * * *" },
   async () => {

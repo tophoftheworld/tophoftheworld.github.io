@@ -2126,6 +2126,39 @@ html {
   color: white;
 }
 
+.pos-sync-status-chip {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 10px;
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: 2px solid #1d8a00;
+  background: #fff;
+  color: #1d8a00;
+  font-family: 'Poppins', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pos-sync-status-chip[data-state="offline"],
+.pos-sync-status-chip[data-state="error"] {
+  border-color: #b00020;
+  color: #b00020;
+}
+
+.pos-sync-status-chip[data-state="syncing"],
+.pos-sync-status-chip[data-state="pending"] {
+  border-color: #c47a00;
+  color: #c47a00;
+}
+
+.pos-sync-status-chip[data-state="online"] {
+  border-color: #1d8a00;
+  color: #1d8a00;
+}
+
 .add-event-btn {
   background-color: #1d8a00;
   color: white;

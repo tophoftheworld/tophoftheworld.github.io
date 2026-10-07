@@ -13,11 +13,11 @@ import {
   onSnapshot,
   runTransaction,
 } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
-import { db } from '../firebase.js?v=106';
-import { STORAGE_KEY, THIS_WEEK_ID } from './seed.js?v=106';
-import { mergeOverlays, stampOverlayEdits } from './overlay-merge.js?v=106';
-import { preferNonEmptyPastWeek, weekHasOnPlanBudget, overlayHasArchivableBudget } from './overlay-filter.js?v=106';
-import { actorStamp } from './actor.js?v=106';
+import { db } from '../firebase.js?v=111';
+import { STORAGE_KEY, THIS_WEEK_ID } from './seed.js?v=111';
+import { mergeOverlays, stampOverlayEdits } from './overlay-merge.js?v=111';
+import { preferNonEmptyPastWeek, weekHasOnPlanBudget, overlayHasArchivableBudget } from './overlay-filter.js?v=111';
+import { actorStamp } from './actor.js?v=111';
 
 export const OVERLAY_KEY = 'purchasing-overlay-v2';
 
@@ -168,10 +168,14 @@ export async function loadLiveOverlay() {
   const remoteHasBudget = overlayHasArchivableBudget(remote);
   const localHasBudget = overlayHasArchivableBudget(local);
   const remoteIsBlankShell = overlayLooksUseful(remote) && !remoteHasBudget;
+  const remoteUpdatedAt = normalizeUpdatedAt(remote?.updatedAt);
+  const localUpdatedAt = normalizeUpdatedAt(local?.updatedAt);
+  // Local is only ever an acked copy; a newer server shell (rollover / clear) supersedes it.
+  const localIsStale = !!(remoteUpdatedAt && localUpdatedAt && remoteUpdatedAt > localUpdatedAt);
 
   // Blank shell (weekStart / branchForecast only) must not clobber a local plan.
   // Return local so Friday rollover can archive it instead of opening an empty next week.
-  if (remoteIsBlankShell && localHasBudget) {
+  if (remoteIsBlankShell && localHasBudget && !localIsStale) {
     setAckedOverlay(local);
     return local;
   }
@@ -375,7 +379,7 @@ export async function clearLiveOverlay(weekStart = null, weekEnd = null) {
 }
 
 /**
- * Listen for remote overlay changes. Skips echoes of this browser’s own saves.
+ * Listen for remote overlay changes. Skips echoes of this browser's own saves.
  * Updates acked overlay when applying remote (caller decides dirty merge).
  * @param {(overlay: object, meta: { isEcho: boolean }) => void} onChange
  * @returns {() => void} unsubscribe

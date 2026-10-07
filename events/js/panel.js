@@ -10,8 +10,9 @@ import {
   resolveHeadcountFields,
   serviceModeForType,
   typeIdFromLead
-} from '../../shared/js/ops-events.js?v=38';
-import { escapeHtml, typeLabel, typeOptionsHtml } from './types.js?v=38';
+} from '../../shared/js/ops-events.js?v=46';
+import { escapeHtml, typeLabel, typeOptionsHtml } from './types.js?v=46';
+import { widgetsForEvent } from './widgets/index.js?v=47';
 
 /**
  * @param {object} opts
@@ -236,208 +237,18 @@ export function eventFooterHtml(event) {
   `;
 }
 
-const DASH_WIDGETS = [
-  { id: 'schedule', title: 'Schedule' },
-  { id: 'menu', title: 'Menu' },
-  { id: 'sales', title: 'Sales' },
-  { id: 'expenses', title: 'Expenses' },
-  { id: 'invoice', title: 'Invoice' },
-  { id: 'inbox', title: 'Inbox' },
-  { id: 'purchasing', title: 'Purchasing' },
-  { id: 'workshops', title: 'Workshops' }
-];
-
-/** Which widgets apply for this event type (mockup filter). */
-function widgetsForEvent(event) {
-  const typeId = event?.typeId;
-  const isPopup = typeId === 'matcha_popup';
-  const isWorkshop = typeId === 'matcha_workshop' || typeId === 'mochi_workshop';
-  const isBar = typeId === 'mobile_bar';
-  return DASH_WIDGETS.filter((w) => {
-    if (w.id === 'menu' || w.id === 'sales') return isPopup;
-    if (w.id === 'purchasing') return isPopup || isWorkshop;
-    if (w.id === 'workshops') return isWorkshop;
-    if (w.id === 'schedule' || w.id === 'expenses' || w.id === 'invoice' || w.id === 'inbox') {
-      return isPopup || isWorkshop || isBar || !typeId;
-    }
-    return true;
-  });
+function escapeAttrValue(text) {
+  return String(text ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
-function expensesAllocationLabel(typeId) {
-  if (typeId === 'matcha_popup') return 'Popup';
-  if (typeId === 'mobile_bar') return 'Bar Service';
-  if (typeId === 'matcha_workshop' || typeId === 'mochi_workshop') return 'Workshop';
-  return 'Popup';
-}
-
-/** Hardcoded mock from employees_v2 (nicknames + staff-photos). Not live shifts. */
-const SCHEDULE_MOCK_ROWS = [
-  {
-    name: 'Bea',
-    photoUrl:
-      'https://firebasestorage.googleapis.com/v0/b/matchanese-attendance.firebasestorage.app/o/staff-photos%2F130129?alt=media&token=e20582ce-a877-4887-9482-728bee8ef2e2',
-    timeIn: '9:30 AM',
-    timeOut: '6:30 PM',
-    kind: 'opening'
-  },
-  {
-    name: 'Acerr',
-    photoUrl:
-      'https://firebasestorage.googleapis.com/v0/b/matchanese-attendance.firebasestorage.app/o/staff-photos%2F130429?alt=media&token=68788e50-90b2-4f08-af1f-0c1456cfc3a5',
-    timeIn: '9:30 AM',
-    timeOut: '6:30 PM',
-    kind: 'opening'
-  },
-  {
-    name: 'Mae',
-    photoUrl:
-      'https://firebasestorage.googleapis.com/v0/b/matchanese-attendance.firebasestorage.app/o/staff-photos%2F130829?alt=media&token=efe0081e-b805-476c-bc0e-ab03c9502ecc',
-    timeIn: '1:00 PM',
-    timeOut: '10:00 PM',
-    kind: 'closing'
-  },
-  {
-    name: 'Lester',
-    photoUrl:
-      'https://firebasestorage.googleapis.com/v0/b/matchanese-attendance.firebasestorage.app/o/staff-photos%2F131029?alt=media&token=690f3989-d839-4375-8847-b1edab4e1c37',
-    timeIn: '1:00 PM',
-    timeOut: '10:00 PM',
-    kind: 'closing'
-  }
-];
-
-const SCHEDULE_KIND_LABEL = {
-  opening: 'Opening',
-  closing: 'Closing'
-};
-
-function scheduleCardHtml(row) {
-  return `<div class="event-sched-card is-${escapeAttrValue(row.kind)}">
-      <img class="event-sched-card__photo" src="${escapeAttrValue(row.photoUrl)}" alt="" width="36" height="36" loading="lazy" />
-      <div class="event-sched-card__details">
-        <div class="event-sched-card__name">${escapeHtml(row.name)}</div>
-        <div class="event-sched-card__kind">${escapeHtml(SCHEDULE_KIND_LABEL[row.kind] || row.kind)}</div>
-        <div class="event-sched-card__time">${escapeHtml(row.timeIn)} – ${escapeHtml(row.timeOut)}</div>
-      </div>
-    </div>`;
-}
-
-function scheduleWidgetHtml() {
-  const opening = SCHEDULE_MOCK_ROWS.filter((r) => r.kind === 'opening');
-  const closing = SCHEDULE_MOCK_ROWS.filter((r) => r.kind === 'closing');
-  const total = SCHEDULE_MOCK_ROWS.length;
-
-  const section = (kind, rows) => {
-    if (!rows.length) return '';
-    return `<div class="event-sched-section">
-      <div class="event-sched-section__label">${escapeHtml(SCHEDULE_KIND_LABEL[kind])} · ${rows.length}</div>
-      <div class="event-sched-list">${rows.map(scheduleCardHtml).join('')}</div>
-    </div>`;
-  };
-
-  return `
-    <div class="event-widget__stat-row">
-      <strong>${total} scheduled</strong>
-    </div>
-    ${section('opening', opening)}
-    ${section('closing', closing)}`;
-}
-
-function widgetBodyHtml(id, event) {
-  const allocation = expensesAllocationLabel(event?.typeId);
-  switch (id) {
-    case 'schedule':
-      return scheduleWidgetHtml();
-    case 'menu':
-      return `
-        <div class="event-widget__stat-row">
-          <span class="event-widget__sub">Custom Menu · 6 categories</span>
-        </div>
-        <ul class="event-widget__menu">
-          <li><span>Halaya Latte</span><span>₱200</span></li>
-          <li><span>Ceremonial Matcha</span><span>₱220</span></li>
-          <li><span>Seasalt Cream Cookie</span><span>₱90</span></li>
-        </ul>
-        <p class="event-widget__more">+14 more · from Pop-ups manage event</p>`;
-    case 'sales':
-      return `
-        <div class="event-widget__metric-label">Total Sales</div>
-        <div class="event-widget__money-lg">₱24,850</div>
-        <div class="event-widget__metrics">
-          <div><span class="event-widget__metric-label">Cups Sold</span><span class="event-widget__metric-value">186</span></div>
-          <div><span class="event-widget__metric-label">Orders</span><span class="event-widget__metric-value">94</span></div>
-          <div><span class="event-widget__metric-label">Est. Profit</span><span class="event-widget__metric-value">₱9.1k</span></div>
-        </div>
-        <p class="event-widget__tenders">Cash ₱11.2k · GCash ₱9.4k · Card ₱4.3k</p>
-        <p class="event-widget__more">EOD · Variance +₱120</p>`;
-    case 'expenses':
-      return `
-        <div class="event-widget__stat-row">
-          <strong class="event-widget__money">₱8,420</strong>
-          <span class="linked-badge on">${escapeHtml(allocation)}</span>
-        </div>
-        <ul class="event-widget__list">
-          <li><span class="event-widget__list-main"><span class="event-widget__name">SM Hypermarket</span><span class="event-widget__meta">Supplier</span></span><span>₱2,180</span></li>
-          <li><span class="event-widget__list-main"><span class="event-widget__name">Lazada</span><span class="event-widget__meta">Supplier</span></span><span>₱960</span></li>
-          <li><span class="event-widget__list-main"><span class="event-widget__name">Petty cash</span><span class="event-widget__meta">Pop-up Cash</span></span><span>₱450</span></li>
-        </ul>
-        <p class="event-widget__more">Allocation · ${escapeHtml(allocation)}</p>`;
-    case 'invoice':
-      return `
-        <div class="event-widget__stat-row">
-          <code class="event-widget__code">INV-2026-1042</code>
-          <span class="event-widget__status is-partial">Partial</span>
-        </div>
-        <div class="event-widget__money-stack">
-          <div><span class="event-widget__metric-label">Total</span><span class="event-widget__metric-value">Php 45,000</span></div>
-          <div><span class="event-widget__metric-label">Remaining</span><span class="event-widget__metric-value is-due">Php 30,000</span></div>
-        </div>
-        <p class="event-widget__more">Date Reservation · Payment confirmed</p>`;
-    case 'inbox':
-      return `
-        <div class="event-widget__stat-row">
-          <span class="lead-pip lead-pipeline-quoted">Quoted</span>
-          <span class="event-widget__meta">2h ago</span>
-        </div>
-        <p class="event-widget__name event-widget__name--lg">Lanson Events</p>
-        <p class="event-widget__subline">Private Matcha Workshop · 16 pax · ₱45,000</p>
-        <p class="event-widget__preview">Can we confirm the Saturday setup time and send the deposit slip?</p>`;
-    case 'purchasing':
-      return `
-        <div class="event-widget__stat-row">
-          <span class="event-widget__sub">Week of Sep 22–28</span>
-          <span class="linked-badge on">Ordering</span>
-        </div>
-        <p class="event-widget__name event-widget__name--lg">${escapeHtml(displayTitle(event) || 'Event location')}</p>
-        <div class="event-widget__metrics">
-          <div><span class="event-widget__metric-label">Plan</span><span class="event-widget__metric-value">₱12.4k</span></div>
-          <div><span class="event-widget__metric-label">Lines</span><span class="event-widget__metric-value">18</span></div>
-          <div><span class="event-widget__metric-label">Status</span><span class="event-widget__metric-value">Open</span></div>
-        </div>
-        <p class="event-widget__more">Budget · Order · Reconcile</p>`;
-    case 'workshops':
-      return `
-        <div class="event-widget__stat-row">
-          <span class="event-widget__sub">Session roster</span>
-          <span class="linked-badge on">4 left</span>
-        </div>
-        <p class="event-widget__seats"><strong>12</strong><span>/16 booked</span></p>
-        <ul class="event-widget__people event-widget__people--compact">
-          <li><span class="event-widget__name">Priya</span></li>
-          <li><span class="event-widget__name">Marco</span></li>
-          <li><span class="event-widget__name">Elle</span></li>
-        </ul>
-        <p class="event-widget__more">+9 participants · open</p>`;
-    default:
-      return '';
-  }
-}
-
-function widgetCardHtml(widget, event) {
+function widgetCardHtml(widget) {
   return `<article class="event-widget" data-widget="${escapeAttrValue(widget.id)}">
     <h3 class="event-widget__title">${escapeHtml(widget.title)}</h3>
-    <div class="event-widget__body">${widgetBodyHtml(widget.id, event)}</div>
+    <div class="event-widget__body"><p class="event-widget__empty-state">Loading…</p></div>
   </article>`;
 }
 
@@ -561,7 +372,7 @@ export function renderEventDashboard(event) {
     <section class="event-dash-widgets" aria-label="Connected apps">
       <div class="event-dash-widgets-grid">
         ${widgetsForEvent(event)
-          .map((w) => widgetCardHtml(w, event))
+          .map((w) => widgetCardHtml(w))
           .join('')}
       </div>
     </section>
@@ -819,13 +630,6 @@ function formatService(service) {
   if (service === 'private_mobile_matcha_bar') return 'Private Mobile Matcha Bar';
   if (service === 'private_matcha_workshop') return 'Private Matcha Workshop';
   return service || '—';
-}
-
-function escapeAttrValue(text) {
-  return String(text ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;');
 }
 
 export function showComposer(rootEl, { date, typesHtml, onSave, onCancel }) {

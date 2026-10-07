@@ -211,6 +211,17 @@
     return `${n} cups`;
   }
 
+  function renderSectionItem(section, text) {
+    let html = escapeHtml(text);
+    if (section.markdown) {
+      html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/__(.+?)__/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/_(.+?)_/g, '<em>$1</em>');
+    }
+    return html;
+  }
+
   function collectInclusions(item) {
     const sections = [];
     const menu = (item.menuItems || []).map((m) => String(m).trim()).filter(Boolean);
@@ -230,7 +241,12 @@
       if (item.workshopDetails && String(item.workshopDetails).trim()) {
         sections.push({
           label: "Additional details",
-          items: [String(item.workshopDetails).trim()]
+          markdown: true,
+          items: String(item.workshopDetails)
+            .replace(/\\n/g, "\n")
+            .split(/\r\n|\r|\n/)
+            .map((line) => line.trim().replace(/^[-*+•]\s+/, ""))
+            .filter(Boolean)
         });
       }
     } else {
@@ -270,6 +286,7 @@
       const choiceSlots = choiceSlotsForPackageType(item.packageType);
       lines.push({
         kind: "package",
+        isWorkshop: isWorkshopItem(item),
         itemId: item.id,
         packageType: item.packageType || "",
         coffeeAddOn: !!item.coffeeAddOn,
@@ -389,6 +406,7 @@
 
   function derivePricingFromDoc(doc, computedLineTotal) {
     const storedDiscount = Number(doc.amountDiscount);
+    const storedVat = Number(doc.amountVat);
     const storedTotal =
       Number.isFinite(Number(doc.amountTotal)) && Number(doc.amountTotal) >= 0
         ? Number(doc.amountTotal)
@@ -409,15 +427,33 @@
       if (Number.isFinite(extra) && extra > 0) amountDiscount += extra;
     }
 
+    let amountVat = Number.isFinite(storedVat) && storedVat > 0 ? storedVat : 0;
+    // Legacy / incomplete docs: vatApplied without amountVat → derive from inclusive total.
+    if (!amountVat && doc.vatApplied && storedTotal != null) {
+      const preVat = Math.round((storedTotal / 1.12) * 100) / 100;
+      amountVat = Math.round((storedTotal - preVat) * 100) / 100;
+    }
+    // Recover VAT when total was saved VAT-inclusive but amountVat was never persisted.
+    if (
+      !amountVat &&
+      storedTotal != null &&
+      Number.isFinite(computedLineTotal) &&
+      computedLineTotal > 0
+    ) {
+      const expectedInclusive = Math.round(computedLineTotal * 1.12 * 100) / 100;
+      if (Math.abs(storedTotal - expectedInclusive) <= 0.5) {
+        amountVat = Math.round((storedTotal - computedLineTotal) * 100) / 100;
+      }
+    }
+
     const amountTotal =
       storedTotal != null
         ? storedTotal
-        : Math.max(0, computedLineTotal);
-    // Always reconstruct subtotal from total + discount so a stale amountSubtotal
-    // (equal to the discounted total) cannot hide the discount on the customer page.
-    const amountSubtotal = amountTotal + amountDiscount;
+        : Math.max(0, computedLineTotal + amountVat);
+    // List subtotal = pre-VAT owed amount + discount (so VAT does not inflate subtotal).
+    const amountSubtotal = Math.max(0, amountTotal - amountVat) + amountDiscount;
 
-    return { amountSubtotal, amountDiscount, amountTotal };
+    return { amountSubtotal, amountDiscount, amountVat, amountTotal };
   }
 
   function computeSummary(doc) {
@@ -425,6 +461,7 @@
     const computedTotal = lines.reduce((s, l) => s + (Number(l.subtotal) || 0), 0);
     const pricing = derivePricingFromDoc(doc || {}, computedTotal);
     const amountDiscount = pricing.amountDiscount;
+    const amountVat = pricing.amountVat || 0;
     const amountTotal = pricing.amountTotal;
     const amountSubtotal = pricing.amountSubtotal;
 
@@ -477,6 +514,7 @@
       amountTotal,
       amountSubtotal,
       amountDiscount,
+      amountVat,
       amountPaid: Number.isFinite(Number(doc.amountPaid)) ? Number(doc.amountPaid) : amountPaid,
       amountRemaining: Number.isFinite(Number(doc.amountRemaining))
         ? Number(doc.amountRemaining)
@@ -613,7 +651,7 @@
                 choiceDrinks
               });
             }
-            return `<li>${escapeHtml(item)}</li>`;
+            return `<li>${renderSectionItem(section, item)}</li>`;
           })
           .join("");
         let extra = "";
@@ -655,6 +693,9 @@
         const sizeLine = line.meta.size
           ? `<div class="inv-package-size">${escapeHtml(line.meta.size)}</div>`
           : "";
+        const perPaxLine = line.isWorkshop && Number.isFinite(Number(line.unitCost))
+          ? `<div class="inv-package-size inv-package-per-pax">Php ${formatCurrency(line.unitCost)} / pax</div>`
+          : "";
         const metaParts = [];
         if (line.meta.venue) {
           metaParts.push(`<strong>Venue:</strong> ${escapeHtml(line.meta.venue)}`);
@@ -673,7 +714,7 @@
             <h3 class="inv-package-title">${escapeHtml(line.title)}</h3>
             <div class="inv-package-price">Php ${formatCurrency(line.subtotal)}</div>
           </div>
-          ${sizeLine}
+          <div class="inv-package-subheading">${sizeLine}${perPaxLine}</div>
           ${renderSectionsHtml(line.sections, {
             includeCoffee,
             interactive: !!options.interactive,
@@ -833,13 +874,51 @@
   function formatClientDisplay(doc) {
     const name = String(doc?.clientName || "").trim();
     const company = String(doc?.clientCompany || "").trim();
-    return { name, company, hasEither: !!(name || company) };
+    const address = String(doc?.clientAddress || "").trim();
+    const tin = String(doc?.clientTIN || "").trim();
+    const email = String(doc?.clientEmail || "").trim();
+    const phone = String(doc?.clientPhone || "").trim();
+    return {
+      name,
+      company,
+      address,
+      tin,
+      email,
+      phone,
+      hasEither: !!(name || company)
+    };
   }
 
   function formatBilledToLine(doc) {
     const { name, company } = formatClientDisplay(doc);
-    if (name && company) return `${name}\n${company}`;
-    return name || company || "";
+    if (name && company) return `${company}\n${name}`;
+    return company || name || "";
+  }
+
+  function renderClientDetailLinesHtml(client) {
+    const rows = [];
+    if (client.address) {
+      rows.push(
+        `<div class="inv-hero-detail"><span class="inv-hero-detail-label">Address</span><span class="inv-hero-detail-value">${escapeHtml(client.address)}</span></div>`
+      );
+    }
+    if (client.tin) {
+      rows.push(
+        `<div class="inv-hero-detail"><span class="inv-hero-detail-label">TIN</span><span class="inv-hero-detail-value">${escapeHtml(client.tin)}</span></div>`
+      );
+    }
+    if (client.email) {
+      rows.push(
+        `<div class="inv-hero-detail"><span class="inv-hero-detail-label">Email</span><span class="inv-hero-detail-value">${escapeHtml(client.email)}</span></div>`
+      );
+    }
+    if (client.phone) {
+      rows.push(
+        `<div class="inv-hero-detail"><span class="inv-hero-detail-label">Phone</span><span class="inv-hero-detail-value">${escapeHtml(client.phone)}</span></div>`
+      );
+    }
+    if (!rows.length) return "";
+    return `<div class="inv-hero-details">${rows.join("")}</div>`;
   }
 
   function renderInvoicePageHtml(doc, options = {}) {
@@ -856,21 +935,44 @@
         ? `${packagesHtml}${extrasHtml}`
         : `<div class="inv-empty">No package details yet.</div>`;
 
-    const heroPrimary = client.name
-      ? `<div class="inv-hero-client">${escapeHtml(client.name)}</div>`
-      : client.company
-        ? `<div class="inv-hero-client">${escapeHtml(client.company)}</div>`
+    // Company is the primary billed entity when present; contact name is secondary.
+    const heroPrimary = client.company
+      ? `<div class="inv-hero-client">${escapeHtml(client.company)}</div>`
+      : client.name
+        ? `<div class="inv-hero-client">${escapeHtml(client.name)}</div>`
         : `<div class="inv-hero-client">Client</div>`;
     const heroSecondary =
-      client.name && client.company
-        ? `<div class="inv-hero-company">${escapeHtml(client.company)}</div>`
+      client.company && client.name
+        ? `<div class="inv-hero-company">${escapeHtml(client.name)}</div>`
         : "";
+    const heroDetails = renderClientDetailLinesHtml(client);
+    const hasBreakdown = summary.amountDiscount > 0 || summary.amountVat > 0;
+    const breakdownRows = [];
+    if (hasBreakdown) {
+      breakdownRows.push(`<div class="inv-breakdown-row">
+                    <span>Subtotal</span>
+                    <span>Php ${formatCurrency(summary.amountSubtotal)}</span>
+                  </div>`);
+      if (summary.amountDiscount > 0) {
+        breakdownRows.push(`<div class="inv-breakdown-row inv-total-discount">
+                    <span>Discount</span>
+                    <span>−Php ${formatCurrency(summary.amountDiscount)}</span>
+                  </div>`);
+      }
+      if (summary.amountVat > 0) {
+        breakdownRows.push(`<div class="inv-breakdown-row inv-total-vat">
+                    <span>VAT (12%)</span>
+                    <span>Php ${formatCurrency(summary.amountVat)}</span>
+                  </div>`);
+      }
+    }
 
     return `
       <section class="inv-hero">
         <div class="inv-hero-identity">
           ${heroPrimary}
           ${heroSecondary}
+          ${heroDetails}
         </div>
         <div class="inv-hero-meta">
           ${doc.invoiceNumber ? `<span>${escapeHtml(doc.invoiceNumber)}</span>` : ""}
@@ -881,18 +983,11 @@
       <section class="inv-block">
         <h2 class="inv-block-title">Your booking</h2>
         ${bookingHtml}
-        <div class="inv-total-block${summary.amountDiscount > 0 ? " has-breakdown" : ""}">
+        <div class="inv-total-block${hasBreakdown ? " has-breakdown" : ""}">
           ${
-            summary.amountDiscount > 0
+            hasBreakdown
               ? `<div class="inv-total-breakdown">
-                  <div class="inv-breakdown-row">
-                    <span>Subtotal</span>
-                    <span>Php ${formatCurrency(summary.amountSubtotal)}</span>
-                  </div>
-                  <div class="inv-breakdown-row inv-total-discount">
-                    <span>Discount</span>
-                    <span>−Php ${formatCurrency(summary.amountDiscount)}</span>
-                  </div>
+                  ${breakdownRows.join("")}
                 </div>`
               : ""
           }
@@ -965,7 +1060,7 @@
           .map(
             (s) =>
               `<div style="margin-top:6px"><strong>${escapeHtml(s.label)}:</strong><ul style="margin:4px 0 0 18px;padding:0">${s.items
-                .map((i) => `<li>${escapeHtml(s.label === "Menu" ? displayMenuItemText(i) : i)}</li>`)
+                .map((i) => `<li>${renderSectionItem(s, s.label === "Menu" ? displayMenuItemText(i) : i)}</li>`)
                 .join("")}</ul></div>`
           )
           .join("");
@@ -1022,9 +1117,16 @@
           <div style="font-size:13px">Date: ${escapeHtml(formatDate(doc.invoiceDate))}</div>
         </div>
         <div style="font-size:13px;margin-bottom:14px;line-height:1.5">
-          <div><strong>Billed to:</strong> ${escapeHtml(doc.clientName || "")}</div>
+          <div><strong>Billed to:</strong> ${escapeHtml(doc.clientCompany || doc.clientName || "")}</div>
+          ${
+            doc.clientCompany && doc.clientName
+              ? `<div><strong>Contact:</strong> ${escapeHtml(doc.clientName)}</div>`
+              : ""
+          }
           <div><strong>Address:</strong> ${escapeHtml(doc.clientAddress || "")}</div>
           <div><strong>TIN:</strong> ${escapeHtml(doc.clientTIN || "")}</div>
+          ${doc.clientEmail ? `<div><strong>Email:</strong> ${escapeHtml(doc.clientEmail)}</div>` : ""}
+          ${doc.clientPhone ? `<div><strong>Phone:</strong> ${escapeHtml(doc.clientPhone)}</div>` : ""}
           ${doc.invoiceNumber ? `<div><strong>Invoice #:</strong> ${escapeHtml(doc.invoiceNumber)}</div>` : ""}
         </div>
         <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -1038,6 +1140,30 @@
           </thead>
           <tbody>
             ${packageBlocks || ""}${otherRows || ""}
+            ${
+              summary.amountDiscount > 0 || summary.amountVat > 0
+                ? `<tr>
+              <td colspan="3" style="border:1px solid #000;padding:8px">Subtotal</td>
+              <td style="border:1px solid #000;padding:8px;text-align:right">Php ${formatCurrency(summary.amountSubtotal)}</td>
+            </tr>`
+                : ""
+            }
+            ${
+              summary.amountDiscount > 0
+                ? `<tr>
+              <td colspan="3" style="border:1px solid #000;padding:8px">Discount</td>
+              <td style="border:1px solid #000;padding:8px;text-align:right">−Php ${formatCurrency(summary.amountDiscount)}</td>
+            </tr>`
+                : ""
+            }
+            ${
+              summary.amountVat > 0
+                ? `<tr>
+              <td colspan="3" style="border:1px solid #000;padding:8px">VAT (12%)</td>
+              <td style="border:1px solid #000;padding:8px;text-align:right">Php ${formatCurrency(summary.amountVat)}</td>
+            </tr>`
+                : ""
+            }
             <tr>
               <td colspan="3" style="border:1px solid #000;padding:10px;font-weight:700">TOTAL AMOUNT DUE</td>
               <td style="border:1px solid #000;padding:10px;text-align:right;font-weight:700">Php ${formatCurrency(summary.amountTotal)}</td>
@@ -1069,6 +1195,7 @@
 
   global.InvoicePageRender = {
     escapeHtml,
+    renderSectionItem,
     formatCurrency,
     formatDate,
     formatClientDisplay,

@@ -8,7 +8,7 @@ const GEMINI_MODELS = ['gemini-3.1-flash-lite', 'gemini-3.5-flash'];
 const GEMINI_MODEL = GEMINI_MODELS[0];
 
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024; // 4MB raw base64 payload cap
-const MAX_ATTEMPTS_PER_MODEL = 3;
+const MAX_ATTEMPTS_PER_MODEL = 2;
 
 const STAFF_BUSY_MESSAGE =
   'Couldn’t read the receipt right now. Tap Auto-fill to try again.';
@@ -62,19 +62,30 @@ Items rules:
    - vatExemptAmount = Service charge + Local Tax (+ any true VAT-exempt sales).
 4) Skip payment lines, change, GCASH/cash tendered, and VAT summary lines as items (except using them for printedVat / Meals math).
 
-Category suggestion (suggestedCategory) — pick exactly one of:
+Category (suggestedCategory) = WHAT the purchase is — pick exactly one of:
 Supplies, Logistics, Staff, Rent & Utilities, Marketing, Equipment, Operations
-Heuristics:
-- Restaurant / cafe / meals / canteen → Staff
-- Groceries / consumables / packaging / store goods → Supplies
-- Lalamove / Grab / courier / delivery fee alone → Logistics
+- Groceries / milk / packaging / consumables / store goods → Supplies (even if for R&D)
+- Courier / Grab / Lalamove delivery fee alone → Logistics
+- Staff payroll-adjacent only → Staff (NOT restaurant meals)
 - Rent, electricity, water, internet → Rent & Utilities
 - Ads / promo → Marketing
-- Tools / equipment → Equipment
-- Otherwise best fit; default Supplies if unsure.
+- Durable tools / equipment → Equipment
+- Restaurant / cafe / dining, gifts, misc VAT claimables, or unclear → Operations
+- Default Supplies if clearly goods/consumables; else Operations
 
-suggestedAllocation (optional hint only): Store | General | Workshop | Popup | Bar Service
-- Restaurant meals often General; do not invent event names.`;
+Allocation (suggestedAllocation) = WHERE / WHY it is charged — pick exactly one of:
+Store | General | R&D | Workshop | Popup | Bar Service
+- Store: typical branch ops / inventory for selling
+- General: company-level VAT-purpose extras (dining/meals, gifts, consumer devices bought mainly for VAT deduction) — not tied to a store or event
+- R&D: research & development budget (category still describes the item, e.g. milk → Supplies + R&D)
+- Workshop / Popup / Bar Service: only when the receipt clearly relates to that event type; do not invent event names
+- Prefer Store when it looks like normal store purchasing; prefer General for meals/dining and gift-like / non-ops VAT receipts
+
+supplierVatRegistered: true if the MERCHANT is VAT-registered — including phrases like "VAT REG. TIN", "VAT Registered", "VAT Reg.", VATable Sales / VAT Amount 12%, or a BIR OR/SI with a VAT breakdown. false if clearly non-VAT (e.g. non-VAT TIN wording, no VAT cues). null if unsure.
+
+inputVatClaimable: whether THIS DOCUMENT supports claiming input VAT. true for a normal sales invoice / official receipt with VAT breakdown suitable for input tax. false when the document says it is NOT valid for claim of input tax, or is clearly an acknowledgment / collection / delivery receipt without a VAT claim breakdown (even if the merchant prints VAT REG. TIN). null if unsure.
+
+suggestedRotationCw: clockwise degrees to rotate the image so printed text is upright for a human viewer. Exactly one of 0, 90, 180, 270. Use merchant header / TIN / totals as upright cues. Prefer 0 when already upright. null only if truly unsure (treat as 0). Do not invent flips.`;
 }
 
 const RESPONSE_SCHEMA = {
@@ -90,6 +101,9 @@ const RESPONSE_SCHEMA = {
     vatExemptAmount: { type: 'NUMBER', nullable: true },
     suggestedCategory: { type: 'STRING', nullable: true },
     suggestedAllocation: { type: 'STRING', nullable: true },
+    supplierVatRegistered: { type: 'BOOLEAN', nullable: true },
+    inputVatClaimable: { type: 'BOOLEAN', nullable: true },
+    suggestedRotationCw: { type: 'NUMBER', nullable: true },
     items: {
       type: 'ARRAY',
       items: {
@@ -218,7 +232,7 @@ function coerceReceiptDateYear(isoDate, now = new Date()) {
   return result;
 }
 
-function normalizeDate(value, now = new Date()) {
+function normalizeDate(value, now = new Date(), preserveDate = false) {
   if (!value) return '';
   const s = String(value).trim();
   let iso = '';
@@ -239,7 +253,7 @@ function normalizeDate(value, now = new Date()) {
       }
     }
   }
-  return coerceReceiptDateYear(iso, now);
+  return preserveDate ? iso : coerceReceiptDateYear(iso, now);
 }
 
 function normalizeItems(rawItems) {
@@ -327,7 +341,7 @@ function reconcileRestaurantVat(items, totalAmount, vatExemptAmount, printedVat)
   return { items: nextItems, totalAmount: nextTotal, vatExemptAmount: nextExempt };
 }
 
-function normalizeParsed(raw, now = new Date()) {
+function normalizeParsed(raw, now = new Date(), preserveDate = false) {
   const data = raw && typeof raw === 'object' ? raw : {};
   const printed = data.printedVat && typeof data.printedVat === 'object' ? data.printedVat : {};
   let items = normalizeItems(data.items);
@@ -362,8 +376,33 @@ function normalizeParsed(raw, now = new Date()) {
     suggestedCategory = '';
   }
   let suggestedAllocation = String(data.suggestedAllocation || '').trim();
-  const allocOk = ['Store', 'General', 'Workshop', 'Popup', 'Bar Service'];
+  const allocOk = ['Store', 'General', 'R&D', 'Workshop', 'Popup', 'Bar Service'];
   if (!allocOk.includes(suggestedAllocation)) suggestedAllocation = '';
+
+  let supplierVatRegistered = null;
+  if (typeof data.supplierVatRegistered === 'boolean') {
+    supplierVatRegistered = data.supplierVatRegistered;
+  } else if ((printedVat.vatableSale || 0) > 0 || (printedVat.vatAmount || 0) > 0) {
+    // Printed VAT lines strongly imply a VAT-registered merchant.
+    supplierVatRegistered = true;
+  }
+
+  let inputVatClaimable = null;
+  if (typeof data.inputVatClaimable === 'boolean') {
+    inputVatClaimable = data.inputVatClaimable;
+  } else if ((printedVat.vatableSale || 0) > 0 || (printedVat.vatAmount || 0) > 0) {
+    inputVatClaimable = true;
+  }
+
+  let suggestedRotationCw = null;
+  const rotRaw = toFiniteNumber(data.suggestedRotationCw);
+  if (rotRaw != null) {
+    const n = Math.round(rotRaw) % 360;
+    const normalized = n < 0 ? n + 360 : n;
+    if ([0, 90, 180, 270].includes(normalized)) {
+      suggestedRotationCw = normalized;
+    }
+  }
 
   return {
     supplierName: String(data.supplierName || '').trim(),
@@ -371,12 +410,15 @@ function normalizeParsed(raw, now = new Date()) {
     tin: normalizeTin(data.tin),
     address: String(data.address || '').trim(),
     invoiceNumber: String(data.invoiceNumber || '').trim(),
-    date: normalizeDate(data.date, now),
+    date: normalizeDate(data.date, now, preserveDate),
     totalAmount,
     vatExemptAmount,
     items,
     suggestedCategory,
     suggestedAllocation,
+    supplierVatRegistered,
+    inputVatClaimable,
+    suggestedRotationCw,
     printedVat
   };
 }
@@ -424,13 +466,13 @@ function toStaffError(rawMessage, status) {
   return err;
 }
 
-function buildRequestBody(raw, mime, now = new Date()) {
+function buildRequestBody(raw, mime, now = new Date(), preserveDate = false) {
   return {
     contents: [
       {
         role: 'user',
         parts: [
-          { text: buildExtractionPrompt(localTodayIso(now)) },
+          { text: buildExtractionPrompt(preserveDate ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(now) : localTodayIso(now)) + (preserveDate ? '\nOVERRIDE YEAR RULE FOR AUTOMATIC DISCORD INGEST: Preserve the printed transaction date exactly. Never replace an old or uncertain year with the current year. Return null when the date is unclear; it will be reviewed by a person.' : '') },
           { inline_data: { mime_type: mime, data: raw } }
         ]
       }
@@ -444,24 +486,72 @@ function buildRequestBody(raw, mime, now = new Date()) {
   };
 }
 
-async function callGeminiModel({ apiKey, model, raw, mime }) {
+const GEMINI_FETCH_TIMEOUT_MS = 25_000;
+
+async function callGeminiModel({ apiKey, model, raw, mime, signal, fetchTimeoutMs, preserveDate }) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-  const res = await fetch(`${url}?key=${encodeURIComponent(apiKey)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(buildRequestBody(raw, mime))
-  });
-  const payload = await res.json().catch(() => ({}));
-  return { res, payload };
+  const timeoutMs = fetchTimeoutMs || GEMINI_FETCH_TIMEOUT_MS;
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const combined =
+    signal && typeof AbortSignal.any === 'function'
+      ? AbortSignal.any([timeoutSignal, signal])
+      : signal || timeoutSignal;
+
+  const started = Date.now();
+  console.log(`[extractExpenseReceipt] start model=${model}`);
+  try {
+    const res = await fetch(`${url}?key=${encodeURIComponent(apiKey)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildRequestBody(raw, mime, new Date(), preserveDate)),
+      signal: combined
+    });
+    const payload = await res.json().catch(() => ({}));
+    console.log(
+      `[extractExpenseReceipt] done model=${model} status=${res.status} ms=${Date.now() - started}`
+    );
+    return { res, payload };
+  } catch (err) {
+    console.warn(
+      `[extractExpenseReceipt] error model=${model} ms=${Date.now() - started}:`,
+      err?.name || '',
+      err?.message || err
+    );
+    throw err;
+  }
 }
 
 /**
- * @param {{ apiKey: string, imageBase64: string, mimeType?: string }} opts
+ * @param {{
+ *   apiKey: string,
+ *   imageBase64: string,
+ *   mimeType?: string,
+ *   signal?: AbortSignal,
+ *   models?: string[],
+ *   maxAttemptsPerModel?: number,
+ *   fetchTimeoutMs?: number
+ * }} opts
  */
-async function extractExpenseFieldsFromImage({ apiKey, imageBase64, mimeType }) {
+async function extractExpenseFieldsFromImage({
+  apiKey,
+  imageBase64,
+  mimeType,
+  signal,
+  models = GEMINI_MODELS,
+  maxAttemptsPerModel = MAX_ATTEMPTS_PER_MODEL,
+  fetchTimeoutMs = GEMINI_FETCH_TIMEOUT_MS,
+  preserveDate = false
+}) {
   if (!apiKey) {
     const err = new Error('GEMINI_API_KEY is not configured');
     err.code = 'failed-precondition';
+    throw err;
+  }
+
+  if (signal?.aborted) {
+    const err = new Error('Receipt OCR was cancelled');
+    err.code = 'cancelled';
+    err.staffFacing = true;
     throw err;
   }
 
@@ -475,22 +565,38 @@ async function extractExpenseFieldsFromImage({ apiKey, imageBase64, mimeType }) 
   if (raw.length > MAX_IMAGE_BYTES * 1.4) {
     const err = new Error('Receipt image is too large');
     err.code = 'invalid-argument';
+    err.staffFacing = true;
     throw err;
   }
 
   const mime = detectMimeType(imageBase64, mimeType);
   let lastStaffError = null;
+  const modelList = Array.isArray(models) && models.length ? models : GEMINI_MODELS;
+  const attempts = Math.max(1, Number(maxAttemptsPerModel) || MAX_ATTEMPTS_PER_MODEL);
 
-  for (const model of GEMINI_MODELS) {
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_MODEL; attempt++) {
+  for (const model of modelList) {
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      if (signal?.aborted) {
+        const err = new Error('Receipt OCR timed out');
+        err.staffFacing = true;
+        throw err;
+      }
       try {
-        const { res, payload } = await callGeminiModel({ apiKey, model, raw, mime });
+        const { res, payload } = await callGeminiModel({
+          apiKey,
+          model,
+          raw,
+          mime,
+          signal,
+          fetchTimeoutMs,
+          preserveDate
+        });
         if (!res.ok) {
           const rawMessage = payload?.error?.message || `Gemini request failed (${res.status})`;
           console.warn(`[extractExpenseReceipt] ${model} attempt ${attempt} failed:`, rawMessage);
           lastStaffError = toStaffError(rawMessage, res.status);
           if (isRetryableStatus(res.status) || isCapacityMessage(rawMessage)) {
-            if (attempt < MAX_ATTEMPTS_PER_MODEL) {
+            if (attempt < attempts) {
               await sleep(400 * attempt * attempt);
               continue;
             }
@@ -502,7 +608,7 @@ async function extractExpenseFieldsFromImage({ apiKey, imageBase64, mimeType }) 
         const text = extractJsonText(payload);
         if (!text) {
           lastStaffError = toStaffError('empty response', 500);
-          if (attempt < MAX_ATTEMPTS_PER_MODEL) {
+          if (attempt < attempts) {
             await sleep(400 * attempt * attempt);
             continue;
           }
@@ -514,19 +620,28 @@ async function extractExpenseFieldsFromImage({ apiKey, imageBase64, mimeType }) 
           parsed = JSON.parse(text);
         } catch {
           lastStaffError = toStaffError('invalid JSON', 500);
-          if (attempt < MAX_ATTEMPTS_PER_MODEL) {
+          if (attempt < attempts) {
             await sleep(400 * attempt * attempt);
             continue;
           }
           break;
         }
 
-        return normalizeParsed(parsed);
+        return normalizeParsed(parsed, new Date(), preserveDate);
       } catch (error) {
         if (error?.staffFacing) throw error;
+        const aborted =
+          signal?.aborted ||
+          error?.name === 'AbortError' ||
+          /aborted|abort/i.test(String(error?.message || ''));
+        if (aborted) {
+          const err = new Error('Receipt OCR timed out');
+          err.staffFacing = true;
+          throw err;
+        }
         console.warn(`[extractExpenseReceipt] ${model} attempt ${attempt} network error:`, error?.message);
         lastStaffError = toStaffError(error?.message || 'network error', 503);
-        if (attempt < MAX_ATTEMPTS_PER_MODEL) {
+        if (attempt < attempts) {
           await sleep(400 * attempt * attempt);
           continue;
         }

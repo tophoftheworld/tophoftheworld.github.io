@@ -10,7 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@100;200;300;400;500;600;700;800;900&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="css/normalize.css?v=4">
-    <link rel="stylesheet" href="css/style.css?v=13">
+    <link rel="stylesheet" href="css/style.css?v=14">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 
     <link rel="icon" href="icons/icon-192.png" type="image/png">
@@ -124,12 +124,21 @@
         </div>
         <div id="sheet-backdrop" class="sheet-backdrop"></div>
 
-    <script type="module" src="js/firebase-setup.js?v=7"></script>
-    <script type="module" src="js/firebase-sync.js?v=13"></script>
+    <script type="module" src="js/firebase-setup.js?v=8"></script>
+    <script type="module" src="js/firebase-sync.js?v=15"></script>
     <script type="module" src="js/menu-data.js?v=6"></script>
-    <script type="module" src="js/script.js?v=event-window-1"></script>
+    <script type="module" src="js/script.js?v=sync-reliability-1"></script>
     <!-- Separate file so stale script.js cache cannot block name greetings -->
     <script type="module" src="js/name-greeting-hook.js?v=2"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('sw.js?v=1').catch((err) => {
+            console.warn('POS service worker registration failed:', err);
+          });
+        });
+      }
+    </script>
 </body>
 
 </html>

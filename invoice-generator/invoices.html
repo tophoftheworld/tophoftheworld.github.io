@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Invoices - Matchanese</title>
-    <link rel="stylesheet" href="css/invoices-app.css?v=20260916-billed-to">
-    <link rel="stylesheet" href="css/invoice-view.css?v=20260916-company-hero">
-    <link rel="stylesheet" href="css/invoice-pdf-document.css?v=20260914-pdf-vcenter">
+    <link rel="stylesheet" href="css/invoices-app.css?v=20260922-pdf-totals">
+    <link rel="stylesheet" href="css/invoice-view.css?v=20260930-per-pax">
+    <link rel="stylesheet" href="css/invoice-pdf-document.css?v=20260922-pdf-totals">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap" rel="stylesheet">
@@ -78,6 +78,14 @@
                             <label for="clientTIN">TIN</label>
                             <input type="text" id="clientTIN" placeholder="Optional">
                         </div>
+                        <div class="form-group">
+                            <label for="clientEmail">Contact email</label>
+                            <input type="email" id="clientEmail" placeholder="Optional" autocomplete="email">
+                        </div>
+                        <div class="form-group">
+                            <label for="clientPhone">Contact phone</label>
+                            <input type="tel" id="clientPhone" placeholder="Optional" autocomplete="tel">
+                        </div>
                     </div>
 
                     <div class="form-section">
@@ -93,11 +101,18 @@
                 </div>
 
                 <div class="form-section">
-                    <h2>Discount</h2>
+                    <h2>Discount &amp; VAT</h2>
                     <div class="form-group">
                         <label for="invoiceDiscount">Additional discount (₱)</label>
                         <input type="number" id="invoiceDiscount" min="0" step="0.01" placeholder="0">
                         <p class="form-hint">Lowering a package amount already counts as a discount. Use this for any extra off the invoice total.</p>
+                    </div>
+                    <div class="form-group form-group-check">
+                        <label class="inv-check-row" for="invoiceVat">
+                            <input type="checkbox" id="invoiceVat">
+                            <span>Add 12% VAT</span>
+                        </label>
+                        <p class="form-hint">VAT is calculated on the amount after discounts and added to the invoice total.</p>
                     </div>
                 </div>
 
@@ -280,8 +295,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="js/invoice-payment-alloc.js?v=20260911-paymodal"></script>
-    <script src="js/invoice-page-render.js?v=20260916-company-hero"></script>
-    <script src="js/invoice-pdf-legacy.js?v=20260914-pdf-vcenter"></script>
-    <script src="js/invoices-script.js?v=20260916-billed-to"></script>
+    <script src="js/invoice-page-render.js?v=20260930-per-pax"></script>
+    <script src="js/invoice-pdf-legacy.js?v=20260930-details"></script>
+    <script src="js/invoices-script.js?v=20260930-details"></script>
 </body>
 </html>

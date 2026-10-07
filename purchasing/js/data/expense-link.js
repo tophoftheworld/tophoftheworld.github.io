@@ -13,9 +13,9 @@ import {
   orderBy,
   limit,
 } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
-import { db } from '../firebase.js?v=106';
-import { locationLabel, itemDisplayName } from './catalog.js?v=106';
-import { lineAmount, isFee } from '../compute.js?v=106';
+import { db } from '../firebase.js?v=111';
+import { locationLabel, itemDisplayName } from './catalog.js?v=111';
+import { lineAmount, isFee } from '../compute.js?v=111';
 
 let cachedExpenses = null;
 let cachedAt = 0;

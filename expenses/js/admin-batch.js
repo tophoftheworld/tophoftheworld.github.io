@@ -2,7 +2,7 @@
  * Admin batch receipt album — multi-file upload, serial OCR into drafts,
  * explicit Save in the expense editor to persist to Firebase.
  */
-import * as shared from './shared.js?v=1.5.91';
+import * as shared from './shared.js?v=1.5.104';
 
 /** @typedef {'queued'|'processing'|'ready'|'failed'|'possible_duplicate'|'saved'} BatchItemStatus */
 
@@ -15,6 +15,8 @@ import * as shared from './shared.js?v=1.5.91';
  * @property {BatchItemStatus} status
  * @property {string} [error]
  * @property {string|null} [duplicateOfId]
+ * @property {'likely'|'possible'|null} [duplicateConfidence]
+ * @property {string[]} [duplicateReasons]
  * @property {object|null} [expense]
  * @property {string|null} [dataUrl]
  * @property {boolean} [ocrFailed]
@@ -28,6 +30,7 @@ let queue = [];
 let batchOverlayEl = null;
 let workerRunning = false;
 let workerPaused = false;
+let saveInProgress = false;
 let refreshTablesTimer = null;
 
 /** @type {{ openExpenseEditor: Function, refreshTables: Function } | null} */
@@ -41,14 +44,36 @@ function escapeHtml(text) {
     return d.innerHTML;
 }
 
-/** Green check only when draft is ready to Save. */
+const TILE_CHECK_SVG =
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
+
+const TILE_WARN_SVG =
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+
+/** Tile badge: green check = ready; amber warning = possible/likely duplicate. */
 function statusChipHtml(item) {
     const needsSave =
         (item.status === 'ready' || item.status === 'possible_duplicate') &&
         !item._persisted &&
         item.expense;
     if (!needsSave) return '';
-    return `<span class="batch-tile-chip" title="Ready to save" aria-label="Ready to save"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg></span>`;
+
+    if (item.status === 'possible_duplicate') {
+        const confLabel =
+            item.duplicateConfidence === 'likely' ? 'Likely duplicate' : 'Possible duplicate';
+        const reasonText =
+            Array.isArray(item.duplicateReasons) && item.duplicateReasons.length
+                ? item.duplicateReasons.join(', ')
+                : '';
+        const title = reasonText ? `${confLabel}: ${reasonText}` : confLabel;
+        const chipClass =
+            item.duplicateConfidence === 'likely'
+                ? 'batch-tile-chip batch-tile-chip--dup-likely'
+                : 'batch-tile-chip batch-tile-chip--dup';
+        return `<span class="${chipClass}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${TILE_WARN_SVG}</span>`;
+    }
+
+    return `<span class="batch-tile-chip batch-tile-chip--saved" title="Ready — use Save all" aria-label="Ready to save">${TILE_CHECK_SVG}</span>`;
 }
 
 const TILE_DELETE_SVG =
@@ -199,6 +224,33 @@ function buildExpenseFromOcr(parsed, expenseId, receiptUrl, extras = {}) {
         ? suggested
         : shared.DEFAULT_EXPENSE_CATEGORY;
 
+    const suggestedAlloc = String(p.suggestedAllocation || '').trim();
+    const allocation = shared.ALLOCATION_OPTIONS.includes(suggestedAlloc)
+        ? suggestedAlloc
+        : 'Store';
+    const isStore = allocation === 'Store';
+    const usesPaidBy = shared.allocationUsesPaidBy(allocation);
+
+    const hasPrintedVat =
+        (Number(p.printedVat?.vatableSale) || 0) > 0 ||
+        (Number(p.printedVat?.vatAmount) || 0) > 0;
+    const supplierVat =
+        typeof p.supplierVatRegistered === 'boolean'
+            ? p.supplierVatRegistered
+            : hasPrintedVat
+              ? true
+              : false;
+    // Claimable input VAT: false for ack/collection / "not valid for input tax"
+    const claimable =
+        typeof p.inputVatClaimable === 'boolean' ? p.inputVatClaimable : null;
+    let vatOn =
+        supplierVat ||
+        (Number(p.vatExemptAmount) || 0) > 0 ||
+        hasPrintedVat;
+    if (claimable === false) {
+        vatOn = false;
+    }
+
     let notes = '';
     if (extras.duplicateNote) {
         notes = extras.duplicateNote;
@@ -207,8 +259,8 @@ function buildExpenseFromOcr(parsed, expenseId, receiptUrl, extras = {}) {
     return {
         id: expenseId,
         date: p.date || shared.getTodayLocal(),
-        branch: 'SM North',
-        allocation: 'Store',
+        branch: isStore ? 'SM North' : null,
+        allocation,
         eventName: null,
         isPettyCash: false,
         supplierName: String(p.supplierName || '').trim() || 'Unknown supplier',
@@ -220,22 +272,55 @@ function buildExpenseFromOcr(parsed, expenseId, receiptUrl, extras = {}) {
         totalAmount: total,
         vatExemptAmount: Number(p.vatExemptAmount) || 0,
         expenseCategory,
-        paidBy: 'Store Cash',
+        paidBy: usesPaidBy ? 'Store Cash' : 'Company',
         notes,
         receiptImage: receiptUrl || null,
-        vatComputationEnabled:
-            (Number(p.vatExemptAmount) || 0) > 0 ||
-            (Number(p.printedVat?.vatableSale) || 0) > 0 ||
-            (Number(p.printedVat?.vatAmount) || 0) > 0
-                ? true
-                : undefined
+        isVatRegistered: supplierVat,
+        vatComputationEnabled: vatOn
     };
 }
 
 function formatDuplicateNote(match) {
-    const amt = Number(match.totalAmount) || 0;
-    const supplier = match.supplierName || 'expense';
-    return `Possible duplicate of ${match.date || '?'} ${supplier} ₱${amt.toLocaleString()}`;
+    return shared.formatDuplicateMatchSummary(match);
+}
+
+/**
+ * @param {BatchQueueItem} item
+ * @param {{ expense: object, confidence: string, reasons: string[], score: number }[]} dupes
+ */
+function applyDuplicateHit(item, dupes) {
+    if (dupes.length > 0) {
+        const top = dupes[0];
+        item.duplicateOfId = top.expense?.id || null;
+        item.duplicateConfidence = top.confidence === 'likely' ? 'likely' : 'possible';
+        item.duplicateReasons = Array.isArray(top.reasons) ? top.reasons.slice() : [];
+        return formatDuplicateNote(top);
+    }
+    item.duplicateOfId = null;
+    item.duplicateConfidence = null;
+    item.duplicateReasons = [];
+    return '';
+}
+
+/**
+ * Clear duplicate warning on a batch draft after "Not a duplicate".
+ * @param {string} expenseId
+ */
+export function clearBatchDuplicateWarning(expenseId) {
+    if (!expenseId) return false;
+    const item = queue.find((q) => q.expenseId === expenseId);
+    if (!item) return false;
+    applyDuplicateHit(item, []);
+    if (item.status === 'possible_duplicate') item.status = 'ready';
+    if (item.expense) {
+        const notes = String(item.expense.notes || '').trim();
+        if (/duplicate/i.test(notes)) {
+            item.expense = { ...item.expense, notes: '' };
+        }
+    }
+    renderBatchBody();
+    updateBatchFooter();
+    return true;
 }
 
 /**
@@ -259,6 +344,8 @@ function addFiles(files) {
             status: 'queued',
             error: '',
             duplicateOfId: null,
+            duplicateConfidence: null,
+            duplicateReasons: [],
             expense: null,
             dataUrl: null,
             ocrFailed: false,
@@ -273,6 +360,9 @@ function addFiles(files) {
     }
     renderBatchBody();
     updateBatchFooter();
+    if (!saveInProgress && queue.some((i) => i.status === 'queued')) {
+        startOrResumeWorker();
+    }
 }
 
 async function processOneItem(item) {
@@ -294,6 +384,12 @@ async function processOneItem(item) {
 
         try {
             parsed = await shared.extractExpenseReceiptFromImage(dataUrl);
+            const rotated = await shared.applySuggestedReceiptRotation(dataUrl, parsed);
+            if (rotated && rotated !== dataUrl) {
+                dataUrl = rotated;
+                item.dataUrl = dataUrl;
+                setItemThumb(item, dataUrl);
+            }
         } catch (ocrErr) {
             console.warn('[Batch] OCR failed:', ocrErr);
             ocrFailed = true;
@@ -309,8 +405,9 @@ async function processOneItem(item) {
 
         let duplicateNote = '';
         if (dupes.length > 0) {
-            item.duplicateOfId = dupes[0].id;
-            duplicateNote = formatDuplicateNote(dupes[0]);
+            duplicateNote = applyDuplicateHit(item, dupes);
+        } else {
+            applyDuplicateHit(item, []);
         }
 
         const payload = buildExpenseFromOcr(parsed, item.expenseId, dataUrl, {
@@ -451,7 +548,7 @@ function openItemEditor(localId) {
 
     if (batchOverlayEl) batchOverlayEl.style.visibility = 'hidden';
 
-    deps.openExpenseEditor(expense, ({ deleted, saved, expenseId } = {}) => {
+    deps.openExpenseEditor(expense, ({ deleted, saved, applied, draft, expenseId } = {}) => {
         if (batchOverlayEl) batchOverlayEl.style.visibility = '';
 
         if (deleted) {
@@ -461,10 +558,27 @@ function openItemEditor(localId) {
                 queue.splice(i, 1);
             }
             scheduleTableRefresh();
+        } else if (applied && draft) {
+            // Individual editor only updates the in-memory draft (Save all persists).
+            item.expense = { ...draft };
+            if (item.dataUrl) item.expense.receiptImage = item.dataUrl;
+            const peers = peerDraftExpenses(item.localId);
+            const dupes = shared.findPossibleDuplicateExpenses(item.expense, {
+                excludeIds: [item.expenseId],
+                extraCandidates: peers
+            });
+            if (dupes.length > 0) {
+                applyDuplicateHit(item, dupes);
+                item.status = 'possible_duplicate';
+            } else if (item.status !== 'failed') {
+                applyDuplicateHit(item, []);
+                item.status = 'ready';
+            }
+            item._persisted = false;
         } else {
             const updated = shared.getExpenses().find((e) => e.id === item.expenseId);
             if (updated || saved) {
-                // Explicit Save put it in Firebase
+                // Already-persisted expense re-edited from batch (after Save all).
                 item.expense = updated || item.expense;
                 item._persisted = true;
                 const peers = peerDraftExpenses(item.localId);
@@ -473,15 +587,14 @@ function openItemEditor(localId) {
                     extraCandidates: peers
                 });
                 if (dupes.length > 0) {
+                    applyDuplicateHit(item, dupes);
                     item.status = 'possible_duplicate';
-                    item.duplicateOfId = dupes[0].id;
                 } else {
+                    applyDuplicateHit(item, []);
                     item.status = 'saved';
-                    item.duplicateOfId = null;
                 }
                 scheduleTableRefresh();
             }
-            // Back without save: leave draft as-is (ready / possible_duplicate / failed)
         }
         renderBatchBody();
         updateBatchFooter();
@@ -509,6 +622,11 @@ function renderEmptyDropzone(mount) {
 function tileStateClass(item) {
     if (item.status === 'queued') return 'batch-tile--pending';
     if (item.status === 'failed') return 'batch-tile--failed';
+    if (item.status === 'possible_duplicate') {
+        return item.duplicateConfidence === 'likely'
+            ? 'batch-tile--dup-likely'
+            : 'batch-tile--dup-possible';
+    }
     return '';
 }
 
@@ -537,8 +655,9 @@ function tileMetaHtml(item) {
     const supplier = String(exp.supplierName || 'Unknown').trim() || 'Unknown';
     const date = formatTileDate(exp.date) || '—';
     const amount = shared.formatCurrency(exp.totalAmount || 0);
+    const isDup = item.status === 'possible_duplicate';
     return `
-        <div class="batch-tile-meta">
+        <div class="batch-tile-meta${isDup ? ' batch-tile-meta--dup' : ''}">
             <span class="batch-tile-supplier" title="${escapeHtml(supplier)}">${escapeHtml(supplier)}</span>
             <span class="batch-tile-sub">
                 <span class="batch-tile-date">${escapeHtml(date)}</span>
@@ -704,48 +823,70 @@ function savedCount() {
 }
 
 async function saveAllReadyDrafts() {
+    if (saveInProgress) return;
+
     const toSave = queue.filter((i) => isDraftStatus(i.status) && !i._persisted && i.expense);
     if (!toSave.length) {
         shared.showToast('Nothing to save yet');
         return;
     }
 
-    let saved = 0;
-    for (const item of toSave) {
-        try {
-            const expense = { ...item.expense };
-            if (item.dataUrl) expense.receiptImage = item.dataUrl;
-            shared.addExpense(expense);
-            item.expense = expense;
-            item._persisted = true;
-            const peers = peerDraftExpenses(item.localId);
-            const dupes = shared.findPossibleDuplicateExpenses(expense, {
-                excludeIds: [item.expenseId],
-                extraCandidates: peers
-            });
-            if (dupes.length > 0) {
-                item.status = 'possible_duplicate';
-                item.duplicateOfId = dupes[0].id;
-            } else {
-                item.status = 'saved';
-                item.duplicateOfId = null;
-            }
-            saved++;
-        } catch (err) {
-            console.error('[Batch] Save failed:', err);
-            item.status = 'failed';
-            item.error = err?.message || 'Save failed';
-        }
+    const likelyCount = toSave.filter((i) => i.duplicateConfidence === 'likely').length;
+    if (likelyCount > 0) {
+        const ok = await confirmAsync(
+            'Likely duplicates',
+            `${likelyCount} draft${likelyCount === 1 ? '' : 's'} look like ${
+                likelyCount === 1 ? 'a duplicate' : 'duplicates'
+            } of existing expenses. Save anyway?`,
+            'Save anyway'
+        );
+        if (!ok) return;
     }
 
-    await shared.flushPendingSync();
-    flushTableRefresh();
-    renderBatchBody();
+    saveInProgress = true;
     updateBatchFooter();
-    shared.showToast(
-        saved === 1 ? '1 expense saved' : `${saved} expenses saved`
-    );
-    await closeBatchAlbum({ force: true });
+
+    let saved = 0;
+    try {
+        for (const item of toSave) {
+            try {
+                const expense = { ...item.expense };
+                if (item.dataUrl) expense.receiptImage = item.dataUrl;
+                shared.addExpense(expense);
+                item.expense = expense;
+                item._persisted = true;
+                const peers = peerDraftExpenses(item.localId);
+                const dupes = shared.findPossibleDuplicateExpenses(expense, {
+                    excludeIds: [item.expenseId],
+                    extraCandidates: peers
+                });
+                if (dupes.length > 0) {
+                    applyDuplicateHit(item, dupes);
+                    item.status = 'possible_duplicate';
+                } else {
+                    applyDuplicateHit(item, []);
+                    item.status = 'saved';
+                }
+                saved++;
+                updateBatchFooter();
+            } catch (err) {
+                console.error('[Batch] Save failed:', err);
+                item.status = 'failed';
+                item.error = err?.message || 'Save failed';
+            }
+        }
+
+        await shared.flushPendingSync();
+        flushTableRefresh();
+        renderBatchBody();
+        shared.showToast(
+            saved === 1 ? '1 expense saved' : `${saved} expenses saved`
+        );
+        await closeBatchAlbum({ force: true });
+    } finally {
+        saveInProgress = false;
+        updateBatchFooter();
+    }
 }
 
 function updateBatchFooter() {
@@ -761,10 +902,16 @@ function updateBatchFooter() {
     const saved = savedCount();
 
     let progress = '';
-    if (total) {
+    if (saveInProgress) {
+        const pending = queue.filter((i) => isDraftStatus(i.status) && !i._persisted && i.expense)
+            .length;
+        const doneSaving = toSaveProgressDone();
+        progress = `Saving… ${doneSaving} done`;
+        if (pending) progress += ` · ${pending} left`;
+    } else if (total) {
         progress = `${done} / ${total} processed`;
         if (saved) progress += ` · ${saved} saved`;
-        if (needSave) progress += ` · ${needSave} need Save`;
+        if (needSave) progress += ` · ${needSave} draft${needSave === 1 ? '' : 's'} not saved yet`;
         if (counts.processing) progress += ' · working…';
         if (workerPaused && counts.queued) progress += ' · paused';
     }
@@ -777,7 +924,9 @@ function updateBatchFooter() {
     } else {
         processBtn.style.display = '';
         processBtn.className = 'action-btn secondary';
-        if (workerRunning && !workerPaused) {
+        if (saveInProgress) {
+            processBtn.disabled = true;
+        } else if (workerRunning && !workerPaused) {
             processBtn.textContent = 'Pause';
             processBtn.dataset.mode = 'pause';
             processBtn.disabled = false;
@@ -793,9 +942,19 @@ function updateBatchFooter() {
     }
 
     if (saveBtn) {
-        const busy = workerRunning && !workerPaused && counts.processing > 0;
-        saveBtn.disabled = busy || needSave === 0;
+        const busy = saveInProgress || (workerRunning && !workerPaused && counts.processing > 0);
+        if (saveInProgress) {
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving…';
+        } else {
+            saveBtn.textContent = 'Save all';
+            saveBtn.disabled = busy || needSave === 0;
+        }
     }
+}
+
+function toSaveProgressDone() {
+    return queue.filter((i) => i._persisted && (i.status === 'saved' || i.status === 'possible_duplicate')).length;
 }
 
 async function closeBatchAlbum({ force = false } = {}) {
@@ -820,7 +979,7 @@ async function closeBatchAlbum({ force = false } = {}) {
             if (needSave > 0) {
                 const ok = await confirmAsync(
                     'Unsaved drafts',
-                    `${needSave} receipt(s) were processed but not saved to Firebase. Close and discard them?`,
+                    `${needSave} draft(s) were processed but not saved to expenses yet. Close and discard them?`,
                     'Discard'
                 );
                 if (!ok) return;
@@ -850,7 +1009,10 @@ function openBatchAlbum() {
     overlay.innerHTML = `
         <div class="batch-album-modal" role="dialog" aria-modal="true" aria-labelledby="batchAlbumTitle">
             <div class="batch-album-header">
-                <h2 id="batchAlbumTitle" class="batch-album-title">Add batch expenses</h2>
+                <div class="batch-album-header-text">
+                    <h2 id="batchAlbumTitle" class="batch-album-title">Add batch expenses</h2>
+                    <p class="batch-album-subtitle">Process reads receipts into drafts. Nothing is added until you Save.</p>
+                </div>
                 <button type="button" class="admin-modal-icon-btn" id="batchAlbumCloseBtn" aria-label="Close">${TILE_DELETE_SVG}</button>
             </div>
             <div class="batch-album-body" id="batchAlbumBody"></div>
@@ -858,8 +1020,8 @@ function openBatchAlbum() {
                 <span class="batch-album-progress" id="batchAlbumProgress"></span>
                 <div class="batch-album-footer-actions">
                     <button type="button" class="action-btn secondary" id="batchCancelBtn">Cancel</button>
-                    <button type="button" class="action-btn secondary" id="batchProcessBtn" style="display:none" data-mode="run">Process</button>
-                    <button type="button" class="action-btn primary" id="batchSaveBtn" disabled>Save</button>
+                    <button type="button" class="action-btn secondary" id="batchProcessBtn" style="display:none" data-mode="run" title="Read receipts with OCR into drafts">Process</button>
+                    <button type="button" class="action-btn primary" id="batchSaveBtn" disabled title="Add all drafts to expenses">Save all</button>
                 </div>
             </div>
         </div>

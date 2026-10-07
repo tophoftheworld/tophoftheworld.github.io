@@ -1,7 +1,7 @@
-import { STORE_LOCATIONS } from '../data/catalog.js?v=106';
-import { THIS_WEEK_ID } from '../data/seed.js?v=106';
+import { STORE_LOCATIONS } from '../data/catalog.js?v=111';
+import { THIS_WEEK_ID } from '../data/seed.js?v=111';
 import { planWeekStart, addDays, getDateKey } from '../../../inventory/js/shared/forecast.js?v=105';
-import { renderWeekChrome, bindWeekChrome } from './week-chrome.js?v=106';
+import { renderWeekChrome, bindWeekChrome } from './week-chrome.js?v=111';
 
 function placeholderWeek() {
   const weekStart = planWeekStart(new Date());

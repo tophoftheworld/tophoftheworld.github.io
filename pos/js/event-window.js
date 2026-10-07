@@ -5,12 +5,26 @@ const YMD = /^\d{4}-\d{2}-\d{2}$/;
 export const POS_EVENT_WINDOW_DAYS = 2;
 
 export function manilaTodayYmd(now = new Date()) {
+  return manilaYmdFromDate(now);
+}
+
+/** Convert any Date/timestamp to YYYY-MM-DD in Asia/Manila (order folder keys). */
+export function manilaYmdFromDate(date = new Date()) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: TIMEZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(new Date());
+  }
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: TIMEZONE,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit'
-  }).format(now);
+  }).format(d);
 }
 
 export function addDaysYmd(ymd, days) {

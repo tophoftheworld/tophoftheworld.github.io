@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Market Market Coffee & Matcha Fair — POS Event Setup</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 520px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.25rem; }
+    button { padding: 0.6rem 1.2rem; font-size: 1rem; cursor: pointer; }
+    #log { margin-top: 1rem; white-space: pre-wrap; font-size: 0.9rem; line-height: 1.5; }
+    .ok { color: #0a7; }
+    .err { color: #c00; }
+    .muted { color: #666; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <h1>Market Market Coffee & Matcha Fair menu setup</h1>
+  <p class="muted">Attaches <code>market_market_menu.json</code> to the existing Events dashboard pop-up (<code>popup-coffee-matcha-fair</code>). Does not create a new event or archive others.</p>
+  <button type="button" id="runBtn">Attach menu to existing event</button>
+  <div id="log"></div>
+  <script type="module">
+    import { db, collection, getDocs, updateDoc, doc } from './js/firebase-setup.js';
+
+    const EVENT_KEY = 'popup-coffee-matcha-fair';
+    const EVENT_NAME = 'Market Market Coffee & Matcha Fair';
+    const MENU_PATH = './data/market_market_menu.json';
+    const logEl = document.getElementById('log');
+
+    function log(msg, cls = '') {
+      const line = document.createElement('div');
+      line.textContent = msg;
+      if (cls) line.className = cls;
+      logEl.appendChild(line);
+    }
+
+    function matchesCoffeeMatchaFair(data) {
+      const key = String(data.key || '').toLowerCase();
+      const name = String(data.name || data.title || '').toLowerCase();
+      if (key === EVENT_KEY) return true;
+      return name.includes('coffee') && name.includes('matcha') && name.includes('fair');
+    }
+
+    async function runSetup() {
+      logEl.innerHTML = '';
+      const btn = document.getElementById('runBtn');
+      btn.disabled = true;
+      try {
+        log('Loading menu…');
+        const res = await fetch(MENU_PATH);
+        if (!res.ok) throw new Error(`Could not load menu (${res.status}). Serve this folder over HTTP (e.g. live server), not file://`);
+        const menuData = await res.json();
+
+        const [branchSnap, eventSnap] = await Promise.all([
+          getDocs(collection(db, 'branches')),
+          getDocs(collection(db, 'opsEvents'))
+        ]);
+
+        let existing = null;
+        branchSnap.forEach((d) => {
+          const data = d.data();
+          if (matchesCoffeeMatchaFair(data)) existing = { id: d.id, ...data };
+        });
+
+        let opsEvent = null;
+        eventSnap.forEach((d) => {
+          const data = d.data();
+          if (matchesCoffeeMatchaFair(data)) opsEvent = { id: d.id, ...data };
+        });
+
+        if (!existing) {
+          throw new Error(`Existing POS branch for Coffee & Matcha Fair (${EVENT_KEY}) was not found.`);
+        }
+
+        log(`Found event: ${existing.name || EVENT_KEY} (${existing.key || existing.id})`, 'ok');
+        if (opsEvent) {
+          log(`Linked Events dashboard row: ${opsEvent.title} (${opsEvent.id})`, 'ok');
+          if (opsEvent.location) log(`Location: ${opsEvent.location}`, 'muted');
+        }
+
+        const patch = {
+          name: EVENT_NAME,
+          type: 'popup',
+          serviceType: 'popup',
+          archived: false,
+          status: 'active',
+          customMenu: menuData,
+          lastModified: new Date().toISOString()
+        };
+        if (opsEvent && !existing.opsEventId) patch.opsEventId = opsEvent.id;
+
+        await updateDoc(doc(db, 'branches', existing.id), patch);
+        if (opsEvent) {
+          await updateDoc(doc(db, 'opsEvents', opsEvent.id), {
+            title: EVENT_NAME,
+            lastModified: new Date().toISOString()
+          });
+        }
+        log('Menu attached.', 'ok');
+
+        log(`\nDone. Open POS and select "[Popup] ${EVENT_NAME}".`, 'ok');
+        log(`Categories: ${menuData.categories.length}, items: ${menuData.items.length}`, 'muted');
+        return true;
+      } catch (e) {
+        console.error(e);
+        log(`Error: ${e.message}`, 'err');
+        return false;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    document.getElementById('runBtn').addEventListener('click', runSetup);
+
+    if (new URLSearchParams(location.search).has('autorun')) {
+      runSetup();
+    }
+  </script>
+</body>
+</html>

@@ -221,6 +221,61 @@ body.embedded .step-bar {
 .week-excel-btn {
   margin-top: 0.4rem;
 }
+.budget-spend-split {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 0.85rem 1.1rem;
+}
+.budget-spend-metric {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+  line-height: 1.15;
+  gap: 0.12rem;
+}
+.budget-spend-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  line-height: 1.2;
+}
+.budget-spend-amount {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  font-weight: 650;
+}
+.budget-spend-metric--sm .budget-spend-amount {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.budget-spend-metric--total .budget-spend-amount {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+.week-total .budget-spend-split {
+  margin: 0;
+}
+.week-total .budget-spend-metric--sm .budget-spend-amount {
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+.week-total .budget-spend-metric--total .week-total-amount {
+  margin: 0;
+}
+.week-total .budget-spend-metric--total .week-total-label {
+  order: 2;
+}
+.loc-group-head .loc-total.budget-spend-split {
+  margin-left: auto;
+  flex-shrink: 0;
+}
 .week-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 
 .metric-row {
@@ -454,6 +509,7 @@ body.embedded .step-bar {
   color: var(--ink);
   line-height: 1.2;
   margin-left: auto;
+  flex-shrink: 0;
 }
 .group-chevron {
   display: inline-flex;
@@ -1435,28 +1491,33 @@ body.embedded .step-bar {
   table-layout: fixed;
   width: 100%;
 }
-.order-list-table col.ol-item { width: 28%; }
-.order-list-table col.ol-branch { width: 11%; }
-.order-list-table col.ol-supplier { width: 20%; }
-.order-list-table col.ol-qty { width: 11%; }
-.order-list-table col.ol-cost { width: 12%; }
-.order-list-table col.ol-status { width: 18%; }
+.order-list-table col.ol-item { width: 22%; }
+.order-list-table col.ol-branch { width: 20%; }
+.order-list-table col.ol-supplier { width: 24%; }
+.order-list-table col.ol-qty { width: 8%; }
+.order-list-table col.ol-cost { width: 10%; }
+.order-list-table col.ol-status { width: 16%; }
+.order-list-table th.ol-item,
 .order-list-table td.ol-item,
+.order-list-table th.ol-branch,
+.order-list-table td.ol-branch,
+.order-list-table th.ol-supplier,
 .order-list-table td.ol-supplier {
   white-space: normal;
+  overflow: hidden;
   overflow-wrap: anywhere;
   word-break: break-word;
   vertical-align: middle;
-}
-.order-list-table td.ol-branch {
-  white-space: nowrap;
+  line-height: 1.3;
 }
 .order-list-table th.num,
 .order-list-table td.num {
   text-align: right;
+  white-space: nowrap;
 }
 .order-list-table td.ol-status {
   overflow: visible;
+  white-space: nowrap;
 }
 
 .sheet-table {

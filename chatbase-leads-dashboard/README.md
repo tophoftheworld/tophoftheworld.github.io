@@ -10,7 +10,7 @@ Dashboard for Chatbase agent conversations (Instagram, Messenger, WhatsApp, widg
 - Filter by source, date range, and client-side search
 - Two-pane layout: conversation list + message thread (agent messages on the **right**)
 - **Summary** button builds an ops brief (Urgent / Leads / Payments to verify / Follow-ups / Awaiting reply)
-- **Send test email** on the summary pane; scheduled emails at **9:00** and **21:00** Asia/Manila (rolling 24h + 5-day awaiting-reply)
+- **Send test email** on the summary pane; scheduled email once daily at **21:00** Asia/Manila (rolling 24h + 5-day awaiting-reply)
 - Same briefs post to Discord `#inbox-summary`; service leads post to `#inquiries` (creates and updates; updates edit the same Discord message)
 
 ### Service leads
@@ -43,7 +43,7 @@ firebase emulators:start --only functions,hosting
 cd functions && npm run deploy
 ```
 
-(or `firebase deploy --only "functions:api,functions:inboxSummaryEmailMorning,functions:inboxSummaryEmailEvening,hosting"`)
+(or `firebase deploy --only "functions:api,functions:inboxSummaryEmailEvening,hosting"`)
 
 Set on Cloud Functions (via `functions/.env`): `ADMIN_API_TOKEN`, `CHATBASE_API_KEY`, `CHATBASE_CHATBOT_ID`, `CHATBASE_ACTION_SECRET`, `SHOPIFY_SHOP`, `SHOPIFY_ACCESS_TOKEN` (or client id/secret), plus EmailJS vars below for summary email, and Discord webhook URLs.
 
@@ -55,7 +55,7 @@ Uses the same EmailJS account as daily-sales. In EmailJS:
 2. Create a template (e.g. `EMAILJS_SUMMARY_TEMPLATE_ID`) with body `{{{summary_html}}}` (triple braces) and params `{{subject}}`, `{{to_email}}`, `{{from_name}}`
 3. Set `EMAILJS_SERVICE_ID`, `EMAILJS_PUBLIC_KEY`, `SUMMARY_EMAIL_TO` (default `hi@matchanese.com`)
 
-Schedules: `inboxSummaryEmailMorning` (09:00) and `inboxSummaryEmailEvening` (21:00) Asia/Manila.
+Schedule: `inboxSummaryEmailEvening` (21:00) Asia/Manila.
 
 ### Discord (inbox summary + new inquiries)
 
@@ -67,7 +67,7 @@ Create **three** incoming webhooks (Integrations → Webhooks). The Discord **Na
 | Inquiries | `#inquiries` | `DISCORD_INQUIRIES_WEBHOOK_URL` |
 | Orders | orders channel | `DISCORD_ORDERS_WEBHOOK_URL` |
 
-Paste the copied URLs into `functions/.env` (do not commit them). Morning/evening jobs and the dashboard **Send test email** button also post the brief to `#inbox-summary`. Chatbase and dashboard lead **creates** post a card to `#inquiries`; later **updates** edit that same message (stored as `discordMessageId` on the lead). If the original Discord message was deleted, a new card is posted. Shopify `orders/create` and `orders/paid` post to the orders webhook. If a URL is missing, email and lead logging still work.
+Paste the copied URLs into `functions/.env` (do not commit them). The evening job and the dashboard **Send test email** button also post the brief to `#inbox-summary`. Chatbase and dashboard lead **creates** post a card to `#inquiries`; later **updates** edit that same message (stored as `discordMessageId` on the lead). If the original Discord message was deleted, a new card is posted. Shopify `orders/create` and `orders/paid` post to the orders webhook. If a URL is missing, email and lead logging still work.
 
 **Webhooks:**
 

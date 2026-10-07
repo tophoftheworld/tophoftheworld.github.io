@@ -116,6 +116,8 @@ function migrateLoadedPackageItem(item, data) {
 
 // ─── LocalStorage Functions ───────────────────────────────────────────────────
 function saveToLocalStorage() {
+    syncClientEmailFromForm();
+    const pricing = calculatePricingBreakdown();
     const data = {
         invoiceNumber: document.getElementById('invoiceNumber').value,
         invoiceDate: document.getElementById('invoiceDate').value,
@@ -124,9 +126,12 @@ function saveToLocalStorage() {
         eventName: document.getElementById('eventName')?.value || '',
         clientAddress: document.getElementById('clientAddress').value,
         clientTIN: document.getElementById('clientTIN').value,
-        clientEmail: _clientEmail || '',
+        clientEmail: readClientEmail(),
+        clientPhone: readClientPhone(),
         notes: document.getElementById('notes').value,
         invoiceDiscount: getInvoiceExtraDiscount(),
+        vatApplied: pricing.vatApplied,
+        amountVat: pricing.amountVat,
         invoiceItems: invoiceItems,
         customLineItems: customLineItems,
         paymentMilestones: paymentMilestones,
@@ -183,6 +188,12 @@ function loadFromLocalStorage() {
                     ? data.invoiceDiscount
                     : '';
         }
+        if (document.getElementById('invoiceVat')) {
+            document.getElementById('invoiceVat').checked = !!data.vatApplied;
+        }
+        if (document.getElementById('clientPhone')) {
+            document.getElementById('clientPhone').value = data.clientPhone || '';
+        }
         
         if (data.invoiceItems) {
             invoiceItems = data.invoiceItems.map(item => migrateLoadedPackageItem(item, data));
@@ -197,7 +208,7 @@ function loadFromLocalStorage() {
         if (data._shareStatus) _shareStatus = data._shareStatus;
         if (data._publishedAt) _publishedAt = data._publishedAt;
         if (data._leadId) _leadId = data._leadId;
-        if (data.clientEmail) _clientEmail = String(data.clientEmail).trim();
+        if (data.clientEmail) setClientEmail(data.clientEmail);
         
         return true;
     } catch (e) {
@@ -229,6 +240,13 @@ function applyInvoicePreset(data) {
     document.getElementById('clientAddress').value = data.clientAddress || '';
     document.getElementById('clientTIN').value = data.clientTIN || '';
     document.getElementById('notes').value = data.notes || '';
+    if (document.getElementById('clientPhone')) {
+        document.getElementById('clientPhone').value = data.clientPhone || '';
+    }
+    if (document.getElementById('invoiceVat')) {
+        document.getElementById('invoiceVat').checked = !!data.vatApplied;
+    }
+    if (data.clientEmail) setClientEmail(data.clientEmail);
 
     invoiceItems = (data.invoiceItems || []).map(item => migrateLoadedPackageItem({ ...item }, data));
     customLineItems = data.customLineItems || [];
@@ -954,8 +972,8 @@ function renderPackageFormFields(item, index) {
                     <textarea class="pkg-workshop-inclusions" data-id="${item.id}" rows="8" placeholder="One inclusion per line"></textarea>
                 </div>
                 <div class="form-group">
-                    <label>Additional Details (optional, markdown)</label>
-                    <textarea class="pkg-workshop-details" data-id="${item.id}" rows="3" placeholder="e.g., Full Workshop (2.5 Hours), time window"></textarea>
+                    <label>Additional Details (optional, one bullet per line)</label>
+                    <textarea class="pkg-workshop-details" data-id="${item.id}" rows="3" placeholder="One detail per line. Use **bold** or *italic* for emphasis."></textarea>
                 </div>
             </div>
         </div>
@@ -1961,8 +1979,8 @@ function setupPaymentMilestoneListeners() {
     });
 }
 
-// Calculate total
-function calculateTotal() {
+// Calculate total (VAT-inclusive when Add 12% VAT is checked)
+function calculatePreVatTotal() {
     const packageTotal = invoiceItems.reduce((sum, item) => {
         const packageSub = getInvoiceItemPricing(item).subtotal;
         const addonsSub = getPackageAddonLineItems(item).reduce((s, a) => s + (a.quantity || 0) * (a.price || 0), 0);
@@ -1970,6 +1988,14 @@ function calculateTotal() {
     }, 0);
     const customTotal = customLineItems.reduce((sum, item) => sum + ((item.quantity || 0) * (item.price || 0)), 0);
     return Math.max(0, packageTotal + customTotal - getInvoiceExtraDiscount());
+}
+
+function isVatApplied() {
+    return !!document.getElementById('invoiceVat')?.checked;
+}
+
+function calculateTotal() {
+    return calculatePricingBreakdown().amountTotal;
 }
 
 function getInvoiceExtraDiscount() {
@@ -1992,18 +2018,24 @@ function getPackageDiscountTotal() {
     }, 0);
 }
 
-/** Subtotal / discount / total for customer page + save payload. */
+/** Subtotal / discount / VAT / total for customer page + save payload. */
 function calculatePricingBreakdown() {
     const packageDiscount = getPackageDiscountTotal();
     const extraDiscount = getInvoiceExtraDiscount();
     const amountDiscount = packageDiscount + extraDiscount;
-    const amountTotal = calculateTotal();
-    const amountSubtotal = amountTotal + amountDiscount;
+    const preVatTotal = calculatePreVatTotal();
+    const vatApplied = isVatApplied();
+    const amountVat = vatApplied ? Math.round(preVatTotal * 0.12 * 100) / 100 : 0;
+    const amountTotal = Math.round((preVatTotal + amountVat) * 100) / 100;
+    const amountSubtotal = amountTotal - amountVat + amountDiscount;
     return {
         amountSubtotal,
         amountDiscount,
         packageDiscount,
         extraDiscount,
+        amountVat,
+        vatApplied,
+        preVatTotal,
         amountTotal
     };
 }
@@ -2333,6 +2365,8 @@ function buildEditorInvoiceDoc() {
             amountTotal: total,
             amountSubtotal: pricing.amountSubtotal,
             amountDiscount: pricing.amountDiscount,
+            amountVat: pricing.amountVat,
+            vatApplied: pricing.vatApplied,
             paymentMilestones: paymentMilestones,
             amountPaid: allocApi().totalReceivedFromPayments
                 ? allocApi().totalReceivedFromPayments(invoicePayments)
@@ -2358,6 +2392,8 @@ function buildEditorInvoiceDoc() {
         eventName: document.getElementById('eventName')?.value || '',
         clientAddress: document.getElementById('clientAddress')?.value || '',
         clientTIN: document.getElementById('clientTIN')?.value || '',
+        clientEmail: readClientEmail(),
+        clientPhone: readClientPhone(),
         notes: document.getElementById('notes')?.value || '',
         invoiceItems: invoiceItems,
         customLineItems: customLineItems,
@@ -2368,6 +2404,8 @@ function buildEditorInvoiceDoc() {
         ),
         paymentStructure,
         invoiceDiscount: getInvoiceExtraDiscount(),
+        vatApplied: pricing.vatApplied,
+        amountVat: pricing.amountVat,
         totalAmount: total,
         amountTotal: total,
         amountSubtotal: pricing.amountSubtotal,
@@ -2623,6 +2661,7 @@ function setupEventListeners() {
     const formInputs = [
         'invoiceNumber', 'invoiceDate',
         'clientName', 'clientCompany', 'eventName', 'clientAddress', 'clientTIN',
+        'clientEmail', 'clientPhone',
         'notes', 'invoiceDiscount'
     ];
 
@@ -2630,14 +2669,24 @@ function setupEventListeners() {
         const element = document.getElementById(id);
         if (element) {
             element.addEventListener('input', function() {
+                if (id === 'clientEmail') syncClientEmailFromForm();
                 updatePreview();
                 saveToLocalStorage();
             });
             element.addEventListener('change', function() {
+                if (id === 'clientEmail') syncClientEmailFromForm();
                 updatePreview();
                 saveToLocalStorage();
             });
         }
+    });
+
+    document.getElementById('invoiceVat')?.addEventListener('change', function() {
+        const total = calculateTotal();
+        updatePaymentMilestones(total);
+        renderPaymentMilestones();
+        updatePreview();
+        saveToLocalStorage();
     });
     
     // Invoice date change should recalculate payment milestone dates.
@@ -2822,7 +2871,10 @@ async function clearForm() {
     if (document.getElementById('eventName')) document.getElementById('eventName').value = '';
     document.getElementById('clientAddress').value = '';
     document.getElementById('clientTIN').value = '';
+    if (document.getElementById('clientEmail')) document.getElementById('clientEmail').value = '';
+    if (document.getElementById('clientPhone')) document.getElementById('clientPhone').value = '';
     if (document.getElementById('invoiceDiscount')) document.getElementById('invoiceDiscount').value = '';
+    if (document.getElementById('invoiceVat')) document.getElementById('invoiceVat').checked = false;
 
     invoiceItems = [];
     customLineItems = [];
@@ -2878,6 +2930,27 @@ let _publishedAt = null;
 let _leadId = null;
 let _opsEventId = null;
 let _clientEmail = '';
+
+function readClientEmail() {
+    const fromForm = String(document.getElementById('clientEmail')?.value || '').trim();
+    if (fromForm) return fromForm;
+    return String(_clientEmail || '').trim();
+}
+
+function readClientPhone() {
+    return String(document.getElementById('clientPhone')?.value || '').trim();
+}
+
+function setClientEmail(value) {
+    _clientEmail = String(value || '').trim();
+    const el = document.getElementById('clientEmail');
+    if (el) el.value = _clientEmail;
+}
+
+function syncClientEmailFromForm() {
+    const el = document.getElementById('clientEmail');
+    if (el) _clientEmail = String(el.value || '').trim();
+}
 let _allCloudInvoices = [];
 let _editorReady = false;
 let _suppressCloudAutosave = false;
@@ -3244,6 +3317,7 @@ async function fetchCloudInvoiceById(docId) {
 
 function buildSavePayload() {
     const pricing = calculatePricingBreakdown();
+    syncClientEmailFromForm();
     const eventName = String(document.getElementById('eventName')?.value || '').trim();
     const payload = {
         invoiceNumber: document.getElementById('invoiceNumber').value,
@@ -3252,7 +3326,8 @@ function buildSavePayload() {
         clientCompany: document.getElementById('clientCompany')?.value || '',
         clientAddress: document.getElementById('clientAddress').value,
         clientTIN: document.getElementById('clientTIN').value,
-        clientEmail: _clientEmail || '',
+        clientEmail: readClientEmail(),
+        clientPhone: readClientPhone(),
         eventDate: getInvoiceEventDate(),
         notes: document.getElementById('notes').value,
         invoiceItems: invoiceItems,
@@ -3261,6 +3336,8 @@ function buildSavePayload() {
         paymentStructure: paymentStructure,
         paymentTermsCustomized: paymentTermsCustomized,
         invoiceDiscount: getInvoiceExtraDiscount(),
+        vatApplied: pricing.vatApplied,
+        amountVat: pricing.amountVat,
         totalAmount: pricing.amountTotal,
         amountTotal: pricing.amountTotal,
         amountSubtotal: pricing.amountSubtotal,
@@ -3291,7 +3368,7 @@ function restoreFromPayload(data, docId) {
     _publishedAt = data.publishedAt || null;
     _leadId = data.leadId || null;
     _opsEventId = data.opsEventId || null;
-    _clientEmail = String(data.clientEmail || '').trim();
+    setClientEmail(data.clientEmail || '');
 
     if (data.invoiceNumber) document.getElementById('invoiceNumber').value = data.invoiceNumber;
     if (data.invoiceDate) document.getElementById('invoiceDate').value = data.invoiceDate;
@@ -3304,12 +3381,18 @@ function restoreFromPayload(data, docId) {
     }
     document.getElementById('clientAddress').value = data.clientAddress || '';
     document.getElementById('clientTIN').value = data.clientTIN || '';
+    if (document.getElementById('clientPhone')) {
+        document.getElementById('clientPhone').value = data.clientPhone || '';
+    }
     document.getElementById('notes').value = data.notes || '';
     if (document.getElementById('invoiceDiscount')) {
         document.getElementById('invoiceDiscount').value =
             data.invoiceDiscount != null && data.invoiceDiscount !== ''
                 ? data.invoiceDiscount
                 : '';
+    }
+    if (document.getElementById('invoiceVat')) {
+        document.getElementById('invoiceVat').checked = !!data.vatApplied;
     }
 
     if (data.invoiceItems) {
@@ -3437,6 +3520,7 @@ async function persistToCloud() {
         await updateDoc(doc(db, 'invoice-generator', _currentCloudDocId), payload);
         await syncLinkedOpsEventFromInvoice(payload);
         syncInvoiceEditorUrl({ docId: _currentCloudDocId });
+        autoAddBookedToCalendar(payload);
         return _currentCloudDocId;
     } else {
         const { collection, addDoc } = _firebaseModules;
@@ -3445,6 +3529,31 @@ async function persistToCloud() {
         saveToLocalStorage(); // persist the new doc ID so refresh doesn't lose it
         syncInvoiceEditorUrl({ docId: _currentCloudDocId });
         return _currentCloudDocId;
+    }
+}
+
+/** Booked (reservation fee paid) means on the calendar: add and confirm the event the first time the fee is marked paid. */
+async function autoAddBookedToCalendar(payload) {
+    if (_opsEventId || payload.archived || payload.paymentMilestones?.[0]?.paid !== true) return;
+    try {
+        const snap = await fetchCloudInvoiceById(_currentCloudDocId);
+        if (!snap || snap.opsEventId || (Array.isArray(snap.opsEventIds) && snap.opsEventIds.length)) return;
+        const { promoteInvoiceToOpsEvent, confirmOpsEvent, loadEventTypes } = await import('../shared/js/ops-events.js?v=30');
+        const { db, firestoreFns } = await getOpsPromoteContext();
+        const created = await promoteInvoiceToOpsEvent(db, firestoreFns, snap, { createdBy: 'invoice-generator-auto' });
+        _opsEventId = created.id;
+        const types = await loadEventTypes(db, firestoreFns);
+        for (const id of created.ids || [created.id]) {
+            const evSnap = await firestoreFns.getDoc(firestoreFns.doc(db, 'opsEvents', id));
+            const ev = evSnap.exists() ? { id, ...evSnap.data() } : null;
+            if (!ev || ev.status !== 'draft') continue;
+            await confirmOpsEvent(db, firestoreFns, ev, types.find((t) => t.id === ev.typeId) || null);
+        }
+        const idx = (_allCloudInvoices || []).findIndex((row) => row.id === _currentCloudDocId);
+        if (idx >= 0) _allCloudInvoices[idx] = { ..._allCloudInvoices[idx], opsEventId: created.id };
+        updateCalendarButton();
+    } catch (err) {
+        console.warn('Booked, but could not add to calendar automatically', err);
     }
 }
 
@@ -3721,7 +3830,7 @@ async function openEmailInvoiceModal() {
         const subjectEl = document.getElementById('emailInvoiceSubject');
         const messageEl = document.getElementById('emailInvoiceMessage');
 
-        if (toEl) toEl.value = _clientEmail || '';
+        if (toEl) toEl.value = readClientEmail();
         if (subjectEl) subjectEl.value = composeInvoiceEmailSubject();
         if (messageEl) messageEl.value = composeInvoiceEmailBody(url);
         setEmailComposeEditable(false);
@@ -3755,7 +3864,7 @@ function isValidEmailAddress(value) {
 
 async function persistClientEmailFromModal() {
     const { to } = readEmailInvoiceFields();
-    _clientEmail = to;
+    setClientEmail(to);
     saveToLocalStorage();
     scheduleCloudAutosave();
 }
@@ -4011,8 +4120,11 @@ async function startNewInvoice() {
     if (document.getElementById('eventName')) document.getElementById('eventName').value = '';
     document.getElementById('clientAddress').value = '';
     document.getElementById('clientTIN').value = '';
+    if (document.getElementById('clientEmail')) document.getElementById('clientEmail').value = '';
+    if (document.getElementById('clientPhone')) document.getElementById('clientPhone').value = '';
     document.getElementById('notes').value = '';
     if (document.getElementById('invoiceDiscount')) document.getElementById('invoiceDiscount').value = '';
+    if (document.getElementById('invoiceVat')) document.getElementById('invoiceVat').checked = false;
     invoiceItems = [];
     customLineItems = [];
     paymentMilestones = [];
@@ -4452,12 +4564,16 @@ function buildCurrentInvoiceForAi() {
         eventName: document.getElementById('eventName')?.value || '',
         clientAddress: document.getElementById('clientAddress').value,
         clientTIN: document.getElementById('clientTIN').value,
+        clientEmail: readClientEmail(),
+        clientPhone: readClientPhone(),
         notes: document.getElementById('notes').value,
         invoiceItems: invoiceItems.map(slimItem),
         customLineItems: customLineItems,
         paymentMilestones: paymentMilestones,
         paymentStructure: paymentStructure,
-        paymentTermsCustomized: paymentTermsCustomized
+        paymentTermsCustomized: paymentTermsCustomized,
+        vatApplied: isVatApplied(),
+        invoiceDiscount: getInvoiceExtraDiscount()
     };
 }
 
@@ -4471,16 +4587,20 @@ function buildInvoiceDocumentPreview() {
     const eventName = document.getElementById('eventName')?.value || '';
     const clientAddress = document.getElementById('clientAddress')?.value || '';
     const clientTIN = document.getElementById('clientTIN')?.value || '';
+    const clientEmail = readClientEmail();
+    const clientPhone = readClientPhone();
     const notes = document.getElementById('notes')?.value || '';
 
     lines.push('BILLING INVOICE');
     if (invNo) lines.push(`Invoice #: ${invNo}`);
     if (invDate) lines.push(`Date: ${formatDate(invDate)}`);
-    lines.push(`Billed to: ${clientName || '(none)'}`);
-    lines.push(`Company: ${clientCompany || '(none)'}`);
+    lines.push(`Billed to: ${clientCompany || clientName || '(none)'}`);
+    if (clientCompany && clientName) lines.push(`Contact: ${clientName}`);
     lines.push(`Event name: ${eventName || '(none)'}`);
     if (clientAddress) lines.push(`Address: ${clientAddress}`);
     if (clientTIN) lines.push(`TIN: ${clientTIN}`);
+    if (clientEmail) lines.push(`Email: ${clientEmail}`);
+    if (clientPhone) lines.push(`Phone: ${clientPhone}`);
     lines.push('');
 
     invoiceItems.forEach((item, idx) => {
@@ -4797,12 +4917,20 @@ function mergeAiInvoice(current, incoming, { allowClear = false } = {}) {
         eventName: pickMergedString(cur.eventName, inc.eventName, allowClear),
         clientAddress: pickMergedString(cur.clientAddress, inc.clientAddress, allowClear),
         clientTIN: pickMergedString(cur.clientTIN, inc.clientTIN, allowClear),
+        clientEmail: pickMergedString(cur.clientEmail, inc.clientEmail, allowClear),
+        clientPhone: pickMergedString(cur.clientPhone, inc.clientPhone, allowClear),
         notes: pickMergedString(cur.notes, inc.notes, allowClear),
         invoiceItems: mergePackageItems(cur.invoiceItems, inc.invoiceItems, allowClear),
         customLineItems: pickMergedArray(cur.customLineItems, inc.customLineItems, allowClear),
         paymentMilestones: pickMergedArray(cur.paymentMilestones, inc.paymentMilestones, allowClear),
         paymentStructure,
-        paymentTermsCustomized
+        paymentTermsCustomized,
+        invoiceDiscount:
+            inc.invoiceDiscount != null && inc.invoiceDiscount !== ''
+                ? Number(inc.invoiceDiscount)
+                : cur.invoiceDiscount,
+        vatApplied:
+            typeof inc.vatApplied === 'boolean' ? inc.vatApplied : !!cur.vatApplied
     };
 
     // Sanitize compound-clause / contaminated names from Gemini or prior form state
@@ -5187,7 +5315,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (e.target === e.currentTarget) closeEmailInvoiceModal();
     });
     document.getElementById('emailInvoiceTo')?.addEventListener('change', () => {
-        _clientEmail = String(document.getElementById('emailInvoiceTo')?.value || '').trim();
+        setClientEmail(String(document.getElementById('emailInvoiceTo')?.value || '').trim());
         saveToLocalStorage();
         scheduleCloudAutosave();
     });

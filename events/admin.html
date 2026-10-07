@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <title>Events · Matchanese</title>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/events.css?v=38" />
+  <link rel="stylesheet" href="css/events.css?v=47" />
 </head>
 <body class="events-app">
   <div class="container">
@@ -82,8 +82,15 @@
     </div>
   </div>
 
+  <div class="event-nested-modal" id="eventNestedModal" hidden>
+    <div class="event-nested-modal__backdrop" data-nested-dismiss></div>
+    <div class="event-nested-modal__panel" role="dialog" aria-modal="true" aria-labelledby="eventNestedModalTitle">
+      <div class="event-nested-modal__body" id="eventNestedModalBody"></div>
+    </div>
+  </div>
+
   <div id="composerRoot"></div>
 
-  <script type="module" src="js/app.js?v=38"></script>
+  <script type="module" src="js/app.js?v=47"></script>
 </body>
 </html>

@@ -89,6 +89,52 @@ test("toPublicInvoice strips unpublished internals and keeps customer fields", (
   assert.equal(pub.savedAt, undefined);
 });
 
+test("computePaymentSummary keeps subtotal pre-VAT and exposes amountVat", () => {
+  const summary = computePaymentSummary({
+    amountTotal: 118720,
+    amountDiscount: 9000,
+    amountVat: 12720,
+    vatApplied: true,
+    paymentMilestones: [
+      { milestone: "Date Reservation", percentage: 25, amount: 29680, paid: false },
+      { milestone: "Pre-Event", percentage: 25, amount: 29680, paid: false },
+      { milestone: "Event Completion", percentage: 50, amount: 59360, paid: false }
+    ]
+  });
+  assert.equal(summary.amountTotal, 118720);
+  assert.equal(summary.amountVat, 12720);
+  assert.equal(summary.vatApplied, true);
+  assert.equal(summary.amountDiscount, 9000);
+  // Pre-VAT owed (106000) + discount (9000) = list subtotal 115000
+  assert.equal(summary.amountSubtotal, 115000);
+});
+
+test("toPublicInvoice passes contact email/phone and VAT fields", () => {
+  const pub = toPublicInvoice({
+    invoiceNumber: "INV-2026-0911-001",
+    clientName: "Anna Karenina Roque",
+    clientCompany: "The Loop",
+    clientEmail: "anna@example.com",
+    clientPhone: "+63 917 000 0000",
+    clientAddress: "Makati",
+    clientTIN: "123-456-789-000",
+    amountTotal: 118720,
+    amountDiscount: 9000,
+    amountVat: 12720,
+    vatApplied: true,
+    invoiceItems: [],
+    customLineItems: [],
+    paymentMilestones: []
+  });
+  assert.equal(pub.clientEmail, "anna@example.com");
+  assert.equal(pub.clientPhone, "+63 917 000 0000");
+  assert.equal(pub.clientAddress, "Makati");
+  assert.equal(pub.clientTIN, "123-456-789-000");
+  assert.equal(pub.amountVat, 12720);
+  assert.equal(pub.amountSubtotal, 115000);
+  assert.equal(pub.vatApplied, true);
+});
+
 test("getPublicInvoiceByToken returns 404 for invalid or missing tokens", async () => {
   const fakeDb = {
     collection(name) {

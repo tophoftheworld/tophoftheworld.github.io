@@ -70,6 +70,35 @@ export function shouldArchiveOverlayForLiveWeek({
   return true;
 }
 
+function addDaysKey(key, n) {
+  const d = new Date(`${key}T12:00:00`);
+  d.setDate(d.getDate() + n);
+  return [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, '0'),
+    String(d.getDate()).padStart(2, '0'),
+  ].join('-');
+}
+
+/**
+ * Dates for the live week. The overlay's own week wins so a pending (failed)
+ * rollover never relabels last week's budget as the upcoming plan week.
+ */
+export function resolveLiveWeekBounds({
+  overlayWeekStart,
+  overlayWeekEnd,
+  planWeekStart,
+  planWeekEnd,
+} = {}) {
+  if (overlayWeekStart) {
+    return {
+      weekStart: overlayWeekStart,
+      weekEnd: overlayWeekEnd || addDaysKey(overlayWeekStart, 6),
+    };
+  }
+  return { weekStart: planWeekStart || null, weekEnd: planWeekEnd || null };
+}
+
 /** True if overlay has any real plan work worth archiving. */
 export function overlayHasPlanEdits(overlay) {
   if (!overlay || typeof overlay !== 'object') return false;

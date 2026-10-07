@@ -110,7 +110,7 @@
               <span class="client-value" data-pdf="clientName"></span>
             </div>
             <div class="client-line" data-pdf="clientCompanyRow" style="display:none">
-              <span class="client-label">Company:</span>
+              <span class="client-label">Contact:</span>
               <span class="client-value" data-pdf="clientCompany"></span>
             </div>
             <div class="client-line">
@@ -120,6 +120,14 @@
             <div class="client-line">
               <span class="client-label">TIN:</span>
               <span class="client-value" data-pdf="clientTIN"></span>
+            </div>
+            <div class="client-line" data-pdf="clientEmailRow" style="display:none">
+              <span class="client-label">Email:</span>
+              <span class="client-value" data-pdf="clientEmail"></span>
+            </div>
+            <div class="client-line" data-pdf="clientPhoneRow" style="display:none">
+              <span class="client-label">Phone:</span>
+              <span class="client-value" data-pdf="clientPhone"></span>
             </div>
           </div>
         </div>
@@ -135,6 +143,18 @@
             </thead>
             <tbody data-pdf="items"></tbody>
             <tfoot>
+              <tr class="subtotal-row" data-pdf="subtotalRow" style="display:none">
+                <td colspan="3" class="total-label">Subtotal</td>
+                <td class="total-amount text-right" data-pdf="subtotal">Php 0.00</td>
+              </tr>
+              <tr class="discount-row" data-pdf="discountRow" style="display:none">
+                <td colspan="3" class="total-label">Discount</td>
+                <td class="total-amount text-right" data-pdf="discount">Php 0.00</td>
+              </tr>
+              <tr class="vat-row" data-pdf="vatRow" style="display:none">
+                <td colspan="3" class="total-label">VAT (12%)</td>
+                <td class="total-amount text-right" data-pdf="vat">Php 0.00</td>
+              </tr>
               <tr class="total-row">
                 <td colspan="3" class="total-label"><strong>TOTAL AMOUNT DUE:</strong></td>
                 <td class="total-amount text-right"><strong data-pdf="total">Php 0.00</strong></td>
@@ -218,7 +238,7 @@
               typeof global.InvoicePageRender.displayMenuItemText === "function"
                 ? global.InvoicePageRender.displayMenuItemText(item)
                 : item;
-            return `<div class="package-list-item">${escapeHtml(text)}</div>`;
+            return `<div class="package-list-item">${global.InvoicePageRender.renderSectionItem(section, text)}</div>`;
           })
           .join("");
         return `<div class="package-section">
@@ -297,6 +317,32 @@
     return s.bottom > f.top - 4;
   }
 
+  function applyTotalsBreakdown(invoiceEl, summary) {
+    const setText = (key, value) => {
+      const el = invoiceEl.querySelector(`[data-pdf="${key}"]`);
+      if (el) el.textContent = value || "";
+    };
+    const amountDiscount = Number(summary.amountDiscount) || 0;
+    const amountVat = Number(summary.amountVat) || 0;
+    const showBreakdown = amountDiscount > 0 || amountVat > 0;
+    const subtotalRow = invoiceEl.querySelector('[data-pdf="subtotalRow"]');
+    const discountRow = invoiceEl.querySelector('[data-pdf="discountRow"]');
+    const vatRow = invoiceEl.querySelector('[data-pdf="vatRow"]');
+    if (subtotalRow) subtotalRow.style.display = showBreakdown ? "" : "none";
+    if (discountRow) discountRow.style.display = amountDiscount > 0 ? "" : "none";
+    if (vatRow) vatRow.style.display = amountVat > 0 ? "" : "none";
+    if (showBreakdown) {
+      setText("subtotal", `Php ${formatCurrency(summary.amountSubtotal)}`);
+    }
+    if (amountDiscount > 0) {
+      setText("discount", `−Php ${formatCurrency(amountDiscount)}`);
+    }
+    if (amountVat > 0) {
+      setText("vat", `Php ${formatCurrency(amountVat)}`);
+    }
+    setText("total", `Php ${formatCurrency(summary.amountTotal)}`);
+  }
+
   function applyInvoiceHeader(invoiceEl, doc, summary, { continued }) {
     const setText = (key, value) => {
       const el = invoiceEl.querySelector(`[data-pdf="${key}"]`);
@@ -310,7 +356,8 @@
       if (titleSection) titleSection.remove();
       const companyInfo = invoiceEl.querySelector(".company-info");
       if (companyInfo) companyInfo.remove();
-      setText("total", `Php ${formatCurrency(summary.amountTotal)}`);
+      // Totals (incl. VAT/discount) still belong on the last items page.
+      applyTotalsBreakdown(invoiceEl, summary);
       return;
     }
 
@@ -319,12 +366,13 @@
     setText("invoiceDate", doc.invoiceDate ? formatDate(doc.invoiceDate) : "");
     const billedName = String(doc.clientName || "").trim();
     const billedCompany = String(doc.clientCompany || "").trim();
-    setText("clientName", billedName || billedCompany || "");
+    // Company is primary billed-to; contact person shown on the Contact row.
+    setText("clientName", billedCompany || billedName || "");
     const companyRow = invoiceEl.querySelector('[data-pdf="clientCompanyRow"]');
     const companyVal = invoiceEl.querySelector('[data-pdf="clientCompany"]');
     if (companyRow && companyVal) {
       if (billedName && billedCompany) {
-        companyVal.textContent = billedCompany;
+        companyVal.textContent = billedName;
         companyRow.style.display = "";
       } else {
         companyVal.textContent = "";
@@ -333,7 +381,16 @@
     }
     setText("clientAddress", doc.clientAddress || "");
     setText("clientTIN", doc.clientTIN || "");
-    setText("total", `Php ${formatCurrency(summary.amountTotal)}`);
+    const email = String(doc.clientEmail || "").trim();
+    const phone = String(doc.clientPhone || "").trim();
+    const emailRow = invoiceEl.querySelector('[data-pdf="clientEmailRow"]');
+    const phoneRow = invoiceEl.querySelector('[data-pdf="clientPhoneRow"]');
+    setText("clientEmail", email);
+    setText("clientPhone", phone);
+    if (emailRow) emailRow.style.display = email ? "" : "none";
+    if (phoneRow) phoneRow.style.display = phone ? "" : "none";
+
+    applyTotalsBreakdown(invoiceEl, summary);
   }
 
   function setItemsTfootVisible(invoiceEl, visible) {
@@ -444,6 +501,9 @@
 
       const isLastItemsPage = index >= rowHtmls.length;
       setItemsTfootVisible(invoiceEl, isLastItemsPage);
+      if (isLastItemsPage) {
+        applyTotalsBreakdown(invoiceEl, summary);
+      }
       itemsEl.innerHTML =
         pageRows.join("") ||
         '<tr><td colspan="4" class="empty-state">No items added yet</td></tr>';

@@ -26,15 +26,17 @@ const COMPLETENESS_FIELDS = [
   "eventType"
 ];
 
-const PIPELINE_STATUSES = ["inquiry", "quoted", "invoiced", "deposit", "completed"];
+const PIPELINE_STATUSES = ["inquiry", "qualifying", "quoted", "invoiced", "deposit", "completed", "lost"];
 const DEFAULT_PIPELINE_STATUS = "inquiry";
 
 const PIPELINE_RANK = {
   inquiry: 0,
+  qualifying: 0,
   quoted: 1,
   invoiced: 2,
   deposit: 3,
-  completed: 4
+  completed: 4,
+  lost: 99
 };
 
 const EDIT_HISTORY_MAX = 100;

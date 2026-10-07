@@ -1,6 +1,6 @@
-import { THIS_WEEK_ID } from '../data/seed.js?v=106';
-import { getThisWeek, pastWeeks, isThisWeek, getWeek } from '../store.js?v=106';
-import { weekTotal } from '../compute.js?v=106';
+import { THIS_WEEK_ID } from '../data/seed.js?v=111';
+import { getThisWeek, pastWeeks, isThisWeek, getWeek } from '../store.js?v=111';
+import { weekTotal, budgetSpendSplit, plannedLines } from '../compute.js?v=111';
 import {
   formatDateRange,
   formatDateShort,
@@ -9,8 +9,17 @@ import {
   statusLabel,
   resolveWeekLastEdit,
   formatLastEditLabel,
-} from '../format.js?v=106';
-import { toast } from './shell.js?v=106';
+} from '../format.js?v=111';
+import { toast } from './shell.js?v=111';
+import { planWeekStart, getDateKey } from '../../../inventory/js/shared/forecast.js?v=105';
+
+/** Live week still holds last week's budget because the rollover archive has not landed. */
+function rolloverPendingNote(week) {
+  if (!isThisWeek(week) || !week?.weekStart) return '';
+  const pending =
+    week.rolloverPending || week.weekStart < getDateKey(planWeekStart(new Date()));
+  return pending ? 'Last week not archived yet \u00B7 retrying' : '';
+}
 
 function todayKeyLocal() {
   const d = new Date();
@@ -103,8 +112,11 @@ export function renderWeekChrome(week, { tab } = {}) {
   const total = weekTotal(week);
   const status = weekStatusText(week);
   const stockNote = stockAsOfNote(week);
-  const statusLine = stockNote ? `${status} \u00B7 ${stockNote}` : status;
+  const rolloverNote = rolloverPendingNote(week);
+  const statusLine = [status, rolloverNote, stockNote].filter(Boolean).join(' \u00B7 ');
   const lastEdit = formatLastEditLabel(resolveWeekLastEdit(week));
+  const showSpendSplit = tab === 'plan';
+  const spend = showSpendSplit ? budgetSpendSplit(plannedLines(week)) : null;
 
   const tabs = [
     { key: 'plan', label: 'Budget', step: '1' },
@@ -136,8 +148,25 @@ export function renderWeekChrome(week, { tab } = {}) {
           }
         </div>
         <div class="week-total" title="Total budget">
-          <span class="week-total-label">Total budget</span>
-          <strong class="week-total-amount">${formatPeso(total)}</strong>
+          ${
+            spend
+              ? `<div class="budget-spend-split" aria-label="Budget spend">
+                  <div class="budget-spend-metric budget-spend-metric--sm">
+                    <strong class="budget-spend-amount">${formatPeso(spend.ordered)}</strong>
+                    <span class="budget-spend-label">Ordered</span>
+                  </div>
+                  <div class="budget-spend-metric budget-spend-metric--sm">
+                    <strong class="budget-spend-amount">${formatPeso(spend.left)}</strong>
+                    <span class="budget-spend-label">Left</span>
+                  </div>
+                  <div class="budget-spend-metric budget-spend-metric--total">
+                    <strong class="week-total-amount">${formatPeso(total)}</strong>
+                    <span class="week-total-label">Total budget</span>
+                  </div>
+                </div>`
+              : `<span class="week-total-label">Total budget</span>
+          <strong class="week-total-amount">${formatPeso(total)}</strong>`
+          }
           <button type="button" class="btn secondary btn-sm week-excel-btn" data-download-week-excel title="Download Excel for all branches">Download Excel</button>
         </div>
       </div>
@@ -183,7 +212,7 @@ function bindWeekExcel(root, week) {
       btn.disabled = true;
       try {
         // Lazy import avoids store/week-chrome/budget-excel cycles (dual module instances).
-        const { downloadWeekBudgetExcel } = await import('./budget-excel.js?v=106');
+        const { downloadWeekBudgetExcel } = await import('./budget-excel.js?v=111');
         await downloadWeekBudgetExcel(live);
       } catch (err) {
         console.warn(err);

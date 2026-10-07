@@ -2,7 +2,7 @@
  * Invoice overlay helpers for the Events calendar.
  */
 
-import { invoiceCalendarDates } from '../../shared/js/ops-events.js?v=38';
+import { invoiceCalendarDates } from '../../shared/js/ops-events.js?v=46';
 
 export function filterInvoicesForMonth(invoices, year, monthIndex) {
   const prefix = `${year}-${String(monthIndex + 1).padStart(2, '0')}`;

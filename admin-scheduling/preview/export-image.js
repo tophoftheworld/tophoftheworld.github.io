@@ -1,4 +1,4 @@
-window.downloadScheduleImage = async ({dates,locations,shifts,employees,presets,title}) => {
+window.downloadScheduleImage = async ({dates,locations,shifts,employees,presets,title,roster}) => {
   const width=1740,labelWidth=220,col=(width-labelWidth-20)/7,cardHeight=102;
   const groups=locations.map(l=>({...l,rows:dates.map(d=>shifts.filter(s=>s.loc===l.id && s.date===d).sort((a,b)=>a.start.localeCompare(b.start)))}));
   const heights=groups.map(g=>Math.max(1,...g.rows.map(r=>r.length))*cardHeight+20);
@@ -19,16 +19,20 @@ window.downloadScheduleImage = async ({dates,locations,shifts,employees,presets,
     box(20,y,width-40,heights[index]-4,'#fff');text(g.name,30,y+29,labelWidth-50,'bold 17px Arial');
     g.rows.forEach((rows,day)=>rows.forEach((s,n)=>{
       const x=labelWidth+day*col+5,cy=y+8+n*cardHeight,p=employees[s.employeeId],image=photos.get(s.employeeId);
-      c.fillStyle='#1f7a38';c.beginPath();c.roundRect(x,cy,col-10,cardHeight-8,9);c.fill();
-      c.save();c.beginPath();c.arc(x+25,cy+25,17,0,Math.PI*2);c.clip();box(x+8,cy+8,34,34,'#dceade');
-      if(image){const size=Math.min(image.width,image.height);c.drawImage(image,(image.width-size)/2,(image.height-size)/2,size,size,x+8,cy+8,34,34);}else text((p?.nickname || p?.name || 'U')[0],x+19,cy+31,22,'bold 18px Arial');c.restore();
-      text(p?.nickname || p?.name || 'Unassigned',x+48,cy+28,col-66,'bold 16px Arial','#fff');
+      const conflict=window.ScheduleLogic?.conflicts(s,roster || shifts).length;
+      const cardColor=conflict ? '#c0392b' : '#1f7a38', pillColor=conflict ? '#fdecea' : '#e1efe5', pillInk=conflict ? '#922b21' : '#195e2d';
+      c.fillStyle=cardColor;c.beginPath();c.roundRect(x,cy,col-10,cardHeight-8,9);c.fill();
+      const photoSize=60,photoX=x+9,photoY=cy+(cardHeight-8-photoSize)/2,bodyX=x+78,bodyWidth=col-98;
+      c.save();c.beginPath();c.arc(photoX+30,photoY+30,30,0,Math.PI*2);c.clip();box(photoX,photoY,photoSize,photoSize,'#dceade');
+      if(image){const size=Math.min(image.width,image.height);c.drawImage(image,(image.width-size)/2,(image.height-size)/2,size,size,photoX,photoY,photoSize,photoSize);}else{c.font='bold 22px Arial';c.fillStyle=cardColor;c.textAlign='center';c.fillText((p?.nickname || p?.name || 'U')[0],photoX+30,photoY+38);}c.restore();
+      text(p?.nickname || p?.name || 'Unassigned',bodyX,cy+22,bodyWidth,'bold 15px Arial','#fff');
       const shiftLabel=presets[s.type]?.label || 'Custom';
       c.font='bold 12px Arial';
-      const pillWidth=Math.min(col-30,c.measureText(shiftLabel).width+16);
-      c.fillStyle='#e1efe5';c.beginPath();c.roundRect(x+10,cy+44,pillWidth,20,10);c.fill();
-      text(shiftLabel,x+18,cy+58,pillWidth-16,'bold 12px Arial','#195e2d');
-      text(`${time(s.start)} – ${time(s.end)}`,x+10,cy+84,col-30,'14px Arial','#fff');
+      const pillWidth=Math.min(bodyWidth,c.measureText(shiftLabel).width+14);
+      c.fillStyle=pillColor;c.beginPath();c.roundRect(bodyX,cy+29,pillWidth,20,10);c.fill();
+      text(shiftLabel,bodyX+7,cy+43,pillWidth-14,'bold 12px Arial',pillInk);
+      text(time(s.start),bodyX,cy+65,bodyWidth,'14px Arial','#fff');
+      text(`– ${time(s.end)}`,bodyX,cy+82,bodyWidth,'14px Arial','#fff');
     }));y+=heights[index];
   });
   const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));if(!blob) throw new Error('Image could not be generated.');

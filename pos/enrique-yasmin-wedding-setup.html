@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enrique & Yasmin Wedding — POS Event Setup</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 520px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.25rem; }
+    button { padding: 0.6rem 1.2rem; font-size: 1rem; cursor: pointer; }
+    #log { margin-top: 1rem; white-space: pre-wrap; font-size: 0.9rem; line-height: 1.5; }
+    .ok { color: #0a7; }
+    .err { color: #c00; }
+    .muted { color: #666; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <h1>Enrique & Yasmin Wedding package menu setup</h1>
+  <p class="muted">Attaches <code>enrique_yasmin_wedding_menu.json</code> to the existing bar service event (<code>service-kyle-tan</code> / Enrique and Yasmin Wedding). Marks it as package service for POS. Does not create a new event or archive others.</p>
+  <button type="button" id="runBtn">Attach menu to existing event</button>
+  <div id="log"></div>
+  <script type="module">
+    import { db, collection, getDocs, updateDoc, doc } from './js/firebase-setup.js';
+
+    const EVENT_KEY = 'service-kyle-tan';
+    const EVENT_NAME = 'Enrique and Yasmin Wedding';
+    const MENU_PATH = './data/enrique_yasmin_wedding_menu.json';
+    const logEl = document.getElementById('log');
+
+    function log(msg, cls = '') {
+      const line = document.createElement('div');
+      line.textContent = msg;
+      if (cls) line.className = cls;
+      logEl.appendChild(line);
+    }
+
+    function matchesWedding(data) {
+      const key = String(data.key || '').toLowerCase();
+      const name = String(data.name || data.title || '').toLowerCase();
+      if (key === EVENT_KEY) return true;
+      return name.includes('enrique') && name.includes('yasmin') && data.archived !== true;
+    }
+
+    async function runSetup() {
+      logEl.innerHTML = '';
+      const btn = document.getElementById('runBtn');
+      btn.disabled = true;
+      try {
+        log('Loading menu…');
+        const res = await fetch(MENU_PATH);
+        if (!res.ok) throw new Error(`Could not load menu (${res.status}). Serve this folder over HTTP (e.g. live server), not file://`);
+        const menuData = await res.json();
+
+        const [branchSnap, eventSnap] = await Promise.all([
+          getDocs(collection(db, 'branches')),
+          getDocs(collection(db, 'opsEvents'))
+        ]);
+
+        let existing = null;
+        branchSnap.forEach((d) => {
+          const data = d.data();
+          if (matchesWedding(data) && data.archived !== true) {
+            existing = { id: d.id, ...data };
+          }
+        });
+
+        let opsEvent = null;
+        eventSnap.forEach((d) => {
+          const data = d.data();
+          if (matchesWedding(data) && data.status !== 'cancelled') {
+            opsEvent = { id: d.id, ...data };
+          }
+        });
+
+        if (!existing) {
+          throw new Error(`Existing Enrique and Yasmin Wedding branch (${EVENT_KEY}) was not found.`);
+        }
+
+        log(`Found event: ${existing.name || EVENT_KEY} (${existing.key || existing.id})`, 'ok');
+        if (opsEvent) {
+          log(`Linked Events dashboard row: ${opsEvent.title} (${opsEvent.id})`, 'ok');
+          if (opsEvent.venue || opsEvent.location) {
+            log(`Venue: ${opsEvent.venue || opsEvent.location}`, 'muted');
+          }
+        }
+
+        const patch = {
+          name: EVENT_NAME,
+          serviceType: 'package',
+          archived: false,
+          status: 'active',
+          customMenu: menuData,
+          lastModified: new Date().toISOString()
+        };
+        if (opsEvent && !existing.opsEventId) patch.opsEventId = opsEvent.id;
+
+        await updateDoc(doc(db, 'branches', existing.id), patch);
+        log('Package menu attached.', 'ok');
+
+        log(`\nDone. Open POS and select "[Package] ${EVENT_NAME}".`, 'ok');
+        log(`Categories: ${menuData.categories.length}, items: ${menuData.items.length}`, 'muted');
+        return true;
+      } catch (e) {
+        console.error(e);
+        log(`Error: ${e.message}`, 'err');
+        return false;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    document.getElementById('runBtn').addEventListener('click', runSetup);
+
+    if (new URLSearchParams(location.search).has('autorun')) {
+      runSetup();
+    }
+  </script>
+</body>
+</html>

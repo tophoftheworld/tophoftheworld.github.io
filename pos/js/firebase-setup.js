@@ -1,7 +1,10 @@
 // firebase-config.js
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
 import {
+    initializeFirestore,
     getFirestore,
+    persistentLocalCache,
+    persistentMultipleTabManager,
     collection,
     addDoc,
     updateDoc,
@@ -28,6 +31,37 @@ const firebaseConfig = {
 };
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
-const db = getFirestore(app);
 
-export { app, db, collection, addDoc, updateDoc, doc, getDocs, query, orderBy, limit, setDoc, getDoc, deleteDoc, serverTimestamp, onSnapshot };
+function createFirestore() {
+    try {
+        return initializeFirestore(app, {
+            localCache: persistentLocalCache({
+                tabManager: persistentMultipleTabManager()
+            })
+        });
+    } catch (err) {
+        // Already initialized in this page (or persistence unsupported) — fall back.
+        console.warn('Firestore persistent cache unavailable, using default:', err?.message || err);
+        return getFirestore(app);
+    }
+}
+
+const db = createFirestore();
+
+export {
+    app,
+    db,
+    collection,
+    addDoc,
+    updateDoc,
+    doc,
+    getDocs,
+    query,
+    orderBy,
+    limit,
+    setDoc,
+    getDoc,
+    deleteDoc,
+    serverTimestamp,
+    onSnapshot
+};

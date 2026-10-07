@@ -29,10 +29,10 @@ function bumpJsImports() {
   walkJs(jsRoot, (filePath) => {
     const src = fs.readFileSync(filePath, 'utf8');
     const next = src.replace(
-      /from '((?:\.\.\/|\.\/)[^']+\.js)(?:\?v=\d+)?'/g,
-      (match, specifier) => {
+      /(from |import\()'((?:\.\.\/|\.\/)[^']+\.js)(?:\?v=\d+)?'/g,
+      (match, prefix, specifier) => {
         if (!isPurchasingInternal(filePath, specifier)) return match;
-        return `from '${specifier}?v=${V}'`;
+        return `${prefix}'${specifier}?v=${V}'`;
       }
     );
     if (next !== src) {
@@ -64,7 +64,7 @@ function assertUniformVersions() {
 
   walkJs(jsRoot, (filePath) => {
     const src = fs.readFileSync(filePath, 'utf8');
-    const re = /from '((?:\.\.\/|\.\/)[^']+\.js)(?:\?v=(\d+))?'/g;
+    const re = /(?:from |import\()'((?:\.\.\/|\.\/)[^']+\.js)(?:\?v=(\d+))?'/g;
     let m;
     while ((m = re.exec(src))) {
       const specifier = m[1];

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#2b9348">
+  <title>Bookings · Matchanese</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/bookings.css">
+</head>
+<body class="bk-app">
+  <header class="bk-topbar">
+    <div class="bk-topbar-inner">
+      <a class="bk-brand" href="#/all" aria-label="Bookings home">
+        <span class="bk-brand-title">Bookings</span>
+        <span class="bk-proto-tag" title="Sample data only; nothing is saved">Sample data</span>
+      </a>
+      <nav class="bk-tabs" aria-label="Views">
+        <a class="bk-tab" data-view="all" href="#/all">All <span class="bk-tab-count" data-count="all"></span></a>
+        <a class="bk-tab" data-view="pipeline" href="#/pipeline">Board <span class="bk-tab-count" data-count="pipeline"></span></a>
+        <a class="bk-tab" href="../events/admin.html" target="_top">Calendar <span class="bk-tab-ext" aria-hidden="true">&#8599;</span></a>
+      </nav>
+      <div class="bk-topbar-actions">
+        <label class="bk-search">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.5 3a7.5 7.5 0 0 1 5.96 12.05l4.25 4.24-1.42 1.42-4.24-4.25A7.5 7.5 0 1 1 10.5 3Zm0 2a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11Z"/></svg>
+          <input id="globalSearch" type="search" placeholder="Search client, venue, INV-…" autocomplete="off">
+        </label>
+        <button class="inv-btn inv-btn-primary" type="button" data-action="new-booking">+ New</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="app" class="bk-main" tabindex="-1"></main>
+
+  <div id="toastRoot" class="bk-toast-root" aria-live="polite"></div>
+  <div id="modalRoot"></div>
+
+  <script src="../invoice-generator/js/invoice-payment-alloc.js"></script>
+  <script src="../chatbase-leads-dashboard/public/js/config.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

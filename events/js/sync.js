@@ -1,4 +1,4 @@
-import { initializeFirebaseServices } from '../../shared/js/firebase-config.js?v=38';
+import { initializeFirebaseServices } from '../../shared/js/firebase-config.js?v=46';
 import {
   ensureEventTypes,
   loadOpsEvents,
@@ -18,7 +18,7 @@ import {
   OPS_EVENTS_COLLECTION,
   SERVICE_LEADS_COLLECTION,
   INVOICES_COLLECTION
-} from '../../shared/js/ops-events.js?v=38';
+} from '../../shared/js/ops-events.js?v=46';
 
 let db = null;
 let firestoreFns = null;
@@ -206,12 +206,18 @@ export async function getEventById(eventId) {
 }
 
 const SHIFT_PRESETS = {
-  opening: { start: '09:30', end: '18:30' },
-  adjustedOpening: { start: '10:30', end: '19:30' },
-  midshift: { start: '11:00', end: '20:00' },
-  closing: { start: '13:00', end: '22:00' },
-  closingHalf: { start: '18:00', end: '22:00' }
+  opening: { start: '09:30', end: '18:30', label: 'Opening' },
+  adjustedOpening: { start: '10:30', end: '19:30', label: 'Adjusted Opening' },
+  midshift: { start: '11:00', end: '20:00', label: 'Mid' },
+  closing: { start: '13:00', end: '22:00', label: 'Closing' },
+  closingHalf: { start: '18:00', end: '22:00', label: 'Closing Half-Day' },
+  custom: { start: '09:30', end: '18:30', label: 'Custom' }
 };
+
+export const SCHEDULE_SHIFT_PRESETS = SHIFT_PRESETS;
+
+/** Days before start / after end allowed for schedule widget day nav. */
+export const SCHEDULE_NAV_MARGIN_DAYS = 1;
 
 function ymdLocal(date) {
   const y = date.getFullYear();
@@ -220,7 +226,14 @@ function ymdLocal(date) {
   return `${y}-${m}-${d}`;
 }
 
-function weekKeyForYmd(ymd) {
+function addDaysYmd(ymd, days) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd || '')) return '';
+  const [y, m, d] = ymd.split('-').map(Number);
+  const dt = new Date(y, m - 1, d + days);
+  return ymdLocal(dt);
+}
+
+export function weekKeyForYmd(ymd) {
   const [y, m, d] = ymd.split('-').map(Number);
   const date = new Date(y, m - 1, d);
   const day = date.getDay();
@@ -230,20 +243,38 @@ function weekKeyForYmd(ymd) {
   return ymdLocal(monday);
 }
 
-function datesInEventRange(event, maxDays = 3) {
+function manilaTodayYmd() {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Manila',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(new Date());
+  } catch {
+    return ymdLocal(new Date());
+  }
+}
+
+/** Event dates expanded by ±margin for ingress/egress day navigation. */
+export function scheduleNavDates(event, marginDays = SCHEDULE_NAV_MARGIN_DAYS) {
   const start = event?.startDate;
   if (!start || !/^\d{4}-\d{2}-\d{2}$/.test(start)) return [];
-  const end = event?.endDate && /^\d{4}-\d{2}-\d{2}$/.test(event.endDate) ? event.endDate : start;
+  const endRaw = event?.endDate && /^\d{4}-\d{2}-\d{2}$/.test(event.endDate) ? event.endDate : start;
+  const end = endRaw >= start ? endRaw : start;
+  const from = addDaysYmd(start, -marginDays);
+  const to = addDaysYmd(end, marginDays);
   const out = [];
-  const [ys, ms, ds] = start.split('-').map(Number);
-  let cur = new Date(ys, ms - 1, ds);
-  const [ye, me, de] = end.split('-').map(Number);
-  const last = new Date(ye, me - 1, de);
-  while (cur <= last && out.length < maxDays) {
-    out.push(ymdLocal(cur));
-    cur.setDate(cur.getDate() + 1);
+  let cur = from;
+  while (cur && cur <= to && out.length < 60) {
+    out.push(cur);
+    cur = addDaysYmd(cur, 1);
   }
   return out;
+}
+
+function datesInEventRange(event, maxDays = 3) {
+  return scheduleNavDates(event, 0).slice(0, maxDays);
 }
 
 function to12Hour(time) {
@@ -278,20 +309,42 @@ function shiftBelongsToBranch(shiftBranch, branchKey, branchName) {
   return false;
 }
 
-/**
- * Load a compact schedule preview for an event (photo + nickname + in/out),
- * matching Schedule app card language. Prefer today's date if in range.
- */
-export async function fetchEventSchedulePreview(event) {
-  await initSync();
-  const { getDocs, collection, doc, getDoc } = firestoreFns;
+/** Map shift type → UI section bucket. */
+export function shiftSectionKind(type) {
+  if (type === 'closing' || type === 'closingHalf') return 'closing';
+  if (type === 'midshift') return 'mid';
+  if (type === 'custom') return 'custom';
+  return 'opening';
+}
+
+/** Normalize stored time to HH:MM for <input type="time">. */
+export function toTimeInputValue(time) {
+  if (!time) return '';
+  const raw = String(time).trim();
+  if (/^\d{2}:\d{2}$/.test(raw)) return raw;
+  if (/^\d{2}:\d{2}:\d{2}$/.test(raw)) return raw.slice(0, 5);
+  const m12 = raw.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (m12) {
+    let h = Number(m12[1]);
+    const min = m12[2];
+    const ap = m12[3].toUpperCase();
+    if (ap === 'PM' && h !== 12) h += 12;
+    if (ap === 'AM' && h === 12) h = 0;
+    return `${String(h).padStart(2, '0')}:${min}`;
+  }
+  return '';
+}
+
+async function resolveEventBranch(event) {
   const links = event?.links || {};
   let branchKey = links.branchKey || event?.key || null;
   let branchName = null;
+  let branchId = links.branchId || null;
 
-  if (links.branchId) {
+  if (branchId) {
     try {
-      const branchSnap = await getDoc(doc(db, 'branches', links.branchId));
+      const { getDoc, doc } = firestoreFns;
+      const branchSnap = await getDoc(doc(db, 'branches', branchId));
       if (branchSnap.exists()) {
         const data = branchSnap.data() || {};
         branchKey = data.key || branchKey;
@@ -302,29 +355,54 @@ export async function fetchEventSchedulePreview(event) {
     }
   }
 
+  return { branchKey, branchName, branchId };
+}
+
+/**
+ * Load schedule rows for an event day (photo + nickname + in/out + type).
+ * @param {object} event
+ * @param {{ date?: string }} [opts]
+ */
+export async function fetchEventSchedulePreview(event, opts = {}) {
+  await initSync();
+  const { getDocs, collection, doc, getDoc } = firestoreFns;
+  const { branchKey, branchName } = await resolveEventBranch(event);
+
   if (!branchKey && !branchName) {
-    return { rows: [], date: null, timedIn: 0, scheduled: 0, emptyReason: 'no-branch' };
+    return {
+      rows: [],
+      date: null,
+      timedIn: 0,
+      scheduled: 0,
+      emptyReason: 'no-branch',
+      branchKey: null,
+      branchName: null,
+      navDates: []
+    };
   }
 
-  const range = datesInEventRange(event, 7);
-  if (!range.length) {
-    return { rows: [], date: null, timedIn: 0, scheduled: 0, emptyReason: 'no-dates' };
+  const navDates = scheduleNavDates(event);
+  if (!navDates.length) {
+    return {
+      rows: [],
+      date: null,
+      timedIn: 0,
+      scheduled: 0,
+      emptyReason: 'no-dates',
+      branchKey,
+      branchName,
+      navDates: []
+    };
   }
 
-  const today = (() => {
-    try {
-      return new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'Asia/Manila',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-      }).format(new Date());
-    } catch {
-      return ymdLocal(new Date());
-    }
-  })();
+  const today = manilaTodayYmd();
+  const requested = opts.date && /^\d{4}-\d{2}-\d{2}$/.test(opts.date) ? opts.date : null;
+  const focusDate = requested && navDates.includes(requested)
+    ? requested
+    : navDates.includes(today)
+      ? today
+      : navDates[0];
 
-  const focusDate = range.includes(today) ? today : range[0];
   const weekKey = weekKeyForYmd(focusDate);
 
   let shifts = [];
@@ -339,14 +417,23 @@ export async function fetchEventSchedulePreview(event) {
     });
   } catch (err) {
     console.warn('Schedule preview load failed:', err);
-    return { rows: [], date: focusDate, timedIn: 0, scheduled: 0, emptyReason: 'load-failed' };
+    return {
+      rows: [],
+      date: focusDate,
+      timedIn: 0,
+      scheduled: 0,
+      emptyReason: 'load-failed',
+      branchKey,
+      branchName,
+      navDates
+    };
   }
 
   shifts.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
 
   const rows = [];
   let timedIn = 0;
-  for (const shift of shifts.slice(0, 6)) {
+  for (const shift of shifts) {
     const planned = plannedTimes(shift);
     let name = shift.employeeId;
     let photoUrl = null;
@@ -359,6 +446,7 @@ export async function fetchEventSchedulePreview(event) {
       if (empSnap.exists()) {
         const emp = empSnap.data() || {};
         name = emp.nickname || String(emp.name || '').split(' ')[0] || name;
+        photoUrl = emp.photoUrl || null;
       }
     } catch (_) {
       /* ignore */
@@ -377,7 +465,7 @@ export async function fetchEventSchedulePreview(event) {
             timedIn += 1;
             timeIn = to12Hour(clockIn);
             timeOut = clockOut ? to12Hour(clockOut) : '';
-            photoUrl = att.clockIn?.selfie || att.timeInPhoto || null;
+            photoUrl = att.clockIn?.selfie || att.timeInPhoto || photoUrl;
           }
         }
       }
@@ -385,17 +473,19 @@ export async function fetchEventSchedulePreview(event) {
       /* ignore */
     }
 
-    if (!photoUrl) {
-      /* keep placeholder in UI when no selfie for this day */
-    }
-
+    const type = shift.type || 'opening';
     rows.push({
+      shiftId: shift.id,
       employeeId: shift.employeeId,
+      type,
+      kind: shiftSectionKind(type),
       name,
       photoUrl,
       timeIn,
       timeOut,
-      isActual
+      isActual,
+      customStart: shift.customStart || null,
+      customEnd: shift.customEnd || null
     });
   }
 
@@ -404,8 +494,100 @@ export async function fetchEventSchedulePreview(event) {
     date: focusDate,
     timedIn,
     scheduled: rows.length,
-    emptyReason: rows.length ? null : 'none'
+    emptyReason: rows.length ? null : 'none',
+    branchKey,
+    branchName,
+    navDates
   };
+}
+
+/** Active employees for the schedule widget picker. */
+export async function fetchScheduleEmployees() {
+  await initSync();
+  const { getDocs, collection } = firestoreFns;
+  const snap = await getDocs(collection(db, 'employees_v2'));
+  const list = [];
+  snap.forEach((d) => {
+    const data = d.data() || {};
+    // Match Schedule app: archived OR active === false are excluded from assign dropdowns
+    if (data.archived || data.active === false) return;
+    const nickname = data.nickname || String(data.name || '').split(' ')[0] || d.id;
+    list.push({
+      id: d.id,
+      nickname,
+      name: data.name || nickname,
+      photoUrl: data.photoUrl || null
+    });
+  });
+  list.sort((a, b) => a.nickname.localeCompare(b.nickname));
+  return list;
+}
+
+function generateShiftId() {
+  return `shift_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+}
+
+/**
+ * Create or update a scheduled shift for an event branch/day.
+ * @param {{ shiftId?: string, date: string, branchKey: string, type: string, employeeId: string, customStart?: string, customEnd?: string }} input
+ */
+export async function saveEventShift(input) {
+  await initSync();
+  const { setDoc, getDoc, doc } = firestoreFns;
+  const date = input.date;
+  const branch = input.branchKey;
+  const type = input.type;
+  const employeeId = input.employeeId;
+  if (!date || !branch || !type || !employeeId) {
+    throw new Error('Missing shift fields');
+  }
+  if (!SHIFT_PRESETS[type]) throw new Error('Unknown shift type');
+
+  let customStart = null;
+  let customEnd = null;
+  if (type === 'custom') {
+    customStart = toTimeInputValue(input.customStart) || null;
+    customEnd = toTimeInputValue(input.customEnd) || null;
+    if (!customStart || !customEnd) {
+      throw new Error('Custom shifts need start and end times');
+    }
+  }
+
+  const id = input.shiftId || generateShiftId();
+  const weekKey = weekKeyForYmd(date);
+  let createdAt = input.createdAt || null;
+  if (!createdAt && input.shiftId) {
+    try {
+      const existing = await getDoc(doc(db, 'schedules', weekKey, 'shifts', id));
+      if (existing.exists()) createdAt = existing.data()?.createdAt || null;
+    } catch (_) {
+      /* ignore */
+    }
+  }
+  if (!createdAt) createdAt = new Date().toISOString();
+
+  const payload = {
+    date,
+    branch,
+    type,
+    employeeId,
+    customStart,
+    customEnd,
+    role: 'barista',
+    customRole: null,
+    createdAt,
+    updatedAt: new Date()
+  };
+  await setDoc(doc(db, 'schedules', weekKey, 'shifts', id), payload);
+  return { id, ...payload };
+}
+
+export async function deleteEventShift({ shiftId, date }) {
+  await initSync();
+  const { deleteDoc, doc } = firestoreFns;
+  if (!shiftId || !date) throw new Error('Missing shift id/date');
+  const weekKey = weekKeyForYmd(date);
+  await deleteDoc(doc(db, 'schedules', weekKey, 'shifts', shiftId));
 }
 
 export { EVENT_STATUSES };

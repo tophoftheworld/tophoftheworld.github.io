@@ -30,8 +30,10 @@ service cloud.firestore {
     // (employees_v2, attendance_v2, payroll_period_earnings_v2, payroll_periods_v2/.../payments,
     // migration_v2_status for migration-tool UI).
     // Tighten before production.
-    match /{document=**} {
-      allow read, write: if request.time < timestamp.date(2035, 1, 1);
+    match /{collection}/{document=**} {
+      // Receipt jobs, cursor/lease state and deduplication keys are Admin SDK only.
+      allow read, write: if !(collection in ['discord_receipt_jobs', 'discord_receipt_state', 'discord_receipt_hashes'])
+        && request.time < timestamp.date(2035, 1, 1);
     }
   }
 }

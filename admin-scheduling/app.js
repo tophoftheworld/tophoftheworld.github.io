@@ -101,10 +101,12 @@
 
   }
 
+  function conflictsFor(s) {
+    return window.ScheduleLogic.conflicts(s,shifts.map(r=>({...M.PRESETS[r.type],...r})));
+  }
   function indicators(s) {
-    const conflicts=window.ScheduleLogic.conflicts(s,shifts.map(r=>({...M.PRESETS[r.type],...r})));
-    const late=window.ScheduleLogic.lateness(s,M.PRESETS);
-    return (conflicts.length ? `<span class="shift-alert conflict" title="${esc(conflicts.map(r=>`${place(r.loc)} ${time(r.start)} – ${time(r.end)}`).join('; '))}">Overlapping shift</span>` : '')+(late ? `<span class="shift-alert ${late.severity}" title="Clocked in ${late.minutes} minutes after the ${esc(s.shift)} start">${late.minutes} min late</span>` : '');
+    const conflicts=conflictsFor(s);
+    return conflicts.length ? `<span class="conflict-marker" role="img" aria-label="Overlapping shift" title="Overlapping shift: ${esc(conflicts.map(r=>`${place(r.loc)} ${time(r.start)} – ${time(r.end)}`).join('; '))}"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M12 2 1 22h22L12 2Zm-1 7h2v6h-2V9Zm0 8h2v2h-2v-2Z"/></svg></span>` : '';
   }
   const icon = (name) => `<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${{chevron:'<path d="m9 5 7 7-7 7"/>',download:'<path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4"/>',copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/>'}[name]}</svg>`;
   function downloadButton() { return `<button type="button" class="icon-action download-action" id="download-week" ${loading || loadError || busy ? 'disabled' : ''} aria-label="Download schedule image" title="Download schedule image">${icon('download')}</button>`; }
@@ -121,10 +123,11 @@
   function chip(s, showLocation) {
 
     const p = person(s.employeeId), label = s.isActual ? s.shift : M.PRESETS[s.type].label;
+    const conflict = !s.isActual && conflictsFor(s).length;
 
     const tag = 'button';
 
-    return `<${tag} class="shift ${s.isActual ? 'actual' : 'scheduled'}" ${s.isActual ? `type="button" data-attendance="${s.id}" aria-label="View attendance photos for ${esc(p.name)}"` : `type="button" data-shift="${esc(s.id)}" aria-label="Edit shift for ${esc(p.name)}, ${esc(dayLabel(s.date))}"`} title="${esc(p.name)} · ${esc(place(s.loc))}">
+    return `<${tag} class="shift ${s.isActual ? 'actual' : 'scheduled'}${conflict ? ' conflict' : ''}" ${s.isActual ? `type="button" data-attendance="${s.id}" aria-label="View attendance photos for ${esc(p.name)}"` : `type="button" data-shift="${esc(s.id)}" aria-label="Edit shift for ${esc(p.name)}, ${esc(dayLabel(s.date))}${conflict ? ', overlapping another shift' : ''}. Drag to another day to change the date"`} title="${esc(p.name)} · ${esc(place(s.loc))}${conflict ? ' · Overlapping shift' : ''}">
 
       ${avatar(s.employeeId,s.isActual ? s.timeInPhoto : p.photoUrl,s.isActual ? 'Clock-in photo' : '')}
 
@@ -132,7 +135,7 @@
 
       ${showLocation ? `<span class="shift-location">${esc(place(s.loc))}</span>` : ''}
 
-      ${s.isActual ? `<span class="shift-time">In ${loggedTime(s.timeIn)}</span><span class="shift-time">${s.timeOut ? 'Out ' + loggedTime(s.timeOut) : 'On shift'}</span>` : `<span class="shift-time">${time(s.start)}</span><span class="shift-time">– ${time(s.end)}</span>`}
+      ${s.isActual ? `<span class="shift-time ${window.ScheduleLogic.lateness(s,M.PRESETS) ? 'late-time' : ''}">In ${loggedTime(s.timeIn)}</span><span class="shift-time">${s.timeOut ? 'Out ' + loggedTime(s.timeOut) : 'On shift'}</span>` : `<span class="shift-time">${time(s.start)}</span><span class="shift-time">– ${time(s.end)}</span>`}
 
       ${indicators(s)}</span></${tag}>`;
 
@@ -201,9 +204,10 @@
     document.getElementById('shift-date-label').textContent=longDate(fields.date.value);
     document.getElementById('shift-context').textContent=`${fields.loc.value ? place(fields.loc.value) : 'Choose location'} · ${longDate(fields.date.value)}`;
   }
-  function locationAvailable(l,date) { return l.kind==='branch' || (!l.cancelled && l.startDate && date>=l.startDate && date<=(l.endDate || l.startDate)); }
+  function locationAvailable(l,date) { return window.ScheduleLogic.locationOpen(l,date); }
   function updateLocations(selected=fields.loc.value) {
-    const locations=M.LOCATIONS.filter(l=>locationAvailable(l,fields.date.value));
+    const locations=M.LOCATIONS.filter(l=>locationAvailable(l,fields.date.value) || l.id===selected);
+    if(selected && !locations.some(l=>l.id===selected)) locations.push(M.LOCATIONS.find(l=>l.id===selected) || {id:selected,name:place(selected)});
     fields.loc.innerHTML='<option value="">Choose location / event</option>'+locations.map(l=>`<option value="${esc(l.id)}">${esc(l.name)}</option>`).join('');
     fields.loc.value=locations.some(l=>l.id===selected) ? selected : '';
     updateContext();
@@ -318,10 +322,11 @@
       shifts=result;
       if(saved){state.day=saved.date;state.loc='all';state.search='';document.getElementById('search').value='';}
       editor.close();status(message+' Saved to live schedule.');
-      lockForm(false);await loadWeek(true);
+      lockForm(false);render({keepScroll:true});
     } catch(error) {
-      document.getElementById('shift-error').textContent=error.message;
-      status('Save not confirmed. Your form is still open.');
+      const open = editor.open;
+      if (open) document.getElementById('shift-error').textContent=error.message;
+      status(open ? 'Save not confirmed. Your form is still open.' : (error.message || 'Save was not confirmed.'));
       lockForm(false);
     }
   }
@@ -339,7 +344,8 @@
     const error = document.getElementById('shift-error');
 
     if (!s.employeeId || (s.employeeId !== 'unassigned' && !M.EMPLOYEES[s.employeeId])) { error.textContent='Choose a person from the suggestions.'; personSearch.focus(); return; }
-    if (!M.LOCATIONS.some(l=>l.id===s.loc && locationAvailable(l,s.date))) { error.textContent='Choose a location or event available on this date.'; return; }
+    const previous=editingId ? shifts.find(row=>row.id===editingId) : null;
+    if (!s.loc || (!(previous && previous.loc===s.loc) && !M.LOCATIONS.some(l=>l.id===s.loc && locationAvailable(l,s.date)))) { error.textContent='Choose a location or event available on this date.'; return; }
     if (minutes(s.end) <= minutes(s.start)) { error.textContent = 'End time must be after start time.'; return; }
 
     if (s.employeeId !== 'unassigned' && shifts.some(other => {
@@ -374,12 +380,22 @@
     if (!list.length) return '<span class="active-hours">No assigned shifts</span>';
     return `<span class="active-hours">${minuteTime(Math.min(...list.map(s => minutes(s.start))))} – ${minuteTime(Math.max(...list.map(s => minutes(s.end))))}</span>`;
   }
+  function nowMinutes() {
+    const parts = new Intl.DateTimeFormat('en-GB', {timeZone:'Asia/Manila', hour:'2-digit', minute:'2-digit', hourCycle:'h23'}).formatToParts(new Date());
+    return (Number(parts.find(p => p.type === 'hour').value) % 24) * 60 + Number(parts.find(p => p.type === 'minute').value);
+  }
+  function spanEnd(s) {
+    if (!s.isActual) return minutes(s.end);
+    if (s.timeOut) return minutes(s.timeOut);
+    const from = minutes(s.timeIn || s.start);
+    return s.date === M.TODAY ? Math.max(from + 15, nowMinutes()) : from + 30;
+  }
   function renderTimeline(filtered, groups) {
     const list = filtered.filter(s => s.date === state.day);
     groups = groups.filter(g => g.kind === 'branch' || list.some(s => s.loc === g.id) || assignedAt(g.id,[state.day]).length);
     const planned = groups.flatMap(g => assignedAt(g.id,[state.day])).filter(s => `${person(s.employeeId).name} ${person(s.employeeId).nickname}`.toLowerCase().includes(state.search));
     const starts = [...planned.map(s => minutes(s.start)),...list.map(s => minutes(s.timeIn || s.start))];
-    const ends = [...planned.map(s => minutes(s.end)),...list.map(s => s.isActual ? (s.timeOut ? minutes(s.timeOut) : minutes(s.timeIn) + 30) : minutes(s.end))];
+    const ends = [...planned.map(s => minutes(s.end)),...list.map(spanEnd)];
     const start = starts.length ? Math.floor(Math.min(...starts)/60)*60 : 9*60;
     const end = Math.max(start+60,ends.length ? Math.ceil(Math.max(...ends)/60)*60 : 22*60);
     const ticks = Array.from({length:(end-start)/60+1},(_,i) => start+i*60);
@@ -388,9 +404,10 @@
       const crew = collapsed.has(g.id) ? [] : list.filter(s => s.loc === g.id);
       const bars = crew.map((s,i) => {
         const from = minutes(s.timeIn || s.start), open = s.isActual && !s.timeOut;
-        const to = s.isActual ? (s.timeOut ? minutes(s.timeOut) : from+30) : minutes(s.end);
+        const to = spanEnd(s);
         const range = s.isActual ? `${loggedTime(s.timeIn)} – ${s.timeOut ? loggedTime(s.timeOut) : 'On shift'}` : `${time(s.start)} – ${time(s.end)}`;
-        return `<button type="button" class="timeline-bar ${s.isActual ? 'actual' : 'scheduled'} ${open ? 'ongoing' : ''}" style="--left:${percent(from)}%;--width:${percent(to)-percent(from)}%;--lane:${i}" ${s.isActual ? `data-attendance="${s.id}"` : `data-shift="${s.id}"`} aria-label="${s.isActual ? 'View attendance' : 'Edit shift'} for ${esc(person(s.employeeId).name)}: ${esc(range)}" title="${esc(range)}">${avatar(s.employeeId,s.isActual ? s.timeInPhoto : person(s.employeeId).photoUrl)}<strong>${esc(person(s.employeeId).nickname)}</strong><span class="shift-name">${esc(s.isActual ? s.shift : M.PRESETS[s.type].label)}</span><span>${esc(range)}</span>${indicators(s)}</button>`;
+        const conflict = !s.isActual && conflictsFor(s).length;
+        return `<button type="button" class="timeline-bar ${s.isActual ? 'actual' : 'scheduled'}${conflict ? ' conflict' : ''} ${open ? 'ongoing' : ''}" style="--left:${percent(from)}%;--width:${percent(to)-percent(from)}%;--lane:${i}" ${s.isActual ? `data-attendance="${s.id}"` : `data-shift="${s.id}"`} aria-label="${s.isActual ? 'View attendance' : 'Edit shift'} for ${esc(person(s.employeeId).name)}: ${esc(range)}${conflict ? ', overlapping another shift' : ''}${s.isActual ? '' : '. Drag to another day to change the date'}" title="${esc(range)}${conflict ? ' · Overlapping shift' : ''}">${avatar(s.employeeId,s.isActual ? s.timeInPhoto : person(s.employeeId).photoUrl)}<strong>${esc(person(s.employeeId).nickname)}</strong><span class="shift-name">${esc(s.isActual ? s.shift : M.PRESETS[s.type].label)}</span><span class="${window.ScheduleLogic.lateness(s,M.PRESETS) ? 'late-time' : ''}">${esc(range)}</span>${indicators(s)}</button>`;
       }).join('');
       return `<div class="timeline-location">${locationHeading(g,[state.day])}</div><div class="timeline-track" style="--lanes:${Math.max(crew.length,1)}">${collapsed.has(g.id) ? crewSummary(list.filter(s=>s.loc===g.id),g.id) : bars || '<span class="timeline-empty">No shifts</span>'}${!collapsed.has(g.id) && state.day >= M.TODAY ? `<button type="button" class="cell-add timeline-add" data-add-date="${state.day}" data-location="${g.id}" aria-label="Add shift for ${esc(g.name)} on ${esc(dayLabel(state.day))}">+</button>` : ''}</div>`;
     }).join('');
@@ -401,7 +418,18 @@
     const days = new Set([...rows,...shifts.filter(s => weekDates().includes(s.date) && visibleLocation(M.LOCATIONS.find(l => l.id === s.loc)))].filter(s => s.employeeId === id).map(s => s.date)).size;
     return `<span class="person-days" title="Distinct dates with a scheduled shift or attendance in this week${state.loc === 'all' ? '' : ', for the selected location filter'}">${days} ${days === 1 ? 'day' : 'days'}${state.loc === 'all' ? '' : '<small>Selected locations</small>'}</span>`;
   }
-  function render() {
+  function rememberScroll() {
+    const wrap=document.querySelector('#schedule .grid-wrap');
+    return {top:wrap?.scrollTop || 0,left:wrap?.scrollLeft || 0,y:window.scrollY};
+  }
+  function restoreScroll(place) {
+    if(!place) return;
+    const wrap=document.querySelector('#schedule .grid-wrap');
+    if(wrap){wrap.scrollTop=place.top;wrap.scrollLeft=place.left;}
+    window.scrollTo(0,place.y);
+  }
+  function render(options={}) {
+    const place=options.keepScroll ? rememberScroll() : null;
     document.body.dataset.view = state.view;
     const week = weekDates();
     if (loadedWeek !== week[0]) { loadWeek(); return; }
@@ -423,32 +451,112 @@
 
     document.getElementById('days').innerHTML = state.view === 'day' ? week.map(d => `<button class="day-pill ${d === M.TODAY ? 'is-today' : ''}" data-day="${d}" aria-label="${esc(dayLabel(d))}" aria-pressed="${d === state.day}"><span>${weekday(d)}</span><strong>${Number(d.slice(-2))}</strong>${d === M.TODAY ? '<small class="today-note">Today</small>' : '<small class="today-note" aria-hidden="true">&nbsp;</small>'}</button>`).join('') : '';
 
-    if (loading || loadError) { document.getElementById('schedule').innerHTML = `<p role="status">${loading ? 'Loading schedules and attendance...' : 'Live data unavailable. Use Retry above.'}</p>`; return; }
+    if (loading || loadError) { document.getElementById('schedule').innerHTML = `<p role="status">${loading ? 'Loading schedules and attendance...' : 'Live data unavailable. Use Retry above.'}</p>`; restoreScroll(place); return; }
     const filtered = visibleRows().filter(s => week.includes(s.date) && visibleLocation(M.LOCATIONS.find(l => l.id === s.loc)) && `${person(s.employeeId).name} ${person(s.employeeId).nickname}`.toLowerCase().includes(state.search));
 
     const dates = state.view === 'day' ? [state.day] : week, people = state.view === 'people';
 
     const groups = people ? [...Object.keys(M.EMPLOYEES),'unassigned'].filter(id => filtered.some(s => s.employeeId === id)).map(id => ({id,name:person(id).name})) : M.LOCATIONS.filter(l => visibleLocation(l) && (l.kind === 'branch' || filtered.some(s => s.loc === l.id) || assignedAt(l.id,week).length));
 
-    if (state.view === 'day') { renderTimeline(filtered,groups); return; }
+    if (state.view === 'day') { renderTimeline(filtered,groups); restoreScroll(place); return; }
 
     const heads = dates.map(d => { const date = new Date(d + 'T12:00:00'); const dow = date.toLocaleDateString('en-US', {weekday:'short'}), n = date.getDate(); return `<button type="button" data-open-day="${d}" aria-label="View ${esc(dayLabel(d))}" class="date-head ${d === M.TODAY ? 'today' : ''}"><span>${dow}</span><strong>${n}</strong></button>`; }).join('');
 
     const cells = groups.map(g => `<div class="row-label">${people ? avatar(g.id) : ''}<span class="location-details">${people ? `<strong>${esc(g.name)}</strong>${personDays(g.id,filtered)}` : locationHeading(g,week)}</span></div>${dates.map(d => {
 
-      if(!people && collapsed.has(g.id)) return `<div class="cell collapsed-cell ${d===M.TODAY ? 'today' : ''}">${crewSummary(filtered.filter(s=>s.date===d && s.loc===g.id),g.id)}</div>`;
+      if(!people && collapsed.has(g.id)) return `<div class="cell collapsed-cell ${d===M.TODAY ? 'today' : ''}" data-drop-date="${d}" data-drop-location="${esc(g.id)}">${crewSummary(filtered.filter(s=>s.date===d && s.loc===g.id),g.id)}</div>`;
       const list = filtered.filter(s => s.date === d && (people ? s.employeeId === g.id : s.loc === g.id));
 
       const largest = Math.max(...dates.map(date => filtered.filter(s => s.date === date && (people ? s.employeeId === g.id : s.loc === g.id)).length));
-      return `<div class="cell ${d === M.TODAY ? 'today' : ''}">${list.map(s => chip(s,people)).join('')}${d >= M.TODAY ? `<button type="button" class="cell-add ${list.length < largest || !list.length ? 'card-add' : ''}" data-add-date="${d}" ${people ? `data-person="${g.id}"` : `data-location="${g.id}"`} aria-label="Add shift for ${esc(g.name)} on ${esc(dayLabel(d))}">+</button>` : ''}</div>`;
+      return `<div class="cell ${d === M.TODAY ? 'today' : ''}" data-drop-date="${d}" ${people ? `data-drop-person="${esc(g.id)}"` : `data-drop-location="${esc(g.id)}"`}>${list.map(s => chip(s,people)).join('')}${d >= M.TODAY ? `<button type="button" class="cell-add ${list.length < largest || !list.length ? 'card-add' : ''}" data-add-date="${d}" ${people ? `data-person="${g.id}"` : `data-location="${g.id}"`} aria-label="Add shift for ${esc(g.name)} on ${esc(dayLabel(d))}">+</button>` : ''}</div>`;
 
     }).join('')}`).join('');
 
     document.getElementById('schedule').innerHTML = `<div class="grid-wrap"><div class="schedule-grid ${state.view}" style="--days:${dates.length}"><div class="corner"><div class="corner-heading">${people ? 'People' : 'Location'}</div>${!people && !shifts.some(s=>week.includes(s.date)) ? `<button type="button" id="copy-week" class="copy-week" ${busy ? 'disabled' : ''}>${icon('copy')}Copy previous week</button>` : ''}</div>${heads}${cells || '<p class="no-results">No matching shifts</p>'}</div></div>`;
+    restoreScroll(place);
 
   }
 
+  let pointerDrag = null, didDrag = false;
+  function dropInfo(node) {
+    if (!node?.closest) return null;
+    const cell = node.closest('[data-drop-date]');
+    if (cell) return {date:cell.dataset.dropDate, loc:cell.dataset.dropLocation || '', employeeId:cell.dataset.dropPerson || '', el:cell};
+    const day = node.closest('[data-day],[data-open-day]');
+    if (day) return {date:day.dataset.day || day.dataset.openDay, loc:'', employeeId:'', el:day};
+    return null;
+  }
+  function clearDropHighlight() { document.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target')); }
+  function movePlan(id, info) {
+    const current = shifts.find(s => s.id === id);
+    if (!current || !info?.date) return {ok:false};
+    const next = {...current, date:info.date, loc:info.loc || current.loc, employeeId:info.employeeId || current.employeeId};
+    if (next.date === current.date && next.loc === current.loc && next.employeeId === current.employeeId) return {ok:false, same:true, el:info.el};
+    if (next.date < M.TODAY) return {ok:false, message:'Shifts can only move to today or a later date.'};
+    const location = M.LOCATIONS.find(l => l.id === next.loc);
+    if (!location || !locationAvailable(location, next.date)) return {ok:false, message:'That location is not available on this date.'};
+    if (next.employeeId !== 'unassigned' && !M.EMPLOYEES[next.employeeId]) return {ok:false, message:'That person is not on the schedule.'};
+    const probe = {...M.PRESETS[next.type], ...next};
+    if (probe.employeeId !== 'unassigned' && conflictsFor(probe).length) return {ok:false, message:'This person already has an overlapping shift on that date.'};
+    return {ok:true, next, current, el:info.el};
+  }
+  function highlightDrop(x, y) {
+    clearDropHighlight();
+    if (!pointerDrag?.active) return;
+    const plan = movePlan(pointerDrag.id, dropInfo(document.elementFromPoint(x, y)));
+    if (plan.el && (plan.ok || plan.same)) plan.el.classList.add('drop-target');
+  }
+  function finishDrag(commitMove, e) {
+    const drag = pointerDrag;
+    pointerDrag = null;
+    document.body.classList.remove('is-shift-drag');
+    clearDropHighlight();
+    drag?.card.classList.remove('is-dragging');
+    drag?.ghost?.remove();
+    if (!drag?.active) return;
+    didDrag = true;
+    if (!commitMove) return;
+    const plan = movePlan(drag.id, dropInfo(document.elementFromPoint(e.clientX, e.clientY)));
+    if (!plan.ok) { if (plan.message) status(plan.message); return; }
+    const movedOn = new Date(plan.next.date + 'T12:00:00');
+    let detail = `${movedOn.toLocaleDateString('en-US',{weekday:'short'})}, ${movedOn.toLocaleDateString('en-US',{month:'short'})} ${movedOn.getDate()}`;
+    if (plan.next.loc !== plan.current.loc) detail += ` · ${place(plan.next.loc)}`;
+    if (plan.next.employeeId !== plan.current.employeeId) detail += ` · ${person(plan.next.employeeId).name}`;
+    commit(shifts.map(s => s.id === drag.id ? plan.next : s), `Shift moved to ${detail}.`);
+  }
+  document.addEventListener('pointerdown', e => {
+    didDrag = false;
+    const card = e.target.closest('.shift.scheduled[data-shift], .timeline-bar.scheduled[data-shift]');
+    if (!card || e.button !== 0 || busy || editor.open || photoDialog.open) return;
+    const rect = card.getBoundingClientRect();
+    pointerDrag = {id:card.dataset.shift, x:e.clientX, y:e.clientY, ox:e.clientX - rect.left, oy:e.clientY - rect.top, active:false, card, pointerId:e.pointerId};
+  });
+  document.addEventListener('pointermove', e => {
+    if (!pointerDrag || e.pointerId !== pointerDrag.pointerId) return;
+    const dx = e.clientX - pointerDrag.x, dy = e.clientY - pointerDrag.y;
+    if (!pointerDrag.active) {
+      if (dx * dx + dy * dy < 64) return;
+      pointerDrag.active = true;
+      try { pointerDrag.card.setPointerCapture(e.pointerId); } catch {}
+      pointerDrag.card.classList.add('is-dragging');
+      document.body.classList.add('is-shift-drag');
+      const ghost = pointerDrag.card.cloneNode(true);
+      ghost.classList.add('drag-ghost');
+      ghost.removeAttribute('data-shift');
+      ghost.style.width = pointerDrag.card.offsetWidth + 'px';
+      document.body.appendChild(ghost);
+      pointerDrag.ghost = ghost;
+    }
+    e.preventDefault();
+    pointerDrag.ghost.style.left = (e.clientX - pointerDrag.ox) + 'px';
+    pointerDrag.ghost.style.top = (e.clientY - pointerDrag.oy) + 'px';
+    highlightDrop(e.clientX, e.clientY);
+  }, {passive:false});
+  document.addEventListener('pointerup', e => { if (pointerDrag && e.pointerId === pointerDrag.pointerId) finishDrag(true, e); });
+  document.addEventListener('pointercancel', e => { if (pointerDrag && e.pointerId === pointerDrag.pointerId) finishDrag(false, e); });
+
   document.addEventListener('click', e => {
+    if (didDrag) { didDrag = false; return; }
 
     const b = e.target.closest('button'); if (!b) return;
 
@@ -500,7 +608,8 @@
       const dates=weekDates();
       const selected=shifts.map(s=>({...M.PRESETS[s.type],...s})).filter(s=>dates.includes(s.date) && (locationId ? s.loc===locationId : visibleLocation(M.LOCATIONS.find(l=>l.id===s.loc))) && `${person(s.employeeId).name} ${person(s.employeeId).nickname}`.toLowerCase().includes(state.search));
       const locations=M.LOCATIONS.filter(l=>(locationId ? l.id===locationId : visibleLocation(l)) && (l.kind==='branch' || selected.some(s=>s.loc===l.id)));
-      await window.downloadScheduleImage({dates,locations,shifts:selected,employees:M.EMPLOYEES,presets:M.PRESETS,title:locationId ? place(locationId) : 'Weekly schedule'});status('Schedule image downloaded.');
+      const roster=shifts.map(s=>({...M.PRESETS[s.type],...s})).filter(s=>dates.includes(s.date));
+      await window.downloadScheduleImage({dates,locations,shifts:selected,employees:M.EMPLOYEES,presets:M.PRESETS,title:locationId ? place(locationId) : 'Weekly schedule',roster});status('Schedule image downloaded.');
     }catch(error){status(error.message);}finally{button.disabled=false;}
   }
   const copyDialog=document.getElementById('copy-dialog');let copyPlan=null;
@@ -527,7 +636,7 @@
   document.getElementById('confirm-copy').addEventListener('click',async()=>{
     if(busy || !copyPlan)return;busy=true;
     copyDialog.querySelectorAll('button').forEach(b=>b.disabled=true);
-    try{const targetDates=Array.from({length:7},(_,i)=>addDays(copyPlan.day,i));const latest=await window.ScheduleLive.load(targetDates,M.TODAY,M.PRESETS,true,true);if(latest.shifts.length)throw new Error('This week now has scheduled shifts. Close this dialog and refresh before continuing.');await window.ScheduleLive.save(copyPlan.before,copyPlan.after);state.day=copyPlan.day;copyDialog.close();status('Previous week copied to the live schedule.');await loadWeek(true);}
+    try{const targetDates=Array.from({length:7},(_,i)=>addDays(copyPlan.day,i));const latest=await window.ScheduleLive.load(targetDates,M.TODAY,M.PRESETS,true,true);if(latest.shifts.length)throw new Error('This week now has scheduled shifts. Close this dialog and refresh before continuing.');shifts=await window.ScheduleLive.save(copyPlan.before,copyPlan.after);state.day=copyPlan.day;copyDialog.close();status('Previous week copied to the live schedule.');}
     catch(error){document.getElementById('copy-error').textContent=error.message;}
     finally{busy=false;copyDialog.querySelectorAll('button').forEach(b=>b.disabled=false);render();}
   });

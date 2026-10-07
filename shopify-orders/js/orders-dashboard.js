@@ -200,6 +200,16 @@ let ordersFetchComplete = false;
 let lastOrdersFetchAt = 0;
 let filterSearchDebounceTimer = null;
 
+/** @type {Map<string, object>} */
+const detailCache = new Map();
+/** @type {Map<string, Promise<object>>} */
+const detailInflight = new Map();
+/** @type {Map<string, ReturnType<typeof setTimeout>>} */
+const inferPendingTimers = new Map();
+
+const DETAIL_PREFETCH_CONCURRENCY = 2;
+let detailPrefetchGeneration = 0;
+
 function isLiveHost() {
     return hasOrdersApi();
 }
@@ -1748,6 +1758,89 @@ function syncListRowFromDetail(detailOrder) {
     patchListRowDom(row);
 }
 
+function detailCacheKey(orderId) {
+    return String(orderId);
+}
+
+function getCachedOrderDetail(orderId) {
+    return detailCache.get(detailCacheKey(orderId)) || null;
+}
+
+function setCachedOrderDetail(orderId, data) {
+    if (!data?.order) return;
+    detailCache.set(detailCacheKey(orderId), data);
+}
+
+function invalidateOrderDetailCache(orderId) {
+    const key = detailCacheKey(orderId);
+    detailCache.delete(key);
+    const timer = inferPendingTimers.get(key);
+    if (timer) {
+        clearTimeout(timer);
+        inferPendingTimers.delete(key);
+    }
+}
+
+/**
+ * Shared detail fetch: cache hit, join in-flight, or network.
+ * @param {string|number} orderId
+ * @param {{ force?: boolean }} [opts]
+ */
+async function fetchOrderDetail(orderId, { force = false } = {}) {
+    const key = detailCacheKey(orderId);
+    if (!force) {
+        const cached = detailCache.get(key);
+        if (cached) return cached;
+        const inflight = detailInflight.get(key);
+        if (inflight) return inflight;
+    } else {
+        detailCache.delete(key);
+    }
+
+    const promise = (async () => {
+        const { res, data } = await fetchJsonWithRetry(`/api/orders/${orderId}`);
+        if (!res.ok) {
+            throw new Error(data.error || res.statusText || "Request failed");
+        }
+        return data;
+    })();
+
+    detailInflight.set(key, promise);
+    try {
+        const data = await promise;
+        if (detailInflight.get(key) === promise) {
+            setCachedOrderDetail(orderId, data);
+        }
+        return data;
+    } finally {
+        if (detailInflight.get(key) === promise) {
+            detailInflight.delete(key);
+        }
+    }
+}
+
+function scheduleInferredRegistrationsRefresh(orderId) {
+    const key = detailCacheKey(orderId);
+    if (inferPendingTimers.has(key)) return;
+    const timer = setTimeout(() => {
+        inferPendingTimers.delete(key);
+        if (String(state.selectedOrderId) !== key) return;
+        void (async () => {
+            try {
+                const data = await fetchOrderDetail(orderId, { force: true });
+                if (String(state.selectedOrderId) !== key) return;
+                await applyOrderDetailFromApi(data);
+            } catch (e) {
+                console.warn(
+                    "Deferred workshop registration refresh failed:",
+                    e
+                );
+            }
+        })();
+    }, 2500);
+    inferPendingTimers.set(key, timer);
+}
+
 async function applyOrderDetailFromApi(data) {
     const productMap = await productMapFromOrdersResponse(
         [data.order],
@@ -1783,18 +1876,17 @@ async function applyOrderDetailFromApi(data) {
     });
     syncListRowFromDetail(state.detailOrder);
     renderDetailPane(state.detailOrder);
+    if (data.inferred_registrations_pending) {
+        scheduleInferredRegistrationsRefresh(orderId);
+    }
     return state.detailOrder;
 }
 
 async function refreshOrderAfterAction(orderId) {
     els.detailPaneBody?.setAttribute("aria-busy", "true");
     try {
-        const { res, data } = await fetchJsonWithRetry(
-            `/api/orders/${orderId}`
-        );
-        if (!res.ok) {
-            throw new Error(data.error || res.statusText || "Request failed");
-        }
+        invalidateOrderDetailCache(orderId);
+        const data = await fetchOrderDetail(orderId, { force: true });
         await applyOrderDetailFromApi(data);
     } finally {
         els.detailPaneBody?.removeAttribute("aria-busy");
@@ -2004,7 +2096,10 @@ function setOrdersSyncing(active) {
     els.listPane?.classList.toggle("list-pane--syncing", Boolean(active));
 }
 
-async function openOrderDetail(orderId, { background = false, skipListRender = false } = {}) {
+async function openOrderDetail(
+    orderId,
+    { background = false, skipListRender = false, force = false } = {}
+) {
     if (!isLiveHost()) return;
     state.selectedOrderId = orderId;
     setSplitMode(true);
@@ -2013,6 +2108,25 @@ async function openOrderDetail(orderId, { background = false, skipListRender = f
     const listRow = els.tbody?.querySelector(
         `tr[data-order-id="${CSS.escape(String(orderId))}"]`
     );
+
+    const cached = !force ? getCachedOrderDetail(orderId) : null;
+    if (cached) {
+        if (!background) {
+            listRow?.scrollIntoView({ block: "nearest" });
+        }
+        try {
+            await applyOrderDetailFromApi(cached);
+        } catch (e) {
+            if (!background) {
+                setDetailLoading(false);
+                els.detailPaneBody.innerHTML = `<div class="detail-error-state"><p>${escapeHtml(e.message || String(e))}</p></div>`;
+            }
+        } finally {
+            state.detailLoading = false;
+        }
+        return;
+    }
+
     if (!background) {
         listRow?.scrollIntoView({ block: "nearest" });
         state.detailLoading = true;
@@ -2027,13 +2141,11 @@ async function openOrderDetail(orderId, { background = false, skipListRender = f
     }
 
     try {
-        const { res, data } = await fetchJsonWithRetry(`/api/orders/${orderId}`);
-        if (!res.ok) {
-            throw new Error(data.error || res.statusText);
-        }
+        const data = await fetchOrderDetail(orderId, { force });
+        if (String(state.selectedOrderId) !== String(orderId)) return;
         await applyOrderDetailFromApi(data);
     } catch (e) {
-        if (!background) {
+        if (!background && String(state.selectedOrderId) === String(orderId)) {
             setDetailLoading(false);
             els.detailPaneBody.innerHTML = `<div class="detail-error-state"><p>${escapeHtml(e.message || String(e))}</p></div>`;
         }
@@ -2298,6 +2410,81 @@ async function runOrdersPostLoadTasks(batch) {
     }
 }
 
+function visibleOrderIdsForPrefetch(rows) {
+    const list = rows || state.rows || [];
+    const visible = [];
+    const rest = [];
+    for (const r of list) {
+        const id = String(r.id);
+        const el =
+            els.tbody?.querySelector(
+                `tr[data-order-id="${CSS.escape(id)}"]`
+            ) ||
+            els.ordersCardList?.querySelector(
+                `[data-order-id="${CSS.escape(id)}"]`
+            );
+        if (!el) {
+            rest.push(id);
+            continue;
+        }
+        const rect = el.getBoundingClientRect();
+        const inView =
+            rect.bottom > 0 &&
+            rect.top <
+                (window.innerHeight || document.documentElement.clientHeight);
+        if (inView) visible.push(id);
+        else rest.push(id);
+    }
+    return [...visible, ...rest];
+}
+
+function scheduleDetailPrefetch(rows) {
+    if (!isLiveHost()) return;
+    const generation = ++detailPrefetchGeneration;
+    const queue = visibleOrderIdsForPrefetch(rows).filter((id) => {
+        if (detailCache.has(id) || detailInflight.has(id)) return false;
+        return true;
+    });
+    if (!queue.length) return;
+
+    const run = async () => {
+        if (generation !== detailPrefetchGeneration) return;
+        let cursor = 0;
+        const workers = Array.from(
+            { length: DETAIL_PREFETCH_CONCURRENCY },
+            async () => {
+                while (generation === detailPrefetchGeneration) {
+                    const idx = cursor++;
+                    if (idx >= queue.length) return;
+                    const orderId = queue[idx];
+                    if (
+                        detailCache.has(orderId) ||
+                        detailInflight.has(orderId)
+                    ) {
+                        continue;
+                    }
+                    try {
+                        await fetchOrderDetail(orderId);
+                    } catch (e) {
+                        console.warn(
+                            `Detail prefetch failed for ${orderId}:`,
+                            e.message || e
+                        );
+                    }
+                    await sleep(50);
+                }
+            }
+        );
+        await Promise.all(workers);
+    };
+
+    if (typeof requestIdleCallback === "function") {
+        requestIdleCallback(() => void run(), { timeout: 2500 });
+    } else {
+        setTimeout(() => void run(), 400);
+    }
+}
+
 async function fetchProductsForOrders(orders) {
     const ids = [
         ...new Set(
@@ -2481,13 +2668,21 @@ async function fetchOrders(
 
         if (!useBackground) setStatus("");
         void runOrdersPostLoadTasks(state.rows);
+        scheduleDetailPrefetch(state.rows);
 
         if (state.selectedOrderId) {
             const still = state.rows.some(
                 (r) => String(r.id) === String(state.selectedOrderId)
             );
             if (still || !state.detailOrder) {
-                await openOrderDetail(state.selectedOrderId, { background });
+                const cached = getCachedOrderDetail(state.selectedOrderId);
+                if (useBackground && cached && state.detailOrder) {
+                    // Keep warm detail; list row already refreshed via renderTable.
+                } else {
+                    await openOrderDetail(state.selectedOrderId, {
+                        background: useBackground,
+                    });
+                }
             }
         }
     } catch (e) {

@@ -127,7 +127,8 @@ function formatDate(date) {
     return `${year}-${month}-${day}`;
 }
 
-const LEAVE_NOTICE_BUSINESS_DAYS = 5;
+// Advance notice is temporarily waived; same-day leave is allowed.
+const LEAVE_NOTICE_BUSINESS_DAYS = 0;
 
 function getTodayLocal() {
     const now = new Date();
@@ -166,6 +167,9 @@ function formatLeaveDateLabel(date) {
 }
 
 function getLeaveNoticeMessage(earliestDate) {
+    if (LEAVE_NOTICE_BUSINESS_DAYS === 0) {
+        return 'Leave can be requested for today or a future date. Admin approval is required.';
+    }
     const earliestLabel = formatLeaveDateLabel(earliestDate);
     return `Leave must be filed ${LEAVE_NOTICE_BUSINESS_DAYS} business days in advance (weekends and holidays don't count). Earliest date is ${earliestLabel}.`;
 }

@@ -248,6 +248,13 @@ test("resolvePipelineStatus does not downgrade invoiced or later", () => {
   );
 });
 
+test("resolvePipelineStatus keeps lost and promotes qualifying", () => {
+  assert.equal(resolvePipelineStatus({ pipelineStatus: "lost", quotedPrice: "PHP 45000" }), "lost");
+  assert.equal(resolvePipelineStatus({ pipelineStatus: "qualifying" }), "qualifying");
+  assert.equal(resolvePipelineStatus({ pipelineStatus: "qualifying", quotedPrice: "PHP 45000" }), "quoted");
+  assert.equal(normalizePipelineStatus("Lost"), "lost");
+});
+
 test("computeProfileStatus matches computeLeadStatus", () => {
   assert.equal(computeProfileStatus({ clientName: "Jane" }), "draft");
   assert.equal(computeLeadStatus({ clientName: "Jane" }), "draft");

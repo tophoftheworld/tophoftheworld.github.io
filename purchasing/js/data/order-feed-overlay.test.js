@@ -16,7 +16,8 @@ import {
   weekHasOnPlanBudget,
   preferNonEmptyPastWeek,
   canReplaceLiveOverlay,
-} from './overlay-filter.js?v=106';
+  resolveLiveWeekBounds,
+} from './overlay-filter.js?v=111';
 
 let failed = 0;
 function test(name, fn) {
@@ -299,6 +300,35 @@ test('blank overlay shell (weekStart / branchForecast only) is not archivable', 
   };
   assert.equal(overlayHasArchivableBudget(blank), false);
   assert.equal(overlayHasOnPlanBudget(blank), false);
+});
+
+test('Sunday with pending rollover keeps last week dates (no relabel to next Monday)', () => {
+  // Sun 2026-09-27: plan week is Sep 28, but the overlay still holds Sep 21's budget.
+  const bounds = resolveLiveWeekBounds({
+    overlayWeekStart: '2026-09-21',
+    overlayWeekEnd: '2026-09-27',
+    planWeekStart: '2026-09-28',
+    planWeekEnd: '2026-10-04',
+  });
+  assert.deepEqual(bounds, { weekStart: '2026-09-21', weekEnd: '2026-09-27' });
+});
+
+test('overlay without weekEnd derives Sunday from its own Monday', () => {
+  const bounds = resolveLiveWeekBounds({
+    overlayWeekStart: '2026-09-21',
+    planWeekStart: '2026-09-28',
+    planWeekEnd: '2026-10-04',
+  });
+  assert.deepEqual(bounds, { weekStart: '2026-09-21', weekEnd: '2026-09-27' });
+});
+
+test('overlay without a week falls back to the calendar plan week', () => {
+  const bounds = resolveLiveWeekBounds({
+    overlayWeekStart: null,
+    planWeekStart: '2026-09-28',
+    planWeekEnd: '2026-10-04',
+  });
+  assert.deepEqual(bounds, { weekStart: '2026-09-28', weekEnd: '2026-10-04' });
 });
 
 if (failed) {

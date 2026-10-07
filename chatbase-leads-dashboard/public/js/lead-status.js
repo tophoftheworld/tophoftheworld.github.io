@@ -1,17 +1,21 @@
 export const PIPELINE_STATUSES = [
   { value: "inquiry", label: "Inquiry" },
+  { value: "qualifying", label: "Qualifying" },
   { value: "quoted", label: "Quoted" },
   { value: "invoiced", label: "Invoiced" },
   { value: "deposit", label: "Deposit" },
-  { value: "completed", label: "Completed" }
+  { value: "completed", label: "Completed" },
+  { value: "lost", label: "Lost" }
 ];
 
 const PIPELINE_RANK = {
   inquiry: 0,
+  qualifying: 0,
   quoted: 1,
   invoiced: 2,
   deposit: 3,
-  completed: 4
+  completed: 4,
+  lost: 99
 };
 
 export function hasQuotedPrice(row) {

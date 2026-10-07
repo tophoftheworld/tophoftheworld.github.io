@@ -840,7 +840,7 @@ export function invoiceAsLeadOverlays(invoice) {
     targetVenue: day.venue,
     targetPax: day.count,
     eventType: day.typeId,
-    pipelineStatus: 'invoiced',
+    pipelineStatus: invoice.paymentMilestones?.[0]?.paid === true || invoice.bookingStage === 'booked' ? 'deposit' : 'invoiced',
     opsEventId: invoice.opsEventId || null,
     archived: !!invoice.archived,
     quotedPrice: quoted,
@@ -1269,6 +1269,7 @@ export async function loadOverlayLeads(db, firestoreFns, { year, monthIndex } = 
     const data = d.data() || {};
     if (data.opsEventId) return;
     if (data.archived) return;
+    if (data.pipelineStatus === 'lost') return;
     const targetDate = normalizeTargetDate(data.targetDate);
     if (!targetDate) return;
     if (prefix && !targetDate.startsWith(prefix)) return;
@@ -1347,10 +1348,12 @@ export async function loadOverlayInvoices(db, firestoreFns, { year, monthIndex }
 export function pipelineLabel(status) {
   const map = {
     inquiry: 'Inquiry',
+    qualifying: 'Qualifying',
     quoted: 'Quoted',
     invoiced: 'Invoiced',
-    deposit: 'Deposit',
-    completed: 'Completed'
+    deposit: 'Booked',
+    completed: 'Completed',
+    lost: 'Lost'
   };
   return map[status] || status || 'Inquiry';
 }

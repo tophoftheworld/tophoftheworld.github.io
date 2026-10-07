@@ -1,6 +1,31 @@
 import { menuData } from './menu-data.js?v=6';
-import { syncOrderToFirebase, syncAllPendingOrders, initializeMenuItems, loadEventsFromFirebase, saveEventToFirebase, subscribeToOrders, publishLiveSession, clearLiveSession, filterPosSelectableEvents } from './firebase-sync.js?v=13';
-import { app, db, collection, doc, getDocs, deleteDoc, setDoc, getDoc, serverTimestamp } from './firebase-setup.js?v=7';
+import {
+  syncOrderToFirebase,
+  syncAllPendingOrders,
+  initializeMenuItems,
+  loadEventsFromFirebase,
+  loadEventsFromFirebaseResult,
+  saveEventToFirebase,
+  subscribeToOrders,
+  publishLiveSession,
+  clearLiveSession,
+  filterPosSelectableEvents,
+  queueOrderSync,
+  getSyncStatus,
+  onSyncStatusChange,
+  getOrderDateString,
+  markLocalOrderSynced
+} from './firebase-sync.js?v=15';
+import { app, db, collection, doc, getDocs, deleteDoc, setDoc, getDoc, serverTimestamp } from './firebase-setup.js?v=8';
+import {
+  mergeRemoteOrder,
+  applyRemoteRemoval,
+  generateOrderId as generateSecureOrderId,
+  filterOrdersForClear,
+  resolveEventSelectorState,
+  enqueueOutbox
+} from './order-sync-core.js?v=1';
+import { manilaYmdFromDate } from './event-window.js?v=4';
 
 console.log('[GREETING_DEBUG][POS] MODULE LOADED', { build: 'greeting-fix-2', hasPublishLiveSession: typeof publishLiveSession });
 
@@ -185,40 +210,42 @@ async function loadAvailableEvents() {
       console.log('Loading cached events for immediate display');
       availableEvents = filterPosSelectableEvents(cachedEvents).map(event => event.key);
       localStorage.setItem('availableEvents', JSON.stringify(availableEvents));
-
-      // Update UI immediately with cached data
-      updateEventSelector();
+      applyEventsToSelector(cachedEvents, { fromCache: true });
     }
 
     // Load from Firebase in background
     console.log('Fetching latest events from Firebase...');
-    const firebaseEvents = await loadEventsFromFirebase();
+    const result = await loadEventsFromFirebaseResult();
 
-    // Check if there are differences
-    const hasChanges = !eventsAreEqual(cachedEvents, firebaseEvents);
-
-    if (hasChanges) {
-      console.log('Events have changed, updating cache and UI');
-
-      // Update cache
-      localStorage.setItem('cachedEvents', JSON.stringify(firebaseEvents));
-
-      // Filter out archived / out-of-window events for POS
-      const activeEvents = filterPosSelectableEvents(firebaseEvents);
-      availableEvents = activeEvents.map(event => event.key);
-      localStorage.setItem('availableEvents', JSON.stringify(availableEvents));
-
-      // Update UI with new data
-      updateEventSelector();
+    if (!result.ok) {
+      console.warn('Events fetch failed — keeping cached events and currentEvent');
+      if (cachedEvents.length > 0) {
+        applyEventsToSelector(cachedEvents, { fromCache: true, offline: true });
+      }
+      await loadEventMenu(currentEvent);
+      return availableEvents;
     }
 
-    // Load custom menu for current event
-    await loadEventMenu(currentEvent);
+    const firebaseEvents = result.events;
+    const hasChanges = !eventsAreEqual(cachedEvents, firebaseEvents);
 
+    // Always refresh cache + selector from Firebase so renames/menus aren't stuck
+    // behind a stale localStorage snapshot (or an order-sensitive equality check).
+    if (hasChanges || cachedEvents.length === 0) {
+      console.log('Events have changed, updating cache and UI');
+    }
+    localStorage.setItem('cachedEvents', JSON.stringify(firebaseEvents));
+    const activeEvents = filterPosSelectableEvents(firebaseEvents);
+    availableEvents = activeEvents.map(event => event.key);
+    localStorage.setItem('availableEvents', JSON.stringify(availableEvents));
+    applyEventsToSelector(firebaseEvents, { fromCache: false });
+
+    await loadEventMenu(currentEvent);
     return availableEvents;
   } catch (error) {
     console.error('Error loading events:', error);
-    return [];
+    // Never wipe currentEvent on failure
+    return availableEvents;
   }
 }
 
@@ -227,12 +254,10 @@ function eventsAreEqual(cachedEvents, firebaseEvents) {
     return false;
   }
 
-  // Compare each event
-  for (let i = 0; i < cachedEvents.length; i++) {
-    const cached = cachedEvents[i];
-    const firebase = firebaseEvents[i];
-
-    if (cached.key !== firebase.key ||
+  const byKey = new Map(firebaseEvents.map((event) => [event.key, event]));
+  for (const cached of cachedEvents) {
+    const firebase = byKey.get(cached.key);
+    if (!firebase ||
       cached.name !== firebase.name ||
       cached.serviceType !== firebase.serviceType ||
       cached.archived !== firebase.archived ||
@@ -247,6 +272,77 @@ function eventsAreEqual(cachedEvents, firebaseEvents) {
 
 let isUpdatingEventSelector = false;
 
+function hasLocalSalesForEvent(eventKey) {
+  if (!eventKey) return false;
+  return orderHistory.some((o) => (o.event || '') === eventKey && o.status !== 'deleted');
+}
+
+function applyEventsToSelector(allEvents, { fromCache = false, offline = false } = {}) {
+  const eventSelector = document.getElementById('eventSelector');
+  if (!eventSelector) return;
+
+  const currentValue = currentEvent;
+  const activeEvents = filterPosSelectableEvents(allEvents || []);
+
+  const state = resolveEventSelectorState({
+    activeEvents,
+    currentValue,
+    allowAutoSwitch: !(hasLocalSalesForEvent(currentValue) || sessionStorage.getItem('posShiftStarted') === '1'),
+    confirmSwitch: (fromKey, toEvent) => confirm(
+      `Event "${fromKey}" is outside the active window.\n\nSwitch to "${toEvent.name}"?\n\nCancel to keep selling under the current event.`
+    )
+  });
+
+  eventSelector.innerHTML = '';
+
+  const eventsToShow = state.events.slice();
+  if (state.action === 'keep-orphaned' && state.orphanedKey) {
+    const orphanMeta = (allEvents || []).find((e) => e.key === state.orphanedKey);
+    const orphanOpt = document.createElement('option');
+    orphanOpt.value = state.orphanedKey;
+    const label = orphanMeta?.name || state.orphanedKey;
+    orphanOpt.textContent = offline
+      ? `[Offline] ${label}`
+      : `[Current] ${label}`;
+    orphanOpt.dataset.serviceType = orphanMeta?.serviceType || 'popup';
+    eventSelector.appendChild(orphanOpt);
+  }
+
+  eventsToShow.forEach((event) => {
+    if (state.orphanedKey && event.key === state.orphanedKey) return;
+    const option = document.createElement('option');
+    option.value = event.key;
+    const serviceLabel = event.serviceType === 'package' ? 'Package' : 'Popup';
+    option.textContent = `[${serviceLabel}] ${event.name}`;
+    option.dataset.serviceType = event.serviceType || 'popup';
+    eventSelector.appendChild(option);
+  });
+
+  if (state.action === 'empty' && !state.eventKey) {
+    const noEventsOption = document.createElement('option');
+    noEventsOption.value = currentValue || '';
+    noEventsOption.textContent = offline || fromCache
+      ? 'Reconnecting… (using last event)'
+      : 'No events available';
+    if (!currentValue) noEventsOption.disabled = true;
+    eventSelector.appendChild(noEventsOption);
+    // Never clear currentEvent to ''
+    return;
+  }
+
+  if (state.eventKey && state.eventKey !== currentEvent) {
+    currentEvent = state.eventKey;
+    window.currentEvent = currentEvent;
+    localStorage.setItem('currentEvent', currentEvent);
+  }
+
+  if (currentEvent) {
+    eventSelector.value = currentEvent;
+  }
+
+  setTimeout(() => updateDisplayMode(), 100);
+}
+
 function updateEventSelector() {
   if (isUpdatingEventSelector) {
     console.log('updateEventSelector already running, skipping...');
@@ -255,58 +351,26 @@ function updateEventSelector() {
 
   isUpdatingEventSelector = true;
 
-  const eventSelector = document.getElementById('eventSelector');
-  const currentValue = currentEvent; // Use the localStorage-saved value, not the selector's current value
+  const cachedEvents = JSON.parse(localStorage.getItem('cachedEvents') || '[]');
+  if (cachedEvents.length > 0) {
+    applyEventsToSelector(cachedEvents, { fromCache: true });
+  }
 
-  // Clear existing options
-  eventSelector.innerHTML = '';
-
-  loadEventsFromFirebase().then(firebaseEvents => {
-    // Filter out archived / out-of-window events for POS (only show nearby dates)
-    const activeEvents = filterPosSelectableEvents(firebaseEvents);
-
-    console.log('Active events loaded:', activeEvents);
-
-    // Add active events only (Legacy Data is dashboard-only, not shown in POS)
-    activeEvents.forEach(event => {
-      console.log('Processing event in updateEventSelector:', event);
-      const option = document.createElement('option');
-      option.value = event.key;
-      const serviceLabel = event.serviceType === 'package' ? 'Package' : 'Popup';
-      option.textContent = `[${serviceLabel}] ${event.name}`;
-      option.dataset.serviceType = event.serviceType || 'popup';
-      eventSelector.appendChild(option);
-    });
-
-    const hasActiveEvents = activeEvents.length > 0;
-    const isCurrentEventActive = activeEvents.some(event => event.key === currentValue);
-
-    if (hasActiveEvents) {
-      if (isCurrentEventActive) {
-        eventSelector.value = currentValue;
-      } else {
-        // Switch to first active (e.g. when previously on Legacy Data or archived event)
-        currentEvent = activeEvents[0].key;
-        eventSelector.value = currentEvent;
-        window.currentEvent = currentEvent;
-        localStorage.setItem('currentEvent', currentEvent);
+  loadEventsFromFirebaseResult().then((result) => {
+    if (!result.ok) {
+      console.warn('updateEventSelector: Firebase failed, keeping cache');
+      if (cachedEvents.length > 0) {
+        applyEventsToSelector(cachedEvents, { fromCache: true, offline: true });
       }
-    } else {
-      const noEventsOption = document.createElement('option');
-      noEventsOption.value = '';
-      noEventsOption.textContent = 'No events available';
-      noEventsOption.disabled = true;
-      eventSelector.appendChild(noEventsOption);
-      currentEvent = '';
-      window.currentEvent = currentEvent;
-      localStorage.setItem('currentEvent', currentEvent);
+      isUpdatingEventSelector = false;
+      return;
     }
 
-    // Update display mode based on selected event
-    setTimeout(() => {
-      updateDisplayMode();
-    }, 100);
-
+    localStorage.setItem('cachedEvents', JSON.stringify(result.events));
+    const activeEvents = filterPosSelectableEvents(result.events);
+    availableEvents = activeEvents.map((e) => e.key);
+    localStorage.setItem('availableEvents', JSON.stringify(availableEvents));
+    applyEventsToSelector(result.events, { fromCache: false });
     isUpdatingEventSelector = false;
   }).catch(() => {
     isUpdatingEventSelector = false;
@@ -631,7 +695,7 @@ function scheduleLiveSessionPublish(forceImmediate = false, extras = {}) {
 }
 
 function generateOrderId() {
-  return crypto.randomUUID().replace(/-/g, '').slice(0, 5).toUpperCase();
+  return generateSecureOrderId();
 }
 
 function addToOrder(item) {
@@ -899,8 +963,10 @@ function displayOrderHistory() {
   const today = new Date();
   const isToday = getLocalDateString(selectedDate) === getLocalDateString(today);
 
-  // Filter orders by selected date AND current event
+  // Filter orders by selected date AND current event (hide mid-edit + deleted)
   const selectedDateOrders = orderHistory.filter(order => {
+    if (order._editing) return false;
+    if (order.status === 'deleted') return false;
     const orderEvent = order.event || 'pop-up';
     return getLocalDateString(new Date(order.timestamp)) === getLocalDateString(selectedDate) &&
       orderEvent === currentEvent;
@@ -1518,25 +1584,11 @@ function deleteOrder(orderId) {
 function deleteOrderConfirmed(orderId) {
   const orderIndex = orderHistory.findIndex(order => order.id === orderId);
   if (orderIndex > -1) {
-    // Mark as deleted but DON'T remove from local storage
     orderHistory[orderIndex].status = 'deleted';
     orderHistory[orderIndex].lastModified = new Date().toISOString();
     orderHistory[orderIndex].needsSync = true;
-    
-    // Update local storage with the 'deleted' status
     localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
-    
-    // Update Firebase with deleted status
-    const orderDate = getLocalDateString(new Date(orderHistory[orderIndex].timestamp));
-
-    syncOrderToFirebase(orderHistory[orderIndex]).then(success => {
-      if (success) {
-        orderHistory[orderIndex].needsSync = false;
-        localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
-      }
-    });
-    
-    // Update display (which will filter out deleted items)
+    queueOrderSync(orderId);
     displayOrderHistory();
   }
 }
@@ -1545,31 +1597,31 @@ function editOrder(orderId) {
   const order = orderHistory.find(o => o.id === orderId);
   if (!order) return;
 
-  // Store the original order ID and Firebase ID for later use
   const originalOrderId = order.id;
   const firebaseId = order.firebaseId;
 
-  // Load items into current order
   currentOrder = order.items.map(item => ({ ...item }));
   customerName = order.customerName || '';
 
-  // Remove from order history temporarily (we'll add it back when completing)
+  // Keep order in history while editing (marked hidden) so reload cannot erase it
   const orderIndex = orderHistory.findIndex(o => o.id === orderId);
   if (orderIndex > -1) {
-    orderHistory.splice(orderIndex, 1);
+    orderHistory[orderIndex] = {
+      ...orderHistory[orderIndex],
+      _editing: true
+    };
     localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
   }
 
-  // Store original order info in a temporary variable for later use
   window.editingOrderData = {
     originalId: originalOrderId,
     firebaseId: firebaseId,
     timestamp: order.timestamp,
     status: order.status,
-    paymentMethod: order.paymentMethod
+    paymentMethod: order.paymentMethod,
+    snapshot: JSON.parse(JSON.stringify(order))
   };
 
-  // Switch to menu view
   const menuContainer = document.getElementById('menu-container');
   const ordersContainer = document.getElementById('orders-container');
   const menuHeader = document.querySelector('.menu-header');
@@ -1583,24 +1635,80 @@ function editOrder(orderId) {
   updateOrderHeader();
 }
 
+function cancelEditingOrder() {
+  if (!window.editingOrderData) return;
+  const snap = window.editingOrderData.snapshot;
+  const id = window.editingOrderData.originalId;
+  const idx = orderHistory.findIndex(o => o.id === id);
+  if (snap) {
+    const restored = { ...snap };
+    delete restored._editing;
+    if (idx > -1) {
+      orderHistory[idx] = restored;
+    } else {
+      orderHistory.push(restored);
+    }
+    localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+  } else if (idx > -1) {
+    delete orderHistory[idx]._editing;
+    localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+  }
+  window.editingOrderData = undefined;
+  currentOrder = [];
+  customerName = '';
+  updateOrderDisplay();
+  updateOrderHeader();
+}
+
+function ensureValidEventForSale() {
+  if (!currentEvent || currentEvent === '') {
+    alert('Select an event before taking a sale. If events failed to load, wait for reconnect or Force Sync after Wi‑Fi returns.');
+    return false;
+  }
+  return true;
+}
+
+/** Persist a completed sale (create or replace mid-edit) and enqueue sync. */
+function persistCompletedOrder(order, isEditing) {
+  sessionStorage.setItem('posShiftStarted', '1');
+
+  if (isEditing) {
+    const idx = orderHistory.findIndex(o => o.id === order.id);
+    const cleaned = { ...order };
+    delete cleaned._editing;
+    if (idx > -1) {
+      orderHistory[idx] = cleaned;
+    } else {
+      orderHistory.push(cleaned);
+    }
+  } else {
+    orderHistory.push(order);
+  }
+
+  localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+  enqueueOutbox(order.id, localStorage);
+  queueOrderSync(order.id);
+
+  syncOrderToFirebase(order).then(success => {
+    if (success) {
+      const orderIndex = orderHistory.findIndex(o => o.id === order.id);
+      if (orderIndex > -1) {
+        orderHistory[orderIndex].needsSync = false;
+        localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+      }
+      markLocalOrderSynced(order.id);
+    }
+  });
+}
+
 function returnToPending(orderId) {
   const orderIndex = orderHistory.findIndex(order => order.id === orderId);
   if (orderIndex > -1) {
     orderHistory[orderIndex].status = 'pending';
-    orderHistory[orderIndex].lastModified = new Date().toISOString(); // Add timestamp
+    orderHistory[orderIndex].lastModified = new Date().toISOString();
     orderHistory[orderIndex].needsSync = true;
     localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
-
-    // Pass order date to sync queue
-    const orderDate = getLocalDateString(new Date(orderHistory[orderIndex].timestamp));
-
-    syncOrderToFirebase(orderHistory[orderIndex]).then(success => {
-      if (success) {
-        orderHistory[orderIndex].needsSync = false;
-        localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
-      }
-    });
-
+    queueOrderSync(orderId);
     displayOrderHistory();
   }
 }
@@ -1618,25 +1726,11 @@ function cancelOrder(orderId) {
 function cancelOrderConfirmed(orderId) {
   const orderIndex = orderHistory.findIndex(order => order.id === orderId);
   if (orderIndex > -1) {
-    // Mark as deleted but DON'T remove from local storage
     orderHistory[orderIndex].status = 'deleted';
     orderHistory[orderIndex].lastModified = new Date().toISOString();
     orderHistory[orderIndex].needsSync = true;
-
-    // Update local storage with the 'deleted' status
     localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
-
-    // Update Firebase with 'deleted' status
-    const orderDate = getLocalDateString(new Date(orderHistory[orderIndex].timestamp));
-
-    syncOrderToFirebase(orderHistory[orderIndex]).then(success => {
-      if (success) {
-        orderHistory[orderIndex].needsSync = false;
-        localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
-      }
-    });
-
-    // Update display (which will filter out deleted items)
+    queueOrderSync(orderId);
     displayOrderHistory();
   }
 }
@@ -1658,27 +1752,13 @@ function voidOrderConfirmed(orderId) {
     orderHistory[orderIndex].lastModified = new Date().toISOString();
     orderHistory[orderIndex].needsSync = true;
     localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
-
-    // Pass order date to sync queue
-    const orderDate = getLocalDateString(new Date(orderHistory[orderIndex].timestamp));
-
-    syncOrderToFirebase(orderHistory[orderIndex]).then(success => {
-      if (success) {
-        orderHistory[orderIndex].needsSync = false;
-        localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
-      }
-    });
-
+    queueOrderSync(orderId);
     displayOrderHistory();
   }
 }
 
 function getLocalDateString(date = new Date()) {
-  // Get local date components
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return manilaYmdFromDate(date) || getOrderDateString(date);
 }
 
 /** Push this event's orders for a date to Firebase. EOD totals live locally; admin dashboard reads Firebase. */
@@ -1755,17 +1835,7 @@ function completeOrder(orderId) {
     orderHistory[orderIndex].lastModified = new Date().toISOString();
     orderHistory[orderIndex].needsSync = true;
     localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
-
-    // Pass order date to sync queue
-    const orderDate = getLocalDateString(new Date(orderHistory[orderIndex].timestamp));
-
-    syncOrderToFirebase(orderHistory[orderIndex]).then(success => {
-      if (success) {
-        orderHistory[orderIndex].needsSync = false;
-        localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
-      }
-    });
-
+    queueOrderSync(orderId);
     displayOrderHistory();
   }
 }
@@ -4282,16 +4352,16 @@ function selectCashAmount(amount, modal) {
 }
 
 function completeCashPayment() {
-  const now = new Date();
+  if (!ensureValidEventForSale()) return;
 
-  // Determine if we're editing or creating a new order
+  const now = new Date();
   const isEditing = window.editingOrderData !== undefined;
 
   const order = {
     id: isEditing ? window.editingOrderData.originalId : generateOrderId(),
     items: [...currentOrder],
     total: calculateOrderTotal(),
-    paymentMethod: 'Cash', // or method
+    paymentMethod: 'Cash',
     timestamp: isEditing ? window.editingOrderData.timestamp : now.toISOString(),
     status: 'pending',
     customerName: customerName,
@@ -4303,31 +4373,13 @@ function completeCashPayment() {
   liveSessionState = { paymentMethod: 'cash', showQr: false, status: 'paid' };
   scheduleLiveSessionPublish(true);
 
-  // Add Firebase ID if we're editing
   if (isEditing && window.editingOrderData.firebaseId) {
     order.firebaseId = window.editingOrderData.firebaseId;
   }
 
-  // Save to order history
-  orderHistory.push(order);
-  localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+  console.log(`Creating/updating order with date: ${getLocalDateString(new Date(order.timestamp))}`);
+  persistCompletedOrder(order, isEditing);
 
-  // Determine order date and sync action
-  const orderDate = getLocalDateString(new Date(order.timestamp));
-  console.log(`Creating/updating order with date: ${orderDate}`);
-
-  // Sync immediately to Firebase
-  syncOrderToFirebase(order).then(success => {
-    if (success) {
-      const orderIndex = orderHistory.findIndex(o => o.id === order.id);
-      if (orderIndex > -1) {
-        orderHistory[orderIndex].needsSync = false;
-        localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
-      }
-    }
-  });
-
-  // Clear editing state if needed
   if (isEditing) {
     window.editingOrderData = undefined;
   }
@@ -4336,16 +4388,16 @@ function completeCashPayment() {
 }
 
 function completeDigitalPayment(method) {
-  const now = new Date();
+  if (!ensureValidEventForSale()) return;
 
-  // Determine if we're editing or creating a new order
+  const now = new Date();
   const isEditing = window.editingOrderData !== undefined;
 
   const order = {
     id: isEditing ? window.editingOrderData.originalId : generateOrderId(),
     items: [...currentOrder],
     total: calculateOrderTotal(),
-    paymentMethod: method, // or method
+    paymentMethod: method,
     timestamp: isEditing ? window.editingOrderData.timestamp : now.toISOString(),
     status: 'pending',
     customerName: customerName,
@@ -4353,7 +4405,7 @@ function completeDigitalPayment(method) {
     needsSync: true,
     lastModified: now.toISOString()
   };
-  
+
   const normalizedMethod = (method || '').toLowerCase();
   liveSessionState = {
     paymentMethod: normalizedMethod || null,
@@ -4361,32 +4413,14 @@ function completeDigitalPayment(method) {
     status: 'paid'
   };
   scheduleLiveSessionPublish(true);
-  
-  // Add Firebase ID if we're editing
+
   if (isEditing && window.editingOrderData.firebaseId) {
     order.firebaseId = window.editingOrderData.firebaseId;
   }
 
-  // Save to order history
-  orderHistory.push(order);
-  localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+  console.log(`Creating/updating order with date: ${getLocalDateString(new Date(order.timestamp))}`);
+  persistCompletedOrder(order, isEditing);
 
-  // Determine order date and sync action
-  const orderDate = getLocalDateString(new Date(order.timestamp));
-  console.log(`Creating/updating order with date: ${orderDate}`);
-
-  // Sync immediately to Firebase
-  syncOrderToFirebase(order).then(success => {
-    if (success) {
-      const orderIndex = orderHistory.findIndex(o => o.id === order.id);
-      if (orderIndex > -1) {
-        orderHistory[orderIndex].needsSync = false;
-        localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
-      }
-    }
-  });
-
-  // Clear editing state if needed
   if (isEditing) {
     window.editingOrderData = undefined;
   }
@@ -4519,6 +4553,24 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Make syncOrdersWithFirebase available globally
   window.syncOrdersWithFirebase = syncOrdersWithFirebase;
+
+  // Sync status chip + listeners
+  updateSyncStatusChip(getSyncStatus());
+  onSyncStatusChange(updateSyncStatusChip);
+
+  // Restore mid-edit orders if the page was reloaded mid-edit
+  orderHistory.forEach((o) => {
+    if (o && o._editing) {
+      delete o._editing;
+    }
+  });
+  localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+
+  window.addEventListener('beforeunload', () => {
+    if (window.editingOrderData?.originalId) {
+      cancelEditingOrder();
+    }
+  });
 
   // Push any locally queued orders and start real-time listener for today
   await syncOrdersWithFirebase();
@@ -4804,37 +4856,23 @@ async function forceFullSync() {
   try {
     console.log("Starting force sync of all local data...");
 
-    // Get all local orders
-    const localOrders = JSON.parse(localStorage.getItem('orderHistory') || '[]');
-    console.log(`Found ${localOrders.length} total orders to sync`);
-
-    // Group orders by date
-    const ordersByDate = {};
-    localOrders.forEach(order => {
-      const dateStr = getLocalDateString(new Date(order.timestamp));
-      if (!ordersByDate[dateStr]) {
-        ordersByDate[dateStr] = [];
+    // Mark all non-empty orders as needing sync (including soft-deletes)
+    orderHistory = JSON.parse(localStorage.getItem('orderHistory') || '[]');
+    orderHistory.forEach((order) => {
+      if (order && order.id) {
+        order.needsSync = true;
+        order.lastModified = order.lastModified || order.timestamp || new Date().toISOString();
+        enqueueOutbox(order.id, localStorage);
       }
-      ordersByDate[dateStr].push(order);
     });
+    localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
 
-    // Sync each date's orders
-    for (const [dateStr, orders] of Object.entries(ordersByDate)) {
-      console.log(`Syncing ${orders.length} orders for ${dateStr}`);
+    const result = await syncAllPendingOrders();
+    orderHistory = JSON.parse(localStorage.getItem('orderHistory') || '[]');
+    displayOrderHistory();
+    updateSyncStatusChip(getSyncStatus());
 
-      for (const order of orders) {
-        // Skip deleted orders
-        if (order.status === 'deleted') continue;
-
-        // Force sync to Firebase
-        await syncOrderToFirebase(order);
-      }
-    }
-
-    // Wait for queue to process
-    await new Promise(resolve => setTimeout(resolve, 5000));
-
-    alert(`Force sync completed. Synced orders from ${Object.keys(ordersByDate).length} days.`);
+    alert(`Force sync completed. Synced ${result?.synced || 0} order(s)${result?.failed ? `, ${result.failed} failed` : ''}.`);
   } catch (error) {
     console.error('Force sync failed:', error);
     alert('Force sync failed. Check console for details.');
@@ -4851,8 +4889,10 @@ async function loadOrdersFromLocalStorage() {
 async function syncOrdersWithFirebase() {
   console.log('Running periodic sync...');
   await syncAllPendingOrders();
+  // Keep in-memory history aligned with storage after flush
+  orderHistory = JSON.parse(localStorage.getItem('orderHistory') || '[]');
+  updateSyncStatusChip(getSyncStatus());
 
-  // Update display if on orders page
   if (document.getElementById('orders-container').style.display !== 'none') {
     displayOrderHistory();
   }
@@ -4860,33 +4900,83 @@ async function syncOrdersWithFirebase() {
 
 function mergeFirebaseOrder(docSnapshot) {
   const remote = { firebaseId: docSnapshot.id, ...docSnapshot.data() };
+  if (!remote.id) remote.id = docSnapshot.id;
 
-  // Never overwrite an order that this device is currently mid-edit
-  if (window.editingOrderData?.originalId === remote.id) return;
+  const { orderHistory: next, changed } = mergeRemoteOrder(orderHistory, remote, {
+    editingId: window.editingOrderData?.originalId
+  });
 
-  const localIndex = orderHistory.findIndex(o => o.id === remote.id);
+  if (!changed) return;
 
-  if (localIndex === -1) {
-    // Order created on another device — add it
-    orderHistory.push(remote);
-  } else {
-    const local = orderHistory[localIndex];
-    // Local wins only if it has unsynced changes that are newer than Firebase
-    const localNewer = local.needsSync &&
-      new Date(local.lastModified) > new Date(remote.lastModified);
-
-    if (!localNewer) {
-      // Firebase version is newer or equal — accept it
-      orderHistory[localIndex] = { ...remote, needsSync: false };
-    }
-    // Otherwise: local pending change is newer, leave it alone until it pushes
-  }
-
+  orderHistory = next;
   localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
 
   if (document.getElementById('orders-container').style.display !== 'none') {
     displayOrderHistory();
   }
+}
+
+function handleRemoteOrderRemoved(docSnapshot) {
+  const orderId = docSnapshot.id;
+  const { orderHistory: next, changed } = applyRemoteRemoval(orderHistory, orderId, {
+    editingId: window.editingOrderData?.originalId
+  });
+  if (!changed) return;
+  orderHistory = next;
+  localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+  if (document.getElementById('orders-container').style.display !== 'none') {
+    displayOrderHistory();
+  }
+}
+
+window.__posOnRemoteOrderRemoved = handleRemoteOrderRemoved;
+window.__posOnOrderSynced = (orderId) => {
+  const idx = orderHistory.findIndex((o) => o.id === orderId);
+  if (idx > -1) {
+    orderHistory[idx].needsSync = false;
+  }
+  updateSyncStatusChip(getSyncStatus());
+};
+
+function updateSyncStatusChip(status) {
+  let chip = document.getElementById('posSyncStatusChip');
+  if (!chip) {
+    chip = document.createElement('button');
+    chip.type = 'button';
+    chip.id = 'posSyncStatusChip';
+    chip.className = 'pos-sync-status-chip';
+    chip.title = 'Tap to retry sync';
+    chip.addEventListener('click', () => {
+      syncOrdersWithFirebase();
+    });
+    const headerLeft = document.querySelector('.header-left') || document.querySelector('.header-container');
+    if (headerLeft) headerLeft.appendChild(chip);
+    else document.body.appendChild(chip);
+  }
+
+  const s = status || getSyncStatus();
+  let label = 'Online';
+  let state = 'online';
+  if (!s.online) {
+    label = s.pending ? `Offline · ${s.pending} pending` : 'Offline';
+    state = 'offline';
+  } else if (s.syncing) {
+    label = s.pending ? `Syncing ${s.pending}…` : 'Syncing…';
+    state = 'syncing';
+  } else if (s.lastError && s.pending > 0) {
+    label = `Sync failed · ${s.pending}`;
+    state = 'error';
+  } else if (s.pending > 0) {
+    label = `${s.pending} pending`;
+    state = 'pending';
+  } else if (s.lastSyncedAt) {
+    const t = new Date(s.lastSyncedAt);
+    label = `Synced ${t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    state = 'online';
+  }
+
+  chip.dataset.state = state;
+  chip.textContent = label;
 }
 
 // Replace the existing showNameInputModal function:
@@ -5197,34 +5287,30 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 function clearDateData() {
   const dateString = getLocalDateString(selectedDate);
-  
-  // Show confirmation dialog
-  const confirmMsg = `Are you sure you want to delete ALL orders for ${selectedDate.toLocaleDateString()}?`;
-  if (!confirm(confirmMsg)) {
-    return; // User cancelled
+  const eventKey = window.currentEvent || currentEvent || 'pop-up';
+
+  const typed = prompt(
+    `Type DELETE to permanently clear orders for event "${eventKey}" on ${selectedDate.toLocaleDateString()}.\n\nOnly this event's orders for that day will be removed.`
+  );
+  if (typed !== 'DELETE') {
+    return;
   }
 
   try {
-    // 1. Filter out orders for the specified date from local storage
     const orders = JSON.parse(localStorage.getItem('orderHistory') || '[]');
     console.log(`Before filtering: ${orders.length} total orders`);
-    
-    const filteredOrders = orders.filter(order => {
-      const orderDateStr = getLocalDateString(new Date(order.timestamp));
-      const shouldKeep = orderDateStr !== dateString;
-      if (!shouldKeep) {
-        console.log(`Filtering out order ${order.id} with date ${orderDateStr}`);
-      }
-      return shouldKeep;
+
+    const filteredOrders = filterOrdersForClear(orders, {
+      eventKey,
+      dateStr: dateString,
+      getDateStr: getLocalDateString
     });
-    
+
     console.log(`After filtering: ${filteredOrders.length} orders remain`);
 
-    // 2. Save filtered orders back to local storage
     localStorage.setItem('orderHistory', JSON.stringify(filteredOrders));
     orderHistory = filteredOrders;
 
-    // 3. Clear current order if we're clearing today's data
     const today = getLocalDateString(new Date());
     if (dateString === today) {
       currentOrder = [];
@@ -5233,24 +5319,16 @@ function clearDateData() {
       updateOrderHeader();
     }
 
-    // 4. Refresh the order history display
     displayOrderHistory();
 
-    // 5. Delete the same day's data from Firebase
-    console.log(`Clearing Firebase data for date: ${dateString}`);
+    console.log(`Clearing Firebase data for ${eventKey} / ${dateString}`);
+    const ordersRef = collection(db, `pos-orders/${eventKey}/${dateString}`);
 
-    // Create a reference to the date collection in Firebase
-    // Create a reference to the date collection in Firebase
-    const dayRef = doc(db, `pos-orders/${window.currentEvent || 'pop-up'}`);
-    const ordersRef = collection(dayRef, dateString);
-
-    // Get all orders for that date and delete them
     getDocs(ordersRef).then(snapshot => {
       console.log(`Found ${snapshot.size} documents to delete from Firebase`);
-      
+
       if (snapshot.empty) {
-        console.log(`No orders found for ${dateString} in Firebase`);
-        alert(`Successfully deleted local data for ${selectedDate.toLocaleDateString()}. No Firebase data found.`);
+        alert(`Deleted local data for ${eventKey} on ${selectedDate.toLocaleDateString()}. No Firebase data found.`);
         return;
       }
 
@@ -5258,13 +5336,11 @@ function clearDateData() {
       const totalDocs = snapshot.size;
 
       snapshot.forEach(document => {
-        console.log(`Deleting document ID: ${document.id}`);
-        deleteDoc(doc(db, `pos-orders/${window.currentEvent || 'pop-up'}`, dateString, document.id))
+        deleteDoc(doc(db, `pos-orders/${eventKey}`, dateString, document.id))
           .then(() => {
-            console.log(`Deleted order ${document.id}`);
             deleteCount++;
             if (deleteCount === totalDocs) {
-              alert(`Successfully deleted ${deleteCount} orders for ${selectedDate.toLocaleDateString()}`);
+              alert(`Deleted ${deleteCount} orders for ${eventKey} on ${selectedDate.toLocaleDateString()}`);
             }
           })
           .catch(error => console.error(`Error deleting order ${document.id}:`, error));
@@ -5324,16 +5400,16 @@ window.addEventListener('offline', () => {
 });
 
 function submitPackageOrder() {
-  const now = new Date();
+  if (!ensureValidEventForSale()) return;
 
-  // Determine if we're editing or creating a new order
+  const now = new Date();
   const isEditing = window.editingOrderData !== undefined;
 
   const order = {
     id: isEditing ? window.editingOrderData.originalId : generateOrderId(),
     items: [...currentOrder],
-    total: currentOrder.reduce((total, item) => total + item.quantity, 0), // Total cups for package service
-    paymentMethod: '', // No payment method for package orders
+    total: currentOrder.reduce((total, item) => total + item.quantity, 0),
+    paymentMethod: '',
     timestamp: isEditing ? window.editingOrderData.timestamp : now.toISOString(),
     status: 'pending',
     customerName: customerName,
@@ -5343,27 +5419,12 @@ function submitPackageOrder() {
     lastModified: now.toISOString()
   };
 
-  // Add Firebase ID if we're editing
   if (isEditing && window.editingOrderData.firebaseId) {
     order.firebaseId = window.editingOrderData.firebaseId;
   }
 
-  // Save to order history
-  orderHistory.push(order);
-  localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+  persistCompletedOrder(order, isEditing);
 
-  // Sync immediately to Firebase
-  syncOrderToFirebase(order).then(success => {
-    if (success) {
-      const orderIndex = orderHistory.findIndex(o => o.id === order.id);
-      if (orderIndex > -1) {
-        orderHistory[orderIndex].needsSync = false;
-        localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
-      }
-    }
-  });
-
-  // Clear editing state if needed
   if (isEditing) {
     window.editingOrderData = undefined;
   }
@@ -5432,24 +5493,36 @@ let isGridView = false;
 
 async function loadEventMenu(eventKey) {
   if (eventKey === 'pop-up') {
-    // Use default menu for legacy pop-up
     setCurrentMenuData((await import('./menu-data.js')).menuData);
     refreshMenuDisplay();
     return;
   }
 
+  // Prefer last-good cached menu so POS works offline after first load
   try {
-    // Load event data from Firebase to get custom menu.
-    // Prefer the active (non-archived) doc when duplicate keys exist
-    // (e.g. legacy archived "SM Southmall" sharing popup-sm-southmall).
-    const events = await loadEventsFromFirebase();
+    const cachedMenuRaw = localStorage.getItem(`posMenuCache_${eventKey}`);
+    if (cachedMenuRaw) {
+      const cachedMenu = JSON.parse(cachedMenuRaw);
+      if (cachedMenu && cachedMenu.items) {
+        setCurrentMenuData(cachedMenu);
+        refreshMenuDisplay();
+      }
+    }
+  } catch (_) { /* ignore bad cache */ }
+
+  try {
+    const result = await loadEventsFromFirebaseResult();
+    const events = result.ok ? result.events : JSON.parse(localStorage.getItem('cachedEvents') || '[]');
     const event = events.find(e => e.key === eventKey && !e.archived)
       || events.find(e => e.key === eventKey);
 
     if (event && event.customMenu) {
       console.log('Loading custom menu for event:', eventKey, event.archived ? '(archived fallback)' : '(active)');
       setCurrentMenuData(event.customMenu);
-    } else {
+      try {
+        localStorage.setItem(`posMenuCache_${eventKey}`, JSON.stringify(event.customMenu));
+      } catch (_) { /* quota */ }
+    } else if (!currentMenuData) {
       console.log('No custom menu found, using default for event:', eventKey);
       setCurrentMenuData((await import('./menu-data.js')).menuData);
     }
@@ -5457,9 +5530,10 @@ async function loadEventMenu(eventKey) {
     refreshMenuDisplay();
   } catch (error) {
     console.error('Error loading event menu:', error);
-    // Fallback to default menu
-    setCurrentMenuData((await import('./menu-data.js')).menuData);
-    refreshMenuDisplay();
+    if (!currentMenuData) {
+      setCurrentMenuData((await import('./menu-data.js')).menuData);
+      refreshMenuDisplay();
+    }
   }
 }
 

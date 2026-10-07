@@ -11,11 +11,11 @@ import {
   saveLastOpenLoc,
   isBranchFeedLoaded,
   CORE_BRANCHES,
-} from '../store.js?v=106';
+} from '../store.js?v=111';
 import {
   itemDisplayName,
   buildLocationGroups,
-} from '../data/catalog.js?v=106';
+} from '../data/catalog.js?v=111';
 import {
   sortByInventoryOrder,
   lineWarning,
@@ -24,7 +24,8 @@ import {
   isLockedStatus,
   fulfillmentStatus,
   orderQtyState,
-} from '../compute.js?v=106';
+  budgetSpendSplit,
+} from '../compute.js?v=111';
 import {
   formatPeso,
   formatQty,
@@ -34,17 +35,17 @@ import {
   escapeHtml,
   statusLabel,
   formatLineEditTitle,
-} from '../format.js?v=106';
-import { renderWeekChrome, bindWeekChrome } from './week-chrome.js?v=106';
-import { toast } from './shell.js?v=106';
-import { openPlanLineModal, openAddLineModal } from './plan-line-modal.js?v=106';
-import { openAddLocationChooser } from './location-chooser.js?v=106';
+} from '../format.js?v=111';
+import { renderWeekChrome, bindWeekChrome } from './week-chrome.js?v=111';
+import { toast } from './shell.js?v=111';
+import { openPlanLineModal, openAddLineModal } from './plan-line-modal.js?v=111';
+import { openAddLocationChooser } from './location-chooser.js?v=111';
 import {
   createAutocomplete,
 } from '../../../expenses/js/autocomplete.js?v=99';
-import { getSuppliers, ensureSupplier } from '../data/suppliers.js?v=106';
-import { buildItemSupplierMatchList, getSupplierRate } from '../data/item-prefs.js?v=106';
-import { isManualPlanLine } from '../data/overlay-filter.js?v=106';
+import { getSuppliers, ensureSupplier } from '../data/suppliers.js?v=111';
+import { buildItemSupplierMatchList, getSupplierRate } from '../data/item-prefs.js?v=111';
+import { isManualPlanLine } from '../data/overlay-filter.js?v=111';
 import {
   VALID_ORDER_BASELINES,
   VALID_ORDER_HORIZONS,
@@ -360,7 +361,7 @@ function renderBranchForecast(week, branch, { loading = false } = {}) {
       <select data-forecast-horizon class="loc-forecast-select" aria-label="Plan for" title="Week window to cover" ${disabled}>
         ${selectOptionsHtml(compactHorizonChoices(today), opts.orderHorizon)}
       </select>
-      <select data-forecast-baseline class="loc-forecast-select loc-forecast-select--usage" aria-label="Usage from" title="Which week’s usage to use as the pattern" ${disabled}>
+      <select data-forecast-baseline class="loc-forecast-select loc-forecast-select--usage" aria-label="Usage from" title="Which week\u2019s usage to use as the pattern" ${disabled}>
         ${selectOptionsHtml(compactBaselineChoices(today), opts.orderUsageBaseline)}
       </select>
       <button type="button" class="loc-forecast-buffer ${opts.orderDemandBuffer ? 'active' : ''}"
@@ -436,7 +437,7 @@ function renderGroup(week, group, editable) {
     collapsed || !feedReady || !expandSuggested
       ? suggestedUnsorted
       : sortByInventoryOrder(suggestedUnsorted);
-  const subtotal = includedRaw.reduce((s, l) => s + lineAmount(l), 0);
+  const spend = budgetSpendSplit(includedRaw);
   const showFeedLoading =
     !collapsed && CORE_BRANCHES.includes(group.key) && !feedReady;
   const withRunout = showRunoutColumn(week);
@@ -556,7 +557,20 @@ function renderGroup(week, group, editable) {
         ${editable ? `<button type="button" class="btn secondary btn-sm" data-add-loc="${group.key}">+ Add</button>` : ''}
       </div>
       ${collapsed ? '' : renderBranchForecast(week, group.key, { loading: showFeedLoading })}
-      <strong class="loc-total">${formatPeso(subtotal)}</strong>
+      <div class="loc-total budget-spend-split" aria-label="Group budget">
+        <div class="budget-spend-metric budget-spend-metric--sm">
+          <strong class="budget-spend-amount">${formatPeso(spend.ordered)}</strong>
+          <span class="budget-spend-label">Ordered</span>
+        </div>
+        <div class="budget-spend-metric budget-spend-metric--sm">
+          <strong class="budget-spend-amount">${formatPeso(spend.left)}</strong>
+          <span class="budget-spend-label">Left</span>
+        </div>
+        <div class="budget-spend-metric budget-spend-metric--total">
+          <strong class="budget-spend-amount">${formatPeso(spend.total)}</strong>
+          <span class="budget-spend-label">Total</span>
+        </div>
+      </div>
     </header>
     ${table ? `<div class="loc-group-body">${table}</div>` : ''}
   </section>`;
@@ -702,12 +716,12 @@ function orderCell(week, line, editing) {
   const state = orderQtyState(line);
   const reset =
     state.edited && line.suggestedQty != null
-      ? `<button type="button" class="order-qty-reset" data-reset-qty title="Reset to suggested">→º</button>`
+      ? `<button type="button" class="order-qty-reset" data-reset-qty title="Reset to suggested">\u21BA</button>`
       : `<span class="order-qty-trail" aria-hidden="true"></span>`;
   const belowFlag = state.belowNeed
-    ? `<span class="order-qty-below-flag" title="Below suggested order" aria-label="Below suggested order">→“</span>`
+    ? `<span class="order-qty-below-flag" title="Below suggested order" aria-label="Below suggested order">\u2193</span>`
     : '';
-  // Italic = edited from suggested. →“ = order qty is below suggested.
+  // Italic = edited from suggested. \u2193 = order qty is below suggested.
   return `<span class="order-qty ${state.classes}" title="${escapeHtml(state.tip)}"><span class="order-qty-val">${escapeHtml(
     formatQty(line.qty, line.unit)
   )}${belowFlag}</span>${reset}</span>`;
@@ -732,7 +746,7 @@ function renderRow(week, line, editable, withRunout = true) {
     ordered: 'Order already sent to the supplier',
     delivered: 'Goods arrived at the store',
   };
-  // Delivered uses the action-column check only — no duplicate "Delivered" pill.
+  // Delivered uses the action-column check only - no duplicate "Delivered" pill.
   const state =
     fulfill !== 'planned' && fulfill !== 'delivered'
       ? `<span class="status-flags"><span class="status-pill status-pill--${fulfill}" title="${escapeHtml(stateTips[fulfill] || '')}">${escapeHtml(statusLabel(fulfill, 'line'))}</span></span>`

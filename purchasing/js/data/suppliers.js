@@ -4,8 +4,8 @@ import {
   getDocs,
   setDoc,
 } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
-import { db } from '../firebase.js?v=106';
-import { catalogSuppliersForPicker } from './catalog.js?v=106';
+import { db } from '../firebase.js?v=111';
+import { catalogSuppliersForPicker } from './catalog.js?v=111';
 
 let suppliers = [];
 let loaded = false;
